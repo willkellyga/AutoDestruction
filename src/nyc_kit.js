@@ -227,7 +227,7 @@ export function billboard(lx, lz, L, o = {}) {
     const cx = x0 + 18, cz = z0 + 20, t = top + 34;
     box(cx - 2, top + 1, cz - 2, cx + 2, top + 4, cz + 2, M.STEEL); box(cx, top + 5, cz, cx, t, cz, M.METAL);
     for (let dy = -4; dy <= 4; dy++) for (let dz = -4; dz <= 4; dz++) for (let dx = -4; dx <= 4; dx++) if (dx * dx + dy * dy + dz * dz <= 17) set(cx + dx, t + 4 + dy, cz + dz, ((dx + dy + dz) & 3) === 0 ? M.LIT_P : ((dx - dz) & 3) === 1 ? M.LIT_B : M.LIT_W);
-  } else roofTank(x1 - 9, top + 1, z1 - 9);
+  } else if (!o.notank) roofTank(x1 - 9, top + 1, z1 - 9);
   if (L >= 2) { lampPost(lx + 1, lz + 1); lampPost(lx + 38, lz + 1); if (o.car) car(lx + 12, lz - 15, o.car); }
 }
 
