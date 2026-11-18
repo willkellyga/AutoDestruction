@@ -180,7 +180,7 @@ export function cinema(lx, lz, L, o = {}) {
     box(x0 + 3, 1, z0 + 2, x0 + 8, 3, z0 + 3, M.WOOD); set(x0 + 4, 4, z0 + 2, M.SIGN); set(x0 + 6, 4, z0 + 2, M.AWN_R);
     for (let r = 0; r < 6; r++) { const z = z0 + 9 + r * 3; for (let x = x0 + 3; x <= x1 - 3; x++) { if (x === x0 + 15 || x === x0 + 16) continue; put(x, 1, z, M.FURN_A); put(x, 1, z - 1, M.FURN_A); put(x, 2, z - 1, M.FURN_A); put(x, 3, z - 1, M.FURN_A); } }
     box(x0 + 4, 6, z1 - 1, x1 - 4, 22, z1 - 1, M.LIT_W); box(x0 + 3, 5, z1 - 1, x1 - 3, 5, z1 - 1, M.DARK);
-    for (const cx of [x0 + 6, x0 + 25]) ceilingLight(cx, 9, z0 + 3);
+    for (const cx of [x0 + 6, x0 + 25]) ceilingLight(cx, 9, z0 + 4);   // against the wall of the hall, which holds them up
   }
   if (L >= 2) { bollards(lx + 6, lz - 2, 8, 4); lampPost(lx + 1, lz + 2); lampPost(lx + 38, lz + 2); bin(lx + 3, lz + 5); if (o.car !== 0) car(lx + 12, lz - 15, o.car || M.CAR_A); }
 }

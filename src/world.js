@@ -15,7 +15,9 @@ export const PARIS = typeof __PARIS__ === 'boolean' && __PARIS__;
 export const NYC = typeof __NYC__ === 'boolean' && __NYC__;
 // TOKYO builds the Tokyo map (`python3 build.py tokyo`, laid out in tokyo.js), on the same terms.
 export const TOKYO = typeof __TOKYO__ === 'boolean' && __TOKYO__;
-export const MAP_FIXED = PARIS || NYC || TOKYO || (typeof __CITY__ === 'boolean' && __CITY__) || (typeof __STUDIO__ === 'boolean' && __STUDIO__) || TILES > 1;
+// CAIRO builds the Cairo map (`python3 build.py cairo`, laid out in cairo.js), on the same terms.
+export const CAIRO = typeof __CAIRO__ === 'boolean' && __CAIRO__;
+export const MAP_FIXED = PARIS || NYC || TOKYO || CAIRO || (typeof __CITY__ === 'boolean' && __CITY__) || (typeof __STUDIO__ === 'boolean' && __STUDIO__) || TILES > 1;
 function chosenMap() {
   if (typeof window === 'undefined') return '';
   if (window.__MAP) return window.__MAP;
@@ -25,8 +27,8 @@ function chosenMap() {
 export function pickMap(m) {
   try { sessionStorage.setItem('mm-map', m); } catch (e) { try { window.name = 'mm-map=' + m; } catch (e2) { /* it stays on this map */ } }
 }
-export const CITY = PARIS || NYC || TOKYO || (typeof __CITY__ === 'boolean' && __CITY__) || (!MAP_FIXED && chosenMap() === 'city');
-export const WX = CITY ? 1024 : TILE_X * TILES, WY = PARIS || NYC || TOKYO ? 256 : CITY ? 224 : 128, WZ = CITY ? 1024 : TILE_Z * TILES, CH = 16;
+export const CITY = PARIS || NYC || TOKYO || CAIRO || (typeof __CITY__ === 'boolean' && __CITY__) || (!MAP_FIXED && chosenMap() === 'city');
+export const WX = CITY ? 1024 : TILE_X * TILES, WY = PARIS || NYC || TOKYO || CAIRO ? 256 : CITY ? 224 : 128, WZ = CITY ? 1024 : TILE_Z * TILES, CH = 16;
 export const NCX = WX / CH, NCZ = WZ / CH;
 
 // ---- storage ---------------------------------------------------------------
@@ -96,9 +98,10 @@ export const LOT = 40, WALK = 6, ROADW = 24;
 // street centre lines. The city's are unevenly spaced, so its blocks are 2, 3 or 4 lots across and 1, 2 or 3 rows deep (city.js).
 // Paris: seven streets across (the two in the middle are the quays either side of the Seine) and five down, which are its bridges.
 // New York: six streets across (the first is in the Bronx, the other five cross the East River to Brooklyn) and five avenues down.
-export const STREET_Z = TOKYO ? [108, 230, 352, 524, 646, 768, 890] : NYC ? [150, 372, 494, 616, 738, 860] : PARIS ? [144, 266, 388, 560, 728, 850, 972] : CITY ? [80, 202, 324, 492, 614, 736, 858, 934] : tiled([80, 202, 324], TILE_Z);
-export const STREET_X = TOKYO ? [156, 330, 504, 678, 936] : NYC ? [262, 436, 610, 738, 952] : PARIS ? [191, 365, 539, 759, 841] : CITY ? [80, 254, 382, 602, 776, 904] : tiled([80, 254, 428], TILE_X);
-export const SPAWN = TOKYO ? { x: 936, z: 890, yaw: -1.8 } : NYC ? { x: 952, z: 860, yaw: -1.8 } : PARIS ? { x: 841, z: 972, yaw: -2.3 } : CITY ? { x: 80, z: 934, yaw: 2.55 } : { x: 80, z: 324, yaw: 2.3 };   // the south-west crossing, in the suburbs, looking up at the downtown skyline
+// Cairo: six streets across, every one a bridge over the Nile, and five down: two on the west bank, the corniche and two more on the east.
+export const STREET_Z = CAIRO ? [108, 230, 352, 524, 696, 868] : TOKYO ? [108, 230, 352, 524, 646, 768, 890] : NYC ? [150, 372, 494, 616, 738, 860] : PARIS ? [144, 266, 388, 560, 728, 850, 972] : CITY ? [80, 202, 324, 492, 614, 736, 858, 934] : tiled([80, 202, 324], TILE_Z);
+export const STREET_X = CAIRO ? [202, 373, 586, 757, 928] : TOKYO ? [156, 330, 504, 678, 936] : NYC ? [262, 436, 610, 738, 952] : PARIS ? [191, 365, 539, 759, 841] : CITY ? [80, 254, 382, 602, 776, 904] : tiled([80, 254, 428], TILE_X);
+export const SPAWN = CAIRO ? { x: 202, z: 352, yaw: 0 } : TOKYO ? { x: 936, z: 890, yaw: -1.8 } : NYC ? { x: 952, z: 860, yaw: -1.8 } : PARIS ? { x: 841, z: 972, yaw: -2.3 } : CITY ? { x: 80, z: 934, yaw: 2.55 } : { x: 80, z: 324, yaw: 2.3 };   // the south-west crossing, in the suburbs, looking up at the downtown skyline
 export let totalInit = 0;
 
 // ---- materials -----------------------------------------------------------
@@ -209,6 +212,11 @@ export const FLAM = new Float32Array(NMAT), BURN = new Float32Array(NMAT), CHARP
   def(86, 'TWR_R', 0xe8552a, 0.9, 4, 0.5, K.METAL, 6);
   def(87, 'TWR_W', 0xf1eee6, 0.9, 4, 0.5, K.METAL, 6);
   HARD[M.TWR_R] = HARD[M.TWR_W] = 1;
+  // Cairo: the pyramids' sandstone in two tones, sun-dried plaster and ochre wash
+  def(88, 'SAND', 0xdcc48e, 0.92, 1, 0.55, K.STONE, 3);
+  def(89, 'SAND2', 0xcdae74, 0.92, 1, 0.55, K.STONE, 3);
+  def(90, 'MUD', 0xcfb287, 0.95, 1, 0.5, K.PLASTER, 3);
+  def(91, 'OCHRE', 0xc08e52, 0.95, 1, 0.5, K.PLASTER, 3);
   HARD[M.GRANITE] = 1;
   HARD[M.CONC] = HARD[M.METAL] = HARD[M.STONE] = HARD[M.STEEL] = HARD[M.SLAB] = 1;
   SEE[M.REBAR] = 1;
