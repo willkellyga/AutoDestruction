@@ -1201,7 +1201,13 @@ export function initSim(sc) {
 }
 export function setParticleScale(h, fov) { const s = h / (2 * Math.tan(fov * Math.PI / 360)); dustP.mat.uniforms.scale.value = s; fireP.mat.uniforms.scale.value = s; }
 export function setShadows(on) { dmesh.castShadow = on; for (const m of chunkMesh) if (m) m.castShadow = on; }
+// Time per part of a step, for the tuning runs (tools/tune): set globalThis.__stepT to an object and each part adds its
+// milliseconds to it. Costs nothing when it is not set.
+let _lt = 0;
+const lap = (k) => { const P = globalThis.__stepT; if (!P) return; const n = performance.now(); if (k) P[k] = (P[k] || 0) + n - _lt; _lt = n; };
+export { lap };
 export function stepSim(dt) {
+  lap();
   if (explQueue.length) {
     for (let i = explQueue.length - 1; i >= 0; i--) {
       const q = explQueue[i]; q[4] -= dt;
@@ -1218,7 +1224,7 @@ export function stepSim(dt) {
     if (Math.random() < dt * 16) dust(b.x0 + Math.random() * (b.x1 - b.x0 + 1), b.failY + 0.5, b.z0 + Math.random() * (b.z1 - b.z0 + 1), 1, 4);
     if (b.failT <= 0) { failing.splice(i, 1); b.failing = false; if (b.count > 0) { crushLayer(b, b.failY); if (!b.nextMode) b.nextMode = b.failMode; pending.add(b.id); } }
   }
-  stepFire(dt);
+  lap('sim.queues'); stepFire(dt); lap('sim.fire');
   for (let i = later.length - 1; i >= 0; i--) { const q = later[i]; q[1] -= dt; if (q[1] <= 0) { later.splice(i, 1); const b = bodies[q[0]]; b.again = false; if (b.count > 0) pending.add(b.id); } }
   if (loose.length) dropLoose();
   let n = 0;
@@ -1230,13 +1236,15 @@ export function stepSim(dt) {
     pending.delete(id); b.seen = simStep; checkBody(b);
     if (++n >= 4 || performance.now() - tc > 4) break;
   }
+  lap('sim.bodies');
   frameSecs.length = 0;
   for (let i = sections.length - 1; i >= 0; i--) if (!sections[i].update(dt)) sections.splice(i, 1);
-  updateDebris(dt);
+  lap('sim.sections');
+  updateDebris(dt); lap('sim.debris');
   dustP.update(dt); fireP.update(dt);
   stats.particles = dustP.live + fireP.live;
-  updateFx(dt);
-  flushChunks(4);
+  updateFx(dt); lap('sim.particles');
+  flushChunks(4); lap('sim.chunks');
 }
 export function sectionCount() { return sections.length; }
 export function sectionVoxels() { let n = 0; for (const s of sections) n += s.alive; return n; }
