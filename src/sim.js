@@ -2,7 +2,7 @@
 // Tuned in the Wrecking Yard sandbox. Everything optional is behind a flag in `cfg`.
 import * as THREE from 'three';
 import { WX, WY, WZ, NCX, NCZ, SX, SXZ, XM, ZS, ZM, YS, NV, voxAt, ownerAt, sootAt, burnAt, setVox, setCell, setGone, setSoot, setBurn, eachVoxel, idx, solid, bodies, rubbleBody, M, MAT_R, MAT_G, MAT_B, SOFT, CARRY, HARD, TOUGH, SHAPE, FLAM, BURN, CHARP, PANE, jitter } from './world.js';
-import { meshChunk, makeChunkMaterial, makeChunkDepthMaterial, meshOpts } from './mesh.js';
+import { meshChunk, meshRegionCoarse, makeChunkMaterial, makeChunkDepthMaterial, meshOpts } from './mesh.js';
 
 export const hooks = { destroyed() {}, bodyDown() {}, shake() {}, sound() {}, scorch() {}, impact() {}, explosion() {} };
 export const stats = { destroyed: 0, active: 0, asleep: 0, particles: 0, burning: 0, quads: 0, rubble: 0 };
@@ -30,7 +30,7 @@ let scene;
 // wait longer, so a rain of rubble does not redraw a chunk every frame.
 const chunkMesh = new Array(NCX * NCZ).fill(null);
 const dirty = new Set(), lazy = new Set(), built = new Int32Array(NCX * NCZ);
-let tick = 10;
+let tick = 10, nearShadow = true;
 let chunkMat, chunkDepth, focusX = WX / 2, focusZ = WZ / 2;
 export function setFocus(x, z) { focusX = x; focusZ = z; }
 function markLazy(x, z) { const k = (x >> 4) + (z >> 4) * NCX; if (!dirty.has(k)) lazy.add(k); }
@@ -50,7 +50,7 @@ function rebuildChunk(k) {
   if (m) { stats.quads -= m.geometry.userData.quads || 0; m.geometry.dispose(); if (!geo) { scene.remove(m); chunkMesh[k] = null; return; } m.geometry = geo; stats.quads += geo.userData.quads; return; }
   if (!geo) return;
   m = new THREE.Mesh(geo, chunkMat); m.customDepthMaterial = chunkDepth; m.position.set(cx * 16, 0, cz * 16); m.updateMatrix(); m.updateMatrixWorld(true);
-  m.castShadow = true; m.receiveShadow = true; m.matrixAutoUpdate = false;
+  m.castShadow = nearShadow; m.receiveShadow = true; m.matrixAutoUpdate = false;
   scene.add(m); chunkMesh[k] = m; stats.quads += geo.userData.quads;
 }
 // how many changed chunks are redrawn each frame however long they take: two on a computer, one on a slow device
@@ -62,16 +62,108 @@ export function flushChunks(ms = 5) {
   const t0 = performance.now();
   let n = 0;
   tick++;
+  updateLod();
   if (dirty.size) {
     order.length = 0;
-    for (const k of dirty) if (tick - built[k] >= 3) order.push(k);
+    for (const k of dirty) {
+      if (lodNow[k]) { dirty.delete(k); lazy.delete(k); staleFar(k); continue; }   // shown coarse: redraw that copy instead
+      if (tick - built[k] >= 3) order.push(k);
+    }
     if (order.length > 2) order.sort((a, b) => far(a) - far(b));
     for (const k of order) { rebuildChunk(k); dirty.delete(k); lazy.delete(k); if (++n >= MIN_CHUNKS && performance.now() - t0 > ms) break; }
   }
   n = 0;
-  for (const k of lazy) { if (n >= 2 || (n >= MIN_CHUNKS - 1 && performance.now() - t0 > ms)) break; if (tick - built[k] < 10 || dirty.has(k)) continue; lazy.delete(k); rebuildChunk(k); n++; }
+  for (const k of lazy) { if (n >= 2 || (n >= MIN_CHUNKS - 1 && performance.now() - t0 > ms)) break; if (tick - built[k] < 10 || dirty.has(k)) continue; lazy.delete(k); if (lodNow[k]) { staleFar(k); continue; } rebuildChunk(k); n++; }
+  // coarse copies for far regions, nearest first, with whatever time is left (at least one every fourth frame)
+  if (regTodo.size && (performance.now() - t0 < ms || (tick & 3) === 0)) {
+    // a region that is already showing waits a while between redraws: far away a second's lag is not seen, and bots
+    // wrecking the far side of the city would otherwise redraw several regions every frame
+    fOrder.length = 0; for (const r of regTodo) if (regMesh[r] === null || tick - regBuilt[r] >= (r >= 2 * NRG ? 90 : 30)) fOrder.push(r);
+    if (fOrder.length > 1) fOrder.sort((a, b) => regFar(a) - regFar(b));
+    let m = 0;
+    for (const r of fOrder) {
+      if (m >= 1 && performance.now() - t0 > ms) break;
+      regTodo.delete(r); buildRegion(r); m++;
+    }
+    if (m) lodX = -1e9;   // show what was just built
+  }
 }
-export function dirtyCount() { return dirty.size + lazy.size; }
+
+// ---- far chunks: coarse copies (mesh.js meshRegionCoarse) ----------------------------------------------------------------
+// Past LOD1 voxels from the action, chunks are drawn by region: one mesh for 2 x 2 chunks at half the detail. Past LOD2,
+// one mesh for 4 x 4 chunks at a quarter of the detail. So the far city is a few hundred draws instead of thousands, with
+// a fraction of the triangles. Until a region's mesh is built, its chunks show the next finer copy that is ready.
+// A chunk that changes while shown coarse redraws only the region showing it; its full copy is redrawn when it comes near.
+// Regions are numbered r = level * NRG + (rx + rz * NRX) on a grid of 2 x 2 chunks; a level-2 region is named by its first
+// 2 x 2 cell (rx, rz both even).
+const NCH = NCX * NCZ, NRX = Math.ceil(NCX / 2), NRZ = Math.ceil(NCZ / 2), NRG = NRX * NRZ;
+const regMesh = new Array(3 * NRG).fill(null), regStale = new Uint8Array(3 * NRG), regShown = new Uint8Array(3 * NRG), regBuilt = new Int32Array(3 * NRG);
+const lodNow = new Uint8Array(NCH), nearStale = new Uint8Array(NCH);   // what each chunk shows: 0 its full copy, 1 or 2 a region
+const regTodo = new Set(), fOrder = [];
+const cell = (k) => ((k % NCX) >> 1) + (((k / NCX) | 0) >> 1) * NRX;   // the 2 x 2 cell a chunk is in
+const up2 = (c) => ((c % NRX) & ~1) + (((c / NRX) | 0) & ~1) * NRX;   // the level-2 region's cell
+const regFar = (r) => {
+  const L = (r / NRG) | 0, c = r % NRG, n = L === 2 ? 4 : 2;
+  const dx = ((c % NRX) * 2 + n / 2) * 16 - focusX, dz = (((c / NRX) | 0) * 2 + n / 2) * 16 - focusZ; return dx * dx + dz * dz;
+};
+let LOD1 = Infinity, LOD2 = Infinity, lodX = -1e9, lodZ = -1e9;
+export function setLod(d1, d2) { if (d1 === LOD1 && d2 === LOD2) return; LOD1 = d1; LOD2 = d2; lodX = -1e9; }
+export function lodStats() {
+  let a = 0, b = 0, r1 = 0, r2 = 0;
+  for (let k = 0; k < NCH; k++) { if (lodNow[k] === 1) a++; else if (lodNow[k] === 2) b++; }
+  for (let c = 0; c < NRG; c++) { r1 += regShown[NRG + c]; r2 += regShown[2 * NRG + c]; }
+  return { half: a, quarter: b, regions: r1 + r2, waiting: regTodo.size };
+}
+function staleFar(k) {
+  nearStale[k] = 1;
+  const c = cell(k), r1 = NRG + c, r2 = 2 * NRG + up2(c);
+  regStale[r1] = 1; regStale[r2] = 1;
+  if (lodNow[k] === 1) regTodo.add(r1); else if (lodNow[k] === 2) regTodo.add(r2);
+}
+function buildRegion(r) {
+  const L = (r / NRG) | 0, c = r % NRG, rx = (c % NRX) * 2, rz = ((c / NRX) | 0) * 2, n = L === 2 ? 4 : 2;
+  const t = performance.now(), geo = meshRegionCoarse(rx, rz, n, L === 2 ? 4 : 2), m = regMesh[r];
+  stats.regions = (stats.regions || 0) + 1; stats.regionMs = (stats.regionMs || 0) + performance.now() - t;   // for the playtest reports
+  regStale[r] = 0; regBuilt[r] = tick;
+  if (m) { m.geometry.dispose(); if (geo) m.geometry = geo; else { scene.remove(m); regMesh[r] = false; } return; }
+  if (!geo) { regMesh[r] = false; return; }   // nothing there: built, and empty
+  const mm = new THREE.Mesh(geo, chunkMat); mm.customDepthMaterial = chunkDepth; mm.position.set(rx * 16, 0, rz * 16); mm.updateMatrix(); mm.updateMatrixWorld(true);
+  mm.castShadow = false; mm.receiveShadow = true;   // far past the shadow box round the monster
+  mm.matrixAutoUpdate = false; mm.visible = !!regShown[r]; scene.add(mm); regMesh[r] = mm;
+}
+const ready = (r) => regMesh[r] !== null;   // built (a mesh, or false when the region is empty); may be stale
+function showRegion(r, on) { if (regShown[r] === on) return; regShown[r] = on; if (regMesh[r]) regMesh[r].visible = !!on; }
+function updateLod() {
+  const dx = focusX - lodX, dz = focusZ - lodZ;
+  if (dx * dx + dz * dz < 64) return;   // looked at again when the action has moved 8 voxels
+  lodX = focusX; lodZ = focusZ;
+  const a = LOD1 * LOD1, b = LOD2 * LOD2;
+  for (let c2 = 0; c2 < NRG; c2++) {
+    if (((c2 % NRX) & 1) || (((c2 / NRX) | 0) & 1)) continue;   // level-2 regions start on even cells
+    const r2 = 2 * NRG + c2, want2 = regFar(r2) > b, show2 = want2 && ready(r2) ? 1 : 0;
+    if (want2 && (!ready(r2) || regStale[r2])) regTodo.add(r2);
+    showRegion(r2, show2);
+    for (let j = 0; j < 4; j++) {
+      const cx = (c2 % NRX) + (j & 1), cz = ((c2 / NRX) | 0) + (j >> 1);
+      if (cx >= NRX || cz >= NRZ) continue;
+      const c = cx + cz * NRX, r1 = NRG + c;
+      const want1 = !show2 && (want2 || regFar(r1) > a);
+      if (want1 && !want2 && (!ready(r1) || regStale[r1])) regTodo.add(r1);
+      const show1 = want1 && ready(r1) ? 1 : 0;
+      showRegion(r1, show1);
+      const L = show2 ? 2 : show1 ? 1 : 0;
+      for (let q = 0; q < 4; q++) {
+        const kx = cx * 2 + (q & 1), kz = cz * 2 + (q >> 1);
+        if (kx >= NCX || kz >= NCZ) continue;
+        const k = kx + kz * NCX;
+        if (lodNow[k] === L) continue;
+        lodNow[k] = L;
+        const near = chunkMesh[k]; if (near) near.visible = L === 0;
+        if (L === 0 && nearStale[k]) { nearStale[k] = 0; dirty.add(k); }   // its full copy is out of date: redrawn in turn
+      }
+    }
+  }
+}
 
 // ---- particles -----------------------------------------------------------
 class Particles {
@@ -104,12 +196,12 @@ class Particles {
   }
   update(dt) {
     const { pos, vel, life, max, col, size } = this;
-    let live = 0;
+    let live = 0, lo = this.n, hi = -1;
     for (let i = 0; i < this.n; i++) {
       if (life[i] <= 0) continue;
       life[i] -= dt;
       if (life[i] <= 0) { col[i * 4 + 3] = 0; size[i] = 0; continue; }
-      live++;
+      live++; if (i < lo) lo = i; hi = i;
       const t = 1 - life[i] / max[i];
       vel[i * 3 + 1] += this.gy[i] * dt;
       pos[i * 3] += vel[i * 3] * dt; pos[i * 3 + 1] += vel[i * 3 + 1] * dt; pos[i * 3 + 2] += vel[i * 3 + 2] * dt;
@@ -119,8 +211,12 @@ class Particles {
       col[i * 4 + 3] = this.a0[i] * (1 - t) * Math.min(1, t * 12);
     }
     this.live = live;
+    // only the span that holds live particles is sent to the graphics card and drawn (it used to be all 9,200 every frame)
     const g = this.points.geometry;
-    g.attributes.position.needsUpdate = true; g.attributes.pcol.needsUpdate = true; g.attributes.psize.needsUpdate = true;
+    if (hi < 0) { g.setDrawRange(0, 0); return; }
+    g.setDrawRange(lo, hi - lo + 1);
+    const A = g.attributes;
+    for (const [at, w] of [[A.position, 3], [A.pcol, 4], [A.psize, 1]]) { at.clearUpdateRanges(); at.addUpdateRange(lo * w, (hi - lo + 1) * w); at.needsUpdate = true; }
   }
 }
 let dustP, fireP;
@@ -186,6 +282,7 @@ let dmesh, dhead = 0, frame = 0, hotNext = 0;   // hotNext: the next piece spawn
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _s = new THREE.Vector3(), _p = new THREE.Vector3(), _c = new THREE.Color();
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
 export let debrisBudget = 8000;
+let dShown = 0, cLo = 1e9, cHi = -1;
 export function setDebrisBudget(n) {
   n = Math.max(500, Math.min(ND, n));
   for (let i = n; i < debrisBudget; i++) if (dstate[i]) { dstate[i] = 0; dmesh.setMatrixAt(i, ZERO); }
@@ -222,7 +319,7 @@ export function spawnDebris(x, y, z, vx, vy, vz, m, lvl = 1, size = 0) {
   dhot[i] = hotNext && cfg.fireSpread ? 2.2 + Math.random() * 3.8 : 0; hotNext = 0;
   if (dhot[i]) j *= 0.45;   // scorched
   _c.setRGB(MAT_R[m] * j, MAT_G[m] * j, MAT_B[m] * j);
-  dmesh.setColorAt(i, _c); dmesh.instanceColor.needsUpdate = true;
+  dmesh.setColorAt(i, _c); if (i < cLo) cLo = i; if (i > cHi) cHi = i;   // sent with the next update (updateDebris)
 }
 export function pushDebris(cx, cy, cz, r, force, up = 0.5) {
   const r2 = r * r;
@@ -267,9 +364,11 @@ function updateDebris(dt) {
   let active = 0, asleep = 0, hotN = 0;
   const hotP = Math.min(1, 90 / (stats.hot || 1));   // however many pieces are alight, they share a fixed budget of flames
   frame++;
+  let top = -1;
   for (let i = 0; i < debrisBudget; i++) {
     const st = dstate[i];
     if (!st) continue;
+    top = i;
     const a = i * 3;
     if (st === 3) { dlife[i] -= dt; if (dlife[i] <= 0) { dstate[i] = 0; dmesh.setMatrixAt(i, ZERO); } continue; }
     if (dhot[i] > 0) {
@@ -317,7 +416,11 @@ function updateDebris(dt) {
     }
     writeDebris(i);
   }
-  dmesh.instanceMatrix.needsUpdate = true;
+  // draw and send only up to the highest piece in use (it used to be all 8,000 boxes, drawn and sent every frame)
+  const shown = top + 1, im = dmesh.instanceMatrix, upTo = Math.max(shown, dShown);
+  dmesh.count = shown; dShown = shown;
+  if (upTo > 0) { im.clearUpdateRanges(); im.addUpdateRange(0, upTo * 16); im.needsUpdate = true; }
+  if (cHi >= 0) { const ic = dmesh.instanceColor; ic.clearUpdateRanges(); ic.addUpdateRange(cLo * 3, (cHi - cLo + 1) * 3); ic.needsUpdate = true; cLo = 1e9; cHi = -1; }
   stats.active = active; stats.asleep = asleep; stats.hot = hotN;
 }
 
@@ -1204,7 +1307,7 @@ export function initSim(sc) {
   ringGeo = new THREE.RingGeometry(0.9, 1, 64);
 }
 export function setParticleScale(h, fov) { const s = h / (2 * Math.tan(fov * Math.PI / 360)); dustP.mat.uniforms.scale.value = s; fireP.mat.uniforms.scale.value = s; }
-export function setShadows(on) { dmesh.castShadow = on; for (const m of chunkMesh) if (m) m.castShadow = on; }
+export function setShadows(on) { dmesh.castShadow = on; nearShadow = on; for (const m of chunkMesh) if (m) m.castShadow = on; }
 export function stepSim(dt) {
   if (explQueue.length) {
     for (let i = explQueue.length - 1; i >= 0; i--) {
