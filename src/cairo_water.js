@@ -1,11 +1,11 @@
 // Cairo's river and what stands in and over it: the bridges (every street across is one), the lions at the ends of the
-// middle bridge, the sailing boats and a river cruiser; a camel train in the desert; and the painted ground: sand and
+// middle bridge, the sailing boats and a river cruiser; and the painted ground: sand and
 // its ripples, the green of the valley, the Nile and its island, the paving round the pyramids, sand over the desert roads.
 // The map is flat, so the water is paint, a bridge's deck is the street itself, and monsters wade.
 import { M, WX, WZ, STREET_X, STREET_Z, WALK, ROADW, set, box, begin, setSeed, ri } from './world.js';
 import { lampPost } from './kit.js';
 import { NILE, ISLE, DESERT, GREAT_AT, KHAFRE_AT, MENK_AT, SPHINX_AT, CITADEL_AT, MUSEUM_AT, OPERA_AT, wet, isle } from './cairo.js';
-import { palm, camel, chain, rdisc } from './cairo_kit.js';
+import { palm, chain, rdisc } from './cairo_kit.js';
 
 // where a street at z meets the water: one span, or two with the island between
 function spans(z) {
@@ -102,8 +102,6 @@ export function cairoExtras() {
   // palms on the desert bank, and a few out on the sand
   for (let z = DESERT.z0 + 40; z < WZ - 20; z += 46) if (STREET_Z.every((s) => Math.abs(z - s) > 24)) palm(NILE.x0 - 2, z + ri(-6, 6), ri(18, 26));
   for (const [x, z] of [[30, 384], [176, 496], [12, 668], [150, 840], [60, 990], [120, 950], [180, 640], [300, 836], [176, 420]]) palm(x, z, ri(16, 24));
-  // a camel train crossing the sand toward the pyramids
-  [0, 1, 2, 3, 4].forEach((k) => camel(60 + k * 20, 392 + (k & 1), [M.AWN_R, M.AWN_B, M.AWN_G, M.SIGN, M.AWN_R][k]));
   // rocks, all clear of the roads
   for (const [x, z, w] of [[20, 496, 5], [178, 670, 4], [150, 400, 3], [10, 836, 5], [60, 498, 3], [170, 1000, 4]]) { begin('Rock', 'prop', false); box(x, 0, z, x + w, 2, z + w - 1, M.SAND2); box(x + 1, 3, z + 1, x + w - 1, 3 + (w > 4 ? 1 : 0), z + w - 2, M.SAND2); }
 }

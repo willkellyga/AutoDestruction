@@ -1,6 +1,6 @@
 // Cairo buildings and lots: flat-roofed blocks of flats (plastered, or bare red brick in a concrete frame with the
 // columns left sticking up for the next floor), old houses with wooden bay windows over striped stone, a bazaar, a
-// small mosque, palm gardens, a riverside hotel, a villa, a mud-brick village and the pieces of the desert.
+// merchants' inn, palm gardens, a riverside hotel, a villa, a mud-brick village and the pieces of the desert.
 // Our own designs. Drawn like the other kits: round a local origin with the front toward low z, turned by place().
 import { M, set, put, get, box, hole, walls, begin, rnd, ri } from './world.js';
 import { face, faces4, win, door, text, textW, lampPost, bench, bin, car } from './kit.js';
@@ -58,28 +58,6 @@ export function dome(cx, cz, y0, R, m, o = {}) {
   }
   return y0 + top;
 }
-// A slim round tower with a balcony or two and a pointed cap: the pencil minaret of an Ottoman mosque.
-export function pencil(cx, cz, y0, H, m, capM = M.ZINC) {
-  for (let y = y0; y <= y0 + H; y++) rdisc(cx, cz, y, 2, m);
-  for (const f of [0.55, 0.8]) { const y = y0 + Math.round(H * f); rdisc(cx, cz, y, 4, m); rdisc(cx, cz, y + 1, 4, M.TRIM, 3); rdisc(cx, cz, y - 1, 3, m); }
-  for (let k = 0; k < 12; k++) rdisc(cx, cz, y0 + H + 1 + k, k < 5 ? 2 : k < 9 ? 1 : 0, capM);
-  set(cx, y0 + H + 13, cz, M.BRASS); set(cx, y0 + H + 14, cz, M.BRASS);
-  return y0 + H + 14;
-}
-// A tiered tower: square, then eight-sided, then a little open pavilion under a bulb.
-export function tiered(cx, cz, y0, H, m, m2) {
-  const a = Math.round(H * 0.45), b = Math.round(H * 0.78);
-  for (let y = y0; y <= y0 + a; y++) { walls(cx - 3, y, cz - 3, cx + 3, y, cz + 3, (y - y0) % 4 < 2 ? m : m2); if ((y - y0) % 8 === 0) box(cx - 2, y, cz - 2, cx + 2, y, cz + 2, m); }
-  box(cx - 4, y0 + a, cz - 4, cx + 4, y0 + a, cz + 4, M.TRIM); walls(cx - 4, y0 + a + 1, cz - 4, cx + 4, y0 + a + 1, cz + 4, m);
-  for (let y = y0 + a + 1; y <= y0 + b; y++) rdisc(cx, cz, y, 2, (y - y0) % 4 < 2 ? m : m2);
-  rdisc(cx, cz, y0 + b, 4, M.TRIM); rdisc(cx, cz, y0 + b + 1, 4, m, 3);
-  for (const [dx, dz] of [[2, 0], [-2, 0], [0, 2], [0, -2]]) box(cx + dx, y0 + b + 1, cz + dz, cx + dx, y0 + H, cz + dz, m);
-  box(cx, y0 + b + 1, cz, cx, y0 + H, cz, m);
-  rdisc(cx, cz, y0 + H, 3, M.TRIM);
-  for (let k = 0; k < 5; k++) rdisc(cx, cz, y0 + H + 1 + k, [2, 2, 2, 1, 0][k], m2);
-  set(cx, y0 + H + 6, cz, M.BRASS);
-  return y0 + H + 6;
-}
 // A doorway or window with a pointed head cut through a wall face: u..u+w-1 wide, h tall to the point.
 export function pointed(F, u, w, h, o = {}) {
   const half = w / 2, rise = Math.max(2, Math.round(w * 0.7));
@@ -89,16 +67,6 @@ export function pointed(F, u, w, h, o = {}) {
     F.c(uu, y, 0);
   }
   if (o.fill) for (let y = Math.max(0, (o.y0 || 0) - 1); y <= (o.y0 || 0) + h; y++) for (let uu = u - 1; uu <= u + w; uu++) F.q(uu, y, -1, o.fill);
-}
-// A camel, standing, nose toward low x, with a blanket over its hump.
-export function camel(x, z, cloth = M.AWN_R) {
-  begin('Camel', 'prop', false);
-  const C = M.OCHRE;
-  for (const a of [2, 9]) for (const b of [0, 3]) box(x + a, 0, z + b, x + a, 5, z + b, C);
-  box(x + 1, 6, z, x + 10, 9, z + 3, C); box(x + 4, 10, z + 1, x + 7, 11, z + 2, M.SAND2);
-  box(x + 3, 9, z, x + 8, 10, z + 3, cloth); box(x + 3, 7, z - 1, x + 8, 8, z - 1, cloth); box(x + 3, 7, z + 4, x + 8, 8, z + 4, cloth);
-  box(x, 8, z + 1, x + 1, 13, z + 2, C); box(x - 3, 12, z + 1, x - 1, 13, z + 2, C); set(x - 3, 13, z + 1, M.DARK); set(x, 14, z + 1, C); set(x, 14, z + 2, C);
-  box(x + 11, 6, z + 1, x + 11, 8, z + 1, C);
 }
 // A ridge tent of striped cloth on poles, open at both ends. It runs along x.
 export function tent(x0, z0, len, half, m, m2) {
@@ -267,33 +235,42 @@ export function souk(lx, lz, L, o = {}) {
   if (L >= 2) { lampPost(lx + 38, lz + 2, 16); }
 }
 
-// ---- a small mosque: a striped prayer hall under a dome, a tower at one corner, a walled court -------------------------
-// o.domeM, o.stripe, o.tower (0 tiered, 1 pencil), o.title
-export function mosque(lx, lz, L, o = {}) {
-  const st = o.stripe || M.OCHRE, x0 = lx + 4, x1 = lx + 30, z0 = lz + 13, z1 = lz + 36, H = 22, cx = lx + 17, cz = lz + 25;
-  begin(o.title || 'Old mosque', 'landmark');
-  for (let y = 0; y <= H; y++) walls(x0, y, z0, x1, y, z1, (y >> 1) & 1 ? st : M.LIME);
-  box(x0, H, z0, x1, H, z1, M.SLAB);
-  for (let x = x0 + 1; x < x1; x++) for (const z of [z0, z1]) if ((x - x0) % 3 !== 0) set(x, H + 1, z, M.LIME);
-  for (let z = z0 + 1; z < z1; z++) for (const x of [x0, x1]) if ((z - z0) % 3 !== 0) set(x, H + 1, z, M.LIME);
-  const Ff = face('f', x0, z0, x1, z1), Fl = face('l', x0, z0, x1, z1), Fr = face('r', x0, z0, x1, z1), Fb = face('b', x0, z0, x1, z1);
-  pointed(Ff, 10, 7, 15, { fill: M.TRUNK }); for (let y = 0; y <= 15; y++) { Ff.p(8, y, 1, M.LIME); Ff.p(18, y, 1, M.LIME); } Ff.box(8, 16, 18, 17, 1, 1, st);
-  for (const F of [Ff, Fl, Fr, Fb]) for (let u = 3; u + 3 < F.W; u += 6) { if (F === Ff && u > 6 && u < 20) continue; pointed(F, u, 3, 8, { y0: 9, fill: M.STAIN_B }); }
-  // the drum and the dome
-  for (let y = H + 1; y <= H + 5; y++) rdisc(cx, cz, y, 9, y === H + 5 ? M.TRIM : M.LIME, 7);
-  if (L >= 1) for (const [dx, dz] of [[9, 0], [-9, 0], [0, 9], [0, -9], [6, 6], [-6, 6], [6, -6], [-6, -6]]) { set(cx + dx, H + 3, cz + dz, M.STAIN_Y); }
-  const top = dome(cx, cz, H + 6, 9, o.domeM || M.LIME2, { sq: 1.15, rib: o.rib, n: 8 });
-  box(cx, top + 1, cz, cx, top + 3, cz, M.BRASS);
-  // the tower stands at the front corner
-  if (o.tower === 1) { box(lx + 30, 0, lz + 7, lx + 36, 12, lz + 13, M.LIME); pencil(lx + 33, lz + 10, 13, 44, M.LIME); }
-  else tiered(lx + 34, lz + 10, 0, 50, M.LIME, st);
-  // the court: a low wall, a gate, a fountain for washing
-  begin('Mosque court', 'wall', false);
-  for (let x = lx + 2; x <= lx + 29; x++) if (x < lx + 14 || x > lx + 20) box(x, 0, lz + 3, x, x % 4 === 0 ? 6 : 5, lz + 3, M.LIME);
-  for (let z = lz + 3; z <= lz + 12; z++) box(lx + 2, 0, z, lx + 2, 5, z, M.LIME);
-  begin('Fountain', 'prop', false);
-  rdisc(lx + 9, lz + 8, 0, 3, M.STONE); rdisc(lx + 9, lz + 8, 1, 3, M.STONE, 2); rdisc(lx + 9, lz + 8, 1, 2, M.WATER); box(lx + 9, 1, lz + 8, lx + 9, 3, lz + 8, M.BRASS);
-  if (L >= 2) palm(lx + 24, lz + 8, 16);
+// ---- an old merchants' inn: a square block round an open court. Striped stone below with a tall pointed gate and a
+// shop either side of it, rooms behind wooden bay windows above, a stepped parapet, a palm in the court.
+// o.wall, o.stripe, o.tall, o.awn, o.title
+export function wikala(lx, lz, L, o = {}) {
+  const x0 = lx + 3, x1 = lx + 36, z0 = lz + 6, z1 = lz + 36, wall = o.wall || M.LIME2, st = o.stripe || M.OCHRE, nf = o.tall ? 3 : 2, G = 12, FH = 9, top = G + nf * FH;
+  const cx0 = x0 + 10, cx1 = x1 - 10, cz0 = z0 + 10, cz1 = z1 - 10, awn = o.awn || M.AWN_R, wd = M.TRUNK;
+  begin(o.title || 'Old inn', 'apartment');
+  for (let y = 0; y <= top; y++) { const m = y < G ? ((y >> 1) & 1 ? st : M.LIME) : wall; walls(x0, y, z0, x1, y, z1, m); walls(cx0, y, cz0, cx1, y, cz1, m); }
+  // the floors and the roof run round the court
+  const ring = (y, m) => { for (let x = x0 + 1; x <= x1 - 1; x++) for (let z = z0 + 1; z <= z1 - 1; z++) if (x < cx0 || x > cx1 || z < cz0 || z > cz1) set(x, y, z, m); };
+  ring(0, M.FLOOR); for (let s = 0; s < nf; s++) ring(G - 1 + s * FH, M.FLOOR); ring(top, M.SLAB);
+  box(cx0 + 1, 0, cz0 + 1, cx1 - 1, 0, cz1 - 1, M.LIME);
+  const [Ff, Fr, Fb, Fl] = faces4(x0, z0, x1, z1), Fi = face('f', cx0, cz0, cx1, cz1);
+  // the gate: a stone frame standing proud of the wall, and the way through to the court
+  Ff.box(12, 0, 13, G + 3, 1, 1, M.LIME); Ff.box(20, 0, 21, G + 3, 1, 1, M.LIME); Ff.box(12, G, 21, G + 3, 1, 1, st); Ff.box(12, G + 2, 21, G + 2, 1, 1, M.LIME);
+  for (const u of [12, 15, 18, 21]) Ff.p(u, G + 4, 1, M.LIME);
+  pointed(Ff, 14, 6, 10); pointed(Fi, 4, 6, 10);
+  // a shop either side, under a striped cloth
+  for (const u0 of [3, 25]) { Ff.box(u0, 1, u0 + 5, 7, 0, 0, M.DARK); for (let u = u0 - 1; u <= u0 + 6; u++) Ff.box(u, 8, u, 8, 1, 3, u & 1 ? awn : M.AWN_W); if (L >= 2) { Ff.p(u0 + 1, 1, 1, M.SIGN); Ff.p(u0 + 3, 1, 1, M.BRASS); Ff.p(u0 + 4, 1, 1, M.AWN_G); } }
+  // above: bay windows of turned wood on brackets
+  const bay = (F, u0, yb) => {
+    if (L >= 1) {
+      F.box(u0, yb + 1, u0 + 4, yb + 1, 1, 2, wd); F.p(u0, yb, 1, wd); F.p(u0 + 4, yb, 1, wd);
+      for (let y = yb + 2; y <= yb + 6; y++) for (let u = u0; u <= u0 + 4; u++) { F.p(u, y, 2, (u + y) & 1 ? wd : M.WOOD); if (u === u0 || u === u0 + 4) F.p(u, y, 1, wd); }
+      F.box(u0, yb + 7, u0 + 4, yb + 7, 1, 2, wd); F.box(u0 + 1, yb + 2, u0 + 3, yb + 6, 0, 0, M.DARK);
+    } else F.box(u0, yb + 2, u0 + 4, yb + 6, 0, 0, wd);
+  };
+  for (let s = 0; s < nf; s++) {
+    const yb = G + s * FH;
+    for (const u of [2, 10, 19, 27]) bay(Ff, u, yb);
+    for (const F of [Fr, Fl]) for (const u of [4, 13, 22]) bay(F, u, yb);
+    for (const u of [4, 12, 20, 28]) Fb.box(u, yb + 3, u + 1, yb + 6, 0, 0, s & 1 ? wd : M.DOOR_G);
+  }
+  // a stone course over the ground floor and a stepped parapet
+  if (L >= 1) for (const F of [Ff, Fr, Fb, Fl]) { F.band(top, top, 1, M.LIME); for (let u = 0; u < F.W; u++) { if (u % 3 !== 2) F.p(u, top + 1, 0, wall); if (u % 6 === 0 || u % 6 === 1) F.p(u, top + 2, 0, wall); } }
+  if (L >= 2) palm((cx0 + cx1) >> 1, (cz0 + cz1) >> 1, top + 6);
 }
 
 // ---- gardens: palms round a fountain, an oasis pool, a field under crops, a date grove ---------------------------------
@@ -426,10 +403,10 @@ export function village(lx, lz, L, o = {}) {
     rdisc(cx, cz, 27, 1, M.TRIM); set(cx, 28, cz, M.TRIM);
     if (L >= 1) for (let y = 8; y <= 24; y += 4) { const R = y < 14 ? 4 : y < 21 ? 3 : 2; for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { set(cx + dx * (R + 1), y, cz + dz * (R + 1), M.TRUNK); set(cx + dx * R, y + 1, cz + dz * R, M.DARK); } }
   }
-  if (L >= 2) { palm(lx + 17, lz + 18, 21); palm(lx + 36, lz + 18, 17); if (v === 1) { camel(lx + 24, lz + 28); } begin('Haystack', 'prop', false); box(lx + 16, 0, lz + 30, lx + 19, 2, lz + 33, M.PL_Y); box(lx + 17, 3, lz + 31, lx + 18, 3, lz + 32, M.PL_Y); }
+  if (L >= 2) { palm(lx + 17, lz + 18, 21); palm(lx + 36, lz + 18, 17); begin('Haystack', 'prop', false); box(lx + 16, 0, lz + 30, lx + 19, 2, lz + 33, M.PL_Y); box(lx + 17, 3, lz + 31, lx + 18, 3, lz + 32, M.PL_Y); }
 }
 
-// ---- the desert: a field of old flat tombs, a visitors' camp with camels, a dig -----------------------------------------
+// ---- the desert: a field of old flat tombs, a visitors' camp, a dig -----------------------------------------
 export function mastabas(lx, lz, L, o = {}) {
   const v = o.v | 0;
   for (let k = 0; k < 6; k++) {
@@ -444,7 +421,10 @@ export function mastabas(lx, lz, L, o = {}) {
 export function camp(lx, lz, L, o = {}) {
   const v = o.v | 0;
   tent(lx + 3, lz + 20, 16, 5, M.AWN_W, M.AWN_R); tent(lx + 22, lz + 22, 14, 4, M.AWN_W, v ? M.AWN_G : M.AWN_B);
-  camel(lx + 8, lz + 6, M.AWN_R); camel(lx + 24, lz + 10, M.AWN_B); if (v) camel(lx + 14, lz + 34, M.AWN_G);
+  // rugs laid out on the sand and a stack of crates
+  begin('Rug', 'prop', false); for (let a = 0; a < 9; a++) box(lx + 6 + a, 0, lz + 6, lx + 6 + a, 0, lz + 10, a === 0 || a === 8 ? M.AWN_W : a & 1 ? M.AWN_R : M.STAIN_B);
+  begin('Rug', 'prop', false); for (let a = 0; a < 7; a++) box(lx + 22 + a, 0, lz + 11, lx + 22 + a, 0, lz + 14, a === 0 || a === 6 ? M.AWN_W : a & 1 ? (v ? M.AWN_G : M.AWN_B) : M.SIGN);
+  if (v) { begin('Crates', 'prop', false); box(lx + 12, 0, lz + 32, lx + 15, 2, lz + 35, M.WOOD); box(lx + 13, 3, lz + 33, lx + 15, 5, lz + 35, M.FLOOR); box(lx + 17, 0, lz + 33, lx + 19, 2, lz + 35, M.WOOD); }
   begin('Souvenir stall', 'prop', false);
   for (const [a, b] of [[30, 3], [37, 3], [30, 8], [37, 8]]) box(lx + a, 0, lz + b, lx + a, 7, lz + b, M.WOOD);
   for (let a = 29; a <= 38; a++) box(lx + a, 8, lz + 2, lx + a, 8, lz + 9, a % 4 < 2 ? M.SIGN : M.AWN_W);

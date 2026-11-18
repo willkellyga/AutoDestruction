@@ -1,10 +1,10 @@
-// Cairo's set pieces: the three pyramids of Giza and the Sphinx, the Citadel on its rise with the domed mosque inside,
+// Cairo's set pieces: the three pyramids of Giza and the Sphinx, the Citadel on its rise with the palace inside,
 // the lattice tower on the island, the pink museum and the opera house.
 // Our own voxel designs. The pyramids, the Sphinx, the Citadel and the museum are public monuments and keep their names;
 // the tower is our own take and is called the Lotus Tower.
 import { M, set, put, box, fill, hole, walls, begin, rnd, ri } from './world.js';
 import { face, faces4, win, door, text, textW, lampPost, bench } from './kit.js';
-import { palm, rdisc, dome, pencil, pointed, camel } from './cairo_kit.js';
+import { palm, rdisc, dome, pointed } from './cairo_kit.js';
 
 const hsh = (a, b, c) => ((Math.imul(a, 73856093) ^ Math.imul(b, 19349663) ^ Math.imul(c, 83492791)) >>> 0) % 100;
 
@@ -102,11 +102,11 @@ export function sphinx(lx, lz, L, o = {}) {
   begin('Old wall', 'wall', false);
   for (let b = 34; b <= 126; b++) for (const a of [36, 96]) if (hsh(a, b >> 3, 5) < 70) box(lx + a, 0, lz + b, lx + a + 1, 2 + hsh(a, b >> 2, 9) % 3, lz + b, M.SAND2);
   for (let a = 36; a <= 97; a++) if (hsh(a >> 3, 2, 5) < 75) box(lx + a, 0, lz + 126, lx + a, 2 + hsh(a >> 2, 4, 9) % 3, lz + 127, M.SAND2);
-  if (L >= 2) { camel(lx + 110, lz + 40, M.AWN_R); camel(lx + 14, lz + 60, M.AWN_B); palm(lx + 120, lz + 110, 22); palm(lx + 8, lz + 118, 19); palm(lx + 112, lz + 118, 17); }
+  if (L >= 2) { palm(lx + 120, lz + 110, 22); palm(lx + 8, lz + 118, 19); palm(lx + 112, lz + 118, 17); }
 }
 
-// ---- the Citadel: a walled fort with round towers on a rise of rock, and inside it the mosque that the skyline of Cairo
-// is known by: a great dome among half domes, four small ones, and two pencil-thin towers ------------------------------
+// ---- the Citadel: a walled fort with round towers on a rise of rock, and inside it a palace round a court, with a
+// fountain and a copper clock tower -------------------------------------------------------------------------------
 export const CITADEL = { S: 132, P: 12 };
 export function citadel(lx, lz, L, o = {}) {
   const S = CITADEL.S, P = CITADEL.P, X = (a) => lx + a, Z = (b) => lz + b, W = M.LIME2;
@@ -119,9 +119,9 @@ export function citadel(lx, lz, L, o = {}) {
     return ramp(a) && b < 10 ? Math.min(P, Math.floor(b * 1.5) + 1) : t;
   };
   const HA = 38, HB = 60, HS = 55, CA = 40, CB = 24, CW = 51;   // the hall and its court
-  const inMosque = (a, b) => (a >= HA - 6 && a <= HA + HS + 6 && b >= HB - 3 && b <= HB + HS) || (a >= CA && a <= CA + CW && b >= CB && b < HB);
+  const inPalace = (a, b) => (a >= HA - 6 && a <= HA + HS + 6 && b >= HB - 3 && b <= HB + HS) || (a >= CA && a <= CA + CW && b >= CB && b < HB);
   const crust = (mine) => { for (let a = 0; a < S; a++) for (let b = 0; b < S; b++) {
-    const h = hill(a, b); if (!h || inMosque(a, b) !== mine) continue;
+    const h = hill(a, b); if (!h || inPalace(a, b) !== mine) continue;
     const low = Math.min(hill(a - 1, b), hill(a + 1, b), hill(a, b - 1), hill(a, b + 1));
     for (let y = Math.max(0, Math.min(h - 2, low - 1)); y < h; y++) set(X(a), y, Z(b), y === h - 1 ? (ramp(a) && b < 10 ? M.LIME : hsh(a >> 2, b >> 2, 3) < 30 ? M.SAND2 : M.SAND) : hsh(a >> 1, y, b >> 1) < 40 ? M.OCHRE : M.SAND2);
   } };
@@ -141,37 +141,52 @@ export function citadel(lx, lz, L, o = {}) {
   for (const [a, b] of [[A0, 66], [A1, 66], [66, A1], [38, A0], [93, A0]]) drum(a, b, 6, T + 5);
   for (const a of [55, 76]) drum(a, A0, 6, T + 7);
 
-  // ---- the mosque -----------------------------------------------------------------------------------------------------
-  begin('Citadel mosque', 'landmark');
-  const ca = HA + 28, cb = HB + 28, top = P + 34, G = M.ZINC, D = M.LIME;
+  // ---- the palace: a long two-storey house in cream render with tall shuttered windows, a columned porch, a look-out
+  // room on the roof under a green hipped roof, and a square tower at each front corner --------------------------------
+  begin('Citadel palace', 'landmark');
+  const ca = HA + 28, cb = HB + 28, top = P + 26, G = M.ROOF_G, D = M.REND_C, T2 = M.TRIM;
   crust(true);
-  for (let y = 0; y <= top; y++) walls(X(HA), y, Z(HB), X(HA + HS), y, Z(HB + HS), y < P ? M.SAND2 : (y - P) % 12 === 11 ? M.LIME2 : D);
+  for (let y = 0; y <= top; y++) walls(X(HA), y, Z(HB), X(HA + HS), y, Z(HB + HS), y < P ? M.SAND2 : y === P + 13 ? T2 : D);
   box(X(HA), top, Z(HB), X(HA + HS), top, Z(HB + HS), M.SLAB);
   const HF = faces4(X(HA), Z(HB), X(HA + HS), Z(HB + HS));
-  for (const F of HF) { for (let u = 5; u + 5 < F.W; u += 9) { pointed(F, u, 5, 11, { y0: P + 3, fill: M.STAIN_B }); pointed(F, u, 5, 9, { y0: P + 20, fill: M.GLASS }); } F.band(top, top, 1, M.TRIM); F.band(P + 17, P + 17, 1, M.LIME2); }
-  pointed(HF[0], 24, 8, 15, { y0: P, fill: M.TRUNK });
-  // the great dome on its drum, the half domes that lean on it, and a small dome at each corner
-  for (let y = top + 1; y <= top + 8; y++) rdisc(X(ca), Z(cb), y, 15, y === top + 8 ? M.TRIM : D, 13);
-  if (L >= 1) for (let k = 0; k < 16; k++) { const an = k * Math.PI / 8 + 0.2; box(X(ca) + Math.round(15 * Math.cos(an)), top + 3, Z(cb) + Math.round(15 * Math.sin(an)), X(ca) + Math.round(15 * Math.cos(an)), top + 6, Z(cb) + Math.round(15 * Math.sin(an)), M.STAIN_Y); }
-  for (const [da, db] of [[19, 0], [-19, 0], [0, 19], [0, -19]]) { for (let y = top + 1; y <= top + 2; y++) rdisc(X(ca + da), Z(cb + db), y, 9, D, 7); dome(X(ca + da), Z(cb + db), top + 3, 9, G); }
-  for (const [da, db] of [[22, 22], [-22, 22], [22, -22], [-22, -22]]) { for (let y = top + 1; y <= top + 3; y++) rdisc(X(ca + da), Z(cb + db), y, 5, D, 3); const t = dome(X(ca + da), Z(cb + db), top + 4, 5, G); set(X(ca + da), t + 1, Z(cb + db), M.BRASS); }
-  const dt = dome(X(ca), Z(cb), top + 9, 15, G, { sq: 1.05 });
-  box(X(ca), dt + 1, Z(cb), X(ca), dt + 5, Z(cb), M.BRASS); rdisc(X(ca), Z(cb), dt + 2, 1, M.BRASS);
-  // the two towers at the front corners of the hall
-  for (const a of [HA - 3, HA + HS + 3]) { for (let y = 0; y <= top + 2; y++) walls(X(a - 3), y, Z(HB - 3), X(a + 3), y, Z(HB + 3), y < P ? M.SAND2 : D); box(X(a - 3), top + 2, Z(HB - 3), X(a + 3), top + 2, Z(HB + 3), D); for (let y = 0; y <= top + 2; y += 6) box(X(a - 2), y, Z(HB - 2), X(a + 2), y, Z(HB + 2), D); pencil(X(a), Z(HB), top + 3, 66, D, G); }
-  // the court in front: arcaded walls under a row of little domes, a fountain under its own roof, the clock tower
+  for (const F of HF) {
+    for (let u = 4; u + 4 < F.W; u += 8) {
+      win(F, u, P + 3, 4, 8, { frame: T2 }); win(F, u, P + 16, 4, 7, { frame: T2 });
+      if (L >= 1) { F.box(u - 1, P + 15, u + 4, P + 15, 1, 2, T2); for (let k = u - 1; k <= u + 4; k++) F.p(k, P + 16, 2, M.DARK); for (const k of [u - 1, u + 4]) F.box(k, P + 17, k, P + 22, 1, 1, M.DOOR_G); }
+    }
+    F.band(top, top, 1, T2); F.band(P, P, 1, T2);
+    for (let u = 0; u < F.W; u++) { F.p(u, top + 1, 0, T2); if (u % 3 === 0) F.p(u, top + 2, 0, T2); }
+    for (const u of [0, F.W - 1]) for (let y = P; y <= top; y++) if ((y - P) % 4 < 2) F.p(u, y, 1, T2);
+  }
+  // the porch on the court side: four columns under a balcony, and the great door
+  pointed(HF[0], 24, 8, 12, { y0: P, fill: M.TRUNK });
+  for (const u of [19, 25, 30, 36]) { HF[0].box(u, P, u, P + 12, 4, 4, T2); HF[0].p(u, P + 12, 3, T2); }
+  HF[0].box(18, P + 13, 37, P + 13, 1, 5, T2); for (let u = 18; u <= 37; u++) for (const d of [5]) HF[0].p(u, P + 14, d, u % 2 ? M.DARK : T2);
+  for (const u of [18, 37]) for (let d = 1; d <= 5; d++) HF[0].p(u, P + 14, d, M.DARK);
+  // the look-out room on the roof, under a hipped roof with a flag
+  for (let y = top + 1; y <= top + 9; y++) walls(X(ca - 11), y, Z(cb - 11), X(ca + 11), y, Z(cb + 11), y === top + 9 ? T2 : D);
+  { const BF = faces4(X(ca - 11), Z(cb - 11), X(ca + 11), Z(cb + 11)); for (const F of BF) for (let u = 3; u + 2 < F.W; u += 5) F.box(u, top + 3, u + 2, top + 7, 0, 0, M.GLASS); }
+  for (let k = 0; k < 7; k++) { const r = 13 - k * 2; if (r < 0) break; for (let a = -r; a <= r; a++) for (let b = -r; b <= r; b++) if (k === 6 || Math.max(Math.abs(a), Math.abs(b)) >= r - 2) set(X(ca + a), top + 10 + k, Z(cb + b), k === 0 ? T2 : G); }
+  box(X(ca), top + 17, Z(cb), X(ca), top + 26, Z(cb), M.METAL); box(X(ca) + 1, top + 23, Z(cb), X(ca) + 5, top + 26, Z(cb), M.AWN_R); box(X(ca) + 1, top + 24, Z(cb), X(ca) + 5, top + 25, Z(cb), M.AWN_W);
+  // a square tower at each front corner, with a roof of its own
+  for (const a of [HA - 3, HA + HS + 3]) {
+    for (let y = 0; y <= top + 9; y++) walls(X(a - 3), y, Z(HB - 3), X(a + 3), y, Z(HB + 3), y < P ? M.SAND2 : y === P + 13 || y === top || y === top + 9 ? T2 : D);
+    for (let y = 0; y <= top + 9; y += 6) box(X(a - 2), y, Z(HB - 2), X(a + 2), y, Z(HB + 2), M.FLOOR);
+    box(X(a - 3), top + 9, Z(HB - 3), X(a + 3), top + 9, Z(HB + 3), T2);
+    const TF = faces4(X(a - 3), Z(HB - 3), X(a + 3), Z(HB + 3)); for (const F of TF) { F.box(3, P + 5, 3, P + 9, 0, 0, M.GLASS); F.box(3, P + 18, 3, P + 22, 0, 0, M.GLASS); F.box(2, top + 3, 4, top + 6, 0, 0, M.GLASS); }
+    for (let k = 0; k < 4; k++) box(X(a - 4 + k), top + 10 + k, Z(HB - 4 + k), X(a + 4 - k), top + 10 + k, Z(HB + 4 - k), k === 0 ? T2 : G);
+    box(X(a), top + 14, Z(HB), X(a), top + 16, Z(HB), M.BRASS);
+  }
+  // the court in front: arcaded walls with a plain coping, an open fountain, the clock tower
   const CD = HB - CB;
-  for (let y = 0; y <= P + 13; y++) { const m = y < P ? M.SAND2 : D; box(X(CA), y, Z(CB), X(CA + CW), y, Z(CB), m); box(X(CA), y, Z(CB), X(CA), y, Z(CB + CD), m); box(X(CA + CW), y, Z(CB), X(CA + CW), y, Z(CB + CD), m); }
+  for (let y = 0; y <= P + 13; y++) { const m = y < P ? M.SAND2 : M.LIME; box(X(CA), y, Z(CB), X(CA + CW), y, Z(CB), m); box(X(CA), y, Z(CB), X(CA), y, Z(CB + CD), m); box(X(CA + CW), y, Z(CB), X(CA + CW), y, Z(CB + CD), m); }
   { const Cf = face('f', X(CA), Z(CB), X(CA + CW), Z(CB + CD)), Cl = face('l', X(CA), Z(CB), X(CA + CW), Z(CB + CD)), Cr = face('r', X(CA), Z(CB), X(CA + CW), Z(CB + CD));
-    for (const F of [Cf, Cl, Cr]) { for (let u = 3; u + 5 < F.W; u += 8) pointed(F, u, 5, 10, { y0: P }); F.band(P + 13, P + 13, 1, M.TRIM); }
-    for (let u = 5; u < CW; u += 8) { rdisc(X(CA + u), Z(CB + 1), P + 14, 3, D); dome(X(CA + u), Z(CB + 1), P + 15, 3, G, { t: 3 }); }
-    for (let u = 5; u < CD - 3; u += 8) for (const a of [CA + 1, CA + CW - 1]) { rdisc(X(a), Z(CB + u), P + 14, 3, D); dome(X(a), Z(CB + u), P + 15, 3, G, { t: 3 }); } }
+    for (const F of [Cf, Cl, Cr]) { for (let u = 3; u + 5 < F.W; u += 8) pointed(F, u, 5, 10, { y0: P }); F.band(P + 13, P + 13, 1, M.TRIM); for (let u = 0; u < F.W; u += 2) F.p(u, P + 14, 0, M.LIME); } }
   begin('Court fountain', 'monument');
   { const fa = X(ca), fb = Z(CB + 20);
     for (let y = 0; y < P; y++) rdisc(fa, fb, y, 2, M.SAND2);
-    rdisc(fa, fb, P, 6, D); rdisc(fa, fb, P + 1, 6, D, 5); rdisc(fa, fb, P + 1, 5, M.WATER);
-    for (let k = 0; k < 8; k++) { const an = k * Math.PI / 4; box(fa + Math.round(6 * Math.cos(an)), P + 1, fb + Math.round(6 * Math.sin(an)), fa + Math.round(6 * Math.cos(an)), P + 9, fb + Math.round(6 * Math.sin(an)), M.TRIM); }
-    rdisc(fa, fb, P + 10, 8, M.TRUNK); rdisc(fa, fb, P + 11, 6, D, 4); dome(fa, fb, P + 12, 6, G); box(fa, P + 1, fb, fa, P + 4, fb, M.BRASS); }
+    rdisc(fa, fb, P, 6, M.LIME); rdisc(fa, fb, P + 1, 6, M.LIME, 5); rdisc(fa, fb, P + 1, 5, M.WATER);
+    box(fa, P + 1, fb, fa, P + 5, fb, M.LIME); rdisc(fa, fb, P + 6, 2, M.LIME); rdisc(fa, fb, P + 7, 2, M.LIME, 1); rdisc(fa, fb, P + 7, 1, M.WATER); set(fa, P + 8, fb, M.WATER); }
   begin('Clock tower', 'monument');
   { const ta = X(ca), tb = Z(CB - 6);
     for (let y = 0; y <= P + 38; y++) walls(ta - 2, y, tb - 2, ta + 2, y, tb + 2, y < P ? M.SAND2 : y > P + 26 ? M.COPPER2 : (y - P) % 8 === 7 ? M.BRASS : M.COPPER);

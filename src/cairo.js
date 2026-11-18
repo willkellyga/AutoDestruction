@@ -13,7 +13,7 @@
 // The map is flat: the water is painted on the ground and monsters wade. A street that crosses water is a bridge.
 // The tower is our own take under our own name; the pyramids, the Sphinx, the Citadel and the museum keep theirs.
 import { M, STREET_X } from './world.js';
-import { baladi, oldhouse, souk, mosque, palms, nilehotel, villa, village, mastabas, camp, dig, obelisk } from './cairo_kit.js';
+import { baladi, oldhouse, souk, wikala, palms, nilehotel, villa, village, mastabas, camp, dig, obelisk } from './cairo_kit.js';
 import { greatpyramid, khafre, menkaure, sphinx, citadel, lotustower, museum, opera, GREAT, KHAFRE, MENK, SPHINX, CITADEL, MUSEUM, OPERA } from './cairo_landmarks.js';
 
 // where each column and row of 40-voxel lots starts: 6 apart inside a block, a street's width apart across one
@@ -105,7 +105,8 @@ const MAKE = {
   },
   oldhouse: () => ({ floors: [ri(2, 4), ri(2, 3), ri(2, 4)], walls: [pick(OLD), pick(OLD), pick(OLD)], wood: [pick([M.TRUNK, M.WOOD]), M.TRUNK, pick([M.TRUNK, M.WOOD])], doors: [pick(DOORS), pick(DOORS), pick(DOORS)], roofs: [ri(0, 2), ri(0, 2), ri(0, 2)], cloth: [pick(AWNS), pick(AWNS), pick(AWNS)], palm: rnd() < 0.3 ? 1 : 0, jars: rnd() < 0.5 ? 1 : 0 }),
   souk: () => { const name = SOUKS(); return { name, title: cap(name) + ' bazaar', cloth: [pick(AWNS), pick(AWNS), pick(AWNS), pick(AWNS)], goods: ri(0, 7), domeM: pick([M.LIME, M.REND_T, M.LIME2]) }; },
-  mosque: () => ({ domeM: pick([M.LIME2, M.REND_T, M.ROOF_G, M.LIME]), stripe: pick([M.OCHRE, M.REND_P, M.LIME2]), tower: rnd() < 0.35 ? 1 : 0, rib: rnd() < 0.5 ? M.LIME : 0 }),
+  // (it draws exactly as many random numbers as the mosque it replaced, so the rest of the city is laid out as it was)
+  wikala: () => ({ wall: pick([M.LIME2, M.MUD, M.REND_C, M.LIME]), stripe: pick([M.OCHRE, M.REND_P, M.LIME2]), tall: rnd() < 0.35 ? 1 : 0, awn: rnd() < 0.5 ? M.AWN_R : M.AWN_B }),
   palms: (v = 0) => ({ v }),
   nilehotel: (round) => { const name = HOTELS(); return { name, title: cap(name) + ' hotel', floors: ri(9, 14), round: round === undefined ? rnd() < 0.3 : round, wall: pick([M.LIME, M.TRIM, M.LIME2, M.REND_C]), glass: pick([M.GLASS_Z, M.GLASS, M.GLASS_G]), ink: pick(INKS), car: rnd() < 0.4 ? pick(CARS) : 0 }; },
   villa: () => ({ wall: pick([M.REND_C, M.REND_Y, M.LIME, M.REND_P, M.TRIM]), door: pick(DOORS) }),
@@ -122,10 +123,10 @@ const MAKE = {
 };
 // what each district is made of: [kind, weight, arguments]
 const DIST = {
-  G: [['baladi', 64, ['raw']], ['baladi', 18, ['mix']], ['mosque', 3], ['palms', 4, [0]], ['shop', 4], ['carpark', 3], ['souk', 4]],
-  B: [['baladi', 58, ['mix']], ['baladi', 10, ['raw']], ['oldhouse', 9], ['palms', 6, [0]], ['mosque', 3], ['shop', 5], ['flats', 6, [5, 8]], ['souk', 3]],
+  G: [['baladi', 64, ['raw']], ['baladi', 18, ['mix']], ['wikala', 3], ['palms', 4, [0]], ['shop', 4], ['carpark', 3], ['souk', 4]],
+  B: [['baladi', 58, ['mix']], ['baladi', 10, ['raw']], ['oldhouse', 9], ['palms', 6, [0]], ['wikala', 3], ['shop', 5], ['flats', 6, [5, 8]], ['souk', 3]],
   D: [['haussmann', 34, [4, 6]], ['baladi', 30, ['tall']], ['flats', 9, [6, 9]], ['cinema', 5], ['tower', 6, [8, 12]], ['palms', 5, [0]], ['shop', 5], ['nilehotel', 6, [false]]],
-  O: [['oldhouse', 54], ['baladi', 15, ['low']], ['souk', 10], ['mosque', 7], ['palms', 6, [0]], ['shop', 4], ['village', 4]],
+  O: [['oldhouse', 54], ['baladi', 15, ['low']], ['souk', 10], ['wikala', 7], ['palms', 6, [0]], ['shop', 4], ['village', 4]],
   S: [['souk', 72], ['oldhouse', 28]],
   H: [['nilehotel', 100]],
   F: [['palms', 50, [2]], ['palms', 26, [3]], ['village', 24]],
@@ -168,9 +169,9 @@ export function cairoLots() {
   }
   return out;
 }
-export const CAIRO_KIT = { baladi, oldhouse, souk, mosque, palms, nilehotel, villa, village, mastabas, camp, dig, obelisk, greatpyramid, khafre, menkaure, sphinx, citadel, lotustower, museum, opera };
+export const CAIRO_KIT = { baladi, oldhouse, souk, wikala, palms, nilehotel, villa, village, mastabas, camp, dig, obelisk, greatpyramid, khafre, menkaure, sphinx, citadel, lotustower, museum, opera };
 // ground colours for the lots (ground.js): dusty pavement in town, lawn in the gardens; the desert pieces have none, so the sand shows
-export const CAIRO_PAD = { baladi: '#cbbd9f', oldhouse: '#cdbf9e', souk: '#d2c3a0', mosque: '#d6c9a8', nilehotel: '#cfc7b4', villa: '#8fb46a', obelisk: '#d8ccae', lotustower: '#d2cab4', haussmann: '#cbc2ad', shop: '#cbbd9f', apartment: '#cbbd9f',
+export const CAIRO_PAD = { baladi: '#cbbd9f', oldhouse: '#cdbf9e', souk: '#d2c3a0', wikala: '#d6c9a8', nilehotel: '#cfc7b4', villa: '#8fb46a', obelisk: '#d8ccae', lotustower: '#d2cab4', haussmann: '#cbc2ad', shop: '#cbbd9f', apartment: '#cbbd9f',
   cinema: '#cbbd9f', tower: '#c9c6bc', park: '#8fb46a', carpark: '#5c5f63' };
 
 // where the street dressing (lamps, parked cars, trees) must stay away: the water and its banks, and the open desert
