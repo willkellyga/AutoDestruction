@@ -9,8 +9,10 @@ export const tiled = (a, step) => Array.from({ length: TILES }, (_, t) => a.map(
 // PARIS builds the Paris map (`python3 build.py paris`, laid out in paris.js). It is a city as far as size, haze and
 // street dressing go, so CITY is true for it too; it is taller, for the Eiffel Tower.
 export const PARIS = typeof __PARIS__ === 'boolean' && __PARIS__;
-export const CITY = PARIS || (typeof __CITY__ === 'boolean' && __CITY__);
-export const WX = CITY ? 1024 : TILE_X * TILES, WY = PARIS ? 256 : CITY ? 224 : 128, WZ = CITY ? 1024 : TILE_Z * TILES, CH = 16;
+// NYC builds the New York map (`python3 build.py nyc`, laid out in nyc.js): a city too, and as tall as the handles allow.
+export const NYC = typeof __NYC__ === 'boolean' && __NYC__;
+export const CITY = PARIS || NYC || (typeof __CITY__ === 'boolean' && __CITY__);
+export const WX = CITY ? 1024 : TILE_X * TILES, WY = PARIS || NYC ? 256 : CITY ? 224 : 128, WZ = CITY ? 1024 : TILE_Z * TILES, CH = 16;
 export const NCX = WX / CH, NCZ = WZ / CH;
 
 // ---- storage ---------------------------------------------------------------
@@ -79,9 +81,10 @@ export function solid(x, y, z) {
 export const LOT = 40, WALK = 6, ROADW = 24;
 // street centre lines. The city's are unevenly spaced, so its blocks are 2, 3 or 4 lots across and 1, 2 or 3 rows deep (city.js).
 // Paris: seven streets across (the two in the middle are the quays either side of the Seine) and five down, which are its bridges.
-export const STREET_Z = PARIS ? [144, 266, 388, 560, 728, 850, 972] : CITY ? [80, 202, 324, 492, 614, 736, 858, 934] : tiled([80, 202, 324], TILE_Z);
-export const STREET_X = PARIS ? [191, 365, 539, 759, 841] : CITY ? [80, 254, 382, 602, 776, 904] : tiled([80, 254, 428], TILE_X);
-export const SPAWN = PARIS ? { x: 841, z: 972, yaw: -2.3 } : CITY ? { x: 80, z: 934, yaw: 2.55 } : { x: 80, z: 324, yaw: 2.3 };   // the south-west crossing, in the suburbs, looking up at the downtown skyline
+// New York: six streets across (the first is in the Bronx, the other five cross the East River to Brooklyn) and five avenues down.
+export const STREET_Z = NYC ? [150, 372, 494, 616, 738, 860] : PARIS ? [144, 266, 388, 560, 728, 850, 972] : CITY ? [80, 202, 324, 492, 614, 736, 858, 934] : tiled([80, 202, 324], TILE_Z);
+export const STREET_X = NYC ? [262, 436, 610, 738, 952] : PARIS ? [191, 365, 539, 759, 841] : CITY ? [80, 254, 382, 602, 776, 904] : tiled([80, 254, 428], TILE_X);
+export const SPAWN = NYC ? { x: 952, z: 860, yaw: -1.8 } : PARIS ? { x: 841, z: 972, yaw: -2.3 } : CITY ? { x: 80, z: 934, yaw: 2.55 } : { x: 80, z: 324, yaw: 2.3 };   // the south-west crossing, in the suburbs, looking up at the downtown skyline
 export let totalInit = 0;
 
 // ---- materials -----------------------------------------------------------
@@ -176,6 +179,16 @@ export const FLAM = new Float32Array(NMAT), BURN = new Float32Array(NMAT), CHARP
   def(73, 'ZINC', 0x8d99a8, 1.05, 1, 0.35, K.ROOF, 6);
   def(74, 'IRON', 0x77614a, 0.9, 4, 0.5, K.METAL, 6);
   HARD[M.IRON] = 1;
+  // New York: brownstone, the statue's weathered copper in two tones, pink granite, taxi yellow, bright steel and two more sign lights
+  def(75, 'BROWNST', 0x7d5444, 0.92, 1, 0.55, K.STONE, 3);
+  def(76, 'COPPER', 0x9cdcc6, 0.9, 2, 0.55, K.PLASTER, 6);
+  def(77, 'COPPER2', 0x80c6ae, 0.9, 2, 0.55, K.PLASTER, 6);
+  def(78, 'GRANITE', 0xb9aa9a, 0.88, 1, 0.65, K.STONE, 3);
+  def(79, 'TAXI', 0xf2b61c, 0.95, 1, 0.3, K.METAL, 6);
+  def(80, 'CHROME', 0xc3ccd6, 0.9, 2, 0.55, K.METAL, 6);
+  def(81, 'LIT_G', 0x6cf08a, 1.5, 0, 0, K.LIT, 2);
+  def(82, 'LIT_P', 0xff62c8, 1.5, 0, 0, K.LIT, 2);
+  HARD[M.GRANITE] = 1;
   HARD[M.CONC] = HARD[M.METAL] = HARD[M.STONE] = HARD[M.STEEL] = HARD[M.SLAB] = 1;
   SEE[M.REBAR] = 1;
 }

@@ -1,6 +1,6 @@
 // Crumbletown's layout: twenty lots round a ring of four streets, each turned to face its street, plus the park,
 // street dressing and the trees round the edge.
-import { M, WX, WZ, CITY, PARIS, TILES, TILE_X, TILE_Z, tiled, LOC, LOT, STREET_X, STREET_Z, place, begin, set, box, ctx, lots, rubbleBody, setSeed, rnd, ri, finalize } from './world.js';
+import { M, WX, WZ, CITY, PARIS, NYC, TILES, TILE_X, TILE_Z, tiled, LOC, LOT, STREET_X, STREET_Z, place, begin, set, box, ctx, lots, rubbleBody, setSeed, rnd, ri, finalize } from './world.js';
 import { disc, tree, lampPost, bench, bin, hydrant, planter, hedge, fence, car } from './kit.js';
 import { cottage, shop, fuel } from './buildings_a.js';
 import { apartment, watertower, church, tower } from './buildings_b.js';
@@ -9,6 +9,8 @@ import { needle, stadium, factory, cinema, rowhouse } from './landmarks.js';
 import { cityLots, cityBlocks, cityAlleys } from './city.js';
 import { parisLots, parisKeepOut, PARIS_KIT } from './paris.js';
 import { parisExtras } from './paris_seine.js';
+import { nycLots, nycKeepOut, NYC_KIT } from './nyc.js';
+import { nycExtras } from './nyc_water.js';
 
 // The districts (Hole.io style: small food where you start, the big prize in sight, clusters to run between):
 //   south-west  suburbs, where he hatches: cottages, a park, a diner, cars to snack on
@@ -74,10 +76,10 @@ const TOWN = [
   { x: 446, z: 342, f: 0, k: 'factory', d: 'yard', o: { wall: M.BRICK2, name: 'MILL', title: 'Mill', car: M.CAR_A } },
 ];
 // the blocks between the streets, and the alleys behind their back-to-back rows (ground.js paints them, generateTown fences them)
-export const LOTS = PARIS ? parisLots() : CITY ? cityLots() : [];
+export const LOTS = NYC ? nycLots() : PARIS ? parisLots() : CITY ? cityLots() : [];
 if (!CITY) for (let tz = 0; tz < TILES; tz++) for (let tx = 0; tx < TILES; tx++) for (const L of TOWN) LOTS.push({ ...L, x: L.x + tx * TILE_X, z: L.z + tz * TILE_Z });
-export const BLOCKS = PARIS ? [] : CITY ? cityBlocks() : Array.from({ length: TILES }, (_, t) => [[98, 236], [272, 410]].map(([a, b]) => [a + t * TILE_X, b + t * TILE_X])).flat();
-export const ALLEYS = PARIS ? [] : CITY ? cityAlleys() : tiled([138, 260], TILE_Z);
+export const BLOCKS = PARIS || NYC ? [] : CITY ? cityBlocks() : Array.from({ length: TILES }, (_, t) => [[98, 236], [272, 410]].map(([a, b]) => [a + t * TILE_X, b + t * TILE_X])).flat();
+export const ALLEYS = PARIS || NYC ? [] : CITY ? cityAlleys() : tiled([138, 260], TILE_Z);
 
 // A lot-local rectangle (a across, b back from the front) as a world rectangle [xa, za, xb, zb].
 export function lotRect(L, a0, b0, a1, b1) {
@@ -107,8 +109,8 @@ function park(lx, lz) {
   planter(lx + 4, lz + 19, 9); planter(lx + 27, lz + 19, 9);
 }
 
-const KIT = { cottage, shop, fuel, apartment, watertower, church, tower, park, carpark, depot, plaza, needle, stadium, factory, cinema, rowhouse, ...PARIS_KIT };
-const off = PARIS ? parisKeepOut : () => false;   // Paris keeps the street dressing out of the river and off its set pieces
+const KIT = { cottage, shop, fuel, apartment, watertower, church, tower, park, carpark, depot, plaza, needle, stadium, factory, cinema, rowhouse, ...PARIS_KIT, ...NYC_KIT };
+const off = NYC ? nycKeepOut : PARIS ? parisKeepOut : () => false;   // Paris and New York keep the street dressing out of the water and off their set pieces
 
 export function generateTown() {
   ctx.L = 3;
@@ -120,12 +122,13 @@ export function generateTown() {
   });
   ctx.lot = -1;
   if (PARIS) { place(0, 0, -1); parisExtras(); }   // the river is drawn in plain map coordinates
+  if (NYC) { place(0, 0, -1); nycExtras(); }
   // street dressing that no lot brings with it, laid along every street: lamps on both pavements, a hydrant or bin here
   // and there, a tree at some corners and cars parked in the kerb lane. A prop is turned by placing it as a one-voxel lot.
   const prop = (x, z, f, fn) => { place(x, z, f, 1); fn(LOC, LOC); };
   setSeed(4242);
   const nearX = (v, list, d) => list.some((s) => Math.abs(v - s) < d);
-  const PAINTS = [M.CAR_A, M.CAR_B, M.CAR_C];
+  const PAINTS = NYC ? [M.TAXI, M.CAR_B, M.TAXI] : [M.CAR_A, M.CAR_B, M.CAR_C];   // New York's kerbs are mostly taxis
   for (const c of STREET_X) for (let z = 30; z < WZ - 20; z += 34) {
     if (nearX(z, STREET_Z, 30) || off(c, z) || off(c, z + 20)) continue;
     const j = z + ri(-4, 4);
