@@ -19,7 +19,8 @@ export const cfg = {
   debrisMul: 1,
 };
 const G = 68;
-const MARGIN = 3.0;
+const MARGIN = 2.2;   // a storey gives way once it carries this many times its designed load for each block left in it
+const SLACK = 4;      // how many blocks further sideways than it was built a block may hang from its support before it falls
 let scene;
 
 // ---- chunks --------------------------------------------------------------
@@ -311,13 +312,25 @@ const failing = [];
 const explQueue = [];
 const glassQ = [];
 const burnT = new Map();
+const loose = [];   // rubble that may have lost what it lay on
+let simStep = 0;
+const later = [];   // bodies to look at again shortly: [id, seconds]
 function removeVoxel(i, x, y, z) {
   const m = voxAt(i);
+  const b = bodies[ownerAt(i)];
+  if (b && !b.span0 && b.kind !== 'rubble') prime(b);
   setVox(i, 0); setGone(i, 1);
   if (burnAt(i)) { setBurn(i, 0); burnT.delete(i); }
-  const b = bodies[ownerAt(i)];
   if (b && b.kind !== 'rubble') { b.count--; b.layers[y]--; b.carry[y] -= CARRY[m]; pending.add(b.id); stats.destroyed++; }
   markDirty(x, z);
+  // what leaned on this voxel: rubble lying on top of it, and parts that hang on another body (a sign on a roof)
+  for (let f = 0; f < 6; f++) {
+    const k = i + NB[f];
+    if (k < 0 || k >= NV || !voxAt(k)) continue;
+    const o = bodies[ownerAt(k)];
+    if (!o) continue;
+    if (o.kind === 'rubble') { if (f === 4) loose.push(k); } else if (o !== b && o.hung) pending.add(o.id);
+  }
   if (m === M.FUEL && b && !b.exploded) { b.exploded = true; explQueue.push([x + 0.5, y + 0.5, z + 0.5, b.explosive || 11, 0.25]); }
   return m;
 }
@@ -385,6 +398,7 @@ export function blast(cx, cy, cz, r, o = {}) {
     if (m0 === M.CONC && cfg.rebar && lvl >= 1 && d2 > rc2 * 0.6 && Math.random() < 0.4) {
       // the concrete breaks away and the bars stay, still tying the pieces together
       const b = bodies[ownerAt(i)];
+      if (b && !b.span0 && b.kind !== 'rubble') prime(b);
       setVox(i, M.REBAR); if (b && b.kind !== 'rubble') { b.carry[y] -= CARRY[M.CONC]; pending.add(b.id); }
       markDirty(x, z);
       if (Math.random() < p) { const d = Math.sqrt(d2) + 0.01, s = push * (0.45 + Math.random() * 0.75); spawnDebris(x + 0.5, y + 0.5, z + 0.5, ex / d * s + dx * push, ey / d * s + 5, ez / d * s + dz * push, M.CONC, lvl); }
@@ -546,6 +560,7 @@ function stepFire(dt) {
     const b = bodies[ownerAt(i)];
     if (Math.random() < CHARP[m]) {
       // burnt through: still there, but it carries nothing, so the storey rule can finish the job
+      if (b && !b.span0 && b.kind !== 'rubble') prime(b);
       setVox(i, M.CHAR); setSoot(i, 0);
       if (b && b.kind !== 'rubble') { b.carry[y] -= CARRY[m]; pending.add(b.id); }
       markLazy(x, z);
@@ -729,7 +744,68 @@ class Section {
 }
 
 // ---- support -------------------------------------------------------------
-let vis = new Uint8Array(1 << 16), stack = new Int32Array(1 << 16), comp = new Int32Array(1 << 16);
+let vis = new Uint8Array(1 << 16), dist = new Uint8Array(1 << 16), qa = new Int32Array(1 << 16), qb = new Int32Array(1 << 16), comp = new Int32Array(1 << 16);
+// Fill `dist` over the body's box with how far sideways each of its voxels is from support (255: nothing reaches it).
+// Seeds are the body's voxels on the ground; a body built wholly on top of another (b.hung) is seeded where it touches one.
+function spanFill(b) {
+  const w = b.x1 - b.x0 + 1, h = b.y1 + 1, d = b.z1 - b.z0 + 1, vol = w * h * d, wd = w * d, id = b.id;
+  if (vol > dist.length) { vis = new Uint8Array(vol); dist = new Uint8Array(vol); qa = new Int32Array(vol); qb = new Int32Array(vol); comp = new Int32Array(vol); }
+  dist.fill(255, 0, vol);
+  let nc = 0;
+  for (let z = 0; z < d; z++) for (let x = 0; x < w; x++) {
+    const gi = idx(b.x0 + x, 0, b.z0 + z);
+    if (voxAt(gi) && ownerAt(gi) === id) { dist[x + w * z] = 0; qa[nc++] = x + w * z; }
+  }
+  if (b.hung) for (let y = 0, l = 0; y < h; y++) for (let z = 0; z < d; z++) for (let x = 0; x < w; x++, l++) {
+    const gi = idx(b.x0 + x, y, b.z0 + z);
+    if (!voxAt(gi) || ownerAt(gi) !== id) continue;
+    for (let f = 0; f < 6; f++) {
+      const k = gi + NB[f];
+      if (k < 0 || k >= NV || !voxAt(k)) continue;
+      const o = bodies[ownerAt(k)];
+      if (o && o !== b && o.kind !== 'rubble') { dist[l] = 0; qa[nc++] = l; break; }
+    }
+  }
+  for (let L = 0; nc && L < 254; L++) {
+    let sp = nc, nn = 0;
+    while (sp) {
+      const l = qa[--sp];
+      if (dist[l] !== L) continue;
+      const x = l % w, z = ((l / w) | 0) % d, y = (l / wd) | 0, g0 = idx(b.x0 + x, y, b.z0 + z);
+      for (let f = 0; f < 6; f++) {
+        let nl;
+        if (f === 0) { if (x === w - 1) continue; nl = l + 1; } else if (f === 1) { if (x === 0) continue; nl = l - 1; }
+        else if (f === 2) { if (z === d - 1) continue; nl = l + w; } else if (f === 3) { if (z === 0) continue; nl = l - w; }
+        else if (f === 4) { if (y === h - 1) continue; nl = l + wd; } else { if (y === 0) continue; nl = l - wd; }
+        if (dist[nl] <= L) continue;
+        const gi = g0 + NB[f], m = voxAt(gi);
+        if (!m || ownerAt(gi) !== id) continue;
+        if (f > 3 && CARRY[m]) { dist[nl] = L; qa[sp++] = nl; }
+        else if (dist[nl] > L + 1) { dist[nl] = L + 1; qb[nn++] = nl; }
+      }
+    }
+    const t = qa; qa = qb; qb = t; nc = nn;
+  }
+  return vol;
+}
+// Remember how the body hangs together while it is whole, the first time anything is about to be taken from it.
+function prime(b) {
+  const vol = spanFill(b);
+  b.span0 = dist.slice(0, vol);
+}
+// Rubble lies only on what is under it: when that goes, it falls again.
+function dropLoose() {
+  let budget = 3000;
+  while (loose.length && budget-- > 0) {
+    const i = loose.pop(), m = voxAt(i);
+    if (!m) continue;
+    const b = bodies[ownerAt(i)], y = i >> YS;
+    if (!b || b.kind !== 'rubble' || y === 0 || voxAt(i - SXZ)) continue;
+    const x = i & XM, z = (i >> ZS) & ZM;
+    removeVoxel(i, x, y, z); stats.rubble--;
+    spawnDebris(x + 0.5, y + 0.5, z + 0.5, (Math.random() - 0.5) * 3, 0, (Math.random() - 0.5) * 3, m, b.level);
+  }
+}
 function crushLayer(b, y) {
   let n = 0, sx = 0, sz = 0;
   for (let yy = y; yy <= Math.min(b.y1, y + 1); yy++) for (let z = b.z0; z <= b.z1; z++) for (let x = b.x0; x <= b.x1; x++) {
@@ -763,48 +839,41 @@ function checkBody(b) {
     b.exploded = true;
     explQueue.push([(b.x0 + b.x1 + 1) / 2, 4, (b.z0 + b.z1 + 1) / 2, b.explosive, 0.05]);
   }
-  // flood fill from the ground
-  const w = b.x1 - b.x0 + 1, h = b.y1 + 1, d = b.z1 - b.z0 + 1, vol = w * h * d;
-  if (vol > vis.length) { vis = new Uint8Array(vol); stack = new Int32Array(vol); comp = new Int32Array(vol); }
+  // What still stands. Support spreads from the ground through the body: straight up or down through anything that can
+  // carry costs nothing, every sideways step costs one. A voxel falls when nothing reaches it, or when it now hangs
+  // more than SLACK further out than it did when the body was whole (the part over a knocked-out corner, say).
+  const vol = spanFill(b), s0 = b.span0;
+  let reached = 0, bad = 0;
   vis.fill(0, 0, vol);
-  const id = b.id, wd = w * d;
-  let sp = 0;
-  for (let z = 0; z < d; z++) for (let x = 0; x < w; x++) {
-    const gi = idx(b.x0 + x, 0, b.z0 + z);
-    if (voxAt(gi) && ownerAt(gi) === id) { vis[x + w * z] = 1; stack[sp++] = x + w * z; }
-  }
-  const flood = (mark, out) => {
-    let cn = 0;
-    while (sp) {
-      const l = stack[--sp];
-      if (out) out[cn++] = l;
-      const x = l % w, z = ((l / w) | 0) % d, y = (l / wd) | 0;
-      for (let f = 0; f < 6; f++) {
-        const nx = x + (f === 0) - (f === 1), ny = y + (f === 2) - (f === 3), nz = z + (f === 4) - (f === 5);
-        if (nx < 0 || ny < 0 || nz < 0 || nx >= w || ny >= h || nz >= d) continue;
-        const nl = nx + w * nz + wd * ny;
-        if (vis[nl]) continue;
-        const gi = idx(b.x0 + nx, ny, b.z0 + nz);
-        if (!voxAt(gi) || ownerAt(gi) !== id) continue;
-        vis[nl] = mark; stack[sp++] = nl;
-      }
-    }
-    return cn;
-  };
-  flood(1, null);
-  let reached = 0;
-  for (let l = 0; l < vol; l++) if (vis[l] === 1) reached++;
-  if (reached < b.count) {
-    for (let y = 0; y < h; y++) for (let z = 0; z < d; z++) for (let x = 0; x < w; x++) {
-      const l = x + w * z + wd * y;
-      if (vis[l]) continue;
+  if (s0) { for (let l = 0; l < vol; l++) { const v = dist[l]; if (v === 255) continue; reached++; if (v > s0[l] + SLACK) { vis[l] = 1; bad++; } } }
+  else for (let l = 0; l < vol; l++) if (dist[l] !== 255) reached++;
+  const spanFail = bad > 0;
+  if (reached < b.count || bad) {
+    const w = b.x1 - b.x0 + 1, h = b.y1 + 1, d = b.z1 - b.z0 + 1, wd = w * d, id = b.id;
+    if (reached < b.count) for (let y = 0, l = 0; y < h; y++) for (let z = 0; z < d; z++) for (let x = 0; x < w; x++, l++) {
+      if (dist[l] !== 255) continue;
       const gi = idx(b.x0 + x, y, b.z0 + z);
-      if (!voxAt(gi) || ownerAt(gi) !== id) continue;
-      vis[l] = 2; stack[0] = l; sp = 1;
-      const cn = flood(2, comp);
+      if (voxAt(gi) && ownerAt(gi) === id) vis[l] = 1;
+    }
+    for (let l0 = 0; l0 < vol; l0++) {
+      if (vis[l0] !== 1) continue;
+      let sp = 0, cn = 0;
+      vis[l0] = 2; qa[sp++] = l0;
+      while (sp) {
+        const l = qa[--sp]; comp[cn++] = l;
+        const x = l % w, z = ((l / w) | 0) % d, y = (l / wd) | 0;
+        if (x > 0 && vis[l - 1] === 1) { vis[l - 1] = 2; qa[sp++] = l - 1; }
+        if (x < w - 1 && vis[l + 1] === 1) { vis[l + 1] = 2; qa[sp++] = l + 1; }
+        if (z > 0 && vis[l - w] === 1) { vis[l - w] = 2; qa[sp++] = l - w; }
+        if (z < d - 1 && vis[l + w] === 1) { vis[l + w] = 2; qa[sp++] = l + w; }
+        if (y > 0 && vis[l - wd] === 1) { vis[l - wd] = 2; qa[sp++] = l - wd; }
+        if (y < h - 1 && vis[l + wd] === 1) { vis[l + wd] = 2; qa[sp++] = l + wd; }
+      }
       for (let k = 0; k < cn; k++) { const c = comp[k]; comp[k] = idx(b.x0 + (c % w), (c / wd) | 0, b.z0 + (((c / w) | 0) % d)); }
       detach(b, comp, cn);
     }
+    // what broke away may have been holding up something else: look again in a moment, so a collapse runs on in steps
+    if (spanFail && !b.again) { b.again = true; later.push([b.id, 0.18]); }
   }
   b.nextMode = null;
   if (!b.dead && b.count < b.init * 0.15) finish(b);
@@ -847,6 +916,7 @@ export function initSim(sc) {
   meshOpts.count = true;
   for (let k = 0; k < NCX * NCZ; k++) rebuildChunk(k);
   meshOpts.count = false;
+  for (let i = 1; i < bodies.length; i++) { const b = bodies[i]; b.hung = b.kind !== 'rubble' && b.count > 0 && b.layers0[0] === 0; }
   boxGeo = new THREE.BoxGeometry(1, 1, 1);
   secMat = new THREE.MeshLambertMaterial();
   dmesh = new THREE.InstancedMesh(boxGeo, new THREE.MeshLambertMaterial(), ND);
@@ -879,9 +949,17 @@ export function stepSim(dt) {
     if (b.failT <= 0) { failing.splice(i, 1); b.failing = false; if (b.count > 0) { crushLayer(b, b.failY); pending.add(b.id); } }
   }
   stepFire(dt);
+  for (let i = later.length - 1; i >= 0; i--) { const q = later[i]; q[1] -= dt; if (q[1] <= 0) { later.splice(i, 1); const b = bodies[q[0]]; b.again = false; if (b.count > 0) pending.add(b.id); } }
+  if (loose.length) dropLoose();
   let n = 0;
   const tc = performance.now();
-  for (const id of pending) { pending.delete(id); checkBody(bodies[id]); if (++n >= 4 || performance.now() - tc > 4) break; }
+  simStep++;
+  for (const id of pending) {
+    const b = bodies[id];
+    if (simStep - (b.seen || 0) < 3) continue;   // a body under steady attack is looked at ten times a second, not thirty
+    pending.delete(id); b.seen = simStep; checkBody(b);
+    if (++n >= 4 || performance.now() - tc > 4) break;
+  }
   for (let i = sections.length - 1; i >= 0; i--) if (!sections[i].update(dt)) sections.splice(i, 1);
   updateDebris(dt);
   dustP.update(dt); fireP.update(dt);
