@@ -1,6 +1,6 @@
 // Crumbletown's layout: twenty lots round a ring of four streets, each turned to face its street, plus the park,
 // street dressing and the trees round the edge.
-import { M, WX, WZ, LOC, LOT, STREET_X, STREET_Z, place, begin, set, box, ctx, lots, rubbleBody, setSeed, rnd, ri, finalize } from './world.js';
+import { M, WX, WZ, TILES, TILE_X, TILE_Z, tiled, LOC, LOT, STREET_X, STREET_Z, place, begin, set, box, ctx, lots, rubbleBody, setSeed, rnd, ri, finalize } from './world.js';
 import { disc, tree, lampPost, bench, bin, hydrant, planter, hedge, fence, car } from './kit.js';
 import { cottage, shop, fuel } from './buildings_a.js';
 import { apartment, watertower, church, tower } from './buildings_b.js';
@@ -16,7 +16,7 @@ import { needle, stadium, factory, cinema, rowhouse } from './landmarks.js';
 // Columns of lots: west edge 22, block A 101 147 193, block B 275 321 367, east edge 446.
 // Rows: north edge 22, then back-to-back pairs 98/144 and 220/266, then south edge 342.
 // f is the way the front faces: 0 north (low z), 1 east, 2 south, 3 west. d names the district (for the ground and the HUD).
-export const LOTS = [
+const TOWN = [
   // north edge, facing the first street
   { x: 22, z: 22, f: 2, k: 'watertower', d: 'old' },
   { x: 101, z: 22, f: 2, k: 'rowhouse', d: 'old' },
@@ -71,8 +71,10 @@ export const LOTS = [
   { x: 446, z: 342, f: 0, k: 'factory', d: 'yard', o: { wall: M.BRICK2, name: 'MILL', title: 'Mill', car: M.CAR_A } },
 ];
 // the blocks between the streets, and the alleys behind their back-to-back rows (ground.js paints them, generateTown fences them)
-export const BLOCKS = [[98, 236], [272, 410]];
-export const ALLEYS = [138, 260];
+export const LOTS = [];
+for (let tz = 0; tz < TILES; tz++) for (let tx = 0; tx < TILES; tx++) for (const L of TOWN) LOTS.push({ ...L, x: L.x + tx * TILE_X, z: L.z + tz * TILE_Z });
+export const BLOCKS = Array.from({ length: TILES }, (_, t) => [[98, 236], [272, 410]].map(([a, b]) => [a + t * TILE_X, b + t * TILE_X])).flat();
+export const ALLEYS = tiled([138, 260], TILE_Z);
 
 // A lot-local rectangle (a across, b back from the front) as a world rectangle [xa, za, xb, zb].
 export function lotRect(L, a0, b0, a1, b1) {

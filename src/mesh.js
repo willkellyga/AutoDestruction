@@ -1,8 +1,14 @@
 // Chunk meshing and the voxel look. Faces that share a material and have no corner shade are merged into runs,
 // and the per-voxel detail (colour variation, weather stains, the line between voxels) is drawn in the shader,
 // so a fine grid costs far fewer triangles than one quad per face.
+//
+// A vertex is 8 bytes, and a chunk mesh sits at its chunk's corner so positions fit in a byte:
+//   pa  4 x uint8   x and z within the chunk (0..16), y (low 8 bits), then bits: y's ninth bit | face << 1 | glow << 4 | level << 6
+//   pc  4 x uint8   colour with the corner shade in it, as square roots (so eight bits hold the dark end well), and the kind
+// The shader works the normal out from the face. The arrays are dropped once they are on the graphics card, so the drawn
+// town costs the page no memory of its own. (Full-size vertices cost 116 bytes a quad, kept twice.)
 import * as THREE from 'three';
-import { WX, WY, WZ, CH, vox, owner, gone, soot, burnF, solid, bodies, levelStats, MAT_R, MAT_G, MAT_B, KIND, SEE, K, PANE } from './world.js';
+import { WX, WY, WZ, CH, voxAt, ownerAt, goneAt, sootAt, burnAt, slabUsed, idx, solid, bodies, levelStats, MAT_R, MAT_G, MAT_B, KIND, SEE, K, PANE } from './world.js';
 
 // run: which in-plane axis a run of merged faces extends along (0 = u, 1 = v). alongZ: runs go along z, otherwise x.
 const FACES = [
@@ -17,16 +23,17 @@ const CORN = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
 const FAR = [[1, 2], [2, 3]]; // the corners that move when a run grows along u, or along v
 const AO = [0.5, 0.68, 0.84, 1.0];
 let cap = 1 << 15;
-let P = new Float32Array(cap * 12), N = new Int8Array(cap * 12), C = new Uint8Array(cap * 16), A = new Uint8Array(cap * 16), I = new Uint32Array(cap * 6);
+let PA = new Uint8Array(cap * 16), PC = new Uint8Array(cap * 16), FLIP = new Uint8Array(cap);
 function grow() {
   cap *= 2;
-  const p = new Float32Array(cap * 12), n = new Int8Array(cap * 12), c = new Uint8Array(cap * 16), a = new Uint8Array(cap * 16), i = new Uint32Array(cap * 6);
-  p.set(P); n.set(N); c.set(C); a.set(A); i.set(I); P = p; N = n; C = c; A = a; I = i;
+  const a = new Uint8Array(cap * 16), c = new Uint8Array(cap * 16), f = new Uint8Array(cap);
+  a.set(PA); c.set(PC); f.set(FLIP); PA = a; PC = c; FLIP = f;
 }
+function dropArray() { this.array = null; }
 // what hides a face and casts corner shade: everything except see-through rebar
 function occ(x, y, z) {
   if (x < 0 || y < 0 || z < 0 || x >= WX || y >= WY || z >= WZ) return 0;
-  const m = vox[x + WX * (z + WZ * y)];
+  const m = voxAt(idx(x, y, z));
   return m && !SEE[m] ? 1 : 0;
 }
 export const meshOpts = { merge: true, count: false };
@@ -35,29 +42,32 @@ const ao = [0, 0, 0, 0];
 export function meshChunk(cx, cz) {
   const xs = cx * CH, zs = cz * CH;
   let top = -1;
-  for (let y = WY - 1; y >= 0 && top < 0; y--) for (let z = zs; z < zs + CH && top < 0; z++) { const a = xs + WX * (z + WZ * y); for (let x = 0; x < CH; x++) if (vox[a + x]) { top = y; break; } }
+  for (let by = (WY - 1) >> 3; by >= 0 && top < 0; by--) {
+    if (!slabUsed(cx, cz, by)) continue;
+    for (let y = by * 8 + 7; y >= by * 8 && top < 0; y--) for (let z = zs; z < zs + CH && top < 0; z++) { const a = idx(xs, y, z); for (let x = 0; x < CH; x++) if (voxAt(a + x)) { top = y; break; } }
+  }
   if (top < 0) return null;
   let q = 0;
   for (let f = 0; f < 6; f++) {
-    const F = FACES[f], n = F.n, u = F.u, v = F.v, far = FAR[F.run], axis = F.alongZ ? 2 : 0;
-    for (let y = f === 3 ? 1 : 0; y <= top; y++) for (let b = 0; b < CH; b++) {
+    const F = FACES[f], n = F.n, u = F.u, v = F.v, far = FAR[F.run], axis = F.alongZ ? 1 : 0;
+    for (let y = f === 3 ? 1 : 0; y <= top; y++) if (slabUsed(cx, cz, y >> 3)) for (let b = 0; b < CH; b++) {
       let runKey = -1, runQ = -1;
       for (let c = 0; c < CH; c++) {
         const x = F.alongZ ? xs + b : xs + c, z = F.alongZ ? zs + c : zs + b;
-        const i = x + WX * (z + WZ * y), m = vox[i];
+        const i = idx(x, y, z), m = voxAt(i);
         if (!m) { runKey = -1; continue; }
         const ax = x + n[0], ay = y + n[1], az = z + n[2], see = SEE[m];
         if (see ? solid(ax, ay, az) : occ(ax, ay, az)) { runKey = -1; continue; }
-        const body = bodies[owner[i]], lvl = body ? body.level : 1, rub = body && body.kind === 'rubble';
+        const body = bodies[ownerAt(i)], lvl = body ? body.level : 1, rub = body && body.kind === 'rubble';
         const inb = ax >= 0 && az >= 0 && ax < WX && az < WZ && ay < WY;
-        const broke = rub || (inb && gone[ax + WX * (az + WZ * ay)] === 1);
+        const broke = rub || (inb && goneAt(idx(ax, ay, az)) === 1);
         let kind = KIND[m], glow = 0;
         if (broke && kind !== K.REBAR && kind !== K.GLASS && kind !== K.LIT && kind !== K.LEAF) kind = K.BROKEN;
-        const burning = burnF[i];
+        const burning = burnAt(i);
         if (burning) glow = 3;
         else if (KIND[m] === K.LIT) glow = 1;
         else if (PANE[m] && body && body.lit && ((Math.imul(x >> 3, 7) + Math.imul((y / 12) | 0, 13) + Math.imul(z >> 3, 5) + body.id * 3) % 10) < 6) glow = 2;
-        const st = soot[i];
+        const st = sootAt(i);
         // corner shade: the eight cells around the face, one step out
         const e1 = occ(ax - u[0], ay - u[1], az - u[2]), e2 = occ(ax + u[0], ay + u[1], az + u[2]);
         const e3 = occ(ax - v[0], ay - v[1], az - v[2]), e4 = occ(ax + v[0], ay + v[1], az + v[2]);
@@ -67,7 +77,7 @@ export function meshChunk(cx, cz) {
             | occ(ax + u[0] + v[0], ay + u[1] + v[1], az + u[2] + v[2]) | occ(ax - u[0] + v[0], ay - u[1] + v[1], az - u[2] + v[2]));
         }
         const key = open ? (m | (st >> 3) << 8 | (broke ? 1 : 0) << 13 | glow << 14 | lvl << 16) : -1;
-        if (open && key === runKey && meshOpts.merge) { P[runQ * 12 + far[0] * 3 + axis] += 1; P[runQ * 12 + far[1] * 3 + axis] += 1; continue; }
+        if (open && key === runKey && meshOpts.merge) { PA[runQ * 16 + far[0] * 4 + axis]++; PA[runQ * 16 + far[1] * 4 + axis]++; continue; }
         if (q >= cap) grow();
         if (open) ao[0] = ao[1] = ao[2] = ao[3] = 3;
         else {
@@ -79,19 +89,15 @@ export function meshChunk(cx, cz) {
         const dark = (1 - st / 255 * 0.78) * F.s;
         let r = MAT_R[m] * dark, g = MAT_G[m] * dark, bl = MAT_B[m] * dark;
         if (burning) { r = 1.0; g = 0.5; bl = 0.12; }
+        const bits = f << 1 | glow << 4 | lvl << 6;
         for (let k = 0; k < 4; k++) {
-          const su = CORN[k][0], sv = CORN[k][1], o = q * 12 + k * 3, o4 = q * 16 + k * 4, sh = AO[ao[k]];
-          P[o] = x + 0.5 + 0.5 * (n[0] + su * u[0] + sv * v[0]);
-          P[o + 1] = y + 0.5 + 0.5 * (n[1] + su * u[1] + sv * v[1]);
-          P[o + 2] = z + 0.5 + 0.5 * (n[2] + su * u[2] + sv * v[2]);
-          N[o] = n[0] * 127; N[o + 1] = n[1] * 127; N[o + 2] = n[2] * 127;
-          // colours are stored as square roots so eight bits hold the dark end well
-          C[o4] = Math.min(255, Math.sqrt(r * sh) * 255); C[o4 + 1] = Math.min(255, Math.sqrt(g * sh) * 255); C[o4 + 2] = Math.min(255, Math.sqrt(bl * sh) * 255); C[o4 + 3] = 255;
-          A[o4] = kind; A[o4 + 1] = glow; A[o4 + 2] = lvl; A[o4 + 3] = 0;
+          const su = CORN[k][0], sv = CORN[k][1], o = q * 16 + k * 4, sh = AO[ao[k]];
+          const py = y + 0.5 + 0.5 * (n[1] + su * u[1] + sv * v[1]);
+          PA[o] = x - xs + 0.5 + 0.5 * (n[0] + su * u[0] + sv * v[0]); PA[o + 1] = z - zs + 0.5 + 0.5 * (n[2] + su * u[2] + sv * v[2]);
+          PA[o + 2] = py & 255; PA[o + 3] = bits | py >> 8;
+          PC[o] = Math.min(255, Math.sqrt(r * sh) * 255); PC[o + 1] = Math.min(255, Math.sqrt(g * sh) * 255); PC[o + 2] = Math.min(255, Math.sqrt(bl * sh) * 255); PC[o + 3] = kind;
         }
-        const vi = q * 4, ii = q * 6;
-        if (ao[0] + ao[2] >= ao[1] + ao[3]) { I[ii] = vi; I[ii + 1] = vi + 1; I[ii + 2] = vi + 2; I[ii + 3] = vi; I[ii + 4] = vi + 2; I[ii + 5] = vi + 3; }
-        else { I[ii] = vi + 1; I[ii + 1] = vi + 2; I[ii + 2] = vi + 3; I[ii + 3] = vi + 1; I[ii + 4] = vi + 3; I[ii + 5] = vi; }
+        FLIP[q] = ao[0] + ao[2] >= ao[1] + ao[3] ? 0 : 1;
         if (meshOpts.count && lvl < 4 && !rub) levelStats[lvl].quads++;
         runKey = key; runQ = q; q++;
       }
@@ -99,19 +105,28 @@ export function meshChunk(cx, cz) {
   }
   if (!q) return null;
   const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(P.slice(0, q * 12), 3));
-  geo.setAttribute('normal', new THREE.BufferAttribute(N.slice(0, q * 12), 3, true));
-  geo.setAttribute('vcol', new THREE.BufferAttribute(C.slice(0, q * 16), 4, true));
-  geo.setAttribute('aux', new THREE.BufferAttribute(A.slice(0, q * 16), 4, false));
-  geo.setIndex(new THREE.BufferAttribute(I.slice(0, q * 6), 1));
+  const I = q * 4 > 65536 ? new Uint32Array(q * 6) : new Uint16Array(q * 6);
+  for (let k = 0; k < q; k++) {
+    const vi = k * 4, ii = k * 6;
+    if (FLIP[k]) { I[ii] = vi + 1; I[ii + 1] = vi + 2; I[ii + 2] = vi + 3; I[ii + 3] = vi + 1; I[ii + 4] = vi + 3; I[ii + 5] = vi; }
+    else { I[ii] = vi; I[ii + 1] = vi + 1; I[ii + 2] = vi + 2; I[ii + 3] = vi; I[ii + 4] = vi + 2; I[ii + 5] = vi + 3; }
+  }
+  geo.setAttribute('pa', new THREE.BufferAttribute(PA.slice(0, q * 16), 4).onUpload(dropArray));
+  geo.setAttribute('pc', new THREE.BufferAttribute(PC.slice(0, q * 16), 4, true).onUpload(dropArray));
+  geo.setIndex(new THREE.BufferAttribute(I, 1).onUpload(dropArray));
+  geo.userData.bytes = q * 32 + I.byteLength;
   const hy = (top + 1) / 2;
-  geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(xs + 8, hy, zs + 8), Math.hypot(12, hy) + 1);
+  geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(8, hy, 8), Math.hypot(12, hy) + 1);   // the mesh sits at (xs, 0, zs)
   geo.userData.quads = q;
   return geo;
 }
 
 // Lambert, plus the per-voxel look. detail 0 leaves every face flat (and level 0 buildings are always flat).
 export const look = { detail: { value: 1 }, dusk: { value: 0 }, edge: { value: 1 } };
+const VERT_HEAD = `
+attribute vec4 pa; attribute vec4 pc;
+vec3 chunkPos() { return vec3(pa.x, pa.z + mod(pa.w, 2.0) * 256.0, pa.y); }
+`;
 const FRAG_HEAD = `
 uniform float lookDetail; uniform float lookDusk; uniform float lookEdge;
 varying vec4 vCol; varying vec3 vAux; varying vec3 vWP; varying vec3 vN0;
@@ -170,12 +185,23 @@ export function makeChunkMaterial() {
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.lookDetail = look.detail; sh.uniforms.lookDusk = look.dusk; sh.uniforms.lookEdge = look.edge;
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec4 vcol; attribute vec4 aux; varying vec4 vCol; varying vec3 vAux; varying vec3 vWP; varying vec3 vN0;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCol = vcol; vAux = aux.xyz; vWP = position; vN0 = normal;');
+      .replace('#include <common>', '#include <common>\n' + VERT_HEAD + 'varying vec4 vCol; varying vec3 vAux; varying vec3 vWP; varying vec3 vN0;')
+      .replace('#include <beginnormal_vertex>', 'int pb = int(pa.w + 0.5), face = (pb >> 1) & 7, ax = face >> 1;\nvec3 objectNormal = vec3(ax == 0 ? 1.0 : 0.0, ax == 1 ? 1.0 : 0.0, ax == 2 ? 1.0 : 0.0) * (1.0 - 2.0 * float(face & 1));')
+      .replace('#include <begin_vertex>', 'vec3 transformed = chunkPos();\nvCol = vec4(pc.rgb, 1.0); vAux = vec3(floor(pc.a * 255.0 + 0.5), float((pb >> 4) & 3), float(pb >> 6)); vWP = (modelMatrix * vec4(transformed, 1.0)).xyz; vN0 = objectNormal;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\n' + FRAG_HEAD)
       .replace('#include <color_fragment>', '#include <color_fragment>\n' + FRAG_LOOK)
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + FRAG_GLOW);
+  };
+  return mat;
+}
+// Shadows are drawn with their own material, which has to unpack the position the same way.
+export function makeChunkDepthMaterial() {
+  const mat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+  mat.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\n' + VERT_HEAD)
+      .replace('#include <begin_vertex>', 'vec3 transformed = chunkPos();');
   };
   return mat;
 }

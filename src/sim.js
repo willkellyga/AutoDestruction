@@ -1,8 +1,8 @@
 // Destruction: blasts, glass, fire, support checks, falling sections (free, toppling, pancake), debris, rubble and particles.
 // Tuned in the Wrecking Yard sandbox. Everything optional is behind a flag in `cfg`.
 import * as THREE from 'three';
-import { WX, WY, WZ, NCX, NCZ, vox, owner, gone, soot, burnF, idx, solid, bodies, rubbleBody, M, MAT_R, MAT_G, MAT_B, SOFT, CARRY, HARD, TOUGH, SHAPE, FLAM, BURN, CHARP, PANE, jitter } from './world.js';
-import { meshChunk, makeChunkMaterial, meshOpts } from './mesh.js';
+import { WX, WY, WZ, NCX, NCZ, SX, SXZ, XM, ZS, ZM, YS, NV, voxAt, ownerAt, sootAt, burnAt, setVox, setCell, setGone, setSoot, setBurn, eachVoxel, idx, solid, bodies, rubbleBody, M, MAT_R, MAT_G, MAT_B, SOFT, CARRY, HARD, TOUGH, SHAPE, FLAM, BURN, CHARP, PANE, jitter } from './world.js';
+import { meshChunk, makeChunkMaterial, makeChunkDepthMaterial, meshOpts } from './mesh.js';
 
 export const hooks = { destroyed() {}, bodyDown() {}, shake() {}, sound() {}, scorch() {}, impact() {}, explosion() {} };
 export const stats = { destroyed: 0, active: 0, asleep: 0, particles: 0, burning: 0, quads: 0, rubble: 0 };
@@ -29,7 +29,7 @@ let scene;
 const chunkMesh = new Array(NCX * NCZ).fill(null);
 const dirty = new Set(), lazy = new Set(), built = new Int32Array(NCX * NCZ);
 let tick = 10;
-let chunkMat, focusX = WX / 2, focusZ = WZ / 2;
+let chunkMat, chunkDepth, focusX = WX / 2, focusZ = WZ / 2;
 export function setFocus(x, z) { focusX = x; focusZ = z; }
 function markLazy(x, z) { const k = (x >> 4) + (z >> 4) * NCX; if (!dirty.has(k)) lazy.add(k); }
 export function markDirty(x, z) {
@@ -46,7 +46,7 @@ function rebuildChunk(k) {
   let m = chunkMesh[k];
   if (m) { stats.quads -= m.geometry.userData.quads || 0; m.geometry.dispose(); if (!geo) { scene.remove(m); chunkMesh[k] = null; return; } m.geometry = geo; stats.quads += geo.userData.quads; return; }
   if (!geo) return;
-  m = new THREE.Mesh(geo, chunkMat);
+  m = new THREE.Mesh(geo, chunkMat); m.customDepthMaterial = chunkDepth; m.position.set(cx * 16, 0, cz * 16); m.updateMatrix(); m.updateMatrixWorld(true);
   m.castShadow = true; m.receiveShadow = true; m.matrixAutoUpdate = false;
   scene.add(m); chunkMesh[k] = m; stats.quads += geo.userData.quads;
 }
@@ -248,8 +248,8 @@ function settle(i) {
   const a = i * 3, x = Math.floor(dp[a]), y = Math.floor(dp[a + 1] - dh[i] + 0.3), z = Math.floor(dp[a + 2]);
   if (x < 1 || z < 1 || x >= WX - 1 || z >= WZ - 1 || y < 0 || y >= WY - 1) return false;
   const k = idx(x, y, z);
-  if (vox[k] || (y > 0 && !vox[idx(x, y - 1, z)])) return false;
-  vox[k] = PANE[dmat[i]] ? M.STONE : dmat[i]; owner[k] = rubbleBody[dlvl[i]].id; gone[k] = 0;
+  if (voxAt(k) || (y > 0 && !voxAt(idx(x, y - 1, z)))) return false;
+  setCell(k, PANE[dmat[i]] ? M.STONE : dmat[i], rubbleBody[dlvl[i]].id); setGone(k, 0);
   markLazy(x, z); stats.rubble++;
   dstate[i] = 3; dlife[i] = 0.4; // the piece stays in view until its voxel has been drawn
   return true;
@@ -312,34 +312,34 @@ const explQueue = [];
 const glassQ = [];
 const burnT = new Map();
 function removeVoxel(i, x, y, z) {
-  const m = vox[i];
-  vox[i] = 0; gone[i] = 1;
-  if (burnF[i]) { burnF[i] = 0; burnT.delete(i); }
-  const b = bodies[owner[i]];
+  const m = voxAt(i);
+  setVox(i, 0); setGone(i, 1);
+  if (burnAt(i)) { setBurn(i, 0); burnT.delete(i); }
+  const b = bodies[ownerAt(i)];
   if (b && b.kind !== 'rubble') { b.count--; b.layers[y]--; b.carry[y] -= CARRY[m]; pending.add(b.id); stats.destroyed++; }
   markDirty(x, z);
   if (m === M.FUEL && b && !b.exploded) { b.exploded = true; explQueue.push([x + 0.5, y + 0.5, z + 0.5, b.explosive || 11, 0.25]); }
   return m;
 }
-const lvlOf = (i) => { const b = bodies[owner[i]]; return b ? b.level : 1; };
+const lvlOf = (i) => { const b = bodies[ownerAt(i)]; return b ? b.level : 1; };
 let lastHit = [0, 0, 0];
 const list = new Int32Array(400000);
-const NB = [1, -1, WX, -WX, WX * WZ, -WX * WZ];
+const NB = [1, -1, SX, -SX, SXZ, -SXZ];
 
 // Glass: one broken voxel takes the whole pane with it, as thin glinting shards.
 const paneStack = new Int32Array(4096);
 function shatterPane(i0, dx, dy, dz) {
-  if (!PANE[vox[i0]]) return 0;
+  if (!PANE[voxAt(i0)]) return 0;
   let sp = 0, n = 0, sx = 0, sy = 0, sz = 0;
   paneStack[sp++] = i0;
   const lvl = lvlOf(i0);
   while (sp && n < 600) {
     const i = paneStack[--sp];
-    if (!PANE[vox[i]]) continue;
-    const x = i % WX, z = ((i / WX) | 0) % WZ, y = (i / (WX * WZ)) | 0;
+    if (!PANE[voxAt(i)]) continue;
+    const x = (i & XM), z = ((i >> ZS) & ZM), y = (i >> YS);
     const gm = removeVoxel(i, x, y, z); n++; sx += x; sy += y; sz += z;
     if (Math.random() < 0.5 * cfg.debrisMul) spawnDebris(x + 0.5, y + 0.5, z + 0.5, dx * (8 + Math.random() * 12) + (Math.random() - 0.5) * 9, dy * 8 + Math.random() * 7, dz * (8 + Math.random() * 12) + (Math.random() - 0.5) * 9, gm, lvl);
-    for (let f = 0; f < 6; f++) { const k = i + NB[f]; if (k >= 0 && k < vox.length && PANE[vox[k]] && sp < 4090) paneStack[sp++] = k; }
+    for (let f = 0; f < 6; f++) { const k = i + NB[f]; if (k >= 0 && k < NV && PANE[voxAt(k)] && sp < 4090) paneStack[sp++] = k; }
   }
   if (n) {
     const cx = sx / n + 0.5, cy = sy / n + 0.5, cz = sz / n + 0.5;
@@ -361,11 +361,11 @@ export function blast(cx, cy, cz, r, o = {}) {
   const z0 = Math.max(0, Math.floor(cz - R)), z1 = Math.min(WZ - 1, Math.floor(cz + R));
   let n = 0;
   for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) {
-    let i = x0 + WX * (z + WZ * y);
+    let i = idx(x0, y, z);
     for (let x = x0; x <= x1; x++, i++) {
-      const m = vox[i];
+      const m = voxAt(i);
       if (!m) continue;
-      if (only) { const b = bodies[owner[i]]; if (!b || !only[b.kind]) continue; }
+      if (only) { const b = bodies[ownerAt(i)]; if (!b || !only[b.kind]) continue; }
       const ex = x + 0.5 - cx, ey = (y + 0.5 - cy) * ys, ez = z + 0.5 - cz, re = r * SOFT[m] * (HARD[m] ? hard : 1);
       const d2 = ex * ex + ey * ey + ez * ez;
       if (d2 <= re * re && n < list.length && (d2 < re * re * 0.3 || Math.random() >= TOUGH[m] * tough)) list[n++] = i;
@@ -379,13 +379,13 @@ export function blast(cx, cy, cz, r, o = {}) {
   let glassN = 0;
   const before = stats.destroyed;
   for (let k = 0; k < n; k++) {
-    const i = list[k], x = i % WX, z = ((i / WX) | 0) % WZ, y = (i / (WX * WZ)) | 0;
+    const i = list[k], x = (i & XM), z = ((i >> ZS) & ZM), y = (i >> YS);
     const ex = x + 0.5 - cx, ey = y + 0.5 - cy, ez = z + 0.5 - cz, d2 = ex * ex + ey * ey + ez * ez;
-    const lvl = lvlOf(i), m0 = vox[i];
+    const lvl = lvlOf(i), m0 = voxAt(i);
     if (m0 === M.CONC && cfg.rebar && lvl >= 1 && d2 > rc2 * 0.6 && Math.random() < 0.4) {
       // the concrete breaks away and the bars stay, still tying the pieces together
-      const b = bodies[owner[i]];
-      vox[i] = M.REBAR; if (b && b.kind !== 'rubble') { b.carry[y] -= CARRY[M.CONC]; pending.add(b.id); }
+      const b = bodies[ownerAt(i)];
+      setVox(i, M.REBAR); if (b && b.kind !== 'rubble') { b.carry[y] -= CARRY[M.CONC]; pending.add(b.id); }
       markDirty(x, z);
       if (Math.random() < p) { const d = Math.sqrt(d2) + 0.01, s = push * (0.45 + Math.random() * 0.75); spawnDebris(x + 0.5, y + 0.5, z + 0.5, ex / d * s + dx * push, ey / d * s + 5, ez / d * s + dz * push, M.CONC, lvl); }
       continue;
@@ -401,7 +401,7 @@ export function blast(cx, cy, cz, r, o = {}) {
   if (cfg.glass && glassN) {
     for (let k = 0; k < n; k++) {
       const i = list[k];
-      for (let f = 0; f < 6; f++) { const j = i + NB[f]; if (j >= 0 && j < vox.length && PANE[vox[j]]) { const x = j % WX, z = ((j / WX) | 0) % WZ, y = (j / (WX * WZ)) | 0, ex = x - cx, ey = y - cy, ez = z - cz, d = Math.hypot(ex, ey, ez) + 0.01; shatterPane(j, ex / d, ey / d, ez / d); } }
+      for (let f = 0; f < 6; f++) { const j = i + NB[f]; if (j >= 0 && j < NV && PANE[voxAt(j)]) { const x = (j & XM), z = ((j >> ZS) & ZM), y = (j >> YS), ex = x - cx, ey = y - cy, ez = z - cz, d = Math.hypot(ex, ey, ez) + 0.01; shatterPane(j, ex / d, ey / d, ez / d); } }
     }
   }
   dust(cx, cy, cz, Math.min(16, 2 + (n >> 6)), r * 1.2);
@@ -417,7 +417,7 @@ export function slice(cx, cy, cz, ax, az, half, depth, thick) {
   const y0 = Math.max(0, Math.floor(cy - thick)), y1 = Math.min(WY - 1, Math.floor(cy + thick));
   let n = 0;
   for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) {
-    const i = idx(x, y, z), m = vox[i];
+    const i = idx(x, y, z), m = voxAt(i);
     if (!m) continue;
     const ex = x + 0.5 - cx, ez = z + 0.5 - cz, u = ex * ax + ez * az, v = ex * bx + ez * bz;
     if (Math.abs(u) > half || Math.abs(v) > depth) continue;
@@ -436,7 +436,7 @@ export function cutBody(b, ya, yb, mode, hx = 0, hz = 0) {
   let n = 0, sx = 0, sz = 0;
   for (let y = ya; y <= yb; y++) for (let z = b.z0; z <= b.z1; z++) for (let x = b.x0; x <= b.x1; x++) {
     const i = idx(x, y, z);
-    if (!vox[i] || owner[i] !== b.id) continue;
+    if (!voxAt(i) || ownerAt(i) !== b.id) continue;
     const m = removeVoxel(i, x, y, z); n++; sx += x; sz += z;
     if (Math.random() < Math.min(1, 320 * cfg.debrisMul / Math.max(1, b.layers0[y] * (yb - ya + 1)))) spawnDebris(x + 0.5, y + 0.5, z + 0.5, (Math.random() - 0.5) * 22 - hx * 8, Math.random() * 5, (Math.random() - 0.5) * 22 - hz * 8, m, b.level);
   }
@@ -467,9 +467,9 @@ export function explode(x, y, z, r, shake = 0.5, o = {}) {
 export function blowGlass(cx, cy, cz, R, speed = 120) {
   const x0 = Math.max(0, Math.floor(cx - R)), x1 = Math.min(WX - 1, Math.floor(cx + R)), y0 = Math.max(0, Math.floor(cy - R)), y1 = Math.min(WY - 1, Math.floor(cy + R)), z0 = Math.max(0, Math.floor(cz - R)), z1 = Math.min(WZ - 1, Math.floor(cz + R));
   for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) {
-    let i = x0 + WX * (z + WZ * y);
+    let i = idx(x0, y, z);
     for (let x = x0; x <= x1; x++, i++) {
-      if (!PANE[vox[i]]) continue;
+      if (!PANE[voxAt(i)]) continue;
       const ex = x + 0.5 - cx, ey = y + 0.5 - cy, ez = z + 0.5 - cz, d = Math.sqrt(ex * ex + ey * ey + ez * ez);
       if (d <= R) glassQ.push([i, d / speed + Math.random() * 0.05, ex / (d + 0.01), ey / (d + 0.01), ez / (d + 0.01)]);
     }
@@ -481,7 +481,7 @@ export function shockwave(x, y, z, R) {
   if (cfg.glass) blowGlass(x, y, z, R, 120);
   else {
     // demo behaviour: glass simply goes
-    for (let i = 0; i < vox.length; i++) if (PANE[vox[i]]) { const gx = i % WX, gz = ((i / WX) | 0) % WZ, gy = (i / (WX * WZ)) | 0; if (Math.hypot(gx - x, gy - y, gz - z) <= R) removeVoxel(i, gx, gy, gz); }
+    eachVoxel((i, m) => { if (!PANE[m]) return; const gx = i & XM, gz = (i >> ZS) & ZM, gy = i >> YS; if (Math.hypot(gx - x, gy - y, gz - z) <= R) removeVoxel(i, gx, gy, gz); });
   }
   pushDebris(x, y, z, R * 0.6, 26, 0.6);
   dust(x, 2, z, 12, 20);
@@ -493,11 +493,11 @@ const FN = [[1, 0, 0, 1], [-1, 0, 0, 1], [0, 0, 1, 1], [0, 0, -1, 1], [0, 1, 0, 
 const newFire = [];
 export const fireInfo = { n: 0, x: 0, y: 0, z: 0 };
 export function ignite(i) {
-  const m = vox[i];
-  if (!m || FLAM[m] <= 0 || burnF[i] || burnT.size >= cfg.burnCap) return false;
-  burnF[i] = 1; burnT.set(i, BURN[m] * (0.7 + Math.random() * 0.6));
-  const x = i % WX, z = ((i / WX) | 0) % WZ, y = (i / (WX * WZ)) | 0;
-  for (let f = 0; f < 6; f++) { const k = i + NB[f]; if (k >= 0 && k < vox.length && vox[k]) soot[k] = Math.min(255, soot[k] + 70); }
+  const m = voxAt(i);
+  if (!m || FLAM[m] <= 0 || burnAt(i) || burnT.size >= cfg.burnCap) return false;
+  setBurn(i, 1); burnT.set(i, BURN[m] * (0.7 + Math.random() * 0.6));
+  const x = (i & XM), z = ((i >> ZS) & ZM), y = (i >> YS);
+  for (let f = 0; f < 6; f++) { const k = i + NB[f]; if (k >= 0 && k < NV && voxAt(k)) setSoot(k, Math.min(255, sootAt(k) + 70)); }
   markLazy(x, z);
   return true;
 }
@@ -508,7 +508,7 @@ export function igniteAt(cx, cy, cz, r, chance = 1) {
     const ex = x + 0.5 - cx, ey = y + 0.5 - cy, ez = z + 0.5 - cz;
     if (ex * ex + ey * ey + ez * ez > r * r) continue;
     const i = idx(x, y, z);
-    if (vox[i] && !FLAM[vox[i]]) soot[i] = Math.min(255, soot[i] + 110), markLazy(x, z);
+    if (voxAt(i) && !FLAM[voxAt(i)]) setSoot(i, Math.min(255, sootAt(i) + 110)), markLazy(x, z);
     if (Math.random() < chance && ignite(i)) n++;
   }
   return n;
@@ -525,28 +525,28 @@ function stepFire(dt) {
   const pe = Math.min(1, 90 / size) * (cfg.dust > 0 ? 1 : 0.5);
   let sx = 0, sy = 0, sz = 0, emb = -1;
   for (const [i, t] of burnT) {
-    const m = vox[i];
-    if (!m) { burnT.delete(i); burnF[i] = 0; continue; }
-    const x = i % WX, z = ((i / WX) | 0) % WZ, y = (i / (WX * WZ)) | 0;
+    const m = voxAt(i);
+    if (!m) { burnT.delete(i); setBurn(i, 0); continue; }
+    const x = (i & XM), z = ((i >> ZS) & ZM), y = (i >> YS);
     sx += x; sy += y; sz += z;
     if (Math.random() < pe) { flame(x + 0.5, y + 0.5, z + 0.5); if (Math.random() < 0.3) smoke(x + 0.5, y + 2.5, z + 0.5, 1, 1); }
     if (Math.random() < 0.002) emb = i;
     if (cfg.fireSpread) for (let f = 0; f < FN.length; f++) {
       const F = FN[f], nx = x + F[0], ny = y + F[1], nz = z + F[2];
       if (nx < 0 || ny < 0 || nz < 0 || nx >= WX || ny >= WY || nz >= WZ) continue;
-      const k = idx(nx, ny, nz), nm = vox[k];
-      if (!nm || burnF[k]) continue;
+      const k = idx(nx, ny, nz), nm = voxAt(k);
+      if (!nm || burnAt(k)) continue;
       if (nm === M.FUEL) { if (Math.random() < h * 1.0) removeVoxel(k, nx, ny, nz); continue; }
       if (PANE[nm]) { if (Math.random() < h * 0.1) glassQ.push([k, 0, 0, 0.2, 0]); continue; }
       if (FLAM[nm] > 0 && Math.random() < FLAM[nm] * h * 1.5 * F[3]) newFire.push(k);
     }
     const left = t - h;
     if (left > 0) { burnT.set(i, left); continue; }
-    burnT.delete(i); burnF[i] = 0;
-    const b = bodies[owner[i]];
+    burnT.delete(i); setBurn(i, 0);
+    const b = bodies[ownerAt(i)];
     if (Math.random() < CHARP[m]) {
       // burnt through: still there, but it carries nothing, so the storey rule can finish the job
-      vox[i] = M.CHAR; soot[i] = 0;
+      setVox(i, M.CHAR); setSoot(i, 0);
       if (b && b.kind !== 'rubble') { b.carry[y] -= CARRY[m]; pending.add(b.id); }
       markLazy(x, z);
     } else { removeVoxel(i, x, y, z); if (Math.random() < 0.15) spawnDebris(x + 0.5, y + 0.5, z + 0.5, (Math.random() - 0.5) * 5, 1, (Math.random() - 0.5) * 5, M.CHAR, b ? b.level : 1, 0.7); }
@@ -556,10 +556,10 @@ function stepFire(dt) {
   fireInfo.x = sx / size + 0.5; fireInfo.y = sy / size + 4; fireInfo.z = sz / size + 0.5;
   // embers ride the wind and can start a new fire across the street
   if (emb >= 0 && cfg.fireSpread) {
-    const x = emb % WX, z = ((emb / WX) | 0) % WZ, y = (emb / (WX * WZ)) | 0;
+    const x = (emb & XM), z = ((emb >> ZS) & ZM), y = (emb >> YS);
     for (let s = 0; s < 6; s++) fireP.spawn(x + 0.5, y + 1, z + 0.5, wind.x * (11 + Math.random() * 14) + (Math.random() - 0.5) * 7, 9 + Math.random() * 10, wind.z * (11 + Math.random() * 14) + (Math.random() - 0.5) * 7, 1.0, 1.6 + Math.random(), 1, 0.6, 0.15, 1, 0, -11, 0.4);
     const d = 14 + Math.random() * 24, tx = Math.floor(x + wind.x * d + (Math.random() - 0.5) * 12), tz = Math.floor(z + wind.z * d + (Math.random() - 0.5) * 12);
-    if (tx > 0 && tz > 0 && tx < WX - 1 && tz < WZ - 1) for (let ty = Math.min(WY - 1, y + 12); ty >= 0; ty--) { const k = idx(tx, ty, tz); if (vox[k]) { if (Math.random() < 0.7) ignite(k); break; } }
+    if (tx > 0 && tz > 0 && tx < WX - 1 && tz < WZ - 1) for (let ty = Math.min(WY - 1, y + 12); ty >= 0; ty--) { const k = idx(tx, ty, tz); if (voxAt(k)) { if (Math.random() < 0.7) ignite(k); break; } }
   }
   crackleT -= h;
   if (crackleT <= 0) { crackleT = 0.18 + Math.random() * 0.25; hooks.sound('crackle', Math.min(1, 0.3 + size / 1800), fireInfo.x, fireInfo.y, fireInfo.z); }
@@ -602,16 +602,16 @@ class Section {
     this.n = n; this.alive = n; this.n0 = n; this.mode = mode; this.lvl = lvl;
     this.off = new Float32Array(n * 3); this.mat = new Uint8Array(n); this.live = new Uint8Array(n).fill(1);
     let sx = 0, sy = 0, sz = 0, minY = 1e9, maxY = 0;
-    for (let k = 0; k < n; k++) { const i = cells[k]; const x = i % WX, z = ((i / WX) | 0) % WZ, y = (i / (WX * WZ)) | 0; sx += x; sy += y; sz += z; if (y < minY) minY = y; if (y > maxY) maxY = y; }
+    for (let k = 0; k < n; k++) { const i = cells[k]; const x = (i & XM), z = ((i >> ZS) & ZM), y = (i >> YS); sx += x; sy += y; sz += z; if (y < minY) minY = y; if (y > maxY) maxY = y; }
     const cx = sx / n + 0.5, cy = sy / n + 0.5, cz = sz / n + 0.5;
     this.mesh = new THREE.InstancedMesh(boxGeo, secMat, n);
     this.mesh.castShadow = true; this.mesh.frustumCulled = false;
     let ext = 0;
     for (let k = 0; k < n; k++) {
-      const i = cells[k]; const x = i % WX, z = ((i / WX) | 0) % WZ, y = (i / (WX * WZ)) | 0, m = vox[i];
+      const i = cells[k]; const x = (i & XM), z = ((i >> ZS) & ZM), y = (i >> YS), m = voxAt(i);
       this.off[k * 3] = x + 0.5 - cx; this.off[k * 3 + 1] = y + 0.5 - cy; this.off[k * 3 + 2] = z + 0.5 - cz; this.mat[k] = m;
       _m.makeTranslation(this.off[k * 3], this.off[k * 3 + 1], this.off[k * 3 + 2]); this.mesh.setMatrixAt(k, _m);
-      const j = jitter(x, y, z) * (1 - soot[i] / 255 * 0.78); _c.setRGB(MAT_R[m] * j, MAT_G[m] * j, MAT_B[m] * j); this.mesh.setColorAt(k, _c);
+      const j = jitter(x, y, z) * (1 - sootAt(i) / 255 * 0.78); _c.setRGB(MAT_R[m] * j, MAT_G[m] * j, MAT_B[m] * j); this.mesh.setColorAt(k, _c);
       if (y - minY < 6) { const e = this.off[k * 3] * hx + this.off[k * 3 + 2] * hz; if (e > ext) ext = e; }
     }
     this.pos = new THREE.Vector3(cx, cy, cz); this.vel = new THREE.Vector3(0, 0, 0); this.q = new THREE.Quaternion(); this.w = new THREE.Vector3();
@@ -659,8 +659,8 @@ class Section {
       if (!hit) {
         const gx = Math.floor(wx), gy = Math.floor(wy), gz = Math.floor(wz);
         if (gx >= 0 && gz >= 0 && gx < WX && gz < WZ && gy < WY) {
-          const gi = gx + WX * (gz + WZ * gy);
-          if (vox[gi]) {
+          const gi = idx(gx, gy, gz);
+          if (voxAt(gi)) {
             hit = true;
             if (Math.random() < crushP) {
               const lv = lvlOf(gi), m = removeVoxel(gi, gx, gy, gz); crushed++;
@@ -734,7 +734,7 @@ function crushLayer(b, y) {
   let n = 0, sx = 0, sz = 0;
   for (let yy = y; yy <= Math.min(b.y1, y + 1); yy++) for (let z = b.z0; z <= b.z1; z++) for (let x = b.x0; x <= b.x1; x++) {
     const i = idx(x, yy, z);
-    if (!vox[i] || owner[i] !== b.id) continue;
+    if (!voxAt(i) || ownerAt(i) !== b.id) continue;
     const m = removeVoxel(i, x, yy, z); n++; sx += x; sz += z;
     if (Math.random() < 0.2 * cfg.debrisMul) spawnDebris(x + 0.5, yy + 0.5, z + 0.5, (Math.random() - 0.5) * 18, Math.random() * 5, (Math.random() - 0.5) * 18, m, b.level);
   }
@@ -771,7 +771,7 @@ function checkBody(b) {
   let sp = 0;
   for (let z = 0; z < d; z++) for (let x = 0; x < w; x++) {
     const gi = idx(b.x0 + x, 0, b.z0 + z);
-    if (vox[gi] && owner[gi] === id) { vis[x + w * z] = 1; stack[sp++] = x + w * z; }
+    if (voxAt(gi) && ownerAt(gi) === id) { vis[x + w * z] = 1; stack[sp++] = x + w * z; }
   }
   const flood = (mark, out) => {
     let cn = 0;
@@ -785,7 +785,7 @@ function checkBody(b) {
         const nl = nx + w * nz + wd * ny;
         if (vis[nl]) continue;
         const gi = idx(b.x0 + nx, ny, b.z0 + nz);
-        if (!vox[gi] || owner[gi] !== id) continue;
+        if (!voxAt(gi) || ownerAt(gi) !== id) continue;
         vis[nl] = mark; stack[sp++] = nl;
       }
     }
@@ -799,7 +799,7 @@ function checkBody(b) {
       const l = x + w * z + wd * y;
       if (vis[l]) continue;
       const gi = idx(b.x0 + x, y, b.z0 + z);
-      if (!vox[gi] || owner[gi] !== id) continue;
+      if (!voxAt(gi) || ownerAt(gi) !== id) continue;
       vis[l] = 2; stack[0] = l; sp = 1;
       const cn = flood(2, comp);
       for (let k = 0; k < cn; k++) { const c = comp[k]; comp[k] = idx(b.x0 + (c % w), (c / wd) | 0, b.z0 + (((c / w) | 0) % d)); }
@@ -821,7 +821,7 @@ function detach(b, cells, n) {
     else if (cfg.topple && n > 600) {
       // a tall piece cut loose at its foot falls like a tree, toward the side that was hit
       let x0 = 1e9, x1 = -1, z0 = 1e9, z1 = -1, y0 = 1e9, y1 = -1, sx = 0, sz = 0;
-      for (let k = 0; k < n; k++) { const i = cells[k], x = i % WX, z = ((i / WX) | 0) % WZ, y = (i / (WX * WZ)) | 0; if (x < x0) x0 = x; if (x > x1) x1 = x; if (z < z0) z0 = z; if (z > z1) z1 = z; if (y < y0) y0 = y; if (y > y1) y1 = y; sx += x; sz += z; }
+      for (let k = 0; k < n; k++) { const i = cells[k], x = (i & XM), z = ((i >> ZS) & ZM), y = (i >> YS); if (x < x0) x0 = x; if (x > x1) x1 = x; if (z < z0) z0 = z; if (z > z1) z1 = z; if (y < y0) y0 = y; if (y > y1) y1 = y; sx += x; sz += z; }
       const hgt = y1 - y0 + 1, wid = Math.max(x1 - x0, z1 - z0) + 1;
       if (hgt > wid * 1.5 && y0 <= 16) { hx = lastHit[0] - sx / n; hz = lastHit[2] - sz / n; const l = Math.hypot(hx, hz); if (l > 0.5) { hx /= l; hz /= l; mode = 'hinge'; } }
     }
@@ -831,7 +831,7 @@ function detach(b, cells, n) {
   let sx = 0, sy = 0, sz = 0;
   const p = Math.min(1, 90 / n);
   for (let k = 0; k < n; k++) {
-    const i = cells[k], x = i % WX, z = ((i / WX) | 0) % WZ, y = (i / (WX * WZ)) | 0;
+    const i = cells[k], x = (i & XM), z = ((i >> ZS) & ZM), y = (i >> YS);
     const m = removeVoxel(i, x, y, z); sx += x; sy += y; sz += z;
     if (!sec && Math.random() < p) spawnDebris(x + 0.5, y + 0.5, z + 0.5, (Math.random() - 0.5) * 9, Math.random() * 4, (Math.random() - 0.5) * 9, m, b.level);
   }
@@ -843,7 +843,7 @@ function detach(b, cells, n) {
 // ---- lifecycle -----------------------------------------------------------
 export function initSim(sc) {
   scene = sc;
-  chunkMat = makeChunkMaterial();
+  chunkMat = makeChunkMaterial(); chunkDepth = makeChunkDepthMaterial();
   meshOpts.count = true;
   for (let k = 0; k < NCX * NCZ; k++) rebuildChunk(k);
   meshOpts.count = false;

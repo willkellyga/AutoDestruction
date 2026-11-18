@@ -2,25 +2,77 @@
 // One voxel is a quarter metre. y is up, chunks are 16 wide.
 import * as THREE from 'three';
 
-export const WX = 512, WY = 128, WZ = 416, CH = 16;
+// TILES repeats the whole town TILES x TILES times: a stress test for a much larger map (`python3 build.py big`).
+export const TILES = typeof __TILES__ === 'number' ? __TILES__ : 1, TILE_X = 512, TILE_Z = 416;
+export const tiled = (a, step) => Array.from({ length: TILES }, (_, t) => a.map((v) => v + t * step)).flat();
+export const WX = TILE_X * TILES, WY = 128, WZ = TILE_Z * TILES, CH = 16;
 export const NCX = WX / CH, NCZ = WZ / CH;
-export const NV = WX * WY * WZ;
-export const vox = new Uint8Array(NV);
-export const owner = new Uint16Array(NV);
-export const gone = new Uint8Array(NV);   // 1 where a voxel used to be: neighbours show a broken face
-export const soot = new Uint8Array(NV);   // 0..255 darkening from fire
-export const burnF = new Uint8Array(NV);  // 1 while burning
-export const idx = (x, y, z) => x + WX * (z + WZ * y);
+
+// ---- storage ---------------------------------------------------------------
+// The world is mostly air, so it is kept in bricks of 8 x 8 x 8 voxels that exist only where something has been built.
+// (Five flat arrays cost 6 bytes for every cell of the map, air included: 164 MB for the first big map.)
+//
+// A cell is named by a handle: x in the low 10 bits, z in the next 10, y above that. Handles work like the old flat
+// index: a neighbour is a fixed step away (1, SX, SXZ) and x, z, y come back out with a mask and a shift. The handle
+// space is 1024 x 1024 x 256 whatever the map size, so WX, WZ and WY can be anything up to that.
+//
+// Each brick has a slot in the pools. Slot 0 is a brick of zeros shared by every cell that has no brick, so reading
+// never branches. Material and owner live in one pair of pools. What damage leaves behind lives in a second pool with its
+// own table, one byte a cell, made only for bricks that have been hit: bit 0 gone (a voxel used to be here, so neighbours
+// show a broken face), bit 1 burning, and the top six bits soot (0..252 in steps of 4, darkening from fire).
+// The pools grow a slice at a time, so a long rampage never doubles them in one go.
+export const SX = 1024, SXZ = 1 << 20, XM = 1023, ZS = 10, ZM = 1023, YS = 20, NV = 1 << 28;
+export const idx = (x, y, z) => x | z << 10 | y << 20;
+const BN = 512, NT = 1 << 19;
+const tab = new Int32Array(NT), ftab = new Int32Array(NT);   // brick -> offset into the pools (0: no brick)
+const STEP = 4096;
+let cap = 8192, used = 1, fcap = 2048, fused = 1;
+let voxP = new Uint8Array(cap * BN), ownP = new Uint16Array(cap * BN);
+let fxP = new Uint8Array(fcap * BN);
+const bricks = [];                                           // every brick that has a slot, for walking the world
+const brickOf = (i) => ((i >> 3) & 127) | ((i >> 13) & 127) << 7 | (i >> 23) << 14;
+const cellOf = (i) => (i & 7) | ((i >> 10) & 7) << 3 | ((i >> 20) & 7) << 6;
+function grown(a, n) { const b = new a.constructor(n); b.set(a); return b; }
+function alloc(b) {
+  if (used === cap) { cap += STEP; voxP = grown(voxP, cap * BN); ownP = grown(ownP, cap * BN); }
+  bricks.push(b);
+  return tab[b] = used++ * BN;
+}
+function falloc(b) {
+  if (fused === fcap) { fcap += STEP; fxP = grown(fxP, fcap * BN); }
+  return ftab[b] = fused++ * BN;
+}
+export function voxAt(i) { return voxP[tab[brickOf(i)] + cellOf(i)]; }
+export function ownerAt(i) { return ownP[tab[brickOf(i)] + cellOf(i)]; }
+export function goneAt(i) { return fxP[ftab[brickOf(i)] + cellOf(i)] & 1; }
+export function burnAt(i) { return fxP[ftab[brickOf(i)] + cellOf(i)] >> 1 & 1; }
+export function sootAt(i) { return fxP[ftab[brickOf(i)] + cellOf(i)] & 252; }
+export function setVox(i, m) { const b = brickOf(i); let o = tab[b]; if (!o) { if (!m) return; o = alloc(b); } voxP[o + cellOf(i)] = m; }
+export function setCell(i, m, id) { const b = brickOf(i), o = (tab[b] || alloc(b)) + cellOf(i); voxP[o] = m; ownP[o] = id; }
+function setFx(i, keep, v) { const b = brickOf(i); let o = ftab[b]; if (!o) { if (!v) return; o = falloc(b); } o += cellOf(i); fxP[o] = fxP[o] & keep | v; }
+export function setGone(i, v) { setFx(i, 254, v ? 1 : 0); }
+export function setBurn(i, v) { setFx(i, 253, v ? 2 : 0); }
+export function setSoot(i, v) { setFx(i, 3, v > 252 ? 252 : v & 252); }
+// 1 if any brick of the 16 x 8 x 16 slab of chunk column (cx, cz) at brick layer by holds anything; for skipping air
+export function slabUsed(cx, cz, by) { const b = cx * 2 | cz * 2 << 7 | by << 14; return (tab[b] | tab[b + 1] | tab[b + 128] | tab[b + 129]) ? 1 : 0; }
+// Call fn(handle, material) for every solid voxel.
+export function eachVoxel(fn) {
+  for (let k = 0; k < bricks.length; k++) {
+    const b = bricks[k], o = tab[b], base = (b & 127) << 3 | ((b >> 7) & 127) << 13 | (b >> 14) << 23;
+    for (let c = 0; c < BN; c++) { const m = voxP[o + c]; if (m) fn(base + ((c & 7) | ((c >> 3) & 7) << 10 | (c >> 6) << 20), m); }
+  }
+}
+export const storage = () => ({ bricks: used - 1, damaged: fused - 1, MB: +((cap * BN * 3 + fcap * BN + NT * 8) / 1e6).toFixed(1) });
 export function solid(x, y, z) {
   if (x < 0 || y < 0 || z < 0 || x >= WX || y >= WY || z >= WZ) return 0;
-  return vox[x + WX * (z + WZ * y)];
+  return voxAt(x | z << 10 | y << 20);
 }
 
 // ---- layout ---------------------------------------------------------------
 // Lots are 40 voxels square. Six streets (three each way) run edge to edge, so every route is at most two corners
 // (the army's street planner relies on that). Between them sit four blocks of six lots, back to back across alleys.
 export const LOT = 40, WALK = 6, ROADW = 24;
-export const STREET_Z = [80, 202, 324], STREET_X = [80, 254, 428]; // street centre lines
+export const STREET_Z = tiled([80, 202, 324], TILE_Z), STREET_X = tiled([80, 254, 428], TILE_X); // street centre lines
 export const SPAWN = { x: 80, z: 324, yaw: 2.3 };   // the south-west crossing, in the suburbs, looking up at the downtown skyline
 export let totalInit = 0;
 
@@ -167,13 +219,13 @@ export function set(x, y, z, m) {
   tf(x, z); x = wx; z = wz;
   if (x < 1 || z < 1 || x >= WX - 1 || z >= WZ - 1 || y < 0 || y >= WY) return;
   const i = idx(x, y, z);
-  vox[i] = m; owner[i] = cur.id;
+  setCell(i, m, cur.id);
   if (x < cur.x0) cur.x0 = x; if (x > cur.x1) cur.x1 = x;
   if (z < cur.z0) cur.z0 = z; if (z > cur.z1) cur.z1 = z;
   if (y > cur.y1) cur.y1 = y;
 }
 export function get(x, y, z) { tf(x, z); return solid(wx, y, wz); }
-export function clr(x, y, z) { tf(x, z); x = wx; z = wz; if (x < 0 || y < 0 || z < 0 || x >= WX || y >= WY || z >= WZ) return; const i = idx(x, y, z); vox[i] = 0; owner[i] = 0; }
+export function clr(x, y, z) { tf(x, z); x = wx; z = wz; if (x < 0 || y < 0 || z < 0 || x >= WX || y >= WY || z >= WZ) return; const i = idx(x, y, z); if (voxAt(i)) setCell(i, 0, 0); }
 export function put(x, y, z, m) { if (!get(x, y, z)) set(x, y, z, m); } // only into empty space
 export function box(x0, y0, z0, x1, y1, z1, m) {
   for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) set(x, y, z, m);
@@ -195,12 +247,11 @@ export function walls(x0, y0, z0, x1, y1, z1, m) {
 export const levelStats = [];
 export function finalize() {
   for (let r = 0; r < 4; r++) levelStats.push({ voxels: 0, quads: 0 });
-  for (let i = 0; i < NV; i++) {
-    const m = vox[i]; if (!m) continue;
-    const b = bodies[owner[i]], y = (i / (WX * WZ)) | 0;
+  eachVoxel((i, m) => {
+    const b = bodies[ownerAt(i)], y = i >> YS;
     b.count++; b.layers[y]++; b.carry[y] += CARRY[m];
     levelStats[b.level].voxels++;
-  }
+  });
   for (let i = 1; i < bodies.length; i++) {
     const b = bodies[i];
     b.init = b.count; b.layers0 = b.layers.slice(); b.dCarry = b.carry.slice();
