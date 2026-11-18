@@ -177,7 +177,8 @@ export function sparks(x, y, z, n, r, g, b, speed = 26) {
 const ND = 16000;
 const dp = new Float32Array(ND * 3), dv = new Float32Array(ND * 3), dr = new Float32Array(ND * 3), dw = new Float32Array(ND * 3), ds = new Float32Array(ND * 3);
 const dh = new Float32Array(ND), dlife = new Float32Array(ND), dstate = new Uint8Array(ND), dmat = new Uint8Array(ND), dlvl = new Uint8Array(ND); // 0 free 1 active 2 asleep 3 turned to rubble, about to go
-let dmesh, dhead = 0, frame = 0;
+const dhot = new Float32Array(ND);   // seconds a piece keeps burning
+let dmesh, dhead = 0, frame = 0, hotNext = 0;   // hotNext: the next piece spawned comes off something that was alight
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _s = new THREE.Vector3(), _p = new THREE.Vector3(), _c = new THREE.Color();
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
 export let debrisBudget = 8000;
@@ -214,6 +215,8 @@ export function spawnDebris(x, y, z, vx, vy, vz, m, lvl = 1, size = 0) {
   else { ds[a] = s; ds[a + 1] = s; ds[a + 2] = s; dh[i] = s * 0.5; }
   dlife[i] = 12 + Math.random() * 14; dstate[i] = 1; dmat[i] = m; dlvl[i] = lvl;
   if (sh === 5) dlife[i] = 3 + Math.random() * 2;
+  dhot[i] = hotNext && cfg.fireSpread ? 2.2 + Math.random() * 3.8 : 0; hotNext = 0;
+  if (dhot[i]) j *= 0.45;   // scorched
   _c.setRGB(MAT_R[m] * j, MAT_G[m] * j, MAT_B[m] * j);
   dmesh.setColorAt(i, _c); dmesh.instanceColor.needsUpdate = true;
 }
@@ -257,13 +260,19 @@ function settle(i) {
   return true;
 }
 function updateDebris(dt) {
-  let active = 0, asleep = 0;
+  let active = 0, asleep = 0, hotN = 0;
+  const hotP = Math.min(1, 90 / (stats.hot || 1));   // however many pieces are alight, they share a fixed budget of flames
   frame++;
   for (let i = 0; i < debrisBudget; i++) {
     const st = dstate[i];
     if (!st) continue;
     const a = i * 3;
     if (st === 3) { dlife[i] -= dt; if (dlife[i] <= 0) { dstate[i] = 0; dmesh.setMatrixAt(i, ZERO); } continue; }
+    if (dhot[i] > 0) {
+      // a burning piece trails flame as it flies, and smoulders for a while where it comes to rest
+      dhot[i] -= dt; hotN++;
+      if ((i + frame) % (st === 1 ? 3 : 7) === 0 && Math.random() < hotP) { flame(dp[a], dp[a + 1], dp[a + 2]); if ((i + frame) % 21 === 0) smoke(dp[a], dp[a + 1] + 1, dp[a + 2], 1, 0.5); }
+    }
     if (st === 2) {
       asleep++;
       dlife[i] -= dt;
@@ -298,13 +307,14 @@ function updateDebris(dt) {
     dr[a] += dw[a] * dt; dr[a + 1] += dw[a + 1] * dt; dr[a + 2] += dw[a + 2] * dt;
     if (rest && dv[a] * dv[a] + dv[a + 2] * dv[a + 2] < 2) {
       dstate[i] = 2; dv[a] = dv[a + 2] = 0;
+      if (dhot[i] > 0 && Math.random() < 0.6) igniteAt(dp[a], dp[a + 1], dp[a + 2], 1.8, 0.5);   // and can set light to what it lands on
       if (ds[a + 1] < 0.45 && ds[a + 2] > 1 || ds[a + 2] < 0.1) { dr[a] = ds[a + 2] < 0.1 ? Math.PI / 2 : 0; dr[a + 2] = 0; } // planks, sheets and shards lie flat
       if (settle(i)) { writeDebris(i); continue; }
     }
     writeDebris(i);
   }
   dmesh.instanceMatrix.needsUpdate = true;
-  stats.active = active; stats.asleep = asleep;
+  stats.active = active; stats.asleep = asleep; stats.hot = hotN;
 }
 
 // ---- voxel removal -------------------------------------------------------
@@ -327,6 +337,7 @@ const later = [];   // bodies to look at again shortly: [id, seconds]
 function removeVoxel(i, x, y, z) {
   const m = voxAt(i);
   const b = bodies[ownerAt(i)];
+  hotNext = burnAt(i);
   if (b && !b.span0 && b.kind !== 'rubble') prime(b);
   if (b && b.kind !== 'rubble') { uncarry(b, i, y, m); b.count--; b.layers[y]--; pending.add(b.id); stats.destroyed++; }
   setVox(i, 0); setGone(i, 1);
@@ -513,13 +524,14 @@ export function shockwave(x, y, z, R) {
 }
 
 // ---- fire ----------------------------------------------------------------
+const BURN_K = 1.6;   // how much longer than its material's own time a voxel stays alight: more of a fire is burning at once
 const FN = [[1, 0, 0, 1], [-1, 0, 0, 1], [0, 0, 1, 1], [0, 0, -1, 1], [0, 1, 0, 2.6], [0, -1, 0, 0.3], [1, 1, 0, 1], [-1, 1, 0, 1], [0, 1, 1, 1], [0, 1, -1, 1]];
 const newFire = [];
 export const fireInfo = { n: 0, x: 0, y: 0, z: 0 };
 export function ignite(i) {
   const m = voxAt(i);
   if (!m || FLAM[m] <= 0 || burnAt(i) || burnT.size >= cfg.burnCap) return false;
-  setBurn(i, 1); burnT.set(i, BURN[m] * (0.7 + Math.random() * 0.6));
+  setBurn(i, 1); burnT.set(i, BURN[m] * BURN_K * (0.7 + Math.random() * 0.6));
   const x = (i & XM), z = ((i >> ZS) & ZM), y = (i >> YS);
   for (let f = 0; f < 6; f++) { const k = i + NB[f]; if (k >= 0 && k < NV && voxAt(k)) setSoot(k, Math.min(255, sootAt(k) + 70)); }
   markLazy(x, z);
@@ -547,6 +559,7 @@ function stepFire(dt) {
   stats.burning = size; fireInfo.n = size;
   if (!size) return;
   const pe = Math.min(1, 90 / size) * (cfg.dust > 0 ? 1 : 0.5);
+  const pTongue = Math.min(0.5, 16 / size), pPlume = Math.min(5, size / 220) / size;
   let sx = 0, sy = 0, sz = 0, emb = -1;
   for (const [i, t] of burnT) {
     const m = voxAt(i);
@@ -555,6 +568,20 @@ function stepFire(dt) {
     sx += x; sy += y; sz += z;
     if (Math.random() < pe) { flame(x + 0.5, y + 0.5, z + 0.5); if (Math.random() < 0.3) smoke(x + 0.5, y + 2.5, z + 0.5, 1, 1); }
     if (Math.random() < 0.002) emb = i;
+    const open = !voxAt(i + SXZ);
+    // tongues of flame stand up off whatever is burning in the open, and a big fire sends up a dark column
+    if (open && Math.random() < pTongue) fireP.spawn(x + 0.5, y + 1.2, z + 0.5, wind.x * 1.6 + (Math.random() - 0.5) * 2.5, 9 + Math.random() * 9, wind.z * 1.6 + (Math.random() - 0.5) * 2.5, 3.2 + Math.random() * 3.4, 0.5 + Math.random() * 0.45, 1.0, 0.28 + Math.random() * 0.34, 0.05, 0.6, -0.6, 4, 1.1);
+    if (Math.random() < pPlume) { const d = 0.07 + Math.random() * 0.06; dustP.spawn(x + 0.5, y + 3, z + 0.5, wind.x * 4 + (Math.random() - 0.5) * 2, 9 + Math.random() * 6, wind.z * 4 + (Math.random() - 0.5) * 2, 9 + Math.random() * 8, cfg.linger ? 6 + Math.random() * 4 : 3, d, d * 0.95, d * 0.9, 0.5, 2.2, 1.2, 0.5); }
+    // heat rises: the fire can take hold of the first thing above it across an open gap (the next floor), or blacken it
+    if (cfg.fireSpread && open && Math.random() < 0.09) {
+      for (let k = i + SXZ * 2, yy = y + 2; yy < WY && yy <= y + 14; yy++, k += SXZ) {
+        const um = voxAt(k);
+        if (!um) continue;
+        if (FLAM[um] > 0) { if (!burnAt(k) && Math.random() < 0.5) newFire.push(k); }
+        else if (sootAt(k) < 200) { setSoot(k, sootAt(k) + 28); markLazy(x, z); }
+        break;
+      }
+    }
     if (cfg.fireSpread) for (let f = 0; f < FN.length; f++) {
       const F = FN[f], nx = x + F[0], ny = y + F[1], nz = z + F[2];
       if (nx < 0 || ny < 0 || nz < 0 || nx >= WX || ny >= WY || nz >= WZ) continue;
@@ -626,6 +653,7 @@ class Section {
   constructor(cells, n, hit, mode, lvl, hx, hz) {
     this.n = n; this.alive = n; this.n0 = n; this.mode = mode; this.lvl = lvl; this.gen = 0;
     this.off = new Float32Array(n * 3); this.mat = new Uint8Array(n); this.live = new Uint8Array(n).fill(1);
+    this.hot = new Uint8Array(n); this.nHot = 0;   // voxels that were alight when the piece broke away
     if (!cells) return;   // a piece of another section: Section.piece fills it in
     let sx = 0, sy = 0, sz = 0, minY = 1e9, maxY = 0;
     for (let k = 0; k < n; k++) { const i = cells[k]; const x = (i & XM), z = ((i >> ZS) & ZM), y = (i >> YS); sx += x; sy += y; sz += z; if (y < minY) minY = y; if (y > maxY) maxY = y; }
@@ -640,6 +668,7 @@ class Section {
       _m.makeTranslation(this.off[k * 3], this.off[k * 3 + 1], this.off[k * 3 + 2]); this.mesh.setMatrixAt(k, _m);
       const j = jitter(x, y, z) * (1 - sootAt(i) / 255 * 0.78); _c.setRGB(MAT_R[m] * j, MAT_G[m] * j, MAT_B[m] * j); this.mesh.setColorAt(k, _c);
       this.col[k * 3] = _c.r; this.col[k * 3 + 1] = _c.g; this.col[k * 3 + 2] = _c.b;
+      if (burnAt(i)) { this.hot[k] = 1; this.nHot++; }
       if (y - minY < 6) { const e = this.off[k * 3] * hx + this.off[k * 3 + 2] * hz; if (e > ext) ext = e; }
     }
     this.pos = new THREE.Vector3(cx, cy, cz); this.vel = new THREE.Vector3(0, 0, 0); this.q = new THREE.Quaternion(); this.w = new THREE.Vector3();
@@ -698,6 +727,7 @@ class Section {
         for (let k = 0; k < n; k++) {
           if (!live[k] || grp[k] !== g || Math.random() > this.pd * 2) continue;
           const ox = off[k * 3], oy = off[k * 3 + 1], oz = off[k * 3 + 2];
+          hotNext = this.hot[k];
           spawnDebris(this.pos.x + e[0] * ox + e[4] * oy + e[8] * oz, Math.max(0.5, this.pos.y + e[1] * ox + e[5] * oy + e[9] * oz), this.pos.z + e[2] * ox + e[6] * oy + e[10] * oz, this.vel.x + (Math.random() - 0.5) * 10, this.vel.y * 0.3 + Math.random() * 5, this.vel.z + (Math.random() - 0.5) * 10, this.mat[k], this.lvl);
         }
         continue;
@@ -714,6 +744,7 @@ class Section {
         if (!live[k] || grp[k] !== g) continue;
         const ox = off[k * 3] - gx, oy = off[k * 3 + 1] - gy, oz = off[k * 3 + 2] - gz;
         s.off[j * 3] = ox; s.off[j * 3 + 1] = oy; s.off[j * 3 + 2] = oz; s.mat[j] = this.mat[k];
+        if (this.hot[k]) { s.hot[j] = 1; s.nHot++; }
         s.col[j * 3] = this.col[k * 3]; s.col[j * 3 + 1] = this.col[k * 3 + 1]; s.col[j * 3 + 2] = this.col[k * 3 + 2];
         _m.makeTranslation(ox, oy, oz); s.mesh.setMatrixAt(j, _m); s.mesh.setColorAt(j, _c.setRGB(s.col[j * 3], s.col[j * 3 + 1], s.col[j * 3 + 2]));
         const wy = e[1] * ox + e[5] * oy + e[9] * oz; if (wy < my0) my0 = wy; if (wy > my1) my1 = wy;
@@ -734,6 +765,7 @@ class Section {
       scene.add(s.mesh); sections.push(s);
     }
     dust(this.pos.x, Math.max(1, this.pos.y), this.pos.z, 6, Math.max(6, Math.min(ex, ez) * 0.5));
+    if (this.nHot > 8) sparks(this.pos.x, Math.max(1, this.pos.y), this.pos.z, Math.min(40, 8 + (this.nHot >> 3)), 1, 0.6, 0.2, 20);
     hooks.sound('crumble', 0.8, this.pos.x, this.pos.y, this.pos.z);
     scene.remove(this.mesh); this.mesh.dispose();
   }
@@ -755,6 +787,13 @@ class Section {
     _m.makeRotationFromQuaternion(this.q);
     const e = _m.elements, px = this.pos.x, py = this.pos.y, pz = this.pos.z, off = this.off;
     const before = this.alive;
+    if (this.nHot) for (let t = 0; t < 4; t++) {
+      // a piece that was burning keeps burning on the way down
+      const k = (Math.random() * this.n) | 0;
+      if (!this.hot[k] || !this.live[k]) continue;
+      const ox = off[k * 3], oy = off[k * 3 + 1], oz = off[k * 3 + 2];
+      flame(px + e[0] * ox + e[4] * oy + e[8] * oz, py + e[1] * ox + e[5] * oy + e[9] * oz, pz + e[2] * ox + e[6] * oy + e[10] * oz);
+    }
     let contacts = 0, crushed = 0, cx = 0, cy = 0, cz = 0;
     const speed = hinge ? this.omega * this.height * 0.6 : this.vel.length(), crushP = Math.min(hinge || drop ? 0.6 : 0.42, 0.08 + speed * 0.009);
     const wx0 = this.w.x, wy0 = this.w.y, wz0 = this.w.z, pvx = hinge ? this.pivot.x : px, pvy = hinge ? this.pivot.y : py, pvz = hinge ? this.pivot.z : pz;
@@ -782,6 +821,7 @@ class Section {
         if (Math.random() < this.pd) {
           const rx = wx - pvx, ry = wy - pvy, rz = wz - pvz;
           const vx = this.vel.x + wy0 * rz - wz0 * ry, vy = this.vel.y + wz0 * rx - wx0 * rz, vz = this.vel.z + wx0 * ry - wy0 * rx;
+          hotNext = this.hot[k];
           spawnDebris(wx, Math.max(0.5, wy), wz, vx * 0.5 + (Math.random() - 0.5) * 12, Math.abs(vy) * 0.22 + Math.random() * 7, vz * 0.5 + (Math.random() - 0.5) * 12, this.mat[k], this.lvl);
         }
       }
@@ -837,9 +877,11 @@ class Section {
       if (Math.random() < p) {
         let vx = this.vel.x, vy = this.vel.y * 0.3, vz = this.vel.z;
         if (this.mode === 'hinge') { const rx = wx - this.pivot.x, ry = wy - this.pivot.y, rz = wz - this.pivot.z; vx = (wy0 * rz - wz0 * ry) * 0.35; vy = 0; vz = (wx0 * ry - wy0 * rx) * 0.35; }
+        hotNext = this.hot[k];
         spawnDebris(wx, Math.max(0.5, wy), wz, vx + (Math.random() - 0.5) * 9, vy + Math.random() * 5, vz + (Math.random() - 0.5) * 9, this.mat[k], this.lvl);
       }
     }
+    if (this.nHot > 8) sparks(this.pos.x, Math.max(1, this.pos.y), this.pos.z, Math.min(50, 10 + (this.nHot >> 3)), 1, 0.6, 0.2, 22);
     if (big && this.alive > 240) {
       const n = Math.min(26, 6 + (this.alive >> 9));
       for (let i = 0; i < n; i++) dust(minX + Math.random() * (maxX - minX), 2, minZ + Math.random() * (maxZ - minZ), 2, 12);
