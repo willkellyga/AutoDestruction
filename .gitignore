@@ -2,3 +2,5 @@ rea-work/
 node_modules/
 .DS_Store
 dist/
+playtest/www/
+playtest/reports.jsonl
