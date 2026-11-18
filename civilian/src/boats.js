@@ -40,7 +40,7 @@ function hull(g, { k0, k1, halfAt, deckAt, keelAt, paint, bottom = true, cut = -
   return inside;
 }
 // a tyre hung over the side as a fender: a ring in the fore-and-aft plane, on its rope
-function tyre(g, i, j, k) {
+export function tyre(g, i, j, k) {
   for (let dj = -2; dj <= 2; dj++) for (let dk = -2; dk <= 2; dk++) { const m = Math.max(ab(dj), ab(dk)); if (m === 2 && !(ab(dj) === 2 && ab(dk) === 2)) g.set(i, j + dj, k + dk, (dj + dk) & 1 ? 0x3d4046 : 0x2c2e33); }   // a shade lighter than the hull, so they show against it
   g.set(i, j + 3, k, ROPE2); g.set(i, j + 4, k, ROPE2);
 }
@@ -152,13 +152,13 @@ function tugParts(o) {
 // =====================================================================================================================
 const BARGE = { k0: -68, k1: 67, B: 20, D: 5, deck: 6 };
 const HEAP = { sand: [0xcdb27a, 0xbfa46c], gravel: [0x8d8f93, 0x7b7d82], coal: [0x1e1e22, 0x2a2a30] };
-const BOXES = [0xb8322a, 0x2a5fae, 0x2f8257, 0xd9772b, 0xdedbd0, 0x7a4f9a];
+export const BOXES = [0xb8322a, 0x2a5fae, 0x2f8257, 0xd9772b, 0xdedbd0, 0x7a4f9a];
 const bargeHalf = (k) => { const e = Math.min(k - BARGE.k0, BARGE.k1 - k); return BARGE.B - (e < 2 ? 2 - e : 0); };
 const bargeKeel = (k) => { const e = Math.min(k - BARGE.k0, BARGE.k1 - k); return -BARGE.D + (e < 10 ? rnd((10 - e) * 0.7) : 0); };
 
 // One shipping container, 14 by 16 by 44 cubes, painted at (oi, oj, ok). hide: 1 leaves off the +x wall, 2 the -x wall,
 // 4 the top (where another box stands against it, so no hidden plating is drawn).
-function crate(g, oi, oj, ok, col, seed, hide = 0) {
+export function crate(g, oi, oj, ok, col, seed, hide = 0) {
   const W = 14, T = 16, L = 44, dk = tone(col, 0.8);
   for (let k = 0; k < L; k++) for (let j = 0; j < T; j++) for (let i = 0; i < W; i++) {
     const sideX = i === 0 || i === W - 1, endZ = k === 0 || k === L - 1, top = j === T - 1;
@@ -254,7 +254,7 @@ const tourDeck = (k) => 4 + (k > 50 ? rnd(3 * Math.pow((k - 50) / 29, 2)) : 0);
 const tourKeel = (k) => -TOUR.D + (k > 56 ? rnd(4 * Math.pow((k - 56) / 23, 2)) : k < -66 ? rnd(3 * (-66 - k) / 14) : 0);
 const tourHalf = (k, j) => Math.max(1, rnd(TOUR.B * tourPlan(k) * (j >= 0 ? 1 : 1 - 0.4 * Math.pow(-j / TOUR.D, 1.5))));
 // a life ring on a wall that faces sideways
-function lifeRing(g, i, j, k) { for (let dj = 0; dj < 4; dj++) for (let dk = 0; dk < 4; dk++) { const ej = dj === 0 || dj === 3, ek = dk === 0 || dk === 3; if (ej !== ek) g.set(i, j + dj, k + dk, (dj === 0 && dk === 1) || (dj === 3 && dk === 2) || (dk === 0 && dj === 2) || (dk === 3 && dj === 1) ? WHITE : 0xe8501e); } }
+export function lifeRing(g, i, j, k) { for (let dj = 0; dj < 4; dj++) for (let dk = 0; dk < 4; dk++) { const ej = dj === 0 || dj === 3, ek = dk === 0 || dk === 3; if (ej !== ek) g.set(i, j + dj, k + dk, (dj === 0 && dk === 1) || (dj === 3 && dk === 2) || (dk === 0 && dj === 2) || (dk === 3 && dj === 1) ? WHITE : 0xe8501e); } }
 // four walls, no floor or roof; c may be a function (i, j, k)
 function shell(g, i0, i1, j0, j1, k0, k1, c) { for (let k = k0; k <= k1; k++) for (let i = i0; i <= i1; i++) if (i === i0 || i === i1 || k === k0 || k === k1) for (let j = j0; j <= j1; j++) g.set(i, j, k, c); }
 // an open rail round the edge of a deck between two stations: posts, a middle rail and a wooden top rail

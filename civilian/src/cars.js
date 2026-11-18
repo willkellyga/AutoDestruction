@@ -314,6 +314,12 @@ export function blowUp(u, debris) {
   let thrown = 0;
   for (const p of u.parts) {
     const { nx, ny, nz, col } = p; if (wk.lamps.test(p.name)) continue;
+    // what hangs from it (a crane's rope and load) comes down in pieces
+    if (wk.drop && wk.drop.test(p.name)) {
+      let n1 = 0;
+      for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) { const n = (k * ny + j) * nx + i, c = col[n]; if (c < 0) continue; if (n1 < 220 && hash(i, j, k, 3) < 0.25) { n1++; toss(p, i, j, k, c, debris, c0.x, c0.y, c0.z, 8); } col[n] = -1; }
+      p.count = 0; p.dirty = true; continue;
+    }
     for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
       const n = (k * ny + j) * nx + i, c = col[n]; if (c < 0) continue;
       const q = bodyPos(u, p, i, j, k, _q), d = Math.hypot(q[0] - O[0], q[1] - O[1], q[2] - O[2]);
@@ -357,11 +363,11 @@ export function crush(u, debris, fx = 0, fz = 0) {
   // hanging off, so they are scattered instead
   if (!again) for (const p of u.parts) {
     if (p === body || (flat && /^w[FR]/.test(p.name)) || (u.blown && wk.adrift && wk.adrift.test(p.name)) || (wk.parked && wk.parked.test(p.name))) continue;
-    const { nx, ny, nz, col } = p, shut = !u.blown && !wk.loose.test(p.name);
+    const { nx, ny, nz, col } = p, shut = !u.blown && !wk.loose.test(p.name), fling = u.blown || (wk.scatter && wk.scatter.test(p.name));   // scatter: thrown about even off a whole one (a crane's jib)
     for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
       const n = (k * ny + j) * nx + i, c = col[n]; if (c < 0) continue;
       if (shut) { const q = bodyPos(u, p, i, j, k, _q); body.set(fl(q[0]), fl(q[1]), fl(q[2]), c); }
-      else if (u.blown && shards < 200 && hash(i, j, k, 3) < 0.4) { shards++; toss(p, i, j, k, c, debris, c0.x, c0.y, c0.z, 9); }
+      else if (fling && shards < (u.blown ? 200 : 420) && hash(i, j, k, 3) < 0.4) { shards++; toss(p, i, j, k, c, debris, c0.x, c0.y, c0.z, 9); }
       col[n] = -1;
     }
     p.count = 0; p.dirty = true;
@@ -432,6 +438,7 @@ export function crush(u, debris, fx = 0, fz = 0) {
 // Where fires sit on a wreck: on whichever face of the body is uppermost as it lies now, at the cubes nearest the seat of
 // the blast, as points in the body bone's space. Call again once the wreck has come to rest.
 export function fireSpots(u, n = 12) {
+  if (u.def.wk.fireAt && !u.crushed) return u.def.wk.fireAt(u, n);   // a crane burns in her machinery house, which is not part of the body
   const p = u.parts.find((q) => q.name === 'body'), O = u.blast || [0, 4, 0], found = [], dims = [p.nx, p.ny, p.nz], org = [p.i0, p.j0, p.k0];
   u.root.updateWorldMatrix(true, true);
   const e = p.bone.matrixWorld.elements, up = [e[1], e[5], e[9]];   // world up, seen from the body
