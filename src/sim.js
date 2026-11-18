@@ -20,6 +20,7 @@ export const cfg = {
 };
 const G = 68;
 const MARGIN = 2.2;   // a storey gives way once it carries this many times its designed load for each block left in it
+const UNDER = 0.45;   // a storey left with less than this share of what carried it gives way under any real load
 const SLACK = 4;      // how many blocks further sideways than it was built a block may hang from its support before it falls
 let scene;
 
@@ -614,19 +615,22 @@ const sections = [];
 let boxGeo, secMat;
 class Section {
   constructor(cells, n, hit, mode, lvl, hx, hz) {
-    this.n = n; this.alive = n; this.n0 = n; this.mode = mode; this.lvl = lvl;
+    this.n = n; this.alive = n; this.n0 = n; this.mode = mode; this.lvl = lvl; this.gen = 0;
     this.off = new Float32Array(n * 3); this.mat = new Uint8Array(n); this.live = new Uint8Array(n).fill(1);
+    if (!cells) return;   // a piece of another section: Section.piece fills it in
     let sx = 0, sy = 0, sz = 0, minY = 1e9, maxY = 0;
     for (let k = 0; k < n; k++) { const i = cells[k]; const x = (i & XM), z = ((i >> ZS) & ZM), y = (i >> YS); sx += x; sy += y; sz += z; if (y < minY) minY = y; if (y > maxY) maxY = y; }
     const cx = sx / n + 0.5, cy = sy / n + 0.5, cz = sz / n + 0.5;
     this.mesh = new THREE.InstancedMesh(boxGeo, secMat, n);
     this.mesh.castShadow = true; this.mesh.frustumCulled = false;
+    this.col = new Float32Array(n * 3);
     let ext = 0;
     for (let k = 0; k < n; k++) {
       const i = cells[k]; const x = (i & XM), z = ((i >> ZS) & ZM), y = (i >> YS), m = voxAt(i);
       this.off[k * 3] = x + 0.5 - cx; this.off[k * 3 + 1] = y + 0.5 - cy; this.off[k * 3 + 2] = z + 0.5 - cz; this.mat[k] = m;
       _m.makeTranslation(this.off[k * 3], this.off[k * 3 + 1], this.off[k * 3 + 2]); this.mesh.setMatrixAt(k, _m);
       const j = jitter(x, y, z) * (1 - sootAt(i) / 255 * 0.78); _c.setRGB(MAT_R[m] * j, MAT_G[m] * j, MAT_B[m] * j); this.mesh.setColorAt(k, _c);
+      this.col[k * 3] = _c.r; this.col[k * 3 + 1] = _c.g; this.col[k * 3 + 2] = _c.b;
       if (y - minY < 6) { const e = this.off[k * 3] * hx + this.off[k * 3 + 2] * hz; if (e > ext) ext = e; }
     }
     this.pos = new THREE.Vector3(cx, cy, cz); this.vel = new THREE.Vector3(0, 0, 0); this.q = new THREE.Quaternion(); this.w = new THREE.Vector3();
@@ -637,6 +641,10 @@ class Section {
       this.c0 = new THREE.Vector3(cx, cy, cz);
       this.theta = 0; this.omega = 0.38; this.k = 1.5 * G / Math.max(16, this.height);
       this.slow = 0;
+      // a tall piece often snaps part way over, and the halves come down apart
+      this.snapAt = this.height > 36 && Math.random() < 0.65 ? 0.4 + Math.random() * 0.45 : 9;
+    } else if (mode === 'drop') {
+      if (hx || hz) this.w.set(hz * 0.1, 0, -hx * 0.1);   // a pancake that leans toward its weak side
     } else if (mode === 'free') {
       let tx = hit[0] - cx, tz = hit[2] - cz; const hl = Math.hypot(tx, tz);
       if (hl > 0.5) { tx /= hl; tz /= hl; const rate = 0.25 + Math.random() * 0.45; this.w.set(tz * rate, (Math.random() - 0.5) * 0.2, -tx * rate); this.vel.set(tx * 3, 0, tz * 3); }
@@ -644,6 +652,81 @@ class Section {
     this.age = 0; this.stuck = 0; this.pd = Math.min(0.9, 1000 * cfg.debrisMul / n); this.puff = 0;
     this.mesh.position.copy(this.pos);
     scene.add(this.mesh);
+  }
+  // Break into two to four pieces that carry on by themselves. `along` 1 cuts across the piece's long side (a tower snapping).
+  split(along) {
+    const e = _m.makeRotationFromQuaternion(this.q).elements.slice(), off = this.off, n = this.n, live = this.live;
+    let lx = 0, ly = 0, lz = 0, x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9, z0 = 1e9, z1 = -1e9;
+    for (let k = 0; k < n; k++) {
+      if (!live[k]) continue;
+      const ox = off[k * 3], oy = off[k * 3 + 1], oz = off[k * 3 + 2];
+      lx += ox; ly += oy; lz += oz;
+      if (ox < x0) x0 = ox; if (ox > x1) x1 = ox; if (oy < y0) y0 = oy; if (oy > y1) y1 = oy; if (oz < z0) z0 = oz; if (oz > z1) z1 = oz;
+    }
+    lx /= this.alive; ly /= this.alive; lz /= this.alive;
+    const ex = x1 - x0, ey = y1 - y0, ez = z1 - z0;
+    // first cut across the longest side, a little off square; a big piece is cut a second time
+    let ax = (Math.random() - 0.5) * 0.7, ay = (Math.random() - 0.5) * 0.7, az = (Math.random() - 0.5) * 0.7;
+    if (ey >= ex && ey >= ez) ay = 1; else if (ex >= ez) ax = 1; else az = 1;
+    if (!along) { ax += (Math.random() - 0.5) * 0.9; ay += (Math.random() - 0.5) * 0.9; az += (Math.random() - 0.5) * 0.9; }
+    const at = (Math.random() - 0.5) * 0.3 * Math.max(ex, ey, ez);
+    const two = this.alive > 1400;
+    const bx = Math.random() - 0.5, by = (Math.random() - 0.5) * 0.6, bz = Math.random() - 0.5;
+    const grp = new Uint8Array(n), cnt = [0, 0, 0, 0];
+    for (let k = 0; k < n; k++) {
+      if (!live[k]) continue;
+      const ox = off[k * 3] - lx, oy = off[k * 3 + 1] - ly, oz = off[k * 3 + 2] - lz;
+      let g = ox * ax + oy * ay + oz * az > at ? 1 : 0;
+      if (two && ox * bx + oy * by + oz * bz > 0) g |= 2;
+      grp[k] = g; cnt[g]++;
+    }
+    const hinge = this.mode === 'hinge';
+    for (let g = 0; g < 4; g++) {
+      const c = cnt[g];
+      if (!c) continue;
+      if (c < 30 || sections.length >= 30) {
+        // crumbs: straight to debris
+        for (let k = 0; k < n; k++) {
+          if (!live[k] || grp[k] !== g || Math.random() > this.pd * 2) continue;
+          const ox = off[k * 3], oy = off[k * 3 + 1], oz = off[k * 3 + 2];
+          spawnDebris(this.pos.x + e[0] * ox + e[4] * oy + e[8] * oz, Math.max(0.5, this.pos.y + e[1] * ox + e[5] * oy + e[9] * oz), this.pos.z + e[2] * ox + e[6] * oy + e[10] * oz, this.vel.x + (Math.random() - 0.5) * 10, this.vel.y * 0.3 + Math.random() * 5, this.vel.z + (Math.random() - 0.5) * 10, this.mat[k], this.lvl);
+        }
+        continue;
+      }
+      const s = new Section(null, c, null, 'free', this.lvl, 0, 0);
+      s.gen = this.gen + 1; s.col = new Float32Array(c * 3);
+      let gx = 0, gy = 0, gz = 0, j = 0;
+      for (let k = 0; k < n; k++) if (live[k] && grp[k] === g) { gx += off[k * 3]; gy += off[k * 3 + 1]; gz += off[k * 3 + 2]; }
+      gx /= c; gy /= c; gz /= c;
+      s.mesh = new THREE.InstancedMesh(boxGeo, secMat, c);
+      s.mesh.castShadow = this.mesh.castShadow; s.mesh.frustumCulled = false;
+      let my0 = 1e9, my1 = -1e9;
+      for (let k = 0; k < n; k++) {
+        if (!live[k] || grp[k] !== g) continue;
+        const ox = off[k * 3] - gx, oy = off[k * 3 + 1] - gy, oz = off[k * 3 + 2] - gz;
+        s.off[j * 3] = ox; s.off[j * 3 + 1] = oy; s.off[j * 3 + 2] = oz; s.mat[j] = this.mat[k];
+        s.col[j * 3] = this.col[k * 3]; s.col[j * 3 + 1] = this.col[k * 3 + 1]; s.col[j * 3 + 2] = this.col[k * 3 + 2];
+        _m.makeTranslation(ox, oy, oz); s.mesh.setMatrixAt(j, _m); s.mesh.setColorAt(j, _c.setRGB(s.col[j * 3], s.col[j * 3 + 1], s.col[j * 3 + 2]));
+        const wy = e[1] * ox + e[5] * oy + e[9] * oz; if (wy < my0) my0 = wy; if (wy > my1) my1 = wy;
+        j++;
+      }
+      // where the piece is, and how that point of the parent was moving
+      const rx = e[0] * gx + e[4] * gy + e[8] * gz, ry = e[1] * gx + e[5] * gy + e[9] * gz, rz = e[2] * gx + e[6] * gy + e[10] * gz;
+      s.pos = new THREE.Vector3(this.pos.x + rx, this.pos.y + ry, this.pos.z + rz);
+      s.q = this.q.clone(); s.w = this.w.clone(); s.vel = this.vel.clone();
+      const px = hinge ? s.pos.x - this.pivot.x : rx, py = hinge ? s.pos.y - this.pivot.y : ry, pz = hinge ? s.pos.z - this.pivot.z : rz;
+      s.vel.x += this.w.y * pz - this.w.z * py; s.vel.y += this.w.z * px - this.w.x * pz; s.vel.z += this.w.x * py - this.w.y * px;
+      // the pieces push apart a little and each picks up its own spin
+      const rl = Math.hypot(rx, rz) + 0.01, kick = 2 + Math.random() * 4;
+      s.vel.x += rx / rl * kick; s.vel.z += rz / rl * kick;
+      s.w.x += (Math.random() - 0.5) * 0.9; s.w.y += (Math.random() - 0.5) * 0.4; s.w.z += (Math.random() - 0.5) * 0.9;
+      s.height = my1 - my0 + 1; s.age = 0; s.stuck = 0; s.puff = 0; s.pd = Math.min(0.9, 1000 * cfg.debrisMul / c);
+      s.mesh.position.copy(s.pos); s.mesh.quaternion.copy(s.q);
+      scene.add(s.mesh); sections.push(s);
+    }
+    dust(this.pos.x, Math.max(1, this.pos.y), this.pos.z, 6, Math.max(6, Math.min(ex, ez) * 0.5));
+    hooks.sound('crumble', 0.8, this.pos.x, this.pos.y, this.pos.z);
+    scene.remove(this.mesh); this.mesh.dispose();
   }
   update(dt) {
     this.age += dt;
@@ -697,9 +780,21 @@ class Section {
     if (contacts) {
       this.mesh.instanceMatrix.needsUpdate = true;
       const f = contacts / before;
-      if (hinge) this.omega *= 1 - Math.min(0.3, f * 1.5);
-      else if (!drop) { this.vel.multiplyScalar(Math.max(0.3, 1 - f * 3.5)); this.w.multiplyScalar(0.94); }
       cx /= contacts; cy /= contacts; cz /= contacts;
+      // a hard knock breaks the piece up, and the parts tumble on by themselves
+      if (!drop && this.gen < 2 && this.alive > 260 && speed > 11 && contacts > Math.max(5, before * 0.012) && sections.length < 27) {
+        if (crushed) hooks.destroyed(crushed, cx, cy, cz, true);
+        hooks.shake(Math.min(0.5, this.alive / 9000), cx, cy, cz);
+        this.split(0); return false;
+      }
+      if (hinge) this.omega *= 1 - Math.min(0.3, f * 1.5);
+      else if (!drop) {
+        // what it lands on pushes back where it touches, so a piece that comes down on an edge rolls over
+        const J = Math.max(0, -this.vel.y) * Math.min(1, f * 6) * 1.1 / Math.max(40, this.height * this.height * 0.5);
+        this.w.x -= (cz - pz) * J; this.w.z += (cx - px) * J;
+        const wl = this.w.length(); if (wl > 2.6) this.w.multiplyScalar(2.6 / wl);
+        this.vel.multiplyScalar(Math.max(0.3, 1 - f * 3.5)); this.w.multiplyScalar(0.96);
+      }
       if (speed > 8) {
         const power = Math.min(1, contacts / 200) * Math.min(1, speed / 36);
         this.puff -= dt;
@@ -710,7 +805,10 @@ class Section {
       if (crushed) hooks.destroyed(crushed, cx, cy, cz, true);
       if (!hinge && !drop && speed < 6) this.stuck += dt;
     }
-    if (hinge) { if (this.omega < 0.06 && this.theta > 0.25) this.slow += dt; else this.slow = 0; }
+    if (hinge) {
+      if (this.omega < 0.06 && this.theta > 0.25) this.slow += dt; else this.slow = 0;
+      if (this.theta > this.snapAt && this.alive > 400 && sections.length < 27) { this.split(1); return false; }
+    }
     this.mesh.position.copy(this.pos); this.mesh.quaternion.copy(this.q);
     const done = hinge ? (this.theta > 1.5 || this.slow > 1.2) : (this.stuck > 0.45 || py < -20);
     if (this.alive < Math.max(8, this.n0 * 0.06) || done || this.age > 9) { this.shatter(); return false; }
@@ -819,6 +917,22 @@ function crushLayer(b, y) {
     hooks.destroyed(n, sx / n, y, sz / n, true); hooks.shake(0.35, sx / n, y, sz / n); hooks.sound('collapse', 1, sx / n, y, sz / n);
   }
 }
+// How a storey that gives way takes the rest down: where what still carries sits to one side, the top goes over toward the
+// side that was eaten away (a tall top falls like a tree, a squat one drops leaning); with the damage all round it pancakes.
+function failMode(b, y) {
+  let n = 0, sx = 0, sz = 0;
+  for (let yy = y; yy <= Math.min(b.y1, y + 1); yy++) for (let z = b.z0; z <= b.z1; z++) for (let x = b.x0; x <= b.x1; x++) {
+    const i = idx(x, yy, z), m = voxAt(i);
+    if (m && CARRY[m] && ownerAt(i) === b.id) { n++; sx += x; sz += z; }
+  }
+  const w = b.x1 - b.x0 + 1, d = b.z1 - b.z0 + 1;
+  if (!n) return { mode: 'drop', hx: 0, hz: 0 };
+  let hx = (b.x0 + b.x1) / 2 - sx / n, hz = (b.z0 + b.z1) / 2 - sz / n;
+  const l = Math.hypot(hx, hz);
+  if (l < Math.min(w, d) * 0.09) return { mode: 'drop', hx: 0, hz: 0 };
+  hx /= l; hz /= l;
+  return { mode: b.y1 - y > Math.min(w, d) * 0.9 ? 'hinge' : 'drop', hx, hz };
+}
 function checkBody(b) {
   if (b.kind === 'rubble') return;
   if (b.count <= 0) { finish(b); return; }
@@ -827,13 +941,19 @@ function checkBody(b) {
     for (let y = b.y1; y >= 0; y--) {
       const c = b.carry[y], n = b.layers[y];
       if (b.dCarry[y] > 0 && n > 0 && above > 80) {
-        const r = c > 0 ? (above / b.dAbove[y]) * (b.dCarry[y] / c) / MARGIN : Infinity;
+        const load = above / b.dAbove[y], kept = c / b.dCarry[y];
+        let r = c > 0 ? load / kept / MARGIN : Infinity;
+        // undermined: with more than half of what carried a storey gone, what is left cannot hold a real load steady
+        if (kept < UNDER && load > 0.3 && r < 1.01) r = 1.01 + UNDER - kept;
         if (r > ratio) { worst = y; ratio = r; }
       }
       above += n;
     }
     // an overloaded storey groans for a moment before it gives way
-    if (worst >= 0 && !b.failing) { b.failing = true; b.failT = 0.35 + Math.random() * 0.35; b.failY = worst; failing.push(b); hooks.sound('creak', 1, (b.x0 + b.x1) / 2, worst, (b.z0 + b.z1) / 2); }
+    if (worst >= 0 && !b.failing) {
+      b.failMode = failMode(b, worst);
+      b.failing = true; b.failT = 0.35 + Math.random() * 0.35; b.failY = worst; failing.push(b); hooks.sound('creak', 1, (b.x0 + b.x1) / 2, worst, (b.z0 + b.z1) / 2);
+    }
   }
   if (b.explosive && !b.exploded && b.count < b.init * 0.7) {
     b.exploded = true;
@@ -946,7 +1066,7 @@ export function stepSim(dt) {
   for (let i = failing.length - 1; i >= 0; i--) {
     const b = failing[i]; b.failT -= dt;
     if (Math.random() < dt * 16) dust(b.x0 + Math.random() * (b.x1 - b.x0 + 1), b.failY + 0.5, b.z0 + Math.random() * (b.z1 - b.z0 + 1), 1, 4);
-    if (b.failT <= 0) { failing.splice(i, 1); b.failing = false; if (b.count > 0) { crushLayer(b, b.failY); pending.add(b.id); } }
+    if (b.failT <= 0) { failing.splice(i, 1); b.failing = false; if (b.count > 0) { crushLayer(b, b.failY); if (!b.nextMode) b.nextMode = b.failMode; pending.add(b.id); } }
   }
   stepFire(dt);
   for (let i = later.length - 1; i >= 0; i--) { const q = later[i]; q[1] -= dt; if (q[1] <= 0) { later.splice(i, 1); const b = bodies[q[0]]; b.again = false; if (b.count > 0) pending.add(b.id); } }
