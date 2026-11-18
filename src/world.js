@@ -64,6 +64,8 @@ function falloc(b) {
   return ftab[b] = fused++ * BN;
 }
 export function voxAt(i) { return voxP[tab[brickOf(i)] + cellOf(i)]; }
+// true when the 8x8x8 brick (bx, by, bz) = (x >> 3, y >> 3, z >> 3) holds nothing at all: a scan can skip it whole
+export function brickEmpty(bx, by, bz) { return tab[bx | bz << 7 | by << 14] === 0; }
 export function ownerAt(i) { return ownP[tab[brickOf(i)] + cellOf(i)]; }
 export function goneAt(i) { return fxP[ftab[brickOf(i)] + cellOf(i)] & 1; }
 export function burnAt(i) { return fxP[ftab[brickOf(i)] + cellOf(i)] >> 1 & 1; }

@@ -1,7 +1,7 @@
 // Destruction: blasts, glass, fire, support checks, falling sections (free, toppling, pancake), debris, rubble and particles.
 // Tuned in the Wrecking Yard sandbox. Everything optional is behind a flag in `cfg`.
 import * as THREE from 'three';
-import { WX, WY, WZ, NCX, NCZ, SX, SXZ, XM, ZS, ZM, YS, NV, voxAt, ownerAt, sootAt, burnAt, setVox, setCell, setGone, setSoot, setBurn, eachVoxel, idx, solid, bodies, rubbleBody, M, MAT_R, MAT_G, MAT_B, SOFT, CARRY, HARD, TOUGH, SHAPE, FLAM, BURN, CHARP, PANE, jitter } from './world.js';
+import { WX, WY, WZ, NCX, NCZ, SX, SXZ, XM, ZS, ZM, YS, NV, voxAt, brickEmpty, ownerAt, sootAt, burnAt, setVox, setCell, setGone, setSoot, setBurn, eachVoxel, idx, solid, bodies, rubbleBody, M, MAT_R, MAT_G, MAT_B, SOFT, CARRY, HARD, TOUGH, SHAPE, FLAM, BURN, CHARP, PANE, jitter } from './world.js';
 import { meshChunk, makeChunkMaterial, makeChunkDepthMaterial, meshOpts } from './mesh.js';
 
 export const hooks = { destroyed() {}, bodyDown() {}, shake() {}, sound() {}, scorch() {}, impact() {}, explosion() {} };
@@ -321,6 +321,12 @@ function updateDebris(dt) {
 const pending = new Set();
 const failing = [];
 const explQueue = [];
+// Work put off a frame or two (a big blast done in shells, so one frame does not carry it all): [frames, fn]
+const soonQ = [];
+export function soon(frames, fn) { soonQ.push([frames, fn]); }
+// A big blast in three growing shells over three frames: the same hole, a third of the work a frame. `run(r)` does one shell
+// (the caller's blast or wreck, so the credit goes where it should).
+export function shells(r, run) { if (r < 24) { run(r); return; } run(r * 0.55); soon(1, () => run(r * 0.8)); soon(2, () => run(r)); }
 const glassQ = [];
 const burnT = new Map();
 // A storey's strength is counted in voxels that hold something up: carrying material with more of the same body's
@@ -393,9 +399,13 @@ export function blast(cx, cy, cz, r, o = {}) {
   const y0 = Math.max(0, Math.floor(cy - R / ys)), y1 = Math.min(WY - 1, Math.floor(cy + R / ys));
   const z0 = Math.max(0, Math.floor(cz - R)), z1 = Math.min(WZ - 1, Math.floor(cz + R));
   let n = 0;
-  for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) {
-    let i = idx(x0, y, z);
-    for (let x = x0; x <= x1; x++, i++) {
+  // brick by brick, skipping the empty ones (most of a big blast's box is sky)
+  for (let by = y0 >> 3; by <= y1 >> 3; by++) for (let bz = z0 >> 3; bz <= z1 >> 3; bz++) for (let bx = x0 >> 3; bx <= x1 >> 3; bx++) {
+  if (brickEmpty(bx, by, bz)) continue;
+  const ya = Math.max(y0, by << 3), yb = Math.min(y1, (by << 3) + 7), za = Math.max(z0, bz << 3), zb = Math.min(z1, (bz << 3) + 7), xa = Math.max(x0, bx << 3), xb = Math.min(x1, (bx << 3) + 7);
+  for (let y = ya; y <= yb; y++) for (let z = za; z <= zb; z++) {
+    let i = idx(xa, y, z);
+    for (let x = xa; x <= xb; x++, i++) {
       const m = voxAt(i);
       if (!m) continue;
       if (only) { const b = bodies[ownerAt(i)]; if (!b || !only[b.kind]) continue; }
@@ -403,6 +413,7 @@ export function blast(cx, cy, cz, r, o = {}) {
       const d2 = ex * ex + ey * ey + ez * ez;
       if (d2 <= re * re && n < list.length && (d2 < re * re * 0.3 || Math.random() >= TOUGH[m] * tough)) list[n++] = i;
     }
+  }
   }
   if (o.pushDebris !== false) pushDebris(cx, cy, cz, r * 1.6, push * 0.9);
   if (!n) return 0;
@@ -500,13 +511,22 @@ export function explode(x, y, z, r, shake = 0.5, o = {}) {
 
 // Queue every pane within reach to burst as the pressure front passes.
 export function blowGlass(cx, cy, cz, R, speed = 120) {
+  R = Math.min(R, 72);   // past this the panes would take seconds to go at 60 a frame anyway (and a pounce's sphere was 400 across)
+  if (glassQ.length > 9000) return;
   const x0 = Math.max(0, Math.floor(cx - R)), x1 = Math.min(WX - 1, Math.floor(cx + R)), y0 = Math.max(0, Math.floor(cy - R)), y1 = Math.min(WY - 1, Math.floor(cy + R)), z0 = Math.max(0, Math.floor(cz - R)), z1 = Math.min(WZ - 1, Math.floor(cz + R));
-  for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) {
-    let i = idx(x0, y, z);
-    for (let x = x0; x <= x1; x++, i++) {
-      if (!PANE[voxAt(i)]) continue;
-      const ex = x + 0.5 - cx, ey = y + 0.5 - cy, ez = z + 0.5 - cz, d = Math.sqrt(ex * ex + ey * ey + ez * ez);
-      if (d <= R) glassQ.push([i, d / speed + Math.random() * 0.05, ex / (d + 0.01), ey / (d + 0.01), ez / (d + 0.01)]);
+  // brick by brick: empty bricks, and bricks wholly outside the sphere, are skipped (a pounce's sphere is 400 voxels across)
+  for (let by = y0 >> 3; by <= y1 >> 3; by++) for (let bz = z0 >> 3; bz <= z1 >> 3; bz++) for (let bx = x0 >> 3; bx <= x1 >> 3; bx++) {
+    if (brickEmpty(bx, by, bz)) continue;
+    const qx = Math.max(bx << 3, Math.min(cx, (bx << 3) + 8)) - cx, qy = Math.max(by << 3, Math.min(cy, (by << 3) + 8)) - cy, qz = Math.max(bz << 3, Math.min(cz, (bz << 3) + 8)) - cz;
+    if (qx * qx + qy * qy + qz * qz > R * R) continue;
+    const ya = Math.max(y0, by << 3), yb = Math.min(y1, (by << 3) + 7), za = Math.max(z0, bz << 3), zb = Math.min(z1, (bz << 3) + 7), xa = Math.max(x0, bx << 3), xb = Math.min(x1, (bx << 3) + 7);
+    for (let y = ya; y <= yb; y++) for (let z = za; z <= zb; z++) {
+      let i = idx(xa, y, z);
+      for (let x = xa; x <= xb; x++, i++) {
+        if (!PANE[voxAt(i)]) continue;
+        const ex = x + 0.5 - cx, ey = y + 0.5 - cy, ez = z + 0.5 - cz, d = Math.sqrt(ex * ex + ey * ey + ez * ez);
+        if (d <= R) glassQ.push([i, d / speed + Math.random() * 0.05, ex / (d + 0.01), ey / (d + 0.01), ez / (d + 0.01)]);
+      }
     }
   }
   glassQ.sort((a, b) => b[1] - a[1]);
@@ -1208,6 +1228,7 @@ const lap = (k) => { const P = globalThis.__stepT; if (!P) return; const n = per
 export { lap };
 export function stepSim(dt) {
   lap();
+  for (let i = soonQ.length - 1; i >= 0; i--) if (--soonQ[i][0] <= 0) { const f = soonQ[i][1]; soonQ.splice(i, 1); f(); }
   if (explQueue.length) {
     for (let i = explQueue.length - 1; i >= 0; i--) {
       const q = explQueue[i]; q[4] -= dt;
