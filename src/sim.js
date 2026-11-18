@@ -645,6 +645,20 @@ function updateFx(dt) {
   }
 }
 
+// Something heavy comes down on the street: dust rolls out along the ground, loose wreckage is thrown outward and
+// whatever small stands there (cars, trees, lamp posts) is flattened. k is 0..1. The ground itself is left whole.
+const PUNCH_MAX = 8, SLAM_ONLY = { prop: true, tree: true };
+function slam(x, z, k) {
+  const reach = 9 + k * 22;
+  dustWave(x, 0.5, z, 16 + k * 46, reach, 0.7, 0.34);
+  if (k > 0.4) dustWave(x, 1.5, z, 14, reach * 0.5, 1.7, 0.36);
+  pushDebris(x, 1, z, reach * 0.8, 9 + k * 22, 0.6);
+  const keep = lastHit;
+  blast(x, 2, z, 2.5 + k * 6, { only: SLAM_ONLY, pushDebris: false, maxDebris: 40, push: 14 });
+  lastHit = keep;
+  hooks.shake(0.15 + k * 0.45, x, 1, z);
+}
+
 // ---- falling sections ----------------------------------------------------
 // free: tumbles as in the demo. hinge: pivots over its base edge like a felled tree. drop: comes straight down, floor onto floor.
 const sections = [];
@@ -795,6 +809,8 @@ class Section {
       flame(px + e[0] * ox + e[4] * oy + e[8] * oz, py + e[1] * ox + e[5] * oy + e[9] * oz, pz + e[2] * ox + e[6] * oy + e[10] * oz);
     }
     let contacts = 0, crushed = 0, cx = 0, cy = 0, cz = 0;
+    let wHits = 0, hx = 0, hy = 0, hz = 0, gHits = 0, gx0 = 0, gz0 = 0;   // what was struck: standing voxels, and the ground
+    this.cool = (this.cool || 0) - dt;
     const speed = hinge ? this.omega * this.height * 0.6 : this.vel.length(), crushP = Math.min(hinge || drop ? 0.6 : 0.42, 0.08 + speed * 0.009);
     const wx0 = this.w.x, wy0 = this.w.y, wz0 = this.w.z, pvx = hinge ? this.pivot.x : px, pvy = hinge ? this.pivot.y : py, pvz = hinge ? this.pivot.z : pz;
     for (let k = 0; k < this.n; k++) {
@@ -802,12 +818,13 @@ class Section {
       const ox = off[k * 3], oy = off[k * 3 + 1], oz = off[k * 3 + 2];
       const wx = px + e[0] * ox + e[4] * oy + e[8] * oz, wy = py + e[1] * ox + e[5] * oy + e[9] * oz, wz = pz + e[2] * ox + e[6] * oy + e[10] * oz;
       let hit = wy < 0.5;
-      if (!hit) {
+      if (hit) { gHits++; gx0 += wx; gz0 += wz; }
+      else {
         const gx = Math.floor(wx), gy = Math.floor(wy), gz = Math.floor(wz);
         if (gx >= 0 && gz >= 0 && gx < WX && gz < WZ && gy < WY) {
           const gi = idx(gx, gy, gz);
           if (voxAt(gi)) {
-            hit = true;
+            hit = true; wHits++; hx += wx; hy += wy; hz += wz;
             if (Math.random() < crushP) {
               const lv = lvlOf(gi), m = removeVoxel(gi, gx, gy, gz); crushed++;
               if (Math.random() < 0.3) spawnDebris(gx + 0.5, gy + 0.5, gz + 0.5, (Math.random() - 0.5) * 14, 4 + Math.random() * 5, (Math.random() - 0.5) * 14, m, lv);
@@ -830,6 +847,16 @@ class Section {
       this.mesh.instanceMatrix.needsUpdate = true;
       const f = contacts / before;
       cx /= contacts; cy /= contacts; cz /= contacts;
+      if (speed > 9 && this.cool <= 0) {
+        const heft = 0.45 + 0.55 * Math.min(1, before / 2500);
+        if (wHits >= 8) {
+          // it punches into what it lands on: enough of that and the neighbour starts to go as well
+          const keep = lastHit, r = Math.min(PUNCH_MAX, 1.6 + Math.sqrt(wHits) * 0.6 * Math.min(1.4, speed / 22) * heft);
+          blast(hx / wHits, hy / wHits, hz / wHits, r, { push: Math.min(24, speed * 0.5), maxDebris: 50, tough: 0.5, hard: 1.3, pushDebris: false });
+          lastHit = keep; this.cool = 0.1;
+        }
+        if (gHits >= 20 && before > 300) { slam(gx0 / gHits, gz0 / gHits, Math.min(1, gHits / 220) * Math.min(1, speed / 28) * heft); this.cool = 0.22; }
+      }
       // a hard knock breaks the piece up, and the parts tumble on by themselves
       if (!drop && this.gen < 2 && this.alive > 260 && speed > 11 && contacts > Math.max(5, before * 0.012) && sections.length < 27) {
         if (crushed) hooks.destroyed(crushed, cx, cy, cz, true);
@@ -886,6 +913,7 @@ class Section {
       const n = Math.min(26, 6 + (this.alive >> 9));
       for (let i = 0; i < n; i++) dust(minX + Math.random() * (maxX - minX), 2, minZ + Math.random() * (maxZ - minZ), 2, 12);
       hooks.shake(Math.min(0.9, 0.3 + this.alive / 36000), this.pos.x, 1, this.pos.z); hooks.sound('collapse', 1, this.pos.x, 1, this.pos.z);
+      slam((minX + maxX) / 2, (minZ + maxZ) / 2, Math.min(1, 0.25 + this.alive / 5000));
       hooks.impact(Math.min(1, this.n0 / 30000));
     } else dust(this.pos.x, Math.max(1, this.pos.y), this.pos.z, 5, 10);
     scene.remove(this.mesh); this.mesh.dispose();
