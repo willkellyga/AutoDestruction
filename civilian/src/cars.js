@@ -275,8 +275,18 @@ export const CAR = {
     } },
   },
   onKill(u, point, r, debris) { blowUp(u, debris, point); },
+  // how it breaks (read by blowUp, crush and fireSpots below, which the buses share)
+  wk: {
+    wrecks: ['WreckStand', 'WreckRoof', 'WreckSide', 'WreckStand'],
+    // the seat of the blast, in body cubes: the engine bay or the tank
+    seat(u, clip) { const sp = specOf(u.opts.type), frontal = clip === 'WreckStand' || hash(u.opts.seed || 0, 3, 7, 1) < 0.5; return [0, 4, frontal ? sp.archF - 1 : sp.archR + 4]; },
+    R: 13, soot: 15, max: 420, push: 20,                       // reach of the tearing, reach of the soot, most cubes thrown, how hard
+    lamps: /^(lights|hazard)$/, loose: /^(lights|hazard|bar.|sign)$/,
+    fireTop: 8,                                                 // upright, fires sit no higher than this
+    // how much of its height a column keeps under a foot, d cubes from the middle of the foot (n is noise, 0 to 1)
+    keep: (d, n) => 0.2 + 0.3 * ease(clamp((d - 4) / 14)) + 0.1 * (n - 0.5), dx: 1.3, recrush: false,
+  },
 };
-const WRECKS = ['WreckStand', 'WreckRoof', 'WreckSide', 'WreckStand'];
 
 // every cube of every part, with where it is in the body's own cube grid when the part is at rest
 function bodyPos(u, p, i, j, k, out) {
@@ -297,21 +307,21 @@ function toss(p, i, j, k, c, debris, cx, cy, cz, push) {
 export function blowUp(u, debris) {
   if (u.blown) return; u.blown = true; u.dead = true; u.deadT = 0;
   u.root.updateWorldMatrix(true, true);
-  const sp = specOf(u.opts.type), seed = u.opts.seed || 0, clip = u.wreckClip || WRECKS[seed % WRECKS.length], frontal = clip === 'WreckStand' || hash(seed, 3, 7, 1) < 0.5;
-  const O = [0, 4, frontal ? sp.archF - 1 : sp.archR + 4];   // the seat of the blast, in body cubes
+  const wk = u.def.wk, seed = u.opts.seed || 0, clip = u.wreckClip || (u.crushed ? 'WreckStand' : wk.wrecks[seed % wk.wrecks.length]);
+  const O = wk.seat(u, clip);   // the seat of the blast, in body cubes
   u.blast = O;
   const c0 = u.bones.body.localToWorld(v3(u.parts[0]).set(O[0] * H, O[1] * H, O[2] * H)).clone();
   let thrown = 0;
   for (const p of u.parts) {
-    const { nx, ny, nz, col } = p; if (p.name === 'lights' || p.name === 'hazard') continue;
+    const { nx, ny, nz, col } = p; if (wk.lamps.test(p.name)) continue;
     for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
       const n = (k * ny + j) * nx + i, c = col[n]; if (c < 0) continue;
       const q = bodyPos(u, p, i, j, k, _q), d = Math.hypot(q[0] - O[0], q[1] - O[1], q[2] - O[2]);
       const lump = hash(fl(q[0] / 2), fl(q[1] / 2), fl(q[2] / 2), seed + 41), grain = hash(fl(q[0]), fl(q[1]), fl(q[2]), seed + 5);
-      const gone = isGlass(c) || lump < 0.5 * clamp(1 - d / 13) || grain < 0.03;
-      if (gone) { col[n] = -1; p.count--; if (thrown < 420 && grain < (isGlass(c) ? 0.3 : 0.7)) { thrown++; toss(p, i, j, k, isGlass(c) ? SHARD : tone(c & 0xffffff, 0.5), debris, c0.x, c0.y - 1, c0.z, 20); } continue; }
+      const gone = isGlass(c) || lump < 0.5 * clamp(1 - d / wk.R) || grain < 0.03;
+      if (gone) { col[n] = -1; p.count--; if (thrown < wk.max && grain < (isGlass(c) ? 0.3 : 0.7)) { thrown++; toss(p, i, j, k, isGlass(c) ? SHARD : tone(c & 0xffffff, 0.5), debris, c0.x, c0.y - 1, c0.z, wk.push); } continue; }
       // soot: black at the seat of the blast, streaked further out, the paint still showing at the far end
-      const burn = clamp(Math.max(0.34, 1.25 - d / 15) + (lump - 0.5) * 0.5 + (grain - 0.5) * 0.2);
+      const burn = clamp(Math.max(0.34, 1.25 - d / wk.soot) + (lump - 0.5) * (wk.mottle ?? 0.5) + (grain - 0.5) * 0.2);
       col[n] = tone(c & 0xffffff, 0.92 - 0.72 * burn);
     }
     p.dirty = true;
@@ -327,20 +337,27 @@ export function char(u, amt = 0.1) {
   }
 }
 
-// Squash a car flat where it stands, as when the monster steps on it. The bonnet, boot and doors are pressed into the body,
-// then every column of cubes is pushed down: hardest under the foot (fx, fz, in body cubes), less at the ends, so it
+// Squash a vehicle where it stands, as when the monster steps on it. The bonnet, boot and doors are pressed into the body,
+// then every column of cubes is pushed down: hardest under the foot (fx, fz, in body cubes), less further off, so it
 // crumples instead of shrinking. The glass bursts out as shards. `debris` gets the shards and a few torn panels.
+// A long vehicle (wk.recrush) is only flattened under the foot and can be stepped on again somewhere else; it is pressed
+// towards whichever of its faces is on the ground, so a wreck lying on its side is flattened too.
 export function crush(u, debris, fx = 0, fz = 0) {
-  if (u.crushed) return; u.crushed = true; u.dead = true; u.deadT = 0;
+  const wk = u.def.wk, again = !!u.crushed; if (again && !wk.recrush) return;
+  u.crushed = true; u.dead = true; if (!again) u.deadT = 0;
   u.root.updateWorldMatrix(true, true);
-  const body = u.parts.find((p) => p.name === 'body'), seed = u.opts.seed || 0;
+  const body = u.parts.find((p) => p.name === 'body'), seed = (u.opts.seed || 0) + (u.crushes ? u.crushes.length * 7 : 0);
+  // which way is down, seen from the body: along its own height (a = 1) or, lying on its side, across it (a = 0)
+  let a = 1, sg = 1;
+  if (wk.recrush) { const e = body.bone.matrixWorld.elements; if (ab(e[1]) > ab(e[5])) { a = 0; sg = e[1] > 0 ? 1 : -1; } else sg = e[5] > 0 ? 1 : -1; }
+  const flat = a === 1 && sg > 0;
   const c0 = u.bones.body.localToWorld(v3(body).set(fx * H, 2, fz * H)).clone();
   let shards = 0;
   // press the loose panels into the body's own grid (they sit on it cube for cube when shut); on a wreck they are already
   // hanging off, so they are scattered instead
-  for (const p of u.parts) {
-    if (p === body || /^w[FR]/.test(p.name)) continue;
-    const { nx, ny, nz, col } = p, shut = !u.blown && !/^(lights|hazard|bar.|sign)$/.test(p.name);
+  if (!again) for (const p of u.parts) {
+    if (p === body || (flat && /^w[FR]/.test(p.name))) continue;
+    const { nx, ny, nz, col } = p, shut = !u.blown && !wk.loose.test(p.name);
     for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
       const n = (k * ny + j) * nx + i, c = col[n]; if (c < 0) continue;
       if (shut) { const q = bodyPos(u, p, i, j, k, _q); body.set(fl(q[0]), fl(q[1]), fl(q[2]), c); }
@@ -349,25 +366,37 @@ export function crush(u, debris, fx = 0, fz = 0) {
     }
     p.count = 0; p.dirty = true;
   }
-  const { nx, ny, nz, col, i0, k0 } = body, out = new Int32Array(col.length).fill(-1);
-  for (let k = 0; k < nz; k++) for (let i = 0; i < nx; i++) {
-    const x = i0 + i + 0.5, z = k0 + k + 0.5, d = Math.hypot((x - fx) * 1.3, z - fz);
+  const { nx, ny, nz, col } = body, dims = [nx, ny, nz], org = [body.i0, body.j0, body.k0], b = 1 - a, na = dims[a], nb = dims[b];
+  const at = (qa, qb, k) => (a === 1 ? (k * ny + qa) * nx + qb : (k * ny + qb) * nx + qa);
+  // the face it rests on, and the middle of it across the foot
+  let g0 = -1, b0 = nb, b1 = -1;
+  for (let m = 0; m < na && g0 < 0; m++) { const qa = sg > 0 ? m : na - 1 - m; for (let k = 0; k < nz && g0 < 0; k++) for (let qb = 0; qb < nb; qb++) if (col[at(qa, qb, k)] >= 0) { g0 = qa; break; } }
+  if (g0 < 0) return;
+  for (let qb = 0; qb < nb; qb++) for (let k = 0; k < nz; k += 3) for (let qa = 0; qa < na; qa += 2) if (col[at(qa, qb, k)] >= 0) { if (qb < b0) b0 = qb; if (qb > b1) b1 = qb; }
+  const mid = flat ? fx - org[0] : (b0 + b1 + 1) / 2, lift = flat ? 1 : 0;   // upright, its floor comes down the last cube onto the road
+  const out = new Int32Array(col.length).fill(-1);
+  for (let k = 0; k < nz; k++) for (let qb = 0; qb < nb; qb++) {
+    const z = org[2] + k + 0.5, d = Math.hypot((qb + 0.5 - mid) * wk.dx, z - fz);
     // how much of its height this column keeps
-    const keep = 0.2 + 0.3 * ease(clamp((d - 4) / 14)) + 0.1 * (hash(fl(x / 2), 7, fl(z / 2), seed) - 0.5);
-    let top = -1, jb = -1;
-    for (let j = 0; j < ny; j++) {
-      const n = (k * ny + j) * nx + i, c = col[n]; if (c < 0) continue;
-      if (isGlass(c)) { if (shards < 320 && hash(i, j, k, 9) < 0.55) { shards++; toss(body, i, j, k, SHARD, debris, c0.x, c0.y, c0.z, 12); } continue; }
-      if (jb < 0) jb = j;
-      const nj = Math.max(0, Math.round((j - 1) * keep)), m = (k * ny + nj) * nx + i;   // the floor (j = 1) comes down onto the road
-      const folded = (c & GLOW) ? tone(c & 0xffffff, 0.45) : j - jb > 2 ? tone(c, 0.74 + 0.24 * hash(i, j, k, 4)) : c;
-      if (nj >= top) { out[m] = folded; top = nj; }                                     // what was on top stays on top
-      else if (out[m] < 0) out[m] = folded;
+    const keep = wk.keep(d, hash(fl((qb + org[b]) / 2), 7, fl(z / 2), seed)), whole = keep >= 1;
+    const G = g0 - sg * Math.round(lift * clamp((1 - keep) * 3));
+    let top = -1, mb = -1;
+    for (let m = 0; m < na; m++) {
+      const qa = g0 + sg * m; if (qa < 0 || qa >= na) break;
+      const n = at(qa, qb, k), c = col[n]; if (c < 0) continue;
+      if (whole) { out[n] = c; continue; }
+      if (isGlass(c)) { if (shards < wk.max * 0.75 && hash(qa, qb, k, 9) < 0.55) { shards++; const ijk = a === 1 ? [qb, qa] : [qa, qb]; toss(body, ijk[0], ijk[1], k, SHARD, debris, c0.x, c0.y, c0.z, 12); } continue; }
+      if (mb < 0) mb = m;
+      const nm = Math.round(m * keep), t = at(Math.max(0, Math.min(na - 1, G + sg * nm)), qb, k);
+      const folded = (c & GLOW) ? tone(c & 0xffffff, 0.45) : m - mb > 2 ? tone(c, 0.74 + 0.24 * hash(qa, qb, k, 4)) : c;
+      if (nm >= top) { out[t] = folded; top = nm; }                                     // what was on top stays on top
+      else if (out[t] < 0) out[t] = folded;
     }
   }
   let count = 0; for (let n = 0; n < out.length; n++) if (out[n] >= 0) count++;
   body.col = out; body.count = count; body.dirty = true;
-  u.play('Crushed', 0);
+  (u.crushes || (u.crushes = [])).push([fx, fz, again ? u.t : 0, flat]);
+  if (!again && (flat || !wk.recrush)) u.play('Crushed', 0);
 }
 
 // Where fires sit on a wreck: on whichever face of the body is uppermost as it lies now, at the cubes nearest the seat of
@@ -380,13 +409,17 @@ export function fireSpots(u, n = 12) {
   const sg = up[a] > 0 ? 1 : -1, b = (a + 1) % 3, c = (a + 2) % 3, q = [0, 0, 0];
   for (q[b] = 0; q[b] < dims[b]; q[b]++) for (q[c] = 0; q[c] < dims[c]; q[c]++) for (let m = 0; m < dims[a]; m++) {
     q[a] = sg > 0 ? dims[a] - 1 - m : m;
-    if (a === 1 && sg > 0 && org[1] + q[1] > 8) continue;   // upright: the fire is in the engine bay, the boot and the seats, not on the roof
+    if (a === 1 && sg > 0 && org[1] + q[1] > u.def.wk.fireTop) continue;   // upright: the fire is in the engine bay, the boot and the seats, not on the roof
     if (p.at(q[0], q[1], q[2]) < 0) continue;
     const w = [org[0] + q[0] + 0.5, org[1] + q[1] + 0.5, org[2] + q[2] + 0.5]; w[a] += 0.5 * sg;
-    found.push([Math.hypot(w[b] - O[b], w[c] - O[c]) + 7 * hash(q[b], 1, q[c], 2), w[0] * p.h, w[1] * p.h, w[2] * p.h]); break;
+    found.push([Math.hypot(w[b] - O[b], w[c] - O[c]) + (u.def.wk.spread || 7) * hash(q[b], 1, q[c], 2), w[0] * p.h, w[1] * p.h, w[2] * p.h]); break;
   }
   found.sort((x, y) => x[0] - y[0]);
   const out = []; for (let m = 0; m < found.length && out.length < n; m += 3) out.push(found[m].slice(1));
   return out;
 }
 export const CAR_TYPES = ['sedan', 'hatch', 'taxi', 'police'];
+
+// shared with the buses (buses.js)
+export { H, bx, bxs, sx, SIDES, half, clamp, ease, spring, sideOf, CHROME, PLASTIC, TRIM, BLACK, CHASSIS, WHITE, TYRE, RIM, RIMD, HUB, DRUM, GLASS, GLASS2, SHINE, DASH, WHEELC,
+  PLATE, PLATE_NY, INK, LENS, TAILC, AMBERC, REVC, ENGINE, ENGINE2, COVER, RAD, BATT, INNER };
