@@ -43,6 +43,7 @@ export function markDirty(x, z) {
 }
 function rebuildChunk(k) {
   const cx = k % NCX, cz = (k / NCX) | 0;
+  stats.rebuilt = (stats.rebuilt || 0) + 1;   // counted for the playtest reports (playtest/server.mjs)
   built[k] = tick;
   const geo = meshChunk(cx, cz);
   let m = chunkMesh[k];
@@ -52,6 +53,9 @@ function rebuildChunk(k) {
   m.castShadow = true; m.receiveShadow = true; m.matrixAutoUpdate = false;
   scene.add(m); chunkMesh[k] = m; stats.quads += geo.userData.quads;
 }
+// how many changed chunks are redrawn each frame however long they take: two on a computer, one on a slow device
+let MIN_CHUNKS = 2;
+export function setMinChunks(n) { MIN_CHUNKS = n; }
 const order = [];
 const far = (k) => { const dx = (k % NCX) * 16 + 8 - focusX, dz = ((k / NCX) | 0) * 16 + 8 - focusZ; return dx * dx + dz * dz; };
 export function flushChunks(ms = 5) {
@@ -62,10 +66,10 @@ export function flushChunks(ms = 5) {
     order.length = 0;
     for (const k of dirty) if (tick - built[k] >= 3) order.push(k);
     if (order.length > 2) order.sort((a, b) => far(a) - far(b));
-    for (const k of order) { rebuildChunk(k); dirty.delete(k); lazy.delete(k); if (++n >= 2 && performance.now() - t0 > ms) break; }
+    for (const k of order) { rebuildChunk(k); dirty.delete(k); lazy.delete(k); if (++n >= MIN_CHUNKS && performance.now() - t0 > ms) break; }
   }
   n = 0;
-  for (const k of lazy) { if (n >= 2 || (n >= 1 && performance.now() - t0 > ms)) break; if (tick - built[k] < 10 || dirty.has(k)) continue; lazy.delete(k); rebuildChunk(k); n++; }
+  for (const k of lazy) { if (n >= 2 || (n >= MIN_CHUNKS - 1 && performance.now() - t0 > ms)) break; if (tick - built[k] < 10 || dirty.has(k)) continue; lazy.delete(k); rebuildChunk(k); n++; }
 }
 export function dirtyCount() { return dirty.size + lazy.size; }
 
