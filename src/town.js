@@ -1,12 +1,14 @@
 // Crumbletown's layout: twenty lots round a ring of four streets, each turned to face its street, plus the park,
 // street dressing and the trees round the edge.
-import { M, WX, WZ, CITY, TILES, TILE_X, TILE_Z, tiled, LOC, LOT, STREET_X, STREET_Z, place, begin, set, box, ctx, lots, rubbleBody, setSeed, rnd, ri, finalize } from './world.js';
+import { M, WX, WZ, CITY, PARIS, TILES, TILE_X, TILE_Z, tiled, LOC, LOT, STREET_X, STREET_Z, place, begin, set, box, ctx, lots, rubbleBody, setSeed, rnd, ri, finalize } from './world.js';
 import { disc, tree, lampPost, bench, bin, hydrant, planter, hedge, fence, car } from './kit.js';
 import { cottage, shop, fuel } from './buildings_a.js';
 import { apartment, watertower, church, tower } from './buildings_b.js';
 import { carpark, depot, plaza } from './lots_c.js';
 import { needle, stadium, factory, cinema, rowhouse } from './landmarks.js';
 import { cityLots, cityBlocks, cityAlleys } from './city.js';
+import { parisLots, parisKeepOut, PARIS_KIT } from './paris.js';
+import { parisExtras } from './paris_seine.js';
 
 // The districts (Hole.io style: small food where you start, the big prize in sight, clusters to run between):
 //   south-west  suburbs, where he hatches: cottages, a park, a diner, cars to snack on
@@ -72,10 +74,10 @@ const TOWN = [
   { x: 446, z: 342, f: 0, k: 'factory', d: 'yard', o: { wall: M.BRICK2, name: 'MILL', title: 'Mill', car: M.CAR_A } },
 ];
 // the blocks between the streets, and the alleys behind their back-to-back rows (ground.js paints them, generateTown fences them)
-export const LOTS = CITY ? cityLots() : [];
+export const LOTS = PARIS ? parisLots() : CITY ? cityLots() : [];
 if (!CITY) for (let tz = 0; tz < TILES; tz++) for (let tx = 0; tx < TILES; tx++) for (const L of TOWN) LOTS.push({ ...L, x: L.x + tx * TILE_X, z: L.z + tz * TILE_Z });
-export const BLOCKS = CITY ? cityBlocks() : Array.from({ length: TILES }, (_, t) => [[98, 236], [272, 410]].map(([a, b]) => [a + t * TILE_X, b + t * TILE_X])).flat();
-export const ALLEYS = CITY ? cityAlleys() : tiled([138, 260], TILE_Z);
+export const BLOCKS = PARIS ? [] : CITY ? cityBlocks() : Array.from({ length: TILES }, (_, t) => [[98, 236], [272, 410]].map(([a, b]) => [a + t * TILE_X, b + t * TILE_X])).flat();
+export const ALLEYS = PARIS ? [] : CITY ? cityAlleys() : tiled([138, 260], TILE_Z);
 
 // A lot-local rectangle (a across, b back from the front) as a world rectangle [xa, za, xb, zb].
 export function lotRect(L, a0, b0, a1, b1) {
@@ -105,7 +107,8 @@ function park(lx, lz) {
   planter(lx + 4, lz + 19, 9); planter(lx + 27, lz + 19, 9);
 }
 
-const KIT = { cottage, shop, fuel, apartment, watertower, church, tower, park, carpark, depot, plaza, needle, stadium, factory, cinema, rowhouse };
+const KIT = { cottage, shop, fuel, apartment, watertower, church, tower, park, carpark, depot, plaza, needle, stadium, factory, cinema, rowhouse, ...PARIS_KIT };
+const off = PARIS ? parisKeepOut : () => false;   // Paris keeps the street dressing out of the river and off its set pieces
 
 export function generateTown() {
   ctx.L = 3;
@@ -116,6 +119,7 @@ export function generateTown() {
     KIT[L.k](LOC, LOC, 3, L.o || {});
   });
   ctx.lot = -1;
+  if (PARIS) { place(0, 0, -1); parisExtras(); }   // the river is drawn in plain map coordinates
   // street dressing that no lot brings with it, laid along every street: lamps on both pavements, a hydrant or bin here
   // and there, a tree at some corners and cars parked in the kerb lane. A prop is turned by placing it as a one-voxel lot.
   const prop = (x, z, f, fn) => { place(x, z, f, 1); fn(LOC, LOC); };
@@ -123,7 +127,7 @@ export function generateTown() {
   const nearX = (v, list, d) => list.some((s) => Math.abs(v - s) < d);
   const PAINTS = [M.CAR_A, M.CAR_B, M.CAR_C];
   for (const c of STREET_X) for (let z = 30; z < WZ - 20; z += 34) {
-    if (nearX(z, STREET_Z, 30)) continue;
+    if (nearX(z, STREET_Z, 30) || off(c, z) || off(c, z + 20)) continue;
     const j = z + ri(-4, 4);
     if (c - 15 > 4) prop(c - 15, j, 1, lampPost); if (c + 15 < WX - 4) prop(c + 15, j + 17, 3, lampPost);
     const r = rnd();
@@ -131,14 +135,14 @@ export function generateTown() {
     if (rnd() < 0.3 && !nearX(j + 20, STREET_Z, 34)) prop(c + (rnd() < 0.5 ? 9 : -9), j + 10, rnd() < 0.5 ? 1 : 3, (x, z) => car(x, z, PAINTS[ri(0, 2)]));
   }
   for (const c of STREET_Z) for (let x = 30; x < WX - 20; x += 34) {
-    if (nearX(x, STREET_X, 30)) continue;
+    if (nearX(x, STREET_X, 30) || off(x, c) || off(x + 20, c)) continue;
     const j = x + ri(-4, 4);
     prop(j, c - 15, 2, lampPost); prop(j + 17, c + 15, 0, lampPost);
     const r = rnd();
     if (r < 0.18) prop(j + 8, c - 16, 0, hydrant); else if (r < 0.32) prop(j + 8, c + 16, 0, bin);
     if (rnd() < 0.3 && !nearX(j + 20, STREET_X, 34)) { place(0, 0, -1); car(j + 2, rnd() < 0.5 ? c - 9 : c + 3, PAINTS[ri(0, 2)]); }
   }
-  for (const x of STREET_X) for (const z of STREET_Z) if (rnd() < 0.5) prop(x + 15, z + 15, 0, (px, pz) => tree(px, pz, ri(9, 11), 4));
+  for (const x of STREET_X) for (const z of STREET_Z) if (rnd() < 0.5 && !off(x + 15, z + 15)) prop(x + 15, z + 15, 0, (px, pz) => tree(px, pz, ri(9, 11), 4));
   place(0, 0, -1);
   // the alleys behind the back-to-back rows: a fence down the middle with gaps, crates and bins
   const big = LOTS.filter((L) => L.s > LOT), free = (xa, xb, z) => big.every((L) => xb < L.x - 2 || xa > L.x + L.s + 1 || z < L.z || z > L.z + L.s);
@@ -165,7 +169,7 @@ export function generateTown() {
     const side = i & 3, t = rnd();
     const x = side === 0 ? ri(5, 15) : side === 1 ? ri(WX - 17, WX - 7) : Math.floor(10 + t * (WX - 22));
     const z = side === 2 ? ri(5, 15) : side === 3 ? ri(WZ - 17, WZ - 7) : Math.floor(10 + t * (WZ - 22));
-    if (!clearOf(x, STREET_X) || !clearOf(z, STREET_Z) || !offLots(x, z)) continue;
+    if (!clearOf(x, STREET_X) || !clearOf(z, STREET_Z) || !offLots(x, z) || off(x, z)) continue;
     if (lastTrees.some((p) => Math.abs(p[0] - x) + Math.abs(p[1] - z) < 14)) continue;
     lastTrees.push([x, z]); n++;
     tree(x, z, ri(10, 15), ri(4, 6));

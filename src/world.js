@@ -6,8 +6,11 @@ import * as THREE from 'three';
 export const TILES = typeof __TILES__ === 'number' ? __TILES__ : 1, TILE_X = 512, TILE_Z = 416;
 export const tiled = (a, step) => Array.from({ length: TILES }, (_, t) => a.map((v) => v + t * step)).flat();
 // CITY builds the big city instead of the first town (`python3 build.py city`): about four times the map, and taller.
-export const CITY = typeof __CITY__ === 'boolean' && __CITY__;
-export const WX = CITY ? 1024 : TILE_X * TILES, WY = CITY ? 224 : 128, WZ = CITY ? 1024 : TILE_Z * TILES, CH = 16;
+// PARIS builds the Paris map (`python3 build.py paris`, laid out in paris.js). It is a city as far as size, haze and
+// street dressing go, so CITY is true for it too; it is taller, for the Eiffel Tower.
+export const PARIS = typeof __PARIS__ === 'boolean' && __PARIS__;
+export const CITY = PARIS || (typeof __CITY__ === 'boolean' && __CITY__);
+export const WX = CITY ? 1024 : TILE_X * TILES, WY = PARIS ? 256 : CITY ? 224 : 128, WZ = CITY ? 1024 : TILE_Z * TILES, CH = 16;
 export const NCX = WX / CH, NCZ = WZ / CH;
 
 // ---- storage ---------------------------------------------------------------
@@ -75,16 +78,17 @@ export function solid(x, y, z) {
 // (the army's street planner relies on that). Between them sit four blocks of six lots, back to back across alleys.
 export const LOT = 40, WALK = 6, ROADW = 24;
 // street centre lines. The city's are unevenly spaced, so its blocks are 2, 3 or 4 lots across and 1, 2 or 3 rows deep (city.js).
-export const STREET_Z = CITY ? [80, 202, 324, 492, 614, 736, 858, 934] : tiled([80, 202, 324], TILE_Z);
-export const STREET_X = CITY ? [80, 254, 382, 602, 776, 904] : tiled([80, 254, 428], TILE_X);
-export const SPAWN = CITY ? { x: 80, z: 934, yaw: 2.55 } : { x: 80, z: 324, yaw: 2.3 };   // the south-west crossing, in the suburbs, looking up at the downtown skyline
+// Paris: seven streets across (the two in the middle are the quays either side of the Seine) and five down, which are its bridges.
+export const STREET_Z = PARIS ? [144, 266, 388, 560, 728, 850, 972] : CITY ? [80, 202, 324, 492, 614, 736, 858, 934] : tiled([80, 202, 324], TILE_Z);
+export const STREET_X = PARIS ? [191, 365, 539, 759, 841] : CITY ? [80, 254, 382, 602, 776, 904] : tiled([80, 254, 428], TILE_X);
+export const SPAWN = PARIS ? { x: 841, z: 972, yaw: -2.3 } : CITY ? { x: 80, z: 934, yaw: 2.55 } : { x: 80, z: 324, yaw: 2.3 };   // the south-west crossing, in the suburbs, looking up at the downtown skyline
 export let totalInit = 0;
 
 // ---- materials -----------------------------------------------------------
 // kind picks the per-voxel look in the shader. shape: 0 cube, 1 plank, 2 shard, 3 chunk, 4 fleck, 5 drop, 6 sheet
 export const K = { PLAIN: 0, BRICK: 1, PLASTER: 2, ROOF: 3, CONC: 4, GLASS: 5, WOOD: 6, METAL: 7, LEAF: 8, STONE: 9, REBAR: 10, CHAR: 11, LIT: 12, CLOTH: 13, WATER: 14, BROKEN: 15 };
 export const M = {};
-export const NMAT = 72;
+export const NMAT = 96;
 export const MAT_R = new Float32Array(NMAT), MAT_G = new Float32Array(NMAT), MAT_B = new Float32Array(NMAT);
 export const SOFT = new Float32Array(NMAT), CARRY = new Uint8Array(NMAT), TOUGH = new Float32Array(NMAT), HARD = new Uint8Array(NMAT);
 export const KIND = new Uint8Array(NMAT), SHAPE = new Uint8Array(NMAT), SEE = new Uint8Array(NMAT);
@@ -166,6 +170,12 @@ export const FLAM = new Float32Array(NMAT), BURN = new Float32Array(NMAT), CHARP
   def(68, 'GLASS_Z', 0xd2ac7c, 1.7, 0, 0, K.GLASS, 2);
   def(69, 'SPAN_G', 0x3f6f62, 1.1, 0, 0.2, K.METAL, 6);
   def(70, 'SPAN_Z', 0x8a6238, 1.1, 0, 0.2, K.METAL, 6);
+  // Paris: cut limestone in two tones, zinc for the roofs and the brown-painted iron of the tower
+  def(71, 'LIME', 0xe4d8ba, 0.92, 1, 0.55, K.STONE, 3);
+  def(72, 'LIME2', 0xd6c6a2, 0.92, 1, 0.55, K.STONE, 3);
+  def(73, 'ZINC', 0x8d99a8, 1.05, 1, 0.35, K.ROOF, 6);
+  def(74, 'IRON', 0x77614a, 0.9, 4, 0.5, K.METAL, 6);
+  HARD[M.IRON] = 1;
   HARD[M.CONC] = HARD[M.METAL] = HARD[M.STONE] = HARD[M.STEEL] = HARD[M.SLAB] = 1;
   SEE[M.REBAR] = 1;
 }
