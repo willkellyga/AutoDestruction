@@ -4,7 +4,7 @@
 // The map is flat, so the water is paint, a bridge's deck is the street itself, and monsters wade.
 import { M, WX, WZ, STREET_X, STREET_Z, WALK, ROADW, set, box, begin, setSeed, ri } from './world.js';
 import { lampPost } from './kit.js';
-import { NILE, ISLE, DESERT, GREAT_AT, KHAFRE_AT, MENK_AT, SPHINX_AT, CITADEL_AT, MUSEUM_AT, OPERA_AT, wet, isle } from './cairo.js';
+import { NILE, ISLE, DESERT, GREAT_AT, KHAFRE_AT, MENK_AT, SPHINX_AT, CITADEL_AT, MUSEUM_AT, OPERA_AT, BARON_AT, RAMSES_AT, ABDEEN_AT, HALL_AT, wet, isle } from './cairo.js';
 import { palm, chain, rdisc } from './cairo_kit.js';
 
 // where a street at z meets the water: one span, or two with the island between
@@ -175,6 +175,21 @@ export function cairoGround(g, GK, rect, speckle, LOTS) {
     g.fillStyle = '#d6ccb2'; rect(P.x + 28, P.z + 52, P.x + 58, P.z + 86); }
   { const P = OPERA_AT; g.fillStyle = '#d9cfb5'; rect(P.x, P.z, P.x + 86, P.z + 86); speckle(P.x, P.z, P.x + 86, P.z + 86, 5000, GRIT);
     g.fillStyle = 'rgba(150,132,104,0.4)'; for (let t = 4; t < 86; t += 8) rect(P.x + 56, P.z + t, P.x + 86, P.z + t + 0.3); }
+  // round 2. The palaces and the station are turned to face south, the hall to face east: R takes lot coordinates
+  { const P = ABDEEN_AT, R = (a0, b0, a1, b1) => rect(P.x + 86 - a1, P.z + 86 - b1, P.x + 86 - a0, P.z + 86 - b0);
+    g.fillStyle = '#d6ccb2'; R(0, 0, 86, 86); speckle(P.x, P.z, P.x + 86, P.z + 86, 5000, GRIT);
+    g.fillStyle = LAWN; R(3, 4, 37, 32); R(49, 4, 83, 32); speckle(P.x + 3, P.z + 54, P.x + 83, P.z + 82, 1500, ['rgba(150,196,104,0.4)', 'rgba(70,116,54,0.25)']);
+    g.fillStyle = '#e4dcc6'; R(38, 0, 48, 33); R(36, 12, 50, 24); }
+  { const P = BARON_AT, R = (a0, b0, a1, b1) => rect(P.x + 86 - a1, P.z + 86 - b1, P.x + 86 - a0, P.z + 86 - b0);
+    g.fillStyle = LAWN; R(0, 0, 86, 86); speckle(P.x, P.z, P.x + 86, P.z + 86, 5000, ['rgba(150,196,104,0.4)', 'rgba(70,116,54,0.25)']);
+    g.fillStyle = '#d9c9a0'; R(33, 0, 53, 28); R(6, 26, 80, 83); speckle(P.x + 6, P.z + 3, P.x + 80, P.z + 60, 2500, GRIT); }
+  { const P = RAMSES_AT, R = (a0, b0, a1, b1) => rect(P.x + 86 - a1, P.z + 86 - b1, P.x + 86 - a0, P.z + 86 - b0);
+    g.fillStyle = '#d2c8b0'; R(0, 0, 86, 86); speckle(P.x, P.z, P.x + 86, P.z + 86, 5000, GRIT);
+    for (const [a0, a1] of [[11, 23], [34, 52], [63, 75]]) { g.fillStyle = '#6f675c'; R(a0, 34, a1, 90); }
+    for (const c of [16, 38, 47, 68]) { g.fillStyle = '#4a3f33'; for (let b = 35; b < 90; b += 2) R(c - 3, b, c + 4, b + 0.6); g.fillStyle = '#b9bcc0'; R(c - 2, 34, c - 1.6, 90); R(c + 2.6, 34, c + 3, 90); } }
+  { const P = HALL_AT, R = (a0, b0, a1, b1) => rect(P.x + 86 - b1, P.z + a0, P.x + 86 - b0, P.z + a1);
+    g.fillStyle = '#d6ccb2'; R(0, 0, 86, 86); speckle(P.x, P.z, P.x + 86, P.z + 86, 5000, GRIT);
+    g.fillStyle = 'rgba(150,132,104,0.4)'; for (let t = 4; t < 86; t += 8) R(t, 0, t + 0.3, 30); }
 }
 // after the streets: the desert roads have no pavements, only sand, and the sand drifts over their edges
 export function cairoOver(g, GK, rect, speckle) {

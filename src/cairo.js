@@ -14,7 +14,7 @@
 // The tower is our own take under our own name; the pyramids, the Sphinx, the Citadel and the museum keep theirs.
 import { M, STREET_X } from './world.js';
 import { baladi, oldhouse, souk, wikala, palms, nilehotel, villa, village, mastabas, camp, dig, obelisk } from './cairo_kit.js';
-import { greatpyramid, khafre, menkaure, sphinx, citadel, lotustower, museum, opera, GREAT, KHAFRE, MENK, SPHINX, CITADEL, MUSEUM, OPERA } from './cairo_landmarks.js';
+import { greatpyramid, khafre, menkaure, sphinx, citadel, lotustower, museum, opera, baron, abdeen, station, hall, GREAT, KHAFRE, MENK, SPHINX, CITADEL, MUSEUM, OPERA, BARON, ABDEEN, STATION, HALL } from './cairo_landmarks.js';
 
 // where each column and row of 40-voxel lots starts: 6 apart inside a block, a street's width apart across one
 export const PX = [6, 52, 98, 144, 223, 269, 315, 438, 484, 607, 653, 699, 778, 824, 870, 949];
@@ -24,6 +24,7 @@ export const ISLE = { x0: 434, x1: 528, z0: 256, z1: 842, r: 30 };          // t
 export const DESERT = { x1: 390, z0: 334 };                                 // west of the river and south of the town: sand
 export const GREAT_AT = { x: 223, z: 370 }, KHAFRE_AT = { x: 40, z: 542 }, MENK_AT = { x: 20, z: 724 }, SPHINX_AT = { x: 223, z: 542 };
 export const CITADEL_AT = { x: 778, z: 714 }, LOTUS_AT = { x: 438, z: 416 }, MUSEUM_AT = { x: 607, z: 416 }, OPERA_AT = { x: 438, z: 542 }, TAHRIR_AT = { x: 607, z: 542 };
+export const BARON_AT = { x: 824, z: 4 }, RAMSES_AT = { x: 653, z: 4 }, ABDEEN_AT = { x: 653, z: 248 }, HALL_AT = { x: 653, z: 542 };
 // is this spot on the island?
 export function isle(x, z) {
   const I = ISLE; if (x < I.x0 || x >= I.x1 || z < I.z0 || z >= I.z1) return false;
@@ -69,7 +70,15 @@ const FIXED = {
   '9,7': { k: 'museum', s: MUSEUM.S, f: 2, d: 'downtown' },
   '7,9': { k: 'opera', s: OPERA.S, f: 1, d: 'gezira' },
   '9,9': { k: 'obelisk', f: 0, d: 'downtown' },
+  // round 2: each stands on four lots that were street blocks in Build 1 (see COVER)
+  '13,0': { k: 'baron', s: BARON.S, f: 2, d: 'wards' },
+  '10,0': { k: 'ramses', s: STATION.S, f: 2, d: 'wards' },
+  '10,4': { k: 'abdeen', s: ABDEEN.S, f: 2, d: 'downtown' },
+  '10,9': { k: 'tahrirhall', s: HALL.S, f: 1, d: 'downtown' },
 };
+// the other three lots under each of those. A lot here still draws its random numbers as it did in Build 1 and keeps its
+// place in the count, so every lot that was not built over comes out exactly as it was.
+const COVER = new Set(['14,0', '13,1', '14,1', '11,0', '10,1', '11,1', '11,4', '10,5', '11,5', '11,9', '10,10', '11,10']);
 // which way a lot fronts: the street along its row, or for the rows with none the avenue beside its column
 const ROW_F = [-1, 2, 0, 2, 0, 2, 0, -1, 2, 0, -1, 2, 0, -1, 2, 0, -1], BACK_F = { 0: 2, 7: 0, 10: 0, 13: 2, 16: 0 };
 const WEST_OF = new Set([3, 6, 11, 14]), EAST_OF = new Set([4, 9, 12, 15]);   // columns with an avenue on their east, or west, side
@@ -134,11 +143,22 @@ const DIST = {
 };
 const NAMES = { G: 'giza', B: 'wards', D: 'downtown', O: 'oldtown', S: 'bazaar', H: 'corniche', F: 'fields', V: 'village' };
 const TURNS = new Set(['baladi', 'oldhouse', 'shop', 'apartment', 'cinema', 'souk', 'haussmann', 'nilehotel']);
+const BOARDS = [['COLA', 'FIG', M.CAR_A, M.LIT_W], ['MINT', 'TEA', M.DOOR_G, M.LIT_W], ['FIZZ', 'SUN', M.SIGN, M.DARK], ['GOLD', 'ZAP', M.DARK, M.LIT_Y], ['SODA', 'JAM', M.DOOR_B, M.LIT_W], ['CHAI', 'OUD', M.BROWNST, M.LIT_Y]];
 const PIECE = { p: ['palms', 0], o: ['palms', 1], v: ['villa'], r: ['nilehotel', true], t: ['camp', 0], c: ['camp', 1], x: ['dig'], m: ['mastabas'] };
 const DESERT_BITS = new Set(['o', 't', 'c', 'x', 'm']);
 
 export function cairoLots() {
   const out = [];
+  // what a district puts on a lot: [kind, options]
+  const draw = (ch, inner) => {
+    const table = DIST[ch];
+    let t = rnd() * table.reduce((s, e) => s + e[1], 0), e = table[0];
+    for (const x of table) { t -= x[1]; if (t < 0) { e = x; break; } }
+    let [k, , a = []] = e;
+    if (inner && k === 'tower') { k = 'baladi'; a = ['tall']; }   // the glass tower parks a car out front, and a lot inside a block has no street
+    return [k === 'flats' ? 'apartment' : k, MAKE[k](...a)];
+  };
+  let sid = 0;
   for (let r = 0; r < PZ.length; r++) for (let c = 0; c < PX.length; c++) {
     const key = c + ',' + r, ch = MAP[r][c], fix = FIXED[key];
     if (!fix && ch === '.') continue;
@@ -147,20 +167,17 @@ export function cairoLots() {
     if (f < 0) f = WEST_OF.has(c) ? 1 : EAST_OF.has(c) ? 3 : BACK_F[r];
     if (c === 7) f = 3; else if (c === 8) f = 1;   // the island's lots look out over the water
     let kind, opt, d = NAMES[ch] || (DESERT_BITS.has(ch) ? 'giza' : c === 7 || c === 8 ? 'gezira' : 'park');
-    if (fix) { kind = fix.k; opt = fix.o; d = fix.d; if (fix.f !== undefined) f = fix.f; }
+    if (COVER.has(key)) { draw(ch, inner); sid++; continue; }
+    if (fix) { if (DIST[ch]) draw(ch, inner); kind = fix.k; opt = fix.o; d = fix.d; if (fix.f !== undefined) f = fix.f; }
     else if (PIECE[ch]) { const [k, a] = PIECE[ch]; kind = k; opt = MAKE[k](a); }
-    else {
-      const table = DIST[ch];
-      let t = rnd() * table.reduce((s, e) => s + e[1], 0), e = table[0];
-      for (const x of table) { t -= x[1]; if (t < 0) { e = x; break; } }
-      let [k, , a = []] = e;
-      if (inner && k === 'tower') { k = 'baladi'; a = ['tall']; }   // the glass tower parks a car out front, and a lot inside a block has no street
-      kind = k === 'flats' ? 'apartment' : k; opt = MAKE[k](...a);
-    }
+    else [kind, opt] = draw(ch, inner);
+    // downtown and in the wards, every third block of flats carries a hoarding on its roof (picked by where the lot is,
+    // not by chance, so nothing else is disturbed)
+    if (!fix && kind === 'baladi' && (ch === 'D' || ch === 'B') && (c + r * 2) % 3 === 0) opt.board = [(c + r) % opt.n, ...BOARDS[(c * 3 + r) % BOARDS.length]];
     // every other corner lot turns to face its avenue, so the avenues are lined with fronts and not with side walls
     if (!fix && TURNS.has(kind) && ROW_F[r] >= 0 && (r + c) % 2 === 0) f = WEST_OF.has(c) ? 1 : EAST_OF.has(c) ? 3 : f;
     if (ch === 'H' || ch === 'r') f = c === 6 ? 1 : c === 9 ? 3 : f;   // the hotels face the river
-    const L = { x: fix && fix.x !== undefined ? fix.x : PX[c], z: fix && fix.z !== undefined ? fix.z : PZ[r], f, k: kind, d, c, r };
+    const L = { x: fix && fix.x !== undefined ? fix.x : PX[c], z: fix && fix.z !== undefined ? fix.z : PZ[r], f, k: kind, d, c, r, sid: sid++ };
     if (opt && inner) { opt.car = 0; }   // a lot inside a block has no street to park on
     if (opt && sandy(L.x, L.z)) opt.lamp = 0;
     if (opt) L.o = opt;
@@ -169,7 +186,7 @@ export function cairoLots() {
   }
   return out;
 }
-export const CAIRO_KIT = { baladi, oldhouse, souk, wikala, palms, nilehotel, villa, village, mastabas, camp, dig, obelisk, greatpyramid, khafre, menkaure, sphinx, citadel, lotustower, museum, opera };
+export const CAIRO_KIT = { baladi, oldhouse, souk, wikala, palms, nilehotel, villa, village, mastabas, camp, dig, obelisk, greatpyramid, khafre, menkaure, sphinx, citadel, lotustower, museum, opera, baron, abdeen, ramses: station, tahrirhall: hall };   // not 'station': Tokyo has a piece by that name, and the kits share one table
 // ground colours for the lots (ground.js): dusty pavement in town, lawn in the gardens; the desert pieces have none, so the sand shows
 export const CAIRO_PAD = { baladi: '#cbbd9f', oldhouse: '#cdbf9e', souk: '#d2c3a0', wikala: '#d6c9a8', nilehotel: '#cfc7b4', villa: '#8fb46a', obelisk: '#d8ccae', lotustower: '#d2cab4', haussmann: '#cbc2ad', shop: '#cbbd9f', apartment: '#cbbd9f',
   cinema: '#cbbd9f', tower: '#c9c6bc', park: '#8fb46a', carpark: '#5c5f63' };

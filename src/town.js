@@ -120,7 +120,7 @@ const off = CAIRO ? cairoKeepOut : TOKYO ? tokyoKeepOut : NYC ? nycKeepOut : PAR
 export function generateTown() {
   ctx.L = 3;
   LOTS.forEach((L, i) => {
-    ctx.lot = lots.length; setSeed(9000 + i * 101);
+    ctx.lot = lots.length; setSeed(9000 + (L.sid === undefined ? i : L.sid) * 101);   // Cairo numbers its lots itself, so one built over later does not shift the rest
     lots.push({ id: ctx.lot, x: L.x, z: L.z, main: 0, kind: L.k });
     place(L.x, L.z, L.f, L.s || LOT);
     KIT[L.k](LOC, LOC, 3, L.o || {});

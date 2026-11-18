@@ -293,3 +293,217 @@ export function opera(lx, lz, L, o = {}) {
   rdisc(cx, lz + 10, 0, 7, M.LIME); rdisc(cx, lz + 10, 1, 7, M.LIME, 6); rdisc(cx, lz + 10, 1, 6, M.WATER); box(cx, 1, lz + 10, cx, 6, lz + 10, M.BRASS); rdisc(cx, lz + 10, 7, 2, M.BRASS); set(cx, 8, lz + 10, M.WATER);
   if (L >= 2) { for (const [a, b] of [[6, 6], [80, 6], [6, 30], [80, 30], [22, 10], [64, 10], [5, 60], [81, 60]]) palm(lx + a, lz + b, ri(18, 24)); lampPost(lx + 30, lz + 3, 18); lampPost(lx + 56, lz + 3, 18); bench(lx + 26, lz + 16); bench(lx + 52, lz + 16); }
 }
+
+// =====================================================================================================================
+// Round 2: two palaces, the main railway station and the big curved government block. Each stands on an 86 lot, front
+// toward low z.
+export const ABDEEN = { S: 86 }, BARON = { S: 86 }, STATION = { S: 86 }, HALL = { S: 86 };
+// a low iron railing on a stone kerb with a post every sixth voxel, from (a0, b0) to (a1, b1) along one axis
+function railing(X, Z, a0, b0, a1, b1, skip = () => false) {
+  for (let a = a0; a <= a1; a++) for (let b = b0; b <= b1; b++) {
+    const t = a1 > a0 ? a - a0 : b - b0;
+    if (skip(a, b)) continue;
+    set(X(a), 0, Z(b), M.GRANITE);
+    if (t % 6 === 0) box(X(a), 1, Z(b), X(a), 4, Z(b), M.TRIM); else { if (t % 2 === 0) box(X(a), 1, Z(b), X(a), 2, Z(b), M.DARK); set(X(a), 3, Z(b), M.DARK); }
+  }
+}
+function bed(X, Z, a0, b0, a1, b1, flower) {
+  begin('Flower bed', 'prop', false);
+  for (let a = a0; a <= a1; a++) for (let b = b0; b <= b1; b++) { const edge = a === a0 || a === a1 || b === b0 || b === b1; set(X(a), 0, Z(b), edge ? M.HEDGE : M.DIRT); set(X(a), 1, Z(b), edge ? M.HEDGE : (a + b) % 3 === 0 ? M.LEAF2 : flower); }
+}
+function basin(cx, cz, title) {
+  begin(title, 'prop', false);
+  rdisc(cx, cz, 0, 5, M.LIME); rdisc(cx, cz, 1, 5, M.LIME, 4); rdisc(cx, cz, 1, 4, M.WATER);
+  box(cx, 1, cz, cx, 5, cz, M.LIME); rdisc(cx, cz, 6, 2, M.LIME); rdisc(cx, cz, 7, 2, M.LIME, 1); rdisc(cx, cz, 7, 1, M.WATER); set(cx, 8, cz, M.WATER);
+}
+// the flag of Egypt on a pole: red over white over black
+function flag(x, y0, z, h) { box(x, y0, z, x, y0 + h, z, M.METAL); box(x + 1, y0 + h - 1, z, x + 6, y0 + h, z, M.AWN_R); box(x + 1, y0 + h - 3, z, x + 6, y0 + h - 2, z, M.AWN_W); box(x + 1, y0 + h - 5, z, x + 6, y0 + h - 4, z, M.DARK); }
+
+// ---- Abdeen Palace: a long pale front between two wings that stand forward, a columned porch under a pediment, a zinc
+// roof, and a railed garden before it with a fountain and flower beds ---------------------------------------------------
+export function abdeen(lx, lz, L, o = {}) {
+  const X = (a) => lx + a, Z = (b) => lz + b, W = M.PL_W, T = M.TRIM, R = M.ZINC, B = 3, FH = 11, top = B + 2 * FH;
+  begin('Abdeen Palace', 'landmark');
+  const wins = (F, lo = 99, hi = -1) => {
+    for (let u = 2; u + 3 < F.W; u += 6) {
+      if (u + 2 < lo || u > hi) win(F, u, B + 2, 3, 6, { frame: T });
+      win(F, u, B + FH + 1, 3, 7, { frame: T }); if (L >= 1) F.box(u - 1, B + FH + 9, u + 3, B + FH + 9, 1, 1, T);
+    }
+    F.band(B + FH - 1, B + FH - 1, 1, T); F.band(top, top, 1, T);
+    for (let u = 0; u < F.W; u++) { F.p(u, top + 1, 0, T); if (u % 3 === 0) F.p(u, top + 2, 0, T); }
+  };
+  [[4, 34, 23, 80], [62, 34, 81, 80], [24, 40, 61, 78]].forEach(([a0, b0, a1, b1], i) => {
+    walls(X(a0), 0, Z(b0), X(a1), top, Z(b1), W);
+    for (const y of [B - 1, B + FH - 1]) box(X(a0 + 1), y, Z(b0 + 1), X(a1 - 1), y, Z(b1 - 1), M.FLOOR);
+    box(X(a0), top, Z(b0), X(a1), top, Z(b1), M.SLAB);
+    const [Ff, Fr, Fb, Fl] = faces4(X(a0), Z(b0), X(a1), Z(b1));
+    for (const F of [Ff, Fr, Fb, Fl]) F.box(0, 0, F.W - 1, B - 1, 0, 0, M.GRANITE);
+    if (i === 2) { wins(Ff, 14, 23); wins(Fb); }
+    else { wins(Ff); wins(Fb); wins(i === 0 ? Fl : Fr); }
+    if (i < 2) for (let k = 0; k < 5; k++) box(X(a0 + 1 + 2 * k), top + 1 + k, Z(b0 + 1 + 2 * k), X(a1 - 1 - 2 * k), top + 1 + k, Z(b1 - 1 - 2 * k), R);
+    else {
+      // an attic storey over the middle, under a zinc roof
+      walls(X(28), top + 1, Z(44), X(57), top + 6, Z(74), W); box(X(28), top + 7, Z(44), X(57), top + 7, Z(74), R); box(X(30), top + 8, Z(46), X(55), top + 8, Z(72), R);
+      const A = faces4(X(28), Z(44), X(57), Z(74)); for (const F of A) for (let u = 3; u + 1 < F.W; u += 5) F.box(u, top + 3, u + 1, top + 4, 0, 0, M.GLASS);
+      // the door, and a balcony over it
+      Ff.box(16, B, 21, B + 9, 0, 0, M.TRUNK); Ff.p(18, B + 4, 1, M.BRASS); Ff.p(19, B + 4, 1, M.BRASS); Ff.box(15, B + 10, 22, B + 10, 0, 0, T);
+      Ff.box(14, B + FH - 1, 23, B + FH - 1, 1, 3, T); Ff.box(14, B + FH, 23, B + FH + 1, 3, 3, M.DARK);
+    }
+  });
+  // the porch: steps, six columns two storeys high, and a pediment with the flag over it
+  box(X(28), 0, Z(32), X(57), 0, Z(39), M.SLAB); box(X(29), 1, Z(33), X(56), 1, Z(39), M.SLAB); box(X(30), 2, Z(34), X(55), 2, Z(39), M.SLAB);
+  for (const a of [30, 35, 40, 44, 49, 54]) box(X(a), 3, Z(35), X(a + 1), top - 1, Z(36), T);
+  box(X(29), top, Z(34), X(56), top + 2, Z(39), T);
+  for (let k = 0; k < 7; k++) box(X(29 + 2 * k), top + 3 + k, Z(34), X(56 - 2 * k), top + 3 + k, Z(39), k === 0 ? T : W);
+  box(X(42), top + 5, Z(33), X(43), top + 6, Z(33), M.BRASS);
+  flag(X(42), top + 10, Z(37), 12);
+  // the garden: railings with a gate, a fountain, four flower beds, palms
+  begin('Palace railing', 'prop', false);
+  railing(X, Z, 2, 3, 83, 3, (a) => a >= 38 && a <= 47); railing(X, Z, 2, 4, 2, 33); railing(X, Z, 83, 4, 83, 33);
+  for (const a of [36, 48]) { box(X(a), 0, Z(2), X(a + 1), 7, Z(3), M.LIME); set(X(a), 8, Z(2), M.LIT); set(X(a + 1), 8, Z(3), M.LIT); }
+  basin(X(43), Z(18), 'Palace fountain');
+  if (L >= 1) { bed(X, Z, 8, 8, 30, 13, M.FLOWER_R); bed(X, Z, 55, 8, 77, 13, M.FLOWER_Y); bed(X, Z, 8, 23, 30, 28, M.FLOWER_Y); bed(X, Z, 55, 23, 77, 28, M.FLOWER_R); }
+  if (L >= 2) for (const [a, b, h] of [[5, 18, 20], [80, 18, 22], [34, 30, 17], [51, 30, 18]]) palm(X(a), Z(b), h);
+}
+
+// ---- the Baron's Palace: a house in the manner of a carved temple, in red-brown stone, on a terrace with a broad stair
+// between stone elephants. A tall tower at one end climbs in bands to a curved, ribbed spire ---------------------------
+export function baron(lx, lz, L, o = {}) {
+  const X = (a) => lx + a, Z = (b) => lz + b, W = M.OCHRE, D = M.BROWNST, T = M.SAND2, B = 4, FH = 11, top = B + 2 * FH;
+  begin("Baron's Palace", 'landmark');
+  // the terrace and its stair
+  walls(X(8), 0, Z(28), X(77), B - 1, Z(80), T); box(X(8), B - 1, Z(28), X(77), B - 1, Z(80), T);
+  for (let k = 0; k < 4; k++) box(X(34), 0, Z(20 + 2 * k), X(51), k, Z(27), k === 3 ? T : W);
+  for (let a = 8; a <= 77; a++) for (let b = 28; b <= 80; b++) if ((a === 8 || a === 77 || b === 28 || b === 80) && !(b === 28 && a >= 34 && a <= 51)) { set(X(a), B, Z(b), (a + b) % 4 === 0 ? D : T); if ((a + b) % 4 === 0) set(X(a), B + 1, Z(b), D); }
+  // the house: an arcade below, windows above, bands of carving between
+  walls(X(16), B, Z(36), X(59), top, Z(74), W); box(X(17), B + FH - 1, Z(37), X(58), B + FH - 1, Z(73), M.FLOOR); box(X(16), top, Z(36), X(59), top, Z(74), M.SLAB);
+  const HF = faces4(X(16), Z(36), X(59), Z(74));
+  HF.forEach((F, k) => {
+    if (k === 1) return;   // the tower stands against this side
+    for (let u = 3; u + 4 < F.W; u += 7) {
+      if (!(k === 0 && u > 14 && u < 26)) pointed(F, u, 4, 8, { y0: B, fill: M.DARK });
+      win(F, u, B + FH + 2, 4, 6, { frame: T });
+      if (L >= 1) { F.box(u - 2, B, u - 2, top, 1, 1, D); F.p(u + 1, B + FH + 9, 1, D); F.p(u + 2, B + FH + 9, 1, D); }
+    }
+    for (const y of [B + FH - 2, B + FH - 1, top - 1, top]) for (let u = -1; u <= F.W; u++) F.p(u, y, 1, (u + y) & 1 ? D : T);
+    for (let u = 0; u < F.W; u++) { F.p(u, top + 1, 0, u % 2 ? D : T); if (u % 4 === 0) F.p(u, top + 2, 0, D); }
+  });
+  // the porch and the door
+  HF[0].box(20, B, 23, B + 8, 0, 0, M.TRUNK); HF[0].p(21, B + 4, 1, M.BRASS); HF[0].p(22, B + 4, 1, M.BRASS);
+  for (const u of [16, 20, 23, 27]) HF[0].box(u, B, u, B + FH - 2, 4, 4, D);
+  HF[0].box(15, B + FH - 1, 28, B + FH - 1, 1, 5, T); for (let u = 15; u <= 28; u++) HF[0].p(u, B + FH, 5, u % 2 ? D : T); for (const u of [15, 28]) for (let d = 1; d <= 5; d++) HF[0].p(u, B + FH, d, D);
+  // a small spire on each corner of the roof
+  const spire = (cx, cz, y0, r, h) => { for (let k = 0; k < h; k++) { const rr = Math.max(0, Math.round(r * (1 - k / h))); box(cx - rr, y0 + k, cz - rr, cx + rr, y0 + k, cz + rr, k % 3 === 2 ? D : W); } box(cx, y0 + h, cz, cx, y0 + h + 1, cz, M.BRASS); };
+  for (const [a, b] of [[19, 39], [56, 39], [19, 71], [56, 71]]) spire(X(a), Z(b), top + 1, 3, 9);
+  // the tower: a square shaft in bands, then the spire: each course a little smaller, a rib standing out every fourth
+  const ta = 67, tb = 50, TS = 36;
+  for (let y = 0; y <= TS; y++) walls(X(ta - 7), y, Z(tb - 7), X(ta + 7), y, Z(tb + 7), y % 6 === 5 ? D : W);
+  for (let y = B - 1; y <= TS; y += 11) box(X(ta - 6), y, Z(tb - 6), X(ta + 6), y, Z(tb + 6), M.FLOOR);
+  { const TF = faces4(X(ta - 7), Z(tb - 7), X(ta + 7), Z(tb + 7));
+    TF.forEach((F, k) => { if (k === 3) return; for (const y of [B + 3, B + 14, B + 25]) { pointed(F, 5, 5, 6, { y0: y, fill: M.GLASS }); if (L >= 1) F.box(4, y - 1, 10, y - 1, 1, 1, T); } }); }
+  for (let k = 0; k < 30; k++) {
+    const y = TS + 1 + k, h = Math.round(7 * (1 - Math.pow(k / 30, 1.7))), rib = k % 4 === 3, r = h + (rib ? 1 : 0);
+    box(X(ta - r), y, Z(tb - r), X(ta + r), y, Z(tb + r), rib ? D : (k >> 2) & 1 ? T : W);
+  }
+  rdisc(X(ta), Z(tb), TS + 31, 2, D); rdisc(X(ta), Z(tb), TS + 32, 1, D); box(X(ta), TS + 33, Z(tb), X(ta), TS + 36, Z(tb), M.BRASS);
+  // two stone elephants keep the stair
+  for (const a of [26, 53]) {
+    begin('Stone elephant', 'monument');
+    for (const [da, db] of [[0, 0], [4, 0], [0, 5], [4, 5]]) box(X(a + da), 0, Z(20 + db), X(a + da + 1), 2, Z(20 + db + 1), M.STONE);
+    box(X(a), 3, Z(19), X(a + 5), 7, Z(27), M.STONE); box(X(a + 1), 5, Z(16), X(a + 4), 8, Z(18), M.STONE); box(X(a + 2), 1, Z(15), X(a + 3), 5, Z(15), M.STONE);
+    set(X(a), 6, Z(17), M.GRANITE); set(X(a + 5), 6, Z(17), M.GRANITE); set(X(a + 1), 7, Z(15), M.DARK); set(X(a + 4), 7, Z(15), M.DARK);
+    box(X(a), 8, Z(20), X(a + 5), 8, Z(25), M.AWN_R); box(X(a + 1), 8, Z(21), X(a + 4), 8, Z(24), M.BRASS);
+  }
+  if (L >= 2) for (const [a, b, h] of [[4, 8, 22], [18, 12, 18], [68, 10, 20], [82, 14, 23], [3, 50, 20], [82, 70, 19], [4, 82, 17]]) palm(X(a), Z(b), h);
+  if (L >= 1) { bed(X, Z, 8, 4, 30, 8, M.FLOWER_R); bed(X, Z, 55, 4, 77, 8, M.FLOWER_Y); }
+}
+
+// ---- Ramses Station: a striped front with a great pointed doorway in a taller middle, and behind it the train shed: a
+// barrel roof of zinc and glass over four tracks, with trains standing at the platforms --------------------------------
+function train(X, Z, a0, b0, cars, paint, band, title) {
+  begin(title, 'monument');
+  for (let c = 0; c < cars; c++) {
+    const b = b0 + c * 15, loco = c === 0;
+    for (const db of [1, 3, 9, 11]) box(X(a0 + 1), 0, Z(b + db), X(a0 + 5), 0, Z(b + db), M.DARK);
+    box(X(a0), 1, Z(b), X(a0 + 6), 8, Z(b + 12), loco ? band : paint); hole(X(a0 + 1), 2, Z(b + 1), X(a0 + 5), 7, Z(b + 11));
+    box(X(a0), 9, Z(b), X(a0 + 6), 9, Z(b + 12), M.ZINC); box(X(a0 + 1), 1, Z(b + 1), X(a0 + 5), 1, Z(b + 11), M.DARK);
+    for (const a of [a0, a0 + 6]) { box(X(a), 3, Z(b), X(a), 3, Z(b + 12), loco ? paint : band); if (loco) box(X(a), 5, Z(b + 1), X(a), 6, Z(b + 3), M.GLASS); else for (let k = 1; k < 12; k += 3) box(X(a), 5, Z(b + k), X(a), 6, Z(b + k + 1), M.GLASS); }
+    if (loco) { box(X(a0 + 1), 5, Z(b), X(a0 + 5), 6, Z(b), M.GLASS); set(X(a0 + 1), 2, Z(b), M.LIT_Y); set(X(a0 + 5), 2, Z(b), M.LIT_Y); box(X(a0 + 2), 10, Z(b + 6), X(a0 + 4), 10, Z(b + 9), M.DARK); }
+    if (c < cars - 1) box(X(a0 + 2), 2, Z(b + 13), X(a0 + 4), 3, Z(b + 14), M.DARK);
+  }
+}
+export function station(lx, lz, L, o = {}) {
+  const X = (a) => lx + a, Z = (b) => lz + b, W = M.LIME, S2 = M.REND_P, T = M.TRIM, H = 28, H2 = 42;
+  const stone = (y) => (y < 18 && (y >> 1) & 1 ? S2 : W);
+  begin('Ramses Station', 'landmark');
+  for (let y = 0; y <= H; y++) walls(X(4), y, Z(8), X(81), y, Z(32), stone(y));
+  box(X(4), H, Z(8), X(81), H, Z(32), M.SLAB); box(X(5), 0, Z(9), X(80), 0, Z(31), M.GRANITE);
+  for (let y = 0; y <= H2; y++) walls(X(30), y, Z(4), X(55), y, Z(32), stone(y));
+  box(X(30), H2, Z(4), X(55), H2, Z(32), M.SLAB);
+  const [Ff, Fr, Fb, Fl] = faces4(X(4), Z(8), X(81), Z(32)), [Cf, Cr, , Cl] = faces4(X(30), Z(4), X(55), Z(32));
+  for (const F of [Ff, Fr, Fl]) {
+    for (let u = 3; u + 4 < F.W; u += 6) { if (F === Ff && u > 20 && u < 54) continue; pointed(F, u, 4, 12, { y0: 2, fill: M.GLASS }); pointed(F, u, 4, 6, { y0: 19, fill: M.STAIN_Y }); }
+    F.band(H, H, 1, T); for (let u = 0; u < F.W; u += 2) F.p(u, H + 1, 0, W);
+  }
+  // the way through to the trains
+  for (let u = 6; u + 8 < Fb.W; u += 12) pointed(Fb, u, 7, 14);
+  // the middle: the great doorway, the name, a clock, a stepped parapet
+  pointed(Cf, 7, 12, 26);
+  for (const u of [5, 20]) Cf.box(u, 0, u, H2 - 12, 1, 1, S2);
+  Cf.box(1, H2 - 12, 24, H2 - 6, 1, 1, M.DOOR_G); text(Cf, 'RAMSES', (26 - textW('RAMSES')) >> 1, H2 - 11, 2, M.LIT_W);
+  Cf.box(11, H2 - 5, 14, H2 - 2, 1, 1, T); Cf.p(12, H2 - 3, 2, M.DARK); Cf.p(12, H2 - 4, 2, M.DARK); Cf.p(13, H2 - 4, 2, M.DARK);
+  for (const F of [Cf, Cr, Cl]) { F.band(H2, H2, 1, T); for (let u = 0; u < F.W; u++) { if (u % 3 !== 2) F.p(u, H2 + 1, 0, W); if (u % 6 < 2) F.p(u, H2 + 2, 0, W); } }
+  for (const F of [Cr, Cl]) pointed(F, 12, 5, 7, { y0: H + 4, fill: M.STAIN_Y });
+  flag(X(42), H2 + 1, Z(18), 12);
+  // the platforms
+  begin('Platforms', 'prop', false);
+  for (const [a0, a1] of [[4, 10], [23, 33], [52, 62], [75, 81]]) { box(X(a0), 0, Z(34), X(a1), 1, Z(84), M.CONC); for (let b = 34; b <= 84; b++) { set(X(a0), 1, Z(b), M.FLOWER_Y); set(X(a1), 1, Z(b), M.FLOWER_Y); } }
+  if (L >= 1) for (const a of [27, 56]) for (const b of [44, 62]) { box(X(a), 2, Z(b), X(a + 1), 2, Z(b + 5), M.WOOD); box(X(a), 3, Z(b), X(a), 4, Z(b + 5), M.WOOD); }
+  // the shed: side walls with open arches, columns on the platforms, steel ribs and a barrel roof of zinc and glass
+  begin('Train shed', 'monument');
+  const ry = (a) => 19 + Math.round(12 * Math.sqrt(Math.max(0, 1 - Math.pow((a - 42.5) / 39.5, 2))));
+  for (const a of [4, 81]) { for (let y = 0; y <= ry(a); y++) box(X(a), y, Z(34), X(a), y, Z(84), stone(y)); const F = face(a === 4 ? 'l' : 'r', X(4), Z(34), X(81), Z(84)); for (let u = 4; u + 6 < F.W; u += 9) pointed(F, u, 6, 13, { y0: 2 }); }
+  for (let a = 4; a <= 81; a++) { const y = ry(a), lo = Math.min(y, a > 4 ? ry(a - 1) + 1 : y, a < 81 ? ry(a + 1) + 1 : y); box(X(a), lo, Z(34), X(a), y, Z(84), (a + 2) % 8 < 3 ? M.GLASS : M.ZINC); }
+  for (const b of [34, 46, 59, 72, 84]) { for (let a = 4; a <= 81; a++) { const y = ry(a); box(X(a), y - 1, Z(b), X(a), y, Z(b), M.STEEL); } for (const a of [7, 28, 57, 78]) box(X(a), 2, Z(b), X(a), ry(a) - 1, Z(b), M.STEEL); }
+  // trains at the platforms, their noses toward the hall
+  train(X, Z, 13, 38, 3, M.CAR_B, M.TAXI, 'Express train'); train(X, Z, 35, 52, 2, M.AWN_G, M.TRIM, 'Local train');
+  train(X, Z, 44, 38, 3, M.STAIN_R, M.TRIM, 'Express train'); train(X, Z, 65, 40, 3, M.TRIM, M.CAR_B, 'Local train');
+  if (L >= 2) { lampPost(X(20), Z(4)); lampPost(X(65), Z(4)); bench(X(8), Z(3)); bench(X(66), Z(3)); palm(X(14), Z(3), 19); palm(X(74), Z(3), 21); }
+}
+
+// ---- Tahrir Hall: our own take on the great government block of the square. A slab fourteen storeys high that curves
+// round its forecourt, a taller middle, a grid of small windows between piers, and a wing running back ------------------
+export function hall(lx, lz, L, o = {}) {
+  const X = (a) => lx + a, Z = (b) => lz + b, W = M.LIME2, G0 = 8, FH = 5, NF = 13, DEPTH = 18;
+  const fr = (a) => 14 + Math.round(16 * (1 - Math.pow((a - 42.5) / 38.5, 2)));
+  begin('Tahrir Hall', 'landmark');
+  for (let a = 4; a <= 81; a++) {
+    const mid = a >= 32 && a <= 53, nf = NF + (mid ? 2 : 0), top = G0 + nf * FH, f0 = fr(a), b1 = f0 + DEPTH, low = G0 + NF * FH, pier = a % 3 === 0, door = a >= 37 && a <= 48 && !pier;
+    for (let y = 0; y <= top + 1; y++) {
+      const floor = y === 0 || (y >= G0 && (y - G0) % FH === 0), k = (y - G0) % FH;
+      const solid = a === 4 || a === 81 || ((a === 32 || a === 53) && y > low);
+      if (y === top + 1) { set(X(a), y, Z(f0), W); set(X(a), y, Z(b1), W); if (solid) for (let b = f0; b <= b1; b++) set(X(a), y, Z(b), W); continue; }
+      if (floor || solid) { for (let b = f0; b <= b1; b++) set(X(a), y, Z(b), !floor || b === f0 || b === b1 ? W : y === top ? M.SLAB : M.CONC); continue; }
+      const glass = y > G0 ? !pier && (k === 2 || k === 3) : !pier && y >= 2 && y <= 5;
+      if (!(door && y < G0 - 1)) set(X(a), y, Z(f0), y < G0 ? (glass ? M.GLASS : M.GRANITE) : glass ? M.GLASS : W);
+      set(X(a), y, Z(b1), y < G0 ? (glass ? M.GLASS : M.GRANITE) : glass ? M.GLASS : W);
+    }
+    // a canopy over the doors
+    if (a >= 35 && a <= 50) for (let d = 1; d <= 4; d++) set(X(a), G0, Z(f0 - d), M.CONC);
+  }
+  for (const a of [35, 50]) box(X(a), 0, Z(fr(a) - 4), X(a), G0 - 1, Z(fr(a) - 4), M.CONC);
+  // the wing behind
+  { const a0 = 30, a1 = 55, b0 = fr(42) + DEPTH, b1 = 74, nf = 9, top = G0 + nf * FH;
+    for (let y = 0; y <= top; y++) for (let a = a0; a <= a1; a++) for (let b = b0 + 1; b <= b1; b++) {
+      const edge = a === a0 || a === a1 || b === b1, floor = y === 0 || (y >= G0 && (y - G0) % FH === 0), k = (y - G0) % FH;
+      if (!edge && !floor) continue;
+      const t = a === a0 || a === a1 ? b : a, glass = edge && !floor && t % 3 !== 0 && (y > G0 ? k === 2 || k === 3 : y >= 2 && y <= 5);
+      set(X(a), y, Z(b), glass ? M.GLASS : edge ? (y < G0 ? M.GRANITE : W) : y === top ? M.SLAB : M.CONC);
+    }
+    for (let a = a0; a <= a1; a++) set(X(a), top + 1, Z(b1), W); }
+  // on the roof: a parapet is already there; add the flag and two masts
+  { const top = G0 + (NF + 2) * FH; flag(X(42), top + 1, Z(fr(42) + 9), 15); for (const a of [36, 49]) box(X(a), top + 1, Z(fr(a) + 9), X(a), top + 9, Z(fr(a) + 9), M.METAL); }
+  // the forecourt: a row of flags, lamps and palms
+  if (L >= 1) for (const a of [26, 59]) { begin('Flag pole', 'prop', false); flag(X(a), 0, Z(8), 18); }
+  if (L >= 2) { for (const a of [10, 75]) lampPost(X(a), Z(5)); for (const [a, b, h] of [[18, 6, 20], [34, 12, 18], [51, 12, 19], [67, 6, 21], [8, 60, 20], [77, 60, 22], [14, 78, 18], [70, 78, 19]]) palm(X(a), Z(b), h); bench(X(38), Z(6)); }
+}

@@ -99,6 +99,7 @@ export function baladi(lx, lz, L, o = {}) {
   const n = o.n || 3, W = n === 2 ? 19 : 13, pitch = n === 2 ? 20 : 13;
   const floors = o.floors || [5, 7, 4], wallsM = o.walls || [M.MUD, M.OCHRE, M.LIME2], raw = o.raw || [0, 0, 0], shut = o.shut || [M.DOOR_G, M.DOOR_B, M.WOOD];
   const signs = o.signs || [['TEA', M.DOOR_G, M.LIT_W], ['FIG', M.CAR_A, M.LIT_Y], ['OUD', M.DARK, M.LIT_W]], roofs = o.roofs || [0, 1, 2], awn = o.awn || [M.AWN_R, M.AWN_G, M.AWN_B];
+  let boarded = false;
   for (let i = 0; i < n; i++) {
     const x0 = lx + i * pitch, x1 = x0 + W - 1, z0 = lz + 5 + (i === 1 ? 1 : 0), z1 = lz + 35, nf = floors[i], bare = raw[i], wall = bare ? M.BRICK : wallsM[i];
     const G = 13, FH = 10, top = G + (nf - 1) * FH - 1, frame = bare ? M.CONC : M.TRIM, sh = shut[i], sg = signs[i];
@@ -153,6 +154,16 @@ export function baladi(lx, lz, L, o = {}) {
       else if (r === 1) { dish(x0 + 3, top + 1, z0 + 4, 0); dish(x0 + W - 4, top + 1, z0 + 9, 1); dish(x0 + 7, top + 1, z0 + 14, 0); }
       else if (r === 2) loft(x0 + W - 7, top + 1, z0 + 3, [M.PL_B, M.PL_G, M.PL_Y, M.PL_P][(i + nf) & 3]);
       if (r !== 2 && L >= 2) dish(x0 + 2, top + 1, z0 + 18, 1);
+      // a hoarding on a steel frame along the front of the roof: o.board = [which block, word, short word, board, ink]
+      const bd = o.board;
+      if (bd && !boarded && i >= bd[0] && !bare && r !== 3) {
+        boarded = true;
+        const word = n === 2 ? bd[1] : bd[2];
+        for (const u of [1, W - 2]) { Ff.box(u, top + 3, u, top + 6, 0, 0, M.STEEL); Ff.box(u, top + 1, u, top + 10, -1, -1, M.STEEL); }
+        Ff.box(0, top + 7, W - 1, top + 16, 0, 0, bd[3]); Ff.box(0, top + 7, W - 1, top + 7, 0, 0, M.DARK); Ff.box(0, top + 16, W - 1, top + 16, 0, 0, M.DARK);
+        text(Ff, word, (W - textW(word)) >> 1, top + 9, 1, bd[4]);
+        for (let u = 1; u < W; u += 4) Ff.p(u, top + 17, 0, M.LIT_W);
+      }
     }
   }
   if (L >= 2) { if (o.lamp !== 0) lampPost(lx + 1, lz + 2); if (o.palm) palm(lx + 36, lz - 1, ri(14, 18)); if (o.car) car(lx + 6, lz - 15, o.car); }
