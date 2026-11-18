@@ -58,7 +58,7 @@ function leaf(name, x, j0, j1, kHinge, dir, kick) {
 // The city bus: 20 cubes wide (i = -10..9), 88 long (k = -44..43), 25 tall. Low floor, engine across the back.
 // =====================================================================================================================
 const CITY = { k0: -44, k1: 43, axF: 27, axR: -25, doors: [[33, 40], [-6, 1]] };
-export { lamp, cubes };
+export { lamp, cubes, led };
 export const LIVERY = { blue: 0x2a62b0, red: 0xc8392f, green: 0x2f8a55, orange: 0xd9772b };
 
 function cityParts(o) {
