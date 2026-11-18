@@ -1,11 +1,12 @@
 // Crumbletown's layout: twenty lots round a ring of four streets, each turned to face its street, plus the park,
 // street dressing and the trees round the edge.
-import { M, WX, WZ, TILES, TILE_X, TILE_Z, tiled, LOC, LOT, STREET_X, STREET_Z, place, begin, set, box, ctx, lots, rubbleBody, setSeed, rnd, ri, finalize } from './world.js';
+import { M, WX, WZ, CITY, TILES, TILE_X, TILE_Z, tiled, LOC, LOT, STREET_X, STREET_Z, place, begin, set, box, ctx, lots, rubbleBody, setSeed, rnd, ri, finalize } from './world.js';
 import { disc, tree, lampPost, bench, bin, hydrant, planter, hedge, fence, car } from './kit.js';
 import { cottage, shop, fuel } from './buildings_a.js';
 import { apartment, watertower, church, tower } from './buildings_b.js';
 import { carpark, depot, plaza } from './lots_c.js';
 import { needle, stadium, factory, cinema, rowhouse } from './landmarks.js';
+import { cityLots, cityBlocks, cityAlleys } from './city.js';
 
 // The districts (Hole.io style: small food where you start, the big prize in sight, clusters to run between):
 //   south-west  suburbs, where he hatches: cottages, a park, a diner, cars to snack on
@@ -71,10 +72,10 @@ const TOWN = [
   { x: 446, z: 342, f: 0, k: 'factory', d: 'yard', o: { wall: M.BRICK2, name: 'MILL', title: 'Mill', car: M.CAR_A } },
 ];
 // the blocks between the streets, and the alleys behind their back-to-back rows (ground.js paints them, generateTown fences them)
-export const LOTS = [];
-for (let tz = 0; tz < TILES; tz++) for (let tx = 0; tx < TILES; tx++) for (const L of TOWN) LOTS.push({ ...L, x: L.x + tx * TILE_X, z: L.z + tz * TILE_Z });
-export const BLOCKS = Array.from({ length: TILES }, (_, t) => [[98, 236], [272, 410]].map(([a, b]) => [a + t * TILE_X, b + t * TILE_X])).flat();
-export const ALLEYS = tiled([138, 260], TILE_Z);
+export const LOTS = CITY ? cityLots() : [];
+if (!CITY) for (let tz = 0; tz < TILES; tz++) for (let tx = 0; tx < TILES; tx++) for (const L of TOWN) LOTS.push({ ...L, x: L.x + tx * TILE_X, z: L.z + tz * TILE_Z });
+export const BLOCKS = CITY ? cityBlocks() : Array.from({ length: TILES }, (_, t) => [[98, 236], [272, 410]].map(([a, b]) => [a + t * TILE_X, b + t * TILE_X])).flat();
+export const ALLEYS = CITY ? cityAlleys() : tiled([138, 260], TILE_Z);
 
 // A lot-local rectangle (a across, b back from the front) as a world rectangle [xa, za, xb, zb].
 export function lotRect(L, a0, b0, a1, b1) {
@@ -141,7 +142,18 @@ export function generateTown() {
   place(0, 0, -1);
   // the alleys behind the back-to-back rows: a fence down the middle with gaps, crates and bins
   const big = LOTS.filter((L) => L.s > LOT), free = (xa, xb, z) => big.every((L) => xb < L.x - 2 || xa > L.x + L.s + 1 || z < L.z || z > L.z + L.s);
-  for (const az of ALLEYS) for (const [x0, x1] of BLOCKS) {
+  if (CITY) for (const az of ALLEYS) for (const [x0, x1] of BLOCKS) {
+    // the city's blocks are 2, 3 or 4 lots across: a length of fence behind each lot, crates or bins in the gaps
+    const n = Math.round((x1 - x0 + 6) / 46);
+    for (let k = 0; k < n; k++) {
+      const xa = x0 + 46 * k + 2, dz = 2 + (k & 1);
+      if (free(xa, xa + 38, az + dz)) fence(xa, xa + 38, az + dz);
+      if (k === n - 1 || !free(xa + 41, xa + 44, az + 2) || rnd() < 0.3) continue;
+      if (k & 1) { begin('Bins', 'prop', false); box(xa + 42, 0, az + 3, xa + 43, 3, az + 4, M.DOOR_G); box(xa + 42, 4, az + 3, xa + 43, 4, az + 4, M.DARK); }
+      else { begin('Crates', 'prop', false); box(xa + 41, 0, az + 1, xa + 43, 2, az + 3, M.WOOD); box(xa + 42, 3, az + 2, xa + 43, 4, az + 3, M.WOOD); }
+    }
+  }
+  else for (const az of ALLEYS) for (const [x0, x1] of BLOCKS) {
     for (const [xa, xb, dz] of [[x0 + 2, x0 + 44, 2], [x0 + 52, x0 + 92, 3], [x0 + 98, x1 - 3, 2]]) if (free(xa, xb, az + dz)) fence(xa, xb, az + dz);
     if (free(x0 + 46, x0 + 48, az + 2)) { begin('Crates', 'prop', false); box(x0 + 46, 0, az + 1, x0 + 48, 2, az + 3, M.WOOD); box(x0 + 47, 3, az + 2, x0 + 48, 4, az + 3, M.WOOD); }
     if (free(x0 + 94, x0 + 95, az + 3)) { begin('Bins', 'prop', false); box(x0 + 94, 0, az + 3, x0 + 95, 3, az + 4, M.DOOR_G); box(x0 + 94, 4, az + 3, x0 + 95, 4, az + 4, M.DARK); }
@@ -149,7 +161,7 @@ export function generateTown() {
   // trees round the edge, clear of the streets
   const clearOf = (v, list) => list.every((s) => Math.abs(v - s) > 22);
   const offLots = (x, z) => LOTS.every((L) => x < L.x - 6 || x > L.x + (L.s || LOT) + 6 || z < L.z - 6 || z > L.z + (L.s || LOT) + 6);
-  for (let i = 0, n = 0; i < 400 && n < 44; i++) {
+  for (let i = 0, n = 0, want = CITY ? 110 : 44; i < want * 9 && n < want; i++) {
     const side = i & 3, t = rnd();
     const x = side === 0 ? ri(5, 15) : side === 1 ? ri(WX - 17, WX - 7) : Math.floor(10 + t * (WX - 22));
     const z = side === 2 ? ri(5, 15) : side === 3 ? ri(WZ - 17, WZ - 7) : Math.floor(10 + t * (WZ - 22));
