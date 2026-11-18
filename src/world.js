@@ -5,13 +5,25 @@ import * as THREE from 'three';
 // TILES repeats the whole town TILES x TILES times: a stress test for a much larger map (`python3 build.py big`).
 export const TILES = typeof __TILES__ === 'number' ? __TILES__ : 1, TILE_X = 512, TILE_Z = 416;
 export const tiled = (a, step) => Array.from({ length: TILES }, (_, t) => a.map((v) => v + t * step)).flat();
-// CITY builds the big city instead of the first town (`python3 build.py city`): about four times the map, and taller.
+// CITY: the big city instead of the first town, about four times the map, and taller. A build can fix the map
+// (`python3 build.py city`, the move studio, the tiled test); otherwise it is the choice made on the menu, kept for the
+// reload that builds the other world (pickMap). A script can force it with `window.__MAP = 'city'` before this runs.
 // PARIS builds the Paris map (`python3 build.py paris`, laid out in paris.js). It is a city as far as size, haze and
 // street dressing go, so CITY is true for it too; it is taller, for the Eiffel Tower.
 export const PARIS = typeof __PARIS__ === 'boolean' && __PARIS__;
 // NYC builds the New York map (`python3 build.py nyc`, laid out in nyc.js): a city too, and as tall as the handles allow.
 export const NYC = typeof __NYC__ === 'boolean' && __NYC__;
-export const CITY = PARIS || NYC || (typeof __CITY__ === 'boolean' && __CITY__);
+export const MAP_FIXED = PARIS || NYC || (typeof __CITY__ === 'boolean' && __CITY__) || (typeof __STUDIO__ === 'boolean' && __STUDIO__) || TILES > 1;
+function chosenMap() {
+  if (typeof window === 'undefined') return '';
+  if (window.__MAP) return window.__MAP;
+  try { const v = sessionStorage.getItem('mm-map'); if (v) return v; } catch (e) { /* no storage here: the window's name carries it */ }
+  const m = /mm-map=(\w+)/.exec(window.name || ''); return m ? m[1] : '';
+}
+export function pickMap(m) {
+  try { sessionStorage.setItem('mm-map', m); } catch (e) { try { window.name = 'mm-map=' + m; } catch (e2) { /* it stays on this map */ } }
+}
+export const CITY = PARIS || NYC || (typeof __CITY__ === 'boolean' && __CITY__) || (!MAP_FIXED && chosenMap() === 'city');
 export const WX = CITY ? 1024 : TILE_X * TILES, WY = PARIS || NYC ? 256 : CITY ? 224 : 128, WZ = CITY ? 1024 : TILE_Z * TILES, CH = 16;
 export const NCX = WX / CH, NCZ = WZ / CH;
 
