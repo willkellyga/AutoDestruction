@@ -647,7 +647,13 @@ function updateFx(dt) {
 
 // Something heavy comes down on the street: dust rolls out along the ground, loose wreckage is thrown outward and
 // whatever small stands there (cars, trees, lamp posts) is flattened. k is 0..1. The ground itself is left whole.
-const PUNCH_MAX = 8, SLAM_ONLY = { prop: true, tree: true };
+const PUNCH_MAX = 11, SLAM_ONLY = { prop: true, tree: true };
+const SOFT_KIND = { prop: true, tree: true, rubble: true };   // what a falling piece runs down without being stopped
+// the cells that falling pieces fill this step, so that they can strike one another (open addressing, stamped by step)
+const OCC_BITS = 19, OCC_SHIFT = 32 - OCC_BITS, OCC_MASK = (1 << OCC_BITS) - 1;
+const occKey = new Int32Array(1 << OCC_BITS), occStamp = new Int32Array(1 << OCC_BITS), occWho = new Int16Array(1 << OCC_BITS);
+const frameSecs = [];
+const NP = 8, punchAt = new Float32Array(NP * 3);
 function slam(x, z, k) {
   const reach = 9 + k * 22;
   dustWave(x, 0.5, z, 16 + k * 46, reach, 0.7, 0.34);
@@ -668,6 +674,7 @@ class Section {
     this.n = n; this.alive = n; this.n0 = n; this.mode = mode; this.lvl = lvl; this.gen = 0;
     this.off = new Float32Array(n * 3); this.mat = new Uint8Array(n); this.live = new Uint8Array(n).fill(1);
     this.hot = new Uint8Array(n); this.nHot = 0;   // voxels that were alight when the piece broke away
+    this.lean = 0; this.onTop = 0; this.cool = 0;
     if (!cells) return;   // a piece of another section: Section.piece fills it in
     let sx = 0, sy = 0, sz = 0, minY = 1e9, maxY = 0;
     for (let k = 0; k < n; k++) { const i = cells[k]; const x = (i & XM), z = ((i >> ZS) & ZM), y = (i >> YS); sx += x; sy += y; sz += z; if (y < minY) minY = y; if (y > maxY) maxY = y; }
@@ -747,7 +754,7 @@ class Section {
         continue;
       }
       const s = new Section(null, c, null, 'free', this.lvl, 0, 0);
-      s.gen = this.gen + 1; s.col = new Float32Array(c * 3);
+      s.gen = this.gen + 1; s.col = new Float32Array(c * 3); s.bodyId = this.bodyId;
       let gx = 0, gy = 0, gz = 0, j = 0;
       for (let k = 0; k < n; k++) if (live[k] && grp[k] === g) { gx += off[k * 3]; gy += off[k * 3 + 1]; gz += off[k * 3 + 2]; }
       gx /= c; gy /= c; gz /= c;
@@ -786,6 +793,7 @@ class Section {
   update(dt) {
     this.age += dt;
     const hinge = this.mode === 'hinge', drop = this.mode === 'drop';
+    const th0 = this.theta, p0x = this.pos.x, p0y = this.pos.y, p0z = this.pos.z;
     if (hinge) {
       this.omega += this.k * Math.sin(Math.max(0.1, this.theta)) * dt; this.theta += this.omega * dt;
       this.q.setFromAxisAngle(this.axis, this.theta);
@@ -808,32 +816,58 @@ class Section {
       const ox = off[k * 3], oy = off[k * 3 + 1], oz = off[k * 3 + 2];
       flame(px + e[0] * ox + e[4] * oy + e[8] * oz, py + e[1] * ox + e[5] * oy + e[9] * oz, pz + e[2] * ox + e[6] * oy + e[10] * oz);
     }
+    // Collisions. Each voxel of the piece is tried against the ground, against what still stands and against the other
+    // falling pieces (a table of the cells they fill, rebuilt every step). Where it strikes hard, both sides crumble; a
+    // voxel that survives the knock blocks, and a blocked piece is put back where it was and pushed off what it met.
+    // A pancake (drop) is the exception: it crushes its way straight down as before.
     let contacts = 0, crushed = 0, cx = 0, cy = 0, cz = 0;
     let wHits = 0, hx = 0, hy = 0, hz = 0, gHits = 0, gx0 = 0, gz0 = 0;   // what was struck: standing voxels, and the ground
+    let gBlock = 0, oBlock = 0, sBlock = 0, bx = 0, by = 0, bz = 0, other = null, oN = 0;
     this.cool = (this.cool || 0) - dt;
+    const me = frameSecs.length; frameSecs.push(this);
     const speed = hinge ? this.omega * this.height * 0.6 : this.vel.length(), crushP = Math.min(hinge || drop ? 0.6 : 0.42, 0.08 + speed * 0.009);
+    const dieP = drop ? 1 : Math.min(0.62, Math.max(0, speed - 4) * 0.022);   // how likely a voxel of the piece is to break where it strikes
     const wx0 = this.w.x, wy0 = this.w.y, wz0 = this.w.z, pvx = hinge ? this.pivot.x : px, pvy = hinge ? this.pivot.y : py, pvz = hinge ? this.pivot.z : pz;
     for (let k = 0; k < this.n; k++) {
       if (!this.live[k]) continue;
       const ox = off[k * 3], oy = off[k * 3 + 1], oz = off[k * 3 + 2];
       const wx = px + e[0] * ox + e[4] * oy + e[8] * oz, wy = py + e[1] * ox + e[5] * oy + e[9] * oz, wz = pz + e[2] * ox + e[6] * oy + e[10] * oz;
-      let hit = wy < 0.5;
-      if (hit) { gHits++; gx0 += wx; gz0 += wz; }
+      let hit = 0;   // 1 the ground, 2 something standing, 3 another falling piece
+      if (wy < 0.5) { hit = 1; gHits++; gx0 += wx; gz0 += wz; }
       else {
         const gx = Math.floor(wx), gy = Math.floor(wy), gz = Math.floor(wz);
         if (gx >= 0 && gz >= 0 && gx < WX && gz < WZ && gy < WY) {
           const gi = idx(gx, gy, gz);
           if (voxAt(gi)) {
-            hit = true; wHits++; hx += wx; hy += wy; hz += wz;
-            if (Math.random() < crushP) {
+            const ob = bodies[ownerAt(gi)], soft = !ob || SOFT_KIND[ob.kind];
+            hit = soft ? 0 : ob.id === this.bodyId ? 4 : 2;   // 4: the building it came off
+            if (!soft) {
+              // keep a few of the places it struck, spread over the whole contact, for the blows it lands there
+              const j = wHits < NP ? wHits : Math.random() * (wHits + 1) < NP ? (Math.random() * NP) | 0 : -1;
+              if (j >= 0) { punchAt[j * 3] = wx; punchAt[j * 3 + 1] = wy; punchAt[j * 3 + 2] = wz; }
+              wHits++; hx += wx; hy += wy; hz += wz;
+            }
+            if (soft || Math.random() < crushP) {
+              // small things (posts, trees, cars, loose rubble) are simply run down
               const lv = lvlOf(gi), m = removeVoxel(gi, gx, gy, gz); crushed++;
               if (Math.random() < 0.3) spawnDebris(gx + 0.5, gy + 0.5, gz + 0.5, (Math.random() - 0.5) * 14, 4 + Math.random() * 5, (Math.random() - 0.5) * 14, m, lv);
             }
+          } else if (!drop) {
+            // the table of cells taken by falling pieces this step
+            let h = (Math.imul(gi, 0x9E3779B1) >>> OCC_SHIFT), o = -1;
+            for (let t = 0; t < 6; t++, h = (h + 1) & OCC_MASK) {
+              if (occStamp[h] !== simStep) { occStamp[h] = simStep; occKey[h] = gi; occWho[h] = me; break; }
+              if (occKey[h] === gi) { o = occWho[h]; break; }
+            }
+            if (o >= 0 && o !== me) { const s2 = frameSecs[o]; if (s2.alive > before * 0.25) { hit = 3; if (s2 !== other) { other = s2; oN = 0; } oN++; } }
           }
         }
       }
-      if (hit) {
-        contacts++; cx += wx; cy += wy; cz += wz;
+      if (!hit) continue;
+      cx += wx; cy += wy; cz += wz;
+      // a toppling piece grinds its heel into the ground and into its own stump, as it always did
+      if (Math.random() < dieP || (hinge && (hit === 1 || hit === 4))) {
+        contacts++;
         this.live[k] = 0; this.alive--; this.mesh.setMatrixAt(k, ZERO);
         if (Math.random() < this.pd) {
           const rx = wx - pvx, ry = wy - pvy, rz = wz - pvz;
@@ -841,51 +875,86 @@ class Section {
           hotNext = this.hot[k];
           spawnDebris(wx, Math.max(0.5, wy), wz, vx * 0.5 + (Math.random() - 0.5) * 12, Math.abs(vy) * 0.22 + Math.random() * 7, vz * 0.5 + (Math.random() - 0.5) * 12, this.mat[k], this.lvl);
         }
-      }
+      } else if (hit === 1) gBlock++;
+      else { oBlock++; bx += wx; by += wy; bz += wz; if (hit === 4) sBlock++; }
     }
-    if (contacts) {
-      this.mesh.instanceMatrix.needsUpdate = true;
-      const f = contacts / before;
-      cx /= contacts; cy /= contacts; cz /= contacts;
+    const hits = contacts + gBlock + oBlock;
+    if (hits) {
+      if (contacts) this.mesh.instanceMatrix.needsUpdate = true;
+      const f = hits / before;
+      cx /= hits; cy /= hits; cz /= hits;
       if (speed > 9 && this.cool <= 0) {
         const heft = 0.45 + 0.55 * Math.min(1, before / 2500);
         if (wHits >= 8) {
           // it punches into what it lands on: enough of that and the neighbour starts to go as well
-          const keep = lastHit, r = Math.min(PUNCH_MAX, 1.6 + Math.sqrt(wHits) * 0.6 * Math.min(1.4, speed / 22) * heft);
-          blast(hx / wHits, hy / wHits, hz / wHits, r, { push: Math.min(24, speed * 0.5), maxDebris: 50, tough: 0.5, hard: 1.3, pushDebris: false });
+          // (a wide contact lands several blows across it, a small one a single blow)
+          const keep = lastHit, np = Math.min(NP, 1 + (wHits >> 5)), o = { push: Math.min(24, speed * 0.5), maxDebris: 50 / np, tough: 0.5, hard: 1.3, pushDebris: false };
+          const r = Math.min(PUNCH_MAX, 1.6 + Math.sqrt(wHits / np) * 1.0 * Math.min(1.4, speed / 22) * heft);
+          if (np === 1) blast(hx / wHits, hy / wHits, hz / wHits, r, o);
+          else for (let j = 0; j < np; j++) blast(punchAt[j * 3], punchAt[j * 3 + 1], punchAt[j * 3 + 2], r, o);
           lastHit = keep; this.cool = 0.1;
         }
         if (gHits >= 20 && before > 300) { slam(gx0 / gHits, gz0 / gHits, Math.min(1, gHits / 220) * Math.min(1, speed / 28) * heft); this.cool = 0.22; }
       }
       // a hard knock breaks the piece up, and the parts tumble on by themselves
-      if (!drop && this.gen < 2 && this.alive > 260 && speed > 11 && contacts > Math.max(5, before * 0.012) && sections.length < 27) {
+      if (!drop && this.gen < 2 && this.alive > 260 && speed > 11 && hits > Math.max(5, before * 0.012) && sections.length < 27) {
         if (crushed) hooks.destroyed(crushed, cx, cy, cz, true);
         hooks.shake(Math.min(0.5, this.alive / 9000), cx, cy, cz);
+        if (gBlock + oBlock) { this.pos.set(p0x, p0y, p0z); if (hinge) { this.theta = th0; this.q.setFromAxisAngle(this.axis, th0); } }
         this.split(0); return false;
       }
-      if (hinge) this.omega *= 1 - Math.min(0.3, f * 1.5);
-      else if (!drop) {
-        // what it lands on pushes back where it touches, so a piece that comes down on an edge rolls over
-        const J = Math.max(0, -this.vel.y) * Math.min(1, f * 6) * 1.1 / Math.max(40, this.height * this.height * 0.5);
-        this.w.x -= (cz - pz) * J; this.w.z += (cx - px) * J;
-        const wl = this.w.length(); if (wl > 2.6) this.w.multiplyScalar(2.6 / wl);
-        this.vel.multiplyScalar(Math.max(0.3, 1 - f * 3.5)); this.w.multiplyScalar(0.96);
+      const blocked = gBlock + oBlock;
+      if (hinge) {
+        if (oBlock >= Math.max(4, before * 0.002)) {
+          // a toppling piece that meets something solid is stopped there: it leans, and only goes on if that gives way
+          this.theta = th0; this.omega *= -0.12; this.leaning = true;
+          this.q.setFromAxisAngle(this.axis, th0); _p.copy(this.c0).sub(this.pivot).applyQuaternion(this.q); this.pos.copy(this.pivot).add(_p);
+        } else this.omega *= 1 - Math.min(0.3, f * 1.5);
+      } else if (!drop) {
+        if (blocked) {
+          // away from what was met: straight up off the ground, and from the point of contact toward the piece's middle
+          let nx = 0, ny = gBlock, nz = 0;
+          if (oBlock) { const ax = px - bx / oBlock, ay = py - by / oBlock, az = pz - bz / oBlock, al = Math.hypot(ax, ay, az) + 1e-6; nx += ax / al * oBlock; ny += ay / al * oBlock; nz += az / al * oBlock; }
+          const nl = Math.hypot(nx, ny, nz) + 1e-6; nx /= nl; ny /= nl; nz /= nl;
+          this.pos.set(p0x + nx * 0.12, p0y + ny * 0.12, p0z + nz * 0.12);
+          const vn = this.vel.x * nx + this.vel.y * ny + this.vel.z * nz;
+          if (vn < 0) {
+            // where it touches pushes back, so a piece that comes down on an edge or a corner goes over
+            const rx = cx - px, ry = cy - py, rz = cz - pz, J = -vn * 1.6 / Math.max(40, this.height * this.height * 0.5);
+            this.w.x += (ry * nz - rz * ny) * J; this.w.y += (rz * nx - rx * nz) * J; this.w.z += (rx * ny - ry * nx) * J;
+            this.vel.x -= 1.12 * vn * nx; this.vel.y -= 1.12 * vn * ny; this.vel.z -= 1.12 * vn * nz;
+            // another falling piece takes its share of the knock
+            if (other && oN > 3 && other.mode === 'free') { const sh = Math.min(1, before / other.alive) * 0.5 * vn; other.vel.x += sh * nx; other.vel.y += sh * ny; other.vel.z += sh * nz; }
+          }
+          this.vel.multiplyScalar(0.9); this.w.multiplyScalar(0.9);
+          const wl = this.w.length(); if (wl > 2.6) this.w.multiplyScalar(2.6 / wl);
+        } else {
+          this.vel.multiplyScalar(Math.max(0.3, 1 - f * 3.5)); this.w.multiplyScalar(0.96);
+        }
       }
       if (speed > 8) {
-        const power = Math.min(1, contacts / 200) * Math.min(1, speed / 36);
+        const power = Math.min(1, hits / 200) * Math.min(1, speed / 36);
         this.puff -= dt;
         if (drop) { if (this.puff <= 0) { this.puff = 0.07; const a = Math.random() * 6.283; dust(cx + Math.cos(a) * 12, cy + 0.5, cz + Math.sin(a) * 12, 3, 10); dust(cx, cy + 0.5, cz, 2, 18); } }
         else if (Math.random() < 0.5) dust(cx, cy + 0.5, cz, 1 + Math.round(power * 5), 6 + power * 8);
         hooks.shake(power * 0.35, cx, cy, cz); hooks.sound('crumble', 0.3 + power * 0.7, cx, cy, cz);
       }
       if (crushed) hooks.destroyed(crushed, cx, cy, cz, true);
-      if (!hinge && !drop && speed < 6) this.stuck += dt;
+      if (!hinge && !drop && speed < 6) { this.stuck += dt; if (sBlock > gBlock && sBlock * 2 > oBlock) this.onTop += dt; }
     }
     if (hinge) {
-      if (this.omega < 0.06 && this.theta > 0.25) this.slow += dt; else this.slow = 0;
+      if (Math.abs(this.omega) < 0.06 && this.theta > 0.25) this.slow += dt; else this.slow = 0;
       if (this.theta > this.snapAt && this.alive > 400 && sections.length < 27) { this.split(1); return false; }
+      // held up against a neighbour for a while: it breaks where it leans and comes down in pieces
+      if (this.leaning) this.lean += dt;
+      if (this.lean > 0.6) { if (this.gen < 2 && this.alive > 260 && sections.length < 27) this.split(1); else this.shatter(); return false; }
     }
     this.mesh.position.copy(this.pos); this.mesh.quaternion.copy(this.q);
+    if (!hinge && !drop && this.stuck > 0.45 && this.onTop > 0.3 && this.alive > 500) {
+      // a big piece that has come to rest on what is left of its own building does not sit there: it goes down through it, floor on floor
+      this.mode = 'drop'; this.vel.set(0, -6, 0); this.w.multiplyScalar(0.1); this.stuck = 0;
+      return true;
+    }
     const done = hinge ? (this.theta > 1.5 || this.slow > 1.2) : (this.stuck > 0.45 || py < -20);
     if (this.alive < Math.max(8, this.n0 * 0.06) || done || this.age > 9) { this.shatter(); return false; }
     return true;
@@ -893,7 +962,7 @@ class Section {
   shatter() {
     _m.makeRotationFromQuaternion(this.q);
     const e = _m.elements, off = this.off, big = this.mode !== 'free';
-    const p = Math.min(1, (big ? 1500 : 400) * cfg.debrisMul / Math.max(1, this.alive));
+    const p = Math.min(1, (big ? 1500 : this.alive > 1500 ? 900 : 400) * cfg.debrisMul / Math.max(1, this.alive));
     const wx0 = this.w.x, wy0 = this.w.y, wz0 = this.w.z;
     let minX = 1e9, maxX = -1e9, minZ = 1e9, maxZ = -1e9;
     for (let k = 0; k < this.n; k++) {
@@ -1094,7 +1163,7 @@ function detach(b, cells, n) {
       if (hgt > wid * 1.5 && y0 <= 16) { hx = lastHit[0] - sx / n; hz = lastHit[2] - sz / n; const l = Math.hypot(hx, hz); if (l > 0.5) { hx /= l; hz /= l; mode = 'hinge'; } }
     }
     if (mode === 'hinge' && Math.hypot(hx, hz) < 0.5) mode = 'free';
-    sec = new Section(cells, n, lastHit, mode, b.level, hx, hz); sections.push(sec);
+    sec = new Section(cells, n, lastHit, mode, b.level, hx, hz); sec.bodyId = b.id; sections.push(sec);
   }
   let sx = 0, sy = 0, sz = 0;
   const p = Math.min(1, 90 / n);
@@ -1161,6 +1230,7 @@ export function stepSim(dt) {
     pending.delete(id); b.seen = simStep; checkBody(b);
     if (++n >= 4 || performance.now() - tc > 4) break;
   }
+  frameSecs.length = 0;
   for (let i = sections.length - 1; i >= 0; i--) if (!sections[i].update(dt)) sections.splice(i, 1);
   updateDebris(dt);
   dustP.update(dt); fireP.update(dt);
