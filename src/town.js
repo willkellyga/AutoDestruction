@@ -1,6 +1,6 @@
 // Crumbletown's layout: twenty lots round a ring of four streets, each turned to face its street, plus the park,
 // street dressing and the trees round the edge.
-import { M, WX, WZ, CITY, PARIS, NYC, TOKYO, TILES, TILE_X, TILE_Z, tiled, LOC, LOT, STREET_X, STREET_Z, place, begin, set, box, ctx, lots, rubbleBody, setSeed, rnd, ri, finalize } from './world.js';
+import { M, WX, WZ, CITY, PARIS, NYC, TOKYO, CAIRO, TILES, TILE_X, TILE_Z, tiled, LOC, LOT, STREET_X, STREET_Z, place, begin, set, box, ctx, lots, rubbleBody, setSeed, rnd, ri, finalize } from './world.js';
 import { disc, tree, lampPost, bench, bin, hydrant, planter, hedge, fence, car } from './kit.js';
 import { cottage, shop, fuel } from './buildings_a.js';
 import { apartment, watertower, church, tower } from './buildings_b.js';
@@ -13,6 +13,9 @@ import { nycLots, nycKeepOut, NYC_KIT } from './nyc.js';
 import { nycExtras } from './nyc_water.js';
 import { tokyoLots, tokyoKeepOut, TOKYO_KIT } from './tokyo.js';
 import { tokyoExtras } from './tokyo_water.js';
+import { cairoLots, cairoKeepOut, CAIRO_KIT } from './cairo.js';
+import { cairoExtras } from './cairo_water.js';
+import { palm } from './cairo_kit.js';
 
 // The districts (Hole.io style: small food where you start, the big prize in sight, clusters to run between):
 //   south-west  suburbs, where he hatches: cottages, a park, a diner, cars to snack on
@@ -78,10 +81,10 @@ const TOWN = [
   { x: 446, z: 342, f: 0, k: 'factory', d: 'yard', o: { wall: M.BRICK2, name: 'MILL', title: 'Mill', car: M.CAR_A } },
 ];
 // the blocks between the streets, and the alleys behind their back-to-back rows (ground.js paints them, generateTown fences them)
-export const LOTS = TOKYO ? tokyoLots() : NYC ? nycLots() : PARIS ? parisLots() : CITY ? cityLots() : [];
+export const LOTS = CAIRO ? cairoLots() : TOKYO ? tokyoLots() : NYC ? nycLots() : PARIS ? parisLots() : CITY ? cityLots() : [];
 if (!CITY) for (let tz = 0; tz < TILES; tz++) for (let tx = 0; tx < TILES; tx++) for (const L of TOWN) LOTS.push({ ...L, x: L.x + tx * TILE_X, z: L.z + tz * TILE_Z });
-export const BLOCKS = PARIS || NYC || TOKYO ? [] : CITY ? cityBlocks() : Array.from({ length: TILES }, (_, t) => [[98, 236], [272, 410]].map(([a, b]) => [a + t * TILE_X, b + t * TILE_X])).flat();
-export const ALLEYS = PARIS || NYC || TOKYO ? [] : CITY ? cityAlleys() : tiled([138, 260], TILE_Z);
+export const BLOCKS = PARIS || NYC || TOKYO || CAIRO ? [] : CITY ? cityBlocks() : Array.from({ length: TILES }, (_, t) => [[98, 236], [272, 410]].map(([a, b]) => [a + t * TILE_X, b + t * TILE_X])).flat();
+export const ALLEYS = PARIS || NYC || TOKYO || CAIRO ? [] : CITY ? cityAlleys() : tiled([138, 260], TILE_Z);
 
 // A lot-local rectangle (a across, b back from the front) as a world rectangle [xa, za, xb, zb].
 export function lotRect(L, a0, b0, a1, b1) {
@@ -111,13 +114,13 @@ function park(lx, lz) {
   planter(lx + 4, lz + 19, 9); planter(lx + 27, lz + 19, 9);
 }
 
-const KIT = { cottage, shop, fuel, apartment, watertower, church, tower, park, carpark, depot, plaza, needle, stadium, factory, cinema, rowhouse, ...PARIS_KIT, ...NYC_KIT, ...TOKYO_KIT };
-const off = TOKYO ? tokyoKeepOut : NYC ? nycKeepOut : PARIS ? parisKeepOut : () => false;   // Paris and New York keep the street dressing out of the water and off their set pieces
+const KIT = { cottage, shop, fuel, apartment, watertower, church, tower, park, carpark, depot, plaza, needle, stadium, factory, cinema, rowhouse, ...PARIS_KIT, ...NYC_KIT, ...TOKYO_KIT, ...CAIRO_KIT };
+const off = CAIRO ? cairoKeepOut : TOKYO ? tokyoKeepOut : NYC ? nycKeepOut : PARIS ? parisKeepOut : () => false;   // Paris and New York keep the street dressing out of the water and off their set pieces
 
 export function generateTown() {
   ctx.L = 3;
   LOTS.forEach((L, i) => {
-    ctx.lot = lots.length; setSeed(9000 + i * 101);
+    ctx.lot = lots.length; setSeed(9000 + (L.sid === undefined ? i : L.sid) * 101);   // Cairo numbers its lots itself, so one built over later does not shift the rest
     lots.push({ id: ctx.lot, x: L.x, z: L.z, main: 0, kind: L.k });
     place(L.x, L.z, L.f, L.s || LOT);
     KIT[L.k](LOC, LOC, 3, L.o || {});
@@ -126,6 +129,7 @@ export function generateTown() {
   if (PARIS) { place(0, 0, -1); parisExtras(); }   // the river is drawn in plain map coordinates
   if (NYC) { place(0, 0, -1); nycExtras(); }
   if (TOKYO) { place(0, 0, -1); tokyoExtras(); }
+  if (CAIRO) { place(0, 0, -1); cairoExtras(); }
   // street dressing that no lot brings with it, laid along every street: lamps on both pavements, a hydrant or bin here
   // and there, a tree at some corners and cars parked in the kerb lane. A prop is turned by placing it as a one-voxel lot.
   const prop = (x, z, f, fn) => { place(x, z, f, 1); fn(LOC, LOC); };
@@ -148,7 +152,7 @@ export function generateTown() {
     if (r < 0.18) prop(j + 8, c - 16, 0, hydrant); else if (r < 0.32) prop(j + 8, c + 16, 0, bin);
     if (rnd() < 0.3 && !nearX(j + 20, STREET_X, 34)) { place(0, 0, -1); car(j + 2, rnd() < 0.5 ? c - 9 : c + 3, PAINTS[ri(0, 2)]); }
   }
-  for (const x of STREET_X) for (const z of STREET_Z) if (rnd() < 0.5 && !off(x + 15, z + 15)) prop(x + 15, z + 15, 0, (px, pz) => tree(px, pz, ri(9, 11), 4));
+  for (const x of STREET_X) for (const z of STREET_Z) if (rnd() < 0.5 && !off(x + 15, z + 15)) prop(x + 15, z + 15, 0, (px, pz) => (CAIRO ? palm(px, pz, ri(16, 22)) : tree(px, pz, ri(9, 11), 4)));
   place(0, 0, -1);
   // the alleys behind the back-to-back rows: a fence down the middle with gaps, crates and bins
   const big = LOTS.filter((L) => L.s > LOT), free = (xa, xb, z) => big.every((L) => xb < L.x - 2 || xa > L.x + L.s + 1 || z < L.z || z > L.z + L.s);
@@ -178,7 +182,7 @@ export function generateTown() {
     if (!clearOf(x, STREET_X) || !clearOf(z, STREET_Z) || !offLots(x, z) || off(x, z)) continue;
     if (lastTrees.some((p) => Math.abs(p[0] - x) + Math.abs(p[1] - z) < 14)) continue;
     lastTrees.push([x, z]); n++;
-    tree(x, z, ri(10, 15), ri(4, 6));
+    if (CAIRO) palm(x, z, ri(16, 26)); else tree(x, z, ri(10, 15), ri(4, 6));
   }
   for (let r = 0; r < 4; r++) { ctx.L = r; rubbleBody.push(begin('Rubble', 'rubble', false)); }
   finalize();
