@@ -4,7 +4,7 @@
 // The map is flat, so the water is paint, a bridge's deck is the street itself, and monsters wade.
 import { M, WX, WZ, STREET_X, STREET_Z, set, box, begin, setSeed } from './world.js';
 import { lampPost } from './kit.js';
-import { RIVER, BAY, PALACE_AT, STATION_AT, SENSO_AT, SHIBA_AT, WHEEL_AT, SCRAMBLE, POND_AT, wet } from './tokyo.js';
+import { RIVER, BAY, PALACE_AT, STATION_AT, SENSO_AT, SHIBA_AT, WHEEL_AT, SCRAMBLE, POND_AT, METRO_AT, STUDIO_AT, EXPO_AT, wet } from './tokyo.js';
 import { PALACE, STATION } from './tokyo_landmarks.js';
 
 // A length of iron railing along x (z0 === z1) or along z.
@@ -158,6 +158,12 @@ export function tokyoGround(g, GK, rect, speckle) {
   g.fillStyle = '#7fae66'; for (const [a, b] of [[2, 2], [70, 2], [2, 70], [70, 70]]) rect(SHIBA_AT.x + a, SHIBA_AT.z + b, SHIBA_AT.x + a + 14, SHIBA_AT.z + b + 14);
   g.fillStyle = '#d2c8b0'; rect(WHEEL_AT.x, WHEEL_AT.z, WHEEL_AT.x + 86, WHEEL_AT.z + 86); speckle(WHEEL_AT.x, WHEEL_AT.z, WHEEL_AT.x + 86, WHEEL_AT.z + 86, 5000, GRIT);
   g.fillStyle = '#7fae66'; rect(WHEEL_AT.x + 2, WHEEL_AT.z + 2, WHEEL_AT.x + 30, WHEEL_AT.z + 14); rect(WHEEL_AT.x + 2, WHEEL_AT.z + 72, WHEEL_AT.x + 30, WHEEL_AT.z + 84);
+  // Build 2: the plaza of the twin towers, the studio's lot (it runs 86 down the avenue) and the expo's forecourt
+  g.fillStyle = '#c9c6bd'; rect(METRO_AT.x, METRO_AT.z, METRO_AT.x + 86, METRO_AT.z + 86); speckle(METRO_AT.x, METRO_AT.z, METRO_AT.x + 86, METRO_AT.z + 86, 5000, GRIT);
+  g.fillStyle = '#b4b0a6'; for (let z = METRO_AT.z + 4; z < METRO_AT.z + 86; z += 8) rect(METRO_AT.x + 70, z, METRO_AT.x + 86, z + 0.3);
+  g.fillStyle = '#c2c6cc'; rect(STUDIO_AT.x, STUDIO_AT.z, STUDIO_AT.x + 40, STUDIO_AT.z + 86); speckle(STUDIO_AT.x, STUDIO_AT.z, STUDIO_AT.x + 40, STUDIO_AT.z + 86, 3000, GRIT);
+  g.fillStyle = '#cfcabd'; rect(EXPO_AT.x, EXPO_AT.z, EXPO_AT.x + 60, EXPO_AT.z + 86); speckle(EXPO_AT.x, EXPO_AT.z, EXPO_AT.x + 60, EXPO_AT.z + 86, 4000, GRIT);
+  g.fillStyle = '#7fae66'; rect(EXPO_AT.x + 4, EXPO_AT.z + 64, EXPO_AT.x + 56, EXPO_AT.z + 82);
   // the pond in the garden at Ueno
   g.fillStyle = SHADE; E(POND_AT.x + 20, POND_AT.z + 20, 15, 11.5); g.fill(); g.fillStyle = '#5f9fae'; E(POND_AT.x + 20, POND_AT.z + 20, 13.5, 10); g.fill();
   // the water: the Sumida and the bay
