@@ -313,6 +313,14 @@ const failing = [];
 const explQueue = [];
 const glassQ = [];
 const burnT = new Map();
+// A storey's strength is counted in voxels that hold something up: carrying material with more of the same body's
+// carrying material straight above (walls and columns, not floorboards or a roof). Call before voxel i stops carrying.
+function uncarry(b, i, y, m) {
+  if (!CARRY[m]) return;
+  const up = i + SXZ, dn = i - SXZ;
+  if (ownerAt(up) === b.id && CARRY[voxAt(up)]) b.carry[y] -= CARRY[m];
+  if (y > 0 && ownerAt(dn) === b.id) b.carry[y - 1] -= CARRY[voxAt(dn)];
+}
 const loose = [];   // rubble that may have lost what it lay on
 let simStep = 0;
 const later = [];   // bodies to look at again shortly: [id, seconds]
@@ -320,9 +328,9 @@ function removeVoxel(i, x, y, z) {
   const m = voxAt(i);
   const b = bodies[ownerAt(i)];
   if (b && !b.span0 && b.kind !== 'rubble') prime(b);
+  if (b && b.kind !== 'rubble') { uncarry(b, i, y, m); b.count--; b.layers[y]--; pending.add(b.id); stats.destroyed++; }
   setVox(i, 0); setGone(i, 1);
   if (burnAt(i)) { setBurn(i, 0); burnT.delete(i); }
-  if (b && b.kind !== 'rubble') { b.count--; b.layers[y]--; b.carry[y] -= CARRY[m]; pending.add(b.id); stats.destroyed++; }
   markDirty(x, z);
   // what leaned on this voxel: rubble lying on top of it, and parts that hang on another body (a sign on a roof)
   for (let f = 0; f < 6; f++) {
@@ -400,7 +408,8 @@ export function blast(cx, cy, cz, r, o = {}) {
       // the concrete breaks away and the bars stay, still tying the pieces together
       const b = bodies[ownerAt(i)];
       if (b && !b.span0 && b.kind !== 'rubble') prime(b);
-      setVox(i, M.REBAR); if (b && b.kind !== 'rubble') { b.carry[y] -= CARRY[M.CONC]; pending.add(b.id); }
+      if (b && b.kind !== 'rubble') { uncarry(b, i, y, M.CONC); pending.add(b.id); }
+      setVox(i, M.REBAR);
       markDirty(x, z);
       if (Math.random() < p) { const d = Math.sqrt(d2) + 0.01, s = push * (0.45 + Math.random() * 0.75); spawnDebris(x + 0.5, y + 0.5, z + 0.5, ex / d * s + dx * push, ey / d * s + 5, ez / d * s + dz * push, M.CONC, lvl); }
       continue;
@@ -562,8 +571,8 @@ function stepFire(dt) {
     if (Math.random() < CHARP[m]) {
       // burnt through: still there, but it carries nothing, so the storey rule can finish the job
       if (b && !b.span0 && b.kind !== 'rubble') prime(b);
+      if (b && b.kind !== 'rubble') { uncarry(b, i, y, m); pending.add(b.id); }
       setVox(i, M.CHAR); setSoot(i, 0);
-      if (b && b.kind !== 'rubble') { b.carry[y] -= CARRY[m]; pending.add(b.id); }
       markLazy(x, z);
     } else { removeVoxel(i, x, y, z); if (Math.random() < 0.15) spawnDebris(x + 0.5, y + 0.5, z + 0.5, (Math.random() - 0.5) * 5, 1, (Math.random() - 0.5) * 5, M.CHAR, b ? b.level : 1, 0.7); }
   }
@@ -1036,7 +1045,9 @@ export function initSim(sc) {
   meshOpts.count = true;
   for (let k = 0; k < NCX * NCZ; k++) rebuildChunk(k);
   meshOpts.count = false;
-  for (let i = 1; i < bodies.length; i++) { const b = bodies[i]; b.hung = b.kind !== 'rubble' && b.count > 0 && b.layers0[0] === 0; }
+  for (let i = 1; i < bodies.length; i++) { const b = bodies[i]; b.hung = b.kind !== 'rubble' && b.count > 0 && b.layers0[0] === 0; b.carry.fill(0); }
+  eachVoxel((i, m) => { if (!CARRY[m]) return; const o = ownerAt(i), up = i + SXZ; if (ownerAt(up) === o && CARRY[voxAt(up)]) bodies[o].carry[i >> YS] += CARRY[m]; });
+  for (let i = 1; i < bodies.length; i++) bodies[i].dCarry = bodies[i].carry.slice();
   boxGeo = new THREE.BoxGeometry(1, 1, 1);
   secMat = new THREE.MeshLambertMaterial();
   dmesh = new THREE.InstancedMesh(boxGeo, new THREE.MeshLambertMaterial(), ND);
