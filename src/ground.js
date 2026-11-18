@@ -1,7 +1,13 @@
 // The painted ground: grass, the four streets with pavements and crossings, lot pads and garden paths.
-import { WX, WZ, STREET_X, STREET_Z, WALK, ROADW } from './world.js';
+import { WX, WZ, PARIS, NYC, TOKYO, STREET_X, STREET_Z, WALK, ROADW } from './world.js';
 import { LOTS, lotRect, BLOCKS, ALLEYS } from './town.js';
 import { STADIUM } from './landmarks.js';
+import { PARIS_PAD } from './paris.js';
+import { parisBase, parisGround } from './paris_seine.js';
+import { NYC_PAD } from './nyc.js';
+import { nycBase, nycGround, nycOver } from './nyc_water.js';
+import { TOKYO_PAD } from './tokyo.js';
+import { tokyoBase, tokyoGround, tokyoOver } from './tokyo_water.js';
 
 export const GK = Math.min(8, Math.floor(4096 / Math.max(WX, WZ)));   // texels a voxel, kept inside a 4096 texture
 export function groundCanvas() {
@@ -14,8 +20,11 @@ export function groundCanvas() {
   const H = ROADW / 2, P = H + WALK;
   g.fillStyle = '#79aa62'; g.fillRect(0, 0, cv.width, cv.height);
   speckle(0, 0, WX, WZ, Math.round(52000 * WX * WZ / 96768), ['rgba(92,146,74,0.5)', 'rgba(146,192,108,0.45)', 'rgba(110,160,84,0.5)', 'rgba(170,190,110,0.25)']);
+  if (PARIS) parisBase(g, GK, rect, speckle);
+  if (NYC) nycBase(g, GK, rect, speckle);
+  if (TOKYO) tokyoBase(g, GK, rect, speckle);
   // lot pads and paths
-  const PAD = { shop: '#c9c2b2', apartment: '#c9c2b2', tower: '#c4c6c8', fuel: '#8e9096', watertower: '#b9a98c', carpark: '#55595f', depot: '#a39d90', plaza: '#d6cdb8', needle: '#d6cdb8', factory: '#9a9690', cinema: '#c9c2b2' };
+  const PAD = { shop: '#c9c2b2', apartment: '#c9c2b2', tower: '#c4c6c8', fuel: '#8e9096', watertower: '#b9a98c', carpark: '#55595f', depot: '#a39d90', plaza: '#d6cdb8', needle: '#d6cdb8', factory: '#9a9690', cinema: '#c9c2b2', ...(PARIS ? PARIS_PAD : {}), ...(NYC ? NYC_PAD : {}), ...(TOKYO ? TOKYO_PAD : {}) };
   const PATH = '#cfc6b0';
   for (const L of LOTS) {
     if (L.s) continue;   // the big lots are painted after the alleys
@@ -60,6 +69,9 @@ export function groundCanvas() {
     for (const s of [-1, 1]) { R(m + s * 18, m - 6, m + s * 13, m - 5.6); R(m + s * 18, m + 5.6, m + s * 13, m + 6); R(m + s * 13 - 0.2, m - 6, m + s * 13 + 0.2, m + 6); }
     g.strokeStyle = '#f2efe4'; g.lineWidth = 0.4 * GK; g.beginPath(); g.arc(c[0] * GK, c[1] * GK, 4 * GK, 0, Math.PI * 2); g.stroke();
   }
+  if (NYC) nycGround(g, GK, rect, speckle);
+  if (TOKYO) tokyoGround(g, GK, rect, speckle);
+  if (PARIS) parisGround(g, GK, rect, speckle);   // the river and the squares go under the streets, so a bridge is just a street
   // pavements
   g.fillStyle = '#c8c1b1';
   for (const z of STREET_Z) rect(0, z - P, WX, z + P);
@@ -91,5 +103,7 @@ export function groundCanvas() {
       rect(x + t, z - P - 5, x + t + 1.5, z - P - 1); rect(x + t, z + P + 1, x + t + 1.5, z + P + 5);
     }
   }
+  if (TOKYO) tokyoOver(g, GK, rect);   // the scramble crossing's diagonal stripes
+  if (NYC) nycOver(g, GK, rect);   // the piers are painted over the streets that run out onto them
   return cv;
 }
