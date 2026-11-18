@@ -321,7 +321,7 @@ export function blowUp(u, debris) {
       const gone = isGlass(c) || lump < 0.5 * clamp(1 - d / wk.R) || grain < 0.03;
       if (gone) { col[n] = -1; p.count--; if (thrown < wk.max && grain < (isGlass(c) ? 0.3 : 0.7)) { thrown++; toss(p, i, j, k, isGlass(c) ? SHARD : tone(c & 0xffffff, 0.5), debris, c0.x, c0.y - 1, c0.z, wk.push); } continue; }
       // soot: black at the seat of the blast, streaked further out, the paint still showing at the far end
-      const burn = clamp(Math.max(0.34, 1.25 - d / wk.soot) + (lump - 0.5) * (wk.mottle ?? 0.5) + (grain - 0.5) * 0.2);
+      const burn = clamp(Math.max(wk.sootMin ?? 0.34, 1.25 - d / wk.soot) + (lump - 0.5) * (wk.mottle ?? 0.5) + (grain - 0.5) * 0.2);
       col[n] = tone(c & 0xffffff, 0.92 - 0.72 * burn);
     }
     p.dirty = true;
@@ -366,6 +366,17 @@ export function crush(u, debris, fx = 0, fz = 0) {
     }
     p.count = 0; p.dirty = true;
   }
+  // what lies loose on a wreck (a liner's fallen funnels) is kicked to bits when the foot comes down by it
+  if (u.blown && wk.fallen) for (const p of u.parts) {
+    if (!wk.fallen.test(p.name) || !p.count || ab(u.rest[p.name].pos[2] / p.h - fz) > 34) continue;
+    const { nx, ny, nz, col } = p;
+    for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+      const n = (k * ny + j) * nx + i, c = col[n]; if (c < 0) continue;
+      if (shards < 320 && hash(i, j, k, 3) < 0.3) { shards++; toss(p, i, j, k, c, debris, c0.x, c0.y, c0.z, 14); }
+      col[n] = -1;
+    }
+    p.count = 0; p.dirty = true;
+  }
   const { nx, ny, nz, col } = body, dims = [nx, ny, nz], org = [body.i0, body.j0, body.k0], b = 1 - a, na = dims[a], nb = dims[b];
   const at = (qa, qb, k) => (a === 1 ? (k * ny + qa) * nx + qb : (k * ny + qb) * nx + qa);
   // the face it rests on, and the middle of it across the foot
@@ -391,11 +402,13 @@ export function crush(u, debris, fx = 0, fz = 0) {
       if (whole) { out[n] = c; continue; }
       if (isGlass(c)) { if (shards < wk.max * 0.75 && hash(qa, qb, k, 9) < 0.55) { shards++; const ijk = a === 1 ? [qb, qa] : [qa, qb]; toss(body, ijk[0], ijk[1], k, SHARD, debris, c0.x, c0.y, c0.z, 12); } continue; }
       if (mb < 0) mb = m;
-      const nm = Math.round(m * keep), t = at(Math.max(0, Math.min(na - 1, G + sg * nm)), qb, k);
+      const nm = Math.max(Math.round(m * keep), Math.min(m, wk.floor || 0)), t = at(Math.max(0, Math.min(na - 1, G + sg * nm)), qb, k);
       const folded = (c & GLOW) ? tone(c & 0xffffff, 0.45) : m - mb > 2 ? tone(c, 0.74 + 0.24 * hash(qa, qb, k, 4)) : c;
       if (nm >= top) { out[t] = folded; top = nm; }                                     // what was on top stays on top
       else if (out[t] < 0) out[t] = folded;
     }
+    // a hollow ship: what is pressed down is packed solid, so the dent is a mash of her own plating and not a few loose cubes
+    if (wk.pack && !whole && top > 0) { let c = -1; for (let nm = top; nm >= 0; nm--) { const t = at(Math.max(0, Math.min(na - 1, G + sg * nm)), qb, k); if (out[t] >= 0) c = out[t]; else if (c >= 0) out[t] = tone(c & 0xffffff, 0.5 + 0.3 * hash(nm, qb, k, seed + 3)); } }
   }
   let count = 0; for (let n = 0; n < out.length; n++) if (out[n] >= 0) count++;
   body.col = out; body.count = count; body.dirty = true;
@@ -421,7 +434,7 @@ export function fireSpots(u, n = 12) {
     found.push([Math.hypot(w[b] - O[b], w[c] - O[c]) + (u.def.wk.spread || 7) * hash(q[b], 1, q[c], 2), w[0] * p.h, w[1] * p.h, w[2] * p.h]); break;
   }
   found.sort((x, y) => x[0] - y[0]);
-  const out = []; for (let m = 0; m < found.length && out.length < n; m += 3) out.push(found[m].slice(1));
+  const out = [], stride = u.def.wk.fireStride || 3; for (let m = 0; m < found.length && out.length < n; m += stride) out.push(found[m].slice(1));   // a long ship takes a wide stride, so she burns from end to end
   return out;
 }
 export const CAR_TYPES = ['sedan', 'hatch', 'taxi', 'police'];

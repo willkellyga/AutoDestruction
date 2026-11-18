@@ -1,6 +1,6 @@
 // Working boats, built in code at eighth-metre cubes on the same kit as the cars and buses: a harbor tug (15 m), a
-// barge (17 m) with a choice of loads, with or without a wheelhouse aft, a sightseeing tour boat (20 m) and a
-// double-ended harbor ferry (22 m).
+// barge (17 m) with a choice of loads, with or without a wheelhouse aft, a sightseeing tour boat (20 m), a
+// double-ended harbor ferry (22 m) and an ocean liner (46 m).
 //
 // Forward is +z, port (left) is +x, and y = 0 is the waterline: the hull goes on down below it, so there is something to
 // see when a boat rolls over, and the water hides the rest. A hull is a shell of cubes cut from a shape function (beam,
@@ -441,6 +441,124 @@ function ferryParts(o) {
 }
 
 // =====================================================================================================================
+// The ocean liner: 368 cubes long (k = -184..183), 48 in the beam. A black hull with a flared bow, a counter stern and
+// rows of lit portholes; a promenade deck with an open walk down each side; a boat deck with seven lifeboats a side; a
+// bridge with wings; three raked funnels (parts of their own: they come down when she is wrecked); two masts with
+// derricks over the hatches. She is hollow, and the decks hidden under the houses are left out, to keep her light.
+// =====================================================================================================================
+export const LINER_PAINT = { red: 0xc8452c, buff: 0xd9a13a, blue: 0x2a5fae };
+const LNR = { k0: -184, k1: 183, B: 24, D: 6 };
+const lnPlan = (k) => (k > 64 ? 1 - Math.pow((k - 64) / 120, 1.7) : k < -150 ? 0.45 + 0.55 * Math.sqrt(Math.max(0, 1 - Math.pow((-150 - k) / 36, 2))) : 1);
+const lnDeck = (k) => 26 + (k > 90 ? rnd(7 * Math.pow((k - 90) / 93, 2)) : 0) + (k < -140 ? rnd(2 * Math.pow((-140 - k) / 44, 2)) : 0);
+// the bow flares (narrow at the water, full at the deck) and the stern overhangs
+const lnHalf = (k, j) => { const up = clamp(j / lnDeck(k)), fb = clamp((k - 100) / 84), fs = clamp((-160 - k) / 24); return Math.max(1, rnd(LNR.B * lnPlan(k) * (1 - 0.3 * fb * (1 - up)) * (1 - 0.55 * fs * Math.pow(1 - up, 1.5)) * (j >= 0 ? 1 : 1 + 0.03 * j))); };
+const FUNNELS = [36, -4, -44];
+// a mast: two cubes square to `mid`, one above; a yard; a derrick boom each side sloping away over the hatch (dir = 1 forward)
+function mast(g, k, j0, mid, top, yard, dir) {
+  bx(g, -1, 0, j0, mid, k, k + 1, 0xd9a13a); bx(g, -1, 0, mid + 1, top, k, k, 0xd9a13a); bx(g, -8, 7, yard, yard, k, k, 0xd9a13a); bx(g, -1, 0, top + 1, top + 1, k, k, 0xcfcab8);
+  bx(g, -3, 2, mid - 8, mid - 6, k - 1, k + 2, WHITE);                                    // the crow's nest
+  for (const i of [-4, 3]) for (let t = 0; t < 24; t++) { const j = j0 + 5 + fl(t * 0.5), kk = k + (dir > 0 ? 2 + t : -1 - t); g.set(i, j, kk, STEEL); if (t % 2) g.set(i, j + 1, kk, STEEL); }
+  bx(g, -4, 3, j0 + 4, j0 + 5, k, k + 1, STEEL);
+}
+function lifeboat(g, s, c, j0, cover) {
+  for (let k = c - 9; k <= c + 8; k++) {
+    const e = ab(k - c + 0.5), w = e > 7.5 ? 1 : 2;
+    for (let a = 19 - w; a <= 18 + w; a++) { if (w === 2 && a > 17 && a < 20) g.set(sx(s, a), j0, k, WHITE); g.set(sx(s, a), j0 + 1, k, WHITE); g.set(sx(s, a), j0 + 2, k, k === c - 1 || k === c ? 0x2a2c30 : WHITE); g.set(sx(s, a), j0 + 3, k, cover); }
+  }
+  for (const k of [c - 5, c + 4]) bxs(g, s, 18, 19, j0 - 1, j0 - 1, k, k, 0x55595f);       // chocks
+  for (const k of [c - 10, c + 9]) { bxs(g, s, 20, 20, j0 - 1, j0 + 7, k, k, 0x6d7279); bxs(g, s, 18, 20, j0 + 7, j0 + 7, k, k, 0x6d7279); }   // davits
+}
+
+function linerParts(o) {
+  const seed = o.seed || 0, paint = LINER_PAINT[o.paint] ?? LINER_PAINT.red, { k0, k1 } = LNR;
+  const A0 = -118, A1 = 94, AO = 21, AI = 17, D0 = 26, RA = 42, B0 = -100, B1 = 84, BW = 15, RB = 59, C0 = -70, C1 = 60, CW = 9, RC = 71;
+  const teak = (i, k) => tone(mod(i, 4) === 0 ? TEAK2 : TEAK, 0.94 + 0.12 * hash(i, 2, k >> 2, seed)), GREY = 0xcfd2d4, DAVIT = 0x6d7279;
+  const bulbs = []; for (const s of SIDES) for (let k = A0 + 4; k <= A1 - 16; k += 8) bulbs.push([sx(s, AO + 1), RA - 1, k]);
+  const parts = [
+    { name: 'body', parent: null, pivot: [0, 0, 0], box: [-28, -4, k0 - 6, 28, 108, k1 + 3], paint: (g) => {
+      const set = (i, j, k, c) => g.set(i, j, k, c);
+      // ---- hull: red below the water, a white line, black topsides with two rows of lit portholes, a white strake at the deck ----
+      hull(g, { k0, k1, halfAt: lnHalf, deckAt: lnDeck, keelAt: () => -LNR.D, bottom: false, skirt: false, cut: -3, paint: (i, j, k, where) => {
+        const d = lnDeck(k);
+        if (where === 'deck') return teak(i, k);
+        if (j <= 0) return tone(BOTTOM, 0.9 + 0.2 * hash(i, j >> 1, k >> 2, seed));
+        if (j === 1) return BOOT;
+        if (j >= d - 3) return WHITE;
+        if (j === d - 4) return paint;
+        return (j === 7 || j === 12 || j === 17) && mod(k, 6) === 0 && k > -166 && k < 150 ? SHINE : HULL;
+      } });
+      for (let k = A0 + 6; k <= A1 - 6; k++) for (let i = -12; i <= 11; i++) set(i, D0, k, -1);   // the deck nobody can see, under the houses
+      // ---- the forecastle: a solid bulwark round the bow, rails behind it; rails round the after deck ----
+      for (let k = 150; k <= k1; k++) { const d = lnDeck(k), w = lnHalf(k, d), wn = Math.min(k < k1 ? lnHalf(k + 1, d) : 0, lnHalf(k - 1, d)); for (let i = -w; i < w; i++) { const a = half(i); if (a === w - 1 || a >= wn - 1) for (let j = d + 1; j <= d + 5; j++) set(i, j, k, j === d + 5 ? WOOD : WHITE); } }
+      rails(g, lnHalf, lnDeck, A1 + 1, 149, k0, k1); rails(g, lnHalf, lnDeck, k0, A0 - 1, k0, k1);
+      // ---- the promenade deck: an open walk down each side behind posts and a rail, closed in with big windows forward ----
+      for (let k = A0; k <= A1; k++) {
+        const front = k >= A1 - 14, endK = k === A0 || k === A1;
+        for (let i = -AO - 1; i <= AO; i++) {
+          const a = half(i);
+          if (a >= 10 || k < B0 + 6 || k > B1 - 6) set(i, RA, k, a === AO || endK ? WHITE : teak(i, k));
+          const wall = front ? a === AO || k === A1 || (k === A1 - 14 && a > AI) : a === AI || (endK && a <= AI);
+          if (wall) for (let j = D0 + 1; j < RA; j++) {
+            const along = a === AO || a === AI, post = along && !(k === A1 || (endK && a < AI)) ? mod(k - A0, 6) < 2 : mod(a, 6) < 2;
+            let c = j >= D0 + 6 && j <= D0 + 12 && !post ? glass(j, along ? k : i + 40, D0 + 11) : WHITE;
+            if (a === AI && !front && mod(k - A0, 44) >= 22 && mod(k - A0, 44) <= 24 && j <= D0 + 12) c = WOOD2;
+            set(i, j, k, c);
+          } else if (a === AO) { if (mod(k - A0, 8) === 0 || endK) for (let j = D0 + 1; j < RA; j++) set(i, j, k, WHITE); else { set(i, D0 + 6, k, WOOD); set(i, D0 + 3, k, RAIL); } }
+        }
+      }
+      // ---- the boat deck: its house, a rail along the edge, seven lifeboats a side under their davits ----
+      for (let k = B0; k <= B1; k++) for (let i = -BW - 1; i <= BW; i++) {
+        const a = half(i), endK = k === B0 || k === B1;
+        if (a >= 5 || k < C0 + 5 || k > C1 + 12) set(i, RB, k, a === BW || endK ? WHITE : teak(i, k));
+        if (a === BW || endK) {
+          for (let j = RA + 1; j < RB; j++) { const post = a === BW && !endK ? mod(k - B0, 6) < 2 : mod(a, 6) < 2; let c = j >= RA + 6 && j <= RA + 11 && !post ? glass(j, a === BW ? k : i + 40, RA + 10) : WHITE; if (a === BW && mod(k - B0, 40) >= 18 && mod(k - B0, 40) <= 20 && j <= RA + 12) c = WOOD2; set(i, j, k, c); }
+          set(i, RB + 5, k, WOOD); set(i, RB + 3, k, RAIL); if (mod(a === BW ? k : i, 6) === 0) for (let j = RB + 1; j <= RB + 4; j++) set(i, j, k, RAIL);   // the sun deck's rail
+        }
+      }
+      for (let k = A0; k <= A1; k++) for (const s of SIDES) { set(sx(s, AO), RA + 5, k, WOOD); set(sx(s, AO), RA + 3, k, RAIL); if (mod(k, 6) === 0) for (let j = RA + 1; j <= RA + 4; j++) set(sx(s, AO), j, k, RAIL); }
+      for (const s of SIDES) for (let n = 0; n < 7; n++) lifeboat(g, s, -86 + 26 * n, RA + 2, paint);
+      // ---- on top: the officers' house the funnels stand on, and the bridge ahead of it with a wing out each side ----
+      for (let k = C0; k <= C1; k++) for (let i = -CW - 1; i <= CW; i++) {
+        const a = half(i), endK = k === C0 || k === C1;
+        set(i, RC, k, a === CW || endK ? WHITE : tone(GREY, 0.94 + 0.1 * hash(i >> 1, 9, k >> 1, seed)));
+        if (a === CW || endK) for (let j = RB + 1; j < RC; j++) set(i, j, k, j >= RB + 5 && j <= RB + 8 && (a === CW ? mod(k - C0, 6) >= 2 : mod(a, 5) >= 2) ? glass(j, a === CW ? k : i + 40, RB + 8) : WHITE);
+      }
+      const W0 = 61, W1 = 78, WW = 13, RW = 73;
+      for (let k = W0; k <= W1; k++) for (let i = -WW - 1; i <= WW; i++) {
+        const a = half(i), endK = k === W0 || k === W1; set(i, RW, k, a === WW || endK ? paint : WHITE);
+        if (a === WW || endK) for (let j = RB + 1; j < RW; j++) { const post = (a === WW && endK) || (a === WW ? mod(k - W0, 4) === 0 : mod(a, 5) === 4); set(i, j, k, j >= RB + 6 && j <= RB + 11 && !post && k !== W0 ? glass(j, a === WW ? k : i + 20, RB + 10) : WHITE); }
+      }
+      for (const s of SIDES) { bxs(g, s, 14, 23, RB, RB, 66, 76, WHITE); for (let k = 66; k <= 76; k++) for (let a = 14; a <= 23; a++) if (a === 23 || k === 66 || k === 76) bxs(g, s, a, a, RB + 1, RB + 5, k, k, WHITE); set(sx(s, 23), RB + 6, 71, s > 0 ? 0x8a1f1a : 0x1f6a38); }
+      bx(g, -1, 0, RW + 1, RW + 2, 69, 70, 0x9a9fa6); bx(g, 0, 0, RW + 1, RW + 12, 64, 64, WHITE); bx(g, -4, 3, RW + 9, RW + 9, 64, 64, WHITE); bx(g, -1, 0, RW + 1, RW + 3, 75, 76, 0xb08a58);
+      // ventilators between the funnels, and the collars the funnels stand in
+      for (const kc of FUNNELS) bx(g, -6, 5, RC + 1, RC + 1, kc - 9, kc + 8, 0x33363c);
+      for (const s of SIDES) for (const k of [18, -22, -60]) { bxs(g, s, 7, 8, RC + 1, RC + 6, k, k + 1, WHITE); bxs(g, s, 6, 9, RC + 7, RC + 9, k - 1, k + 3, WHITE); bxs(g, s, 7, 8, RC + 7, RC + 8, k + 3, k + 3, 0xb8322a); }
+      // ---- the weather decks: hatches under the derricks, a windlass and capstans forward, a staff and flag aft ----
+      mast(g, 116, lnDeck(116) + 1, 78, 102, 92, 1); mast(g, -130, D0 + 1, 74, 98, 88, -1);
+      for (let k = 124; k <= 142; k++) bx(g, -8, 7, lnDeck(k) + 1, lnDeck(124) + 3, k, k, (i, j) => (j === lnDeck(124) + 3 ? 0x3f5a50 : 0x55595f));
+      bx(g, -8, 7, D0 + 1, D0 + 3, -156, -138, (i, j) => (j === D0 + 3 ? 0x3f5a50 : 0x55595f));
+      { const d = lnDeck(160); bx(g, -4, 3, d + 1, d + 3, 158, 163, STEEL); bx(g, -6, 5, d + 2, d + 2, 160, 161, 0x55595f); for (const i of [-9, 7]) bx(g, i, i + 1, lnDeck(150) + 1, lnDeck(150) + 3, 150, 151, STEEL); }
+      for (const s of SIDES) { const d = lnDeck(168); bxs(g, s, lnHalf(168, d - 3), lnHalf(168, d - 3), d - 5, d - 3, 167, 169, 0x2a2c30); }   // the anchors, in their pipes
+      { const d = lnDeck(-181); bx(g, 0, 0, d + 1, d + 16, -181, -181, WHITE); bx(g, 0, 0, d + 12, d + 15, -187, -182, (i, j) => (j === d + 13 || j === d + 14 ? WHITE : paint)); }
+      for (const k of [-176, -164]) for (const i of [-8, 6]) bx(g, i, i + 1, lnDeck(k) + 1, lnDeck(k) + 3, k, k + 1, STEEL);
+    } },
+    { name: 'radar', parent: 'body', pivot: [0, 76, 70], box: [-5, 0, -1, 5, 2, 1], paint: (g) => { bx(g, -5, 4, 0, 1, -1, 0, 0xe9e6dc); bx(g, -5, 4, 0, 0, -1, -1, 0x9a9fa6); } },
+    lamp('nvM', cubes(-1, 0, 103, 103, 116), WHITE_L), lamp('nvA', cubes(-1, 0, 99, 99, -130), WHITE_L), lamp('nvP', cubes(23, 23, 65, 65, 71), RED_L), lamp('nvS', cubes(-24, -24, 65, 65, 71), GREEN_L),
+    lamp('fest', bulbs, 0xffd27a | GLOW), lamp('festOff', bulbs, 0xd8d2b8),
+  ];
+  // ---- the funnels: oval, raked aft, the owner's colour under a black top ----
+  FUNNELS.forEach((kc, n) => parts.push({ name: 'f' + (n + 1), parent: 'body', pivot: [0, 72, kc], box: [-5, 0, -12, 5, 31, 8], paint: (g) => {
+    for (let j = 0; j <= 30; j++) { const r = -fl(j / 8); for (let k = -7; k <= 6; k++) for (let i = -5; i <= 4; i++) {
+      const a = half(i), ke = k <= -6 || k >= 5; if (a === 4 && (k === -7 || k === 6)) continue;
+      if (!(a === 4 || k === -7 || k === 6 || (a === 3 && ke)) && j < 30) continue;
+      g.set(i, j, k + r, j >= 24 ? BLACK : paint);
+    } }
+    for (let j = 8; j <= 24; j += 8) for (let i = -5; i <= 4; i++) g.set(i, j - 1, 6 - fl(j / 8) + 1, j >= 24 ? BLACK : paint);   // close the steps the rake leaves at the front
+  } }));
+  return parts;
+}
+
+// =====================================================================================================================
 // Clips
 // =====================================================================================================================
 const ON = [0, 0, 0, 0, 0, 0, 1.15], OFF = [0, 0, 0, 0, 0, 0, 0], SHOW = [0, 0, 0, 0, 0, 0, 1];
@@ -462,9 +580,9 @@ function boatClips(cfg) {
   const stomped = (u) => {
     const cr = u.crushes || [], n = cr.length; if (!n) return [0, 0, 0, 0, 0, 0];
     let lean = 0, tip = 0, down = 0.8;
-    for (const [, fz, t0] of cr) { const a = ease(clamp((u.t - t0) / 6)), amid = ab(fz) < cfg.len * 0.16; down += (amid ? 3 : 1.6) * a; if (amid) lean += 0.12 * a; else tip += (fz > 0 ? 1 : -1) * 0.075 * a; }   // a hit amidships floods it fastest
+    for (const [, fz, t0] of cr) { const a = ease(clamp((u.t - t0) / 6)), amid = ab(fz) < cfg.len * 0.16; down += (amid ? 3 : 1.6) * a; if (amid) lean += 0.12 * a; else tip += (fz > 0 ? 1 : -1) * (cfg.tip || 0.075) * a; }   // a hit amidships floods it fastest
     const sd = -lowSide(u);
-    return [clamp(tip, -0.16, 0.16), 0, sd * Math.min(0.3, lean), 0, -dunk(u) - Math.min(cfg.sink, down), 0];
+    const tm = (cfg.tip || 0.075) * 2.1; return [clamp(tip, -tm, tm), 0, sd * Math.min(cfg.lean || 0.3, lean), 0, -dunk(u) - Math.min(cfg.sink, down), 0];
   };
   const clips = {
     Moored: { loop: true, speed: 0, pose: (t, u) => ({ body: bob(t, u, cfg.lively), ...off, radar: [0, 0.6, 0] }) },
@@ -484,6 +602,8 @@ function boatClips(cfg) {
         const wx = sx0 + (ex - sx0) * e, wy = sy0 + (ey - sy0) * e + 3.2 * S(PI * clamp(b * 1.7)) * (1 - e), dy = wy + drop;
         P['c' + n] = [0.07 * e * S(wob * 0.7), (n & 1 ? 0.3 : -0.22) * e, (roll - th) * e, wx * ct + dy * st - r[0], -wx * st + dy * ct - r[1], [-3, -4.5, 3, 4.5, 0][n - 1] * e];
       }
+      // her funnels come down across the low side, one after another
+      (cfg.topple || []).forEach((name, n) => { const b = clamp((t - 1.6 - n * 1.2) / 1.5), ang = 1.38 * b * b - 0.07 * S(clamp((t - 3.1 - n * 1.2) / 0.5) * PI); P[name] = [0, 0, -low * ang, low * 1.5 * b, -1.2 * b * b, 0]; });
       return P;
     } },
     Crushed: { loop: false, hidden: true, dur: 0.3, speed: 0, pose: (t, u) => ({ body: add(bob(u.t, u, 0.4), stomped(u)), ...off, radar: [0, 0.6, 0] }) },
@@ -527,4 +647,11 @@ export const FERRY = {
   clips: boatClips({ len: 176, speed: 8, lively: 0.45, sink: 5.6, trim: 0.03, list: 0.14 }),
   // the blast starts amidships on the main deck, at the foot of the funnel
   wk: boatWk({ beam: 14, wrecks: ['WreckSink'], seat: (u) => [0, 12, (u.opts.seed || 0) % 2 ? 14 : -14], R: 30, soot: 62, max: 1300, boom: 9, fires: 34, fireSize: 1.5, spread: 26 }),
+};
+export const LINER = {
+  kind: 'boat', h: H, parts: linerParts, start: 'Moored', dieAt: 0.08, inner: INNER, onKill,
+  clips: boatClips({ len: 368, speed: 7, lively: 0.22, sink: 7.5, trim: 0.016, list: 0.17, tip: 0.02, lean: 0.2, topple: ['f1', 'f2', 'f3'], lamps: { on: { fest: SHOW, festOff: OFF }, off: { fest: OFF, festOff: SHOW } } }),
+  // the blast starts in the boiler rooms, under the middle funnel. stacks: where her smoke comes out, in town voxels.
+  wk: boatWk({ beam: 12, wrecks: ['WreckSink'], seat: () => [0, 26, -6], R: 42, soot: 100, max: 1700, boom: 12, fires: 46, fireSize: 2.1, spread: 80, fireStride: 150, sootMin: 0.1, pack: true, floor: 18, fallen: /^f\d/, adrift: /^(c|f)\d/,
+    lamps: /^(nv|sl|fest$)/, loose: /^(nv|sl|radar|fest)/, stacks: FUNNELS.map((kc) => [0, 51.5, (kc - 4) * 0.5]) }),
 };
