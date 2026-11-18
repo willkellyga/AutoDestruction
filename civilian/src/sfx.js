@@ -27,7 +27,7 @@ export function makeSfx(camera) {
     const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol, t + 0.008); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
     o.connect(g); g.connect(to); o.start(t); o.stop(t + dur + 0.05);
   }
-  const GAP = { boom: 70, crunch: 60, glass: 50, clang: 50, thud: 40, alarm: 2600, crackle: 60, splash: 90, hiss: 400 };
+  const GAP = { boom: 70, crunch: 60, glass: 50, clang: 50, thud: 40, alarm: 2600, crackle: 60, splash: 90, hiss: 400, jet: 900, cat: 200, gun: 40 };
   const api = {
     on: true, init,
     play(name, p, vol = 1) {
@@ -50,6 +50,10 @@ export function makeSfx(camera) {
         case 'alarm': for (let i = 0; i < 6; i++) { tone(o, 980, 1400, 0.19, 0.045 * vol, 'square', i * 0.4); tone(o, 1400, 980, 0.19, 0.045 * vol, 'square', i * 0.4 + 0.2); } break;
         // water thrown up and falling back: a soft slap, then a long wash of hiss
         case 'splash': noise(o, 0.16, 900 * r, 0.8, 0.5 * vol, 'lowpass', 0.4); noise(o, 0.9, 2600 * r, 0.6, 0.34 * vol, 'bandpass', 0.5, 0.03); noise(o, 1.4, 5200, 0.5, 0.14 * vol, 'highpass', 0.8, 0.12); break;
+        // a jet going by: a long roar that falls away; the catapult: a slam and a rush of steam; the gun: a short rip
+        case 'jet': noise(o, 2.6, 900 * r, 0.35, 0.5 * vol, 'lowpass', 0.5); noise(o, 2.2, 2600 * r, 0.6, 0.16 * vol, 'bandpass', 0.6, 0.1); tone(o, 190 * r, 90, 2.2, 0.12 * vol, 'sawtooth'); break;
+        case 'cat': tone(o, 90 * r, 40, 0.25, 0.7 * vol); noise(o, 1.1, 3800 * r, 0.6, 0.3 * vol, 'highpass', 0.7, 0.03); break;
+        case 'gun': noise(o, 0.05, 1500 * r, 0.7, 0.4 * vol, 'bandpass', 0.6); tone(o, 210 * r, 120, 0.04, 0.2 * vol, 'square'); break;
         case 'hiss': noise(o, 1.1, 6000 * r, 0.7, 0.1 * vol, 'highpass', 0.7); break;
         case 'crackle': noise(o, 0.05 + Math.random() * 0.05, 1800 + Math.random() * 2600, 2.5, 0.16 * vol, 'bandpass', 0.7); break;
       }

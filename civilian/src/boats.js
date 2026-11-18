@@ -1,6 +1,6 @@
 // Working boats, built in code at eighth-metre cubes on the same kit as the cars and buses: a harbor tug (15 m), a
 // barge (17 m) with a choice of loads, with or without a wheelhouse aft, a sightseeing tour boat (20 m), a
-// double-ended harbor ferry (22 m) and an ocean liner (46 m).
+// double-ended harbor ferry (22 m), an ocean liner (46 m) and an aircraft carrier (46 m) with four jets on deck (the jet itself is in jet.js).
 //
 // Forward is +z, port (left) is +x, and y = 0 is the waterline: the hull goes on down below it, so there is something to
 // see when a boat rolls over, and the water hides the rest. A hull is a shell of cubes cut from a shape function (beam,
@@ -12,6 +12,7 @@
 import { GLOW, hash, tone } from '../../units/src/voxpart.js';
 import { blowUp, H, bx, bxs, sx, SIDES, half, clamp, ease, sideOf, CHROME, TRIM, BLACK, TYRE, GLASS, GLASS2, SHINE, DASH, WHEELC, ENGINE, ENGINE2, INNER } from './cars.js';
 import { lamp, cubes } from './buses.js';
+import { jetStatic, jetBox, JET_TINT } from './jet.js';
 
 const S = Math.sin, C = Math.cos, PI = Math.PI, ab = Math.abs, fl = Math.floor, rnd = Math.round;
 const mod = (a, n) => ((a % n) + n) % n;
@@ -559,6 +560,122 @@ function linerParts(o) {
 }
 
 // =====================================================================================================================
+// The aircraft carrier: 368 cubes long (k = -184..183), 52 in the beam at the water and up to 88 across the flight deck.
+// A grey hull that flares out to the deck, hangar doors down both sides, an angled landing strip that bulges out to
+// port, two catapult tracks forward, arrestor wires aft, lifts, and on the starboard side the island: three tiers of
+// bridges, a funnel, a mast with a turning radar. Four jets stand on deck, each a part of its own: they go over the side
+// when she lists. She is hollow, like the liner.
+// =====================================================================================================================
+const CVR = { k0: -184, k1: 183, B: 26, FD: 38 };
+const GREY = 0x8d959c, GREY2 = 0x7b838a, GREY3 = 0x9aa2a8, FDECK = 0x393d43, LINE = 0xe4e2d8, YEL = 0xe2b93b, WIRE = 0x1d1f23, CABLE = 0x8a8f96, NOZ = 0x26282c;
+const dkBase = (k) => (k > 150 ? 30 - rnd(9 * Math.pow((k - 150) / 33, 1.6)) : k < -176 ? 28 : 30);
+const dkPort = (k) => dkBase(k) + (k <= 60 && k >= -112 ? rnd(14 * Math.min(1, (60 - k) / 44, (k + 112) / 30)) : 0);            // the angled deck
+const dkStar = (k) => dkBase(k) + (k >= -10 && k <= 50 ? 6 : 0) + (k >= -78 && k <= -46 ? 8 : 0);                                // the island, the deck-edge lift
+const cvPlan = (k) => (k > 184 ? 0 : k > 84 ? 1 - Math.pow((k - 84) / 100, 2.1) : k < -150 ? 0.72 + 0.28 * Math.sqrt(Math.max(0, 1 - Math.pow((-150 - k) / 34, 2))) : 1);
+// the stem rakes forward and the bow flares out under the deck; the stern tucks in toward the water
+const cvHalf = (k, j) => {
+  const up = clamp(j / 37), wl = CVR.B * cvPlan(k + (1 - up) * 24) * (j >= 0 ? 1 : 1 + 0.03 * j); if (wl <= 0) return 0;
+  const top = Math.min(CVR.B + 2, dkBase(k) - 2) * (k > 150 ? Math.pow(clamp((185 - k) / 35), 0.45) : 1), fs = clamp((-150 - k) / 34);
+  return Math.max(1, rnd((wl + (top - wl) * Math.pow(up, 2.2)) * (1 - 0.3 * fs * Math.pow(1 - up, 1.5))));
+};
+const NINE = ['.###.', '#...#', '#...#', '.####', '....#', '#...#', '.###.'];
+const nine = (u, v) => u >= 0 && u < 5 && v >= 0 && v < 7 && NINE[v][u] === '#';
+// the centre line of the landing strip, which runs from the stern out over the port bow
+const strip = (k) => -8 + (k + 176) * 0.17;
+
+// Where her four jets stand, wings folded: [across, along, squadron colour]. The first is on the bow catapult and the
+// second on the waist catapult, which throws it out along the angled deck; the other two are parked abaft the island, one of them on the deck-edge lift.
+export const DECK_JETS = [[-13, 112, 'gold'], [14, -14, 'gold'], [-18, -61, 'red'], [-18, -135, 'blue']];
+export const WAIST = 0.21;   // how far the waist catapult points off the bow, to port
+export const CARRIER_DECK = CVR.FD + 1;   // the cube the jets' wheels stand in
+
+function carrierParts(o) {
+  const seed = o.seed || 0, { k0, k1, FD } = CVR, IK0 = -6, IK1 = 44, IA0 = 24, IA1 = 35;
+  const deckPaint = (i, k) => {
+    const base = tone(FDECK, 0.9 + 0.2 * hash(i >> 1, 4, k >> 1, seed)), wP = dkPort(k), wS = dkStar(k);
+    if (i === wP - 3 || i === -wS + 2) return LINE;                                                         // the deck edge lines
+    if (k >= -180 && k <= 46) {                                                                             // the landing strip
+      const d = i - strip(k);
+      if ((k === -152 || k === -140 || k === -128 || k === -116) && ab(d) < 12) return CABLE;               // arrestor wires
+      if (ab(d) < 0.55) return mod(k, 12) < 7 ? YEL : base;
+      if (ab(ab(d) - 13) < 0.55) return LINE;
+    }
+    if (k >= 84 && k <= 178 && (i === -13 || i === -14)) return WIRE;                                     // the bow catapult's track
+    if (k >= -8 && k <= 62) { const d = i - (14 + (k + 14) * WAIST); if (ab(d) < 0.6) return WIRE; }   // and the waist one's, out along the angled deck
+    if (k >= 148 && k <= 161 && (nine(fl((11 - i) / 2), fl((161 - k) / 2)) || nine(fl((-1 - i) / 2), fl((161 - k) / 2)))) return LINE;   // her number, read from astern
+    if (k >= 38 && k <= 62 && i >= -11 && i <= 10 && (k === 38 || k === 62 || i === -11 || i === 10)) return GREY2;                       // the forward lift
+    if (k >= -78 && k <= -46 && i <= -22 && (k === -78 || k === -46 || i === -22)) return (i + k) & 2 ? YEL : WIRE;                     // the deck-edge lift
+    return base;
+  };
+  const parts = [
+    { name: 'body', parent: null, pivot: [0, 0, 0], box: [-48, -4, k0 - 4, 48, FD + 62, k1 + 4], paint: (g) => {
+      const set = (i, j, k, c) => g.set(i, j, k, c);
+      // ---- hull: red under the water, a black boot top, grey above with hangar doors down both sides ----
+      hull(g, { k0, k1, halfAt: cvHalf, deckAt: () => FD - 1, keelAt: () => -6, bottom: false, skirt: false, cut: -3, paint: (i, j, k, where) => {
+        if (where === 'deck') return -1;                                                                  // the flight deck covers it
+        if (j < 0) return tone(BOTTOM, 0.9 + 0.2 * hash(i, j >> 1, k >> 2, seed));
+        if (j <= 1) return 0x1c1e22;
+        if (k === k0 && j >= 18 && j <= 29 && half(i) < 15) return j === 18 || j === 29 || half(i) === 14 ? GREY2 : mod(i, 5) === 0 ? GREY2 : j <= 21 ? 0x4a4f56 : 0x1b1d21;   // the open fantail under the round-down
+        if (k >= -150 && k <= 96 && j >= 12 && j <= 28 && mod(k + 150, 50) < 24) {                        // a hangar door: two stand open
+          const n = fl((k + 150) / 50), open = n === 1 || n === 3, e = mod(k + 150, 50);
+          if (e === 0 || e === 23 || j === 12 || j === 28) return GREY2;
+          return open ? (j < 15 ? 0x4a4f56 : 0x1b1d21) : tone(GREY3, mod(j, 4) === 0 ? 0.82 : 1);
+        }
+        if (j === 7 && mod(k, 9) === 0 && k > -170 && k < 130) return SHINE;
+        return tone(GREY, 0.95 + 0.1 * hash(i, j >> 1, k >> 2, seed) - (j >= FD - 3 ? 0.08 : 0));
+      } });
+      // ---- the flight deck, two cubes thick at its edge, with her markings ----
+      for (let k = k0; k <= k1; k++) {
+        const wP = dkPort(k), wS = dkStar(k), end = k === k0 || k === k1;
+        for (let i = -wS; i < wP; i++) {
+          const edge = end || i === -wS || i === wP - 1 || i >= dkPort(k + 1) || i >= dkPort(k - 1) || i < -dkStar(k + 1) || i < -dkStar(k - 1);
+          set(i, FD, k, edge ? GREY2 : deckPaint(i, k));
+          if (edge) set(i, FD - 1, k, k === k0 && mod(i, 6) < 3 ? LINE : GREY2);
+        }
+        // under the angled deck a sponson slopes back in to the hull; under the rest of the overhang a walkway with rafts
+        const hw = cvHalf(k, FD - 1);
+        for (let a = hw; a < wP - 1; a++) if (wP > dkBase(k)) { const j = Math.max(FD - 16, FD - 2 - rnd((wP - 2 - a) * 0.9)); set(a, j, k, GREY); set(a, j + 1, k, GREY); }
+        if (k > -172 && k < 150) for (const s of SIDES) {
+          if (s > 0 && wP > dkBase(k)) continue;
+          for (let a = hw; a <= hw + 1; a++) set(sx(s, a), FD - 6, k, 0x5d646b);
+          if (mod(k, 6) === 0) for (let j = FD - 5; j <= FD - 2; j++) set(sx(s, hw + 1), j, k, GREY2);
+          if (mod(k, 18) < 4) { set(sx(s, hw + 1), FD - 7, k, LINE); set(sx(s, hw + 1), FD - 8, k, LINE); }
+        }
+      }
+      // ---- the island: three tiers, each with its band of windows, and the funnel built into its after end ----
+      const tier = (a0, a1, j0, j1, ka, kb, g0, g1, roof) => { for (let k = ka; k <= kb; k++) for (let a = a0; a <= a1; a++) {
+        const edge = a === a0 || a === a1 || k === ka || k === kb, i = sx(-1, a); set(i, j1, k, edge ? GREY2 : roof);
+        if (edge) for (let j = j0; j < j1; j++) { const along = a === a0 || a === a1, post = along ? mod(k - ka, 4) === 0 || k === kb : mod(a - a0, 4) === 0 || a === a1; set(i, j, k, j >= g0 && j <= g1 && !post ? glass(j, along ? k : a + 30, g1) : tone(GREY, 0.96 + 0.08 * hash(a, j >> 1, k >> 2, seed))); }
+      } };
+      tier(IA0, IA1, FD + 1, FD + 14, IK0, IK1, 0, -1, 0x5d646b);
+      tier(IA0, IA1 - 1, FD + 15, FD + 22, 6, IK1, FD + 18, FD + 20, 0x5d646b);
+      tier(IA0, IA1 - 2, FD + 23, FD + 30, 12, IK1 - 2, FD + 26, FD + 28, 0x5d646b);
+      for (let k = 14; k <= 22; k++) for (let a = IA0 - 3; a < IA0; a++) { const i = sx(-1, a), e = a === IA0 - 3 || k === 14 || k === 22; set(i, FD + 22, k, GREY2); set(i, FD + 30, k, GREY2); if (e) for (let j = FD + 23; j < FD + 30; j++) set(i, j, k, j >= FD + 25 && j <= FD + 28 && !(a === IA0 - 3 && (k === 14 || k === 22)) ? glass(j, k, FD + 28) : GREY); }   // flight control, looking out over the deck
+      for (const a of [IA0, IA1]) for (let k = 14; k <= 36; k++) for (let j = FD + 3; j <= FD + 12; j++) { const u = a === IA1 ? k - 14 : 36 - k; if (nine(fl(u / 2), fl((FD + 12 - j) / 1.45)) || nine(fl((u - 12) / 2), fl((FD + 12 - j) / 1.45))) set(sx(-1, a), j, k, LINE); }   // her number on the island
+      for (let k = IK0; k <= 5; k++) for (let a = IA0 + 2; a <= IA1 - 3; a++) { const e = a === IA0 + 2 || a === IA1 - 3 || k === IK0 || k === 5; if (e) for (let j = FD + 15; j <= FD + 34; j++) set(sx(-1, a), j, k - fl((j - FD - 15) / 10), j >= FD + 31 ? BLACK : GREY2); }   // the funnel, raked
+      for (let j = FD + 25; j <= FD + 34; j += 10) for (let a = IA0 + 2; a <= IA1 - 3; a++) set(sx(-1, a), j - 1, 5 - fl((j - FD - 15) / 10) + 1, j >= FD + 31 ? BLACK : GREY2);
+      bxs(g, -1, IA0 + 3, IA0 + 6, FD + 31, FD + 34, 36, 39, LINE);                                       // a radar dome on the bridge roof
+      // the mast: a post with a platform and a yard, the big radar turning on top
+      bxs(g, -1, 29, 30, FD + 31, FD + 49, 24, 25, GREY2); bxs(g, -1, 27, 32, FD + 43, FD + 43, 22, 27, GREY2); bxs(g, -1, 23, 36, FD + 39, FD + 39, 24, 24, GREY2); bxs(g, -1, 29, 29, FD + 50, FD + 55, 24, 24, GREY2);
+      // a crane abaft the island, two yellow deck tractors, a flag
+      bxs(g, -1, 28, 29, FD + 1, FD + 11, -20, -19, YEL); for (let t = 0; t < 16; t++) { set(sx(-1, 28), FD + 11 + fl(t / 4), -21 - t, YEL); set(sx(-1, 28), FD + 10 + fl(t / 4), -21 - t, YEL); }
+      for (const [i, k] of [[-22, 66], [12, -150]]) { bx(g, i, i + 3, FD + 2, FD + 3, k, k + 5, YEL); bx(g, i, i + 3, FD + 4, FD + 4, k, k + 1, YEL); for (const kk of [k, k + 5]) for (const ii of [i, i + 3]) set(ii, FD + 1, kk, BLACK); bx(g, i + 1, i + 2, FD + 1, FD + 1, k, k + 5, 0x2a2c30); }
+      bxs(g, -1, 30, 30, FD + 15, FD + 26, IK0 - 1, IK0 - 1, GREY2); bx(g, -31, -31, FD + 23, FD + 26, IK0 - 7, IK0 - 2, (i, j) => (j & 1 ? LINE : 0xb8322a));
+      // anchors in their pipes
+      for (const s of SIDES) { const w = cvHalf(150, 26); bxs(g, s, w, w, 24, 27, 149, 151, 0x2a2c30); }
+    } },
+    { name: 'radar', parent: 'body', pivot: [-30, FD + 50, 25], box: [-7, 0, -1, 7, 6, 1], paint: (g) => { for (let x = -7; x <= 6; x++) for (let y = 0; y <= 5; y++) if (y === 0 || y === 5 || x === -7 || x === 6 || mod(x, 3) === 0) g.set(x, y, -1, GREY3); bx(g, -1, 0, 0, 5, 0, 0, GREY2); } },
+    lamp('nvM', cubes(-30, -30, FD + 56, FD + 56, 24), WHITE_L), lamp('nvA', cubes(-1, 0, FD - 3, FD - 3, k0 - 1), WHITE_L),
+    lamp('nvP', cubes(dkPort(120), dkPort(120), FD, FD, 120), RED_L), lamp('nvS', cubes(-dkStar(120) - 1, -dkStar(120) - 1, FD, FD, 120), GREEN_L),
+  ];
+  // deck lights: along the landing strip and down both edges
+  const bulbs = []; for (let k = -176; k <= 40; k += 12) bulbs.push([rnd(strip(k)), FD + 1, k]); for (let k = -170; k <= 150; k += 16) { bulbs.push([dkPort(k) - 2, FD + 1, k]); bulbs.push([-dkStar(k) + 1, FD + 1, k]); }
+  parts.push(lamp('fest', bulbs, 0xffe08a | GLOW), lamp('festOff', bulbs, 0x6d7279));
+  DECK_JETS.forEach(([i, k, tint], n) => parts.push({ name: 'p' + (n + 1), parent: 'body', pivot: [i, FD + 1, k], box: jetBox(0), paint: (g) => jetStatic(g, { dir: 0, folded: true, seed: seed + n, tint: JET_TINT[tint] }) }));
+  return parts;
+}
+
+// =====================================================================================================================
 // Clips
 // =====================================================================================================================
 const ON = [0, 0, 0, 0, 0, 0, 1.15], OFF = [0, 0, 0, 0, 0, 0, 0], SHOW = [0, 0, 0, 0, 0, 0, 1];
@@ -602,6 +719,12 @@ function boatClips(cfg) {
         const wx = sx0 + (ex - sx0) * e, wy = sy0 + (ey - sy0) * e + 3.2 * S(PI * clamp(b * 1.7)) * (1 - e), dy = wy + drop;
         P['c' + n] = [0.07 * e * S(wob * 0.7), (n & 1 ? 0.3 : -0.22) * e, (roll - th) * e, wx * ct + dy * st - r[0], -wx * st + dy * ct - r[1], [-3, -4.5, 3, 4.5, 0][n - 1] * e];
       }
+      // aircraft on deck roll to the low side, go over the edge one after another and sink
+      (cfg.planes || []).forEach((name, n) => {
+        const r = u.rest[name] && u.rest[name].pos, b = clamp((t - 1.5 - n * 0.75) / 3.6); if (!r || b <= 0) return;
+        const s1 = clamp(b / 0.62), s2 = clamp((b - 0.62) / 0.38), go = low * (cfg.edge + 3) - r[0];
+        P[name] = [0, 0.25 * s1 * (n & 1 ? 1 : -1), -low * 1.9 * s2 * s2, go * s1 * s1 + low * 7 * s2, -(r[1] + 9) * s2 * s2, 0, s2 >= 1 ? 0 : 1];
+      });
       // her funnels come down across the low side, one after another
       (cfg.topple || []).forEach((name, n) => { const b = clamp((t - 1.6 - n * 1.2) / 1.5), ang = 1.38 * b * b - 0.07 * S(clamp((t - 3.1 - n * 1.2) / 0.5) * PI); P[name] = [0, 0, -low * ang, low * 1.5 * b, -1.2 * b * b, 0]; });
       return P;
@@ -654,4 +777,11 @@ export const LINER = {
   // the blast starts in the boiler rooms, under the middle funnel. stacks: where her smoke comes out, in town voxels.
   wk: boatWk({ beam: 12, wrecks: ['WreckSink'], seat: () => [0, 26, -6], R: 42, soot: 100, max: 1700, boom: 12, fires: 46, fireSize: 2.1, spread: 80, fireStride: 150, sootMin: 0.1, pack: true, floor: 18, fallen: /^f\d/, adrift: /^(c|f)\d/,
     lamps: /^(nv|sl|fest$)/, loose: /^(nv|sl|radar|fest)/, stacks: FUNNELS.map((kc) => [0, 51.5, (kc - 4) * 0.5]) }),
+};
+export const CARRIER = {
+  kind: 'boat', h: H, parts: carrierParts, start: 'Moored', dieAt: 0.08, inner: INNER, onKill,
+  clips: boatClips({ len: 368, speed: 8, lively: 0.15, sink: 8, trim: 0.012, list: 0.21, tip: 0.02, lean: 0.2, edge: 22, planes: DECK_JETS.map((q, n) => 'p' + (n + 1)), lamps: { on: { fest: SHOW, festOff: OFF }, off: { fest: OFF, festOff: SHOW } } }),
+  // the blast starts in the hangar, under the island
+  wk: boatWk({ beam: 15, wrecks: ['WreckSink'], seat: () => [-6, 24, 14], R: 40, soot: 74, char: 0.05, max: 1800, boom: 13, fires: 46, fireSize: 2.1, spread: 80, fireStride: 150, sootMin: 0.1, pack: true, floor: 20,
+    adrift: /^p\d/, parked: /^p\d/, plop: { pre: 'p', n: DECK_JETS.length, t0: 3.9, dt: 0.75, size: 170 }, lamps: /^(nv|sl|fest$)/, loose: /^(nv|sl|radar|fest)/, stacks: [[-14.5, 36.5, -1]] }),
 };

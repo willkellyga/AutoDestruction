@@ -356,12 +356,24 @@ export function crush(u, debris, fx = 0, fz = 0) {
   // press the loose panels into the body's own grid (they sit on it cube for cube when shut); on a wreck they are already
   // hanging off, so they are scattered instead
   if (!again) for (const p of u.parts) {
-    if (p === body || (flat && /^w[FR]/.test(p.name)) || (u.blown && wk.adrift && wk.adrift.test(p.name))) continue;
+    if (p === body || (flat && /^w[FR]/.test(p.name)) || (u.blown && wk.adrift && wk.adrift.test(p.name)) || (wk.parked && wk.parked.test(p.name))) continue;
     const { nx, ny, nz, col } = p, shut = !u.blown && !wk.loose.test(p.name);
     for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
       const n = (k * ny + j) * nx + i, c = col[n]; if (c < 0) continue;
       if (shut) { const q = bodyPos(u, p, i, j, k, _q); body.set(fl(q[0]), fl(q[1]), fl(q[2]), c); }
       else if (u.blown && shards < 200 && hash(i, j, k, 3) < 0.4) { shards++; toss(p, i, j, k, c, debris, c0.x, c0.y, c0.z, 9); }
+      col[n] = -1;
+    }
+    p.count = 0; p.dirty = true;
+  }
+  // whole things standing on her (a carrier's jets) are never pressed into her plating: one the foot comes down on is
+  // smashed to bits, and the rest stand where they were
+  if (wk.parked && !u.blown) for (const p of u.parts) {
+    if (!wk.parked.test(p.name) || !p.count || ab(u.rest[p.name].pos[2] / p.h - fz) > 14 + p.nz / 2) continue;
+    const { nx, ny, nz, col } = p; let n1 = 0;
+    for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+      const n = (k * ny + j) * nx + i, c = col[n]; if (c < 0) continue;
+      if (n1 < 260 && hash(i, j, k, 3) < 0.05) { n1++; toss(p, i, j, k, c, debris, c0.x, c0.y, c0.z, 16); }
       col[n] = -1;
     }
     p.count = 0; p.dirty = true;
