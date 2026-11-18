@@ -15,6 +15,7 @@ import { M, STREET_X } from './world.js';
 import { billboard } from './nyc_kit.js';
 import { machiya, zakkyo, shrine, garden, port } from './tokyo_kit.js';
 import { shibatower, soratower, sensoji, palace, station, baywheel, PALACE, STATION, SENSO, SHIBA, WHEEL } from './tokyo_landmarks.js';
+import { metrohall, mayutower, flamehall, baystudio, bayexpo, podtower, METRO, EXPO } from './tokyo_skyline.js';
 
 // where each column and row of 40-voxel lots starts: 6 apart inside a block, a street's width apart across one
 export const PX = [6, 52, 98, 177, 223, 269, 351, 397, 443, 525, 571, 617, 699, 745, 875, 957];
@@ -23,6 +24,7 @@ export const RIVER = { x0: 790, x1: 868 };                   // the Sumida, the 
 export const BAY = { x0: 698, z0: 832 };                     // Tokyo Bay: from here east to the river's far bank, and south
 export const PALACE_AT = { x: 351, z: 370 }, STATION_AT = { x: 525, z: 370 }, SENSO_AT = { x: 699, z: 126 }, SORA_AT = { x: 875, z: 172 };
 export const SHIBA_AT = { x: 351, z: 664 }, WHEEL_AT = { x: 571, z: 908 }, SCRAMBLE = { x: 156, z: 768 }, POND_AT = { x: 571, z: 50 };
+export const METRO_AT = { x: 52, z: 248 }, MAYU_AT = { x: 177, z: 248 }, FLAME_AT = { x: 875, z: 126 }, STUDIO_AT = { x: 875, z: 786 }, EXPO_AT = { x: 957, z: 664 }, POD_AT = { x: 617, z: 664 };
 // is this spot water?
 export function wet(x, z) { return x < RIVER.x1 && (x >= RIVER.x0 || (x >= BAY.x0 && z >= BAY.z0)); }
 
@@ -59,6 +61,17 @@ const FIXED = {
   '6,11': { k: 'shibatower', s: SHIBA.S, f: 0, d: 'minato' },
   '10,15': { k: 'baywheel', s: WHEEL.S, f: 1, d: 'bay' },
 };
+// Build 2: the pieces that give the skyline its own shapes. Each takes over a lot (or several) that the letter map
+// filled first, after that lot has made its draw, so the rest of the city is the same city as in Build 1.
+const LATER = {
+  '1,4': { k: 'metrohall', s: METRO.S, f: 1, d: 'shinjuku' },     // two by two lots, facing the avenue
+  '3,4': { k: 'mayutower', f: 3, d: 'shinjuku' },
+  '14,2': { k: 'flamehall', f: 3, d: 'sumida' },                  // across the river from Senso-ji: it faces the water, flame side-on
+  '14,13': { k: 'baystudio', f: 1, d: 'odaiba' },                 // 86 long: it runs on over the lot south of it
+  '15,11': { k: 'bayexpo', s: EXPO.S, f: 3, d: 'odaiba' },        // a 60 lot, out to the east edge of the map
+  '11,11': { k: 'podtower', f: 1, d: 'minato' },
+};
+const GONE = new Set(['2,4', '1,5', '2,5', '14,14', '15,12']);   // lots those pieces stand on
 // which way a lot fronts: the street along its row, or for the rows with none the avenue beside its column
 const ROW_F = [-1, 2, 0, 2, 0, 2, 0, -1, 2, 0, 2, 0, 2, 0, 2, 0, -1], BACK_F = { 0: 2, 7: 0, 16: 0 };
 const WEST_OF = new Set([2, 5, 8, 11, 14]), EAST_OF = new Set([3, 6, 9, 12, 15]);   // columns with an avenue on their east, or west, side
@@ -136,6 +149,9 @@ export function tokyoLots() {
       else if (a) opt = MAKE[k](a[0], a[1]);
       else if (MAKE[k]) opt = MAKE[k]();
     }
+    if (GONE.has(key)) continue;
+    const late = LATER[key];
+    if (late) { kind = late.k; opt = undefined; d = late.d; f = late.f; }
     // every other corner lot turns to face its avenue, so the avenues are lined with fronts and not with side walls
     if (!fix && TURNS.has(kind) && ROW_F[r] >= 0 && (r + c) % 2 === 0) f = WEST_OF.has(c) ? 1 : EAST_OF.has(c) ? 3 : f;
     if (kind === 'billboard') {
@@ -147,14 +163,15 @@ export function tokyoLots() {
     if (opt && inner) { opt.car = 0; opt.vend = 0; }   // a lot inside a block has no street to park on
     if (opt) L.o = opt;
     if (fix && fix.s) L.s = fix.s;
+    if (late && late.s) L.s = late.s;
     out.push(L);
   }
   return out;
 }
-export const TOKYO_KIT = { machiya, zakkyo, shrine, garden, port, billboard, shibatower, soratower, sensoji, palace, station, baywheel };
+export const TOKYO_KIT = { machiya, zakkyo, shrine, garden, port, billboard, shibatower, soratower, sensoji, palace, station, baywheel, metrohall, mayutower, flamehall, baystudio, bayexpo, podtower };
 // ground colours for the lots (ground.js): Tokyo is pavement grey, gravel at its shrines and green in its gardens
 export const TOKYO_PAD = { machiya: '#b9b5ab', zakkyo: '#b4b2ac', billboard: '#b4b2ac', shrine: '#d2cbb6', garden: '#7fae66', port: '#8b8e94', soratower: '#c8c4b8', shop: '#b9b5ab', apartment: '#b9b5ab', cinema: '#b9b5ab', tower: '#c2c4c6',
-  park: '#79aa62', factory: '#9a9690' };
+  park: '#79aa62', factory: '#9a9690', mayutower: '#c6c8cc', flamehall: '#bdb9b0', baystudio: '#c2c6cc', podtower: '#b9b5ab' };
 
 // where the street dressing (lamps, parked cars, trees) must stay away: the water and its banks
 export function tokyoKeepOut(x, z) { return wet(x, z) || wet(x - 6, z) || wet(x + 6, z) || wet(x, z - 6) || wet(x, z + 6); }
