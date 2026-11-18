@@ -187,11 +187,39 @@ export function setDebrisBudget(n) {
   for (let i = n; i < debrisBudget; i++) if (dstate[i]) { dstate[i] = 0; dmesh.setMatrixAt(i, ZERO); }
   debrisBudget = n; if (dhead >= n) dhead = 0; dmesh.count = n; dmesh.instanceMatrix.needsUpdate = true;
 }
+// Straight into the instance matrix, the sums of three.js Quaternion.setFromEuler (XYZ) and Matrix4.compose done here: going
+// through Vector3s and a Matrix4 boxed every number it wrote, a gigabyte of garbage every 40 s in a busy round (tools/tune ALLOC).
+// It reads its numbers itself (from typed arrays, or a flame's fields): numbers passed into a call that is not inlined are boxed too.
+export function writeTRS(te, o, px, py, pz, ex, ey, ez, sx, sy, sz) {
+  const c1 = Math.cos(ex / 2), c2 = Math.cos(ey / 2), c3 = Math.cos(ez / 2), s1 = Math.sin(ex / 2), s2 = Math.sin(ey / 2), s3 = Math.sin(ez / 2);
+  const x = s1 * c2 * c3 + c1 * s2 * s3, y = c1 * s2 * c3 - s1 * c2 * s3, z = c1 * c2 * s3 + s1 * s2 * c3, w = c1 * c2 * c3 - s1 * s2 * s3;
+  const x2 = x + x, y2 = y + y, z2 = z + z, xx = x * x2, xy = x * y2, xz = x * z2, yy = y * y2, yz = y * z2, zz = z * z2, wx = w * x2, wy = w * y2, wz = w * z2;
+  te[o] = (1 - (yy + zz)) * sx; te[o + 1] = (xy + wz) * sx; te[o + 2] = (xz - wy) * sx; te[o + 3] = 0;
+  te[o + 4] = (xy - wz) * sy; te[o + 5] = (1 - (xx + zz)) * sy; te[o + 6] = (yz + wx) * sy; te[o + 7] = 0;
+  te[o + 8] = (xz + wy) * sz; te[o + 9] = (yz - wx) * sz; te[o + 10] = (1 - (xx + yy)) * sz; te[o + 11] = 0;
+  te[o + 12] = px; te[o + 13] = py; te[o + 14] = pz; te[o + 15] = 1;
+}
 function writeDebris(i) {
-  const k = dstate[i] === 2 && dlife[i] < 1 ? Math.max(0, dlife[i]) : 1;
-  _e.set(dr[i * 3], dr[i * 3 + 1], dr[i * 3 + 2]); _q.setFromEuler(_e);
-  _p.set(dp[i * 3], dp[i * 3 + 1], dp[i * 3 + 2]); _s.set(ds[i * 3] * k, ds[i * 3 + 1] * k, ds[i * 3 + 2] * k);
-  _m.compose(_p, _q, _s); dmesh.setMatrixAt(i, _m);
+  const k = dstate[i] === 2 && dlife[i] < 1 ? Math.max(0, dlife[i]) : 1, a = i * 3, te = dmesh.instanceMatrix.array, o = i * 16;
+  const ex = dr[a] / 2, ey = dr[a + 1] / 2, ez = dr[a + 2] / 2, sx = ds[a] * k, sy = ds[a + 1] * k, sz = ds[a + 2] * k;
+  const c1 = Math.cos(ex), c2 = Math.cos(ey), c3 = Math.cos(ez), s1 = Math.sin(ex), s2 = Math.sin(ey), s3 = Math.sin(ez);
+  const x = s1 * c2 * c3 + c1 * s2 * s3, y = c1 * s2 * c3 - s1 * c2 * s3, z = c1 * c2 * s3 + s1 * s2 * c3, w = c1 * c2 * c3 - s1 * s2 * s3;
+  const x2 = x + x, y2 = y + y, z2 = z + z, xx = x * x2, xy = x * y2, xz = x * z2, yy = y * y2, yz = y * z2, zz = z * z2, wx = w * x2, wy = w * y2, wz = w * z2;
+  te[o] = (1 - (yy + zz)) * sx; te[o + 1] = (xy + wz) * sx; te[o + 2] = (xz - wy) * sx; te[o + 3] = 0;
+  te[o + 4] = (xy - wz) * sy; te[o + 5] = (1 - (xx + zz)) * sy; te[o + 6] = (yz + wx) * sy; te[o + 7] = 0;
+  te[o + 8] = (xz + wy) * sz; te[o + 9] = (yz - wx) * sz; te[o + 10] = (1 - (xx + yy)) * sz; te[o + 11] = 0;
+  te[o + 12] = dp[a]; te[o + 13] = dp[a + 1]; te[o + 14] = dp[a + 2]; te[o + 15] = 1;
+}
+// a flame block's matrix, read off the block itself (main.js stepFlames)
+export function writeFlame(te, o, f, size) {
+  const sc = size > 0.01 ? size : 0.01, ex = f.ax / 2, ey = f.ay / 2;
+  const c1 = Math.cos(ex), c2 = Math.cos(ey), s1 = Math.sin(ex), s2 = Math.sin(ey);
+  const x = s1 * c2, y = c1 * s2, z = s1 * s2, w = c1 * c2;
+  const x2 = x + x, y2 = y + y, z2 = z + z, xx = x * x2, xy = x * y2, xz = x * z2, yy = y * y2, yz = y * z2, zz = z * z2, wx = w * x2, wy = w * y2, wz = w * z2;
+  te[o] = (1 - (yy + zz)) * sc; te[o + 1] = (xy + wz) * sc; te[o + 2] = (xz - wy) * sc; te[o + 3] = 0;
+  te[o + 4] = (xy - wz) * sc; te[o + 5] = (1 - (xx + zz)) * sc; te[o + 6] = (yz + wx) * sc; te[o + 7] = 0;
+  te[o + 8] = (xz + wy) * sc; te[o + 9] = (yz - wx) * sc; te[o + 10] = (1 - (xx + yy)) * sc; te[o + 11] = 0;
+  te[o + 12] = f.x; te[o + 13] = f.y; te[o + 14] = f.z; te[o + 15] = 1;
 }
 export function spawnDebris(x, y, z, vx, vy, vz, m, lvl = 1, size = 0) {
   let i = -1;
