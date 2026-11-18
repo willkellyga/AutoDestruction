@@ -2,7 +2,7 @@
 // Sumida, the Rainbow Bridge across the bay, a container ship under the cranes and the roofed pleasure boats on the
 // river; and the painted ground: river, bay, the palace moat, the station's tracks, the temple's paving, the scramble.
 // The map is flat, so the water is paint, a bridge's deck is the street itself, and monsters wade.
-import { M, WX, WZ, STREET_X, STREET_Z, set, box, begin, setSeed } from './world.js';
+import { M, WX, WZ, STREET_X, STREET_Z, set, box, begin, setSeed, vehicle } from './world.js';
 import { lampPost } from './kit.js';
 import { RIVER, BAY, PALACE_AT, STATION_AT, SENSO_AT, SHIBA_AT, WHEEL_AT, SCRAMBLE, POND_AT, METRO_AT, STUDIO_AT, EXPO_AT, wet } from './tokyo.js';
 import { PALACE, STATION } from './tokyo_landmarks.js';
@@ -65,41 +65,8 @@ function cables(zc, T, title, m) {
   }
 }
 
-// ---- boats: drawn bow first along a line that runs along x, or along z for the river ---------------------------------
-const plotter = (x0, z0, alongZ) => (i, y, d, m) => (alongZ ? set(x0 + d, y, z0 + i, m) : set(x0 + i, y, z0 + d, m));
-function hull(P, len, half, hgt, m, keel, bow, deckM) {
-  const W = (i) => { const t = i >= len - bow ? (i - (len - bow) + 1) / bow : i < 4 ? (4 - i) / 10 : 0; return Math.max(1, Math.round(half * (1 - t * t))); };
-  for (let i = 0; i < len; i++) {
-    const w = W(i), wn = Math.min(i ? W(i - 1) : 0, i < len - 1 ? W(i + 1) : 0);
-    for (let d = -w; d < w; d++) {
-      const skin = d === -w || d === w - 1 || d < -wn || d >= wn || i % 8 === 0;
-      for (let y = 0; y <= hgt; y++) if (y < 2 || y === hgt || skin) P(i, y, d, y < 2 ? keel : y === hgt ? deckM : m);
-    }
-  }
-}
-const pbox = (P, i0, y0, d0, i1, y1, d1, m) => { for (let i = i0; i <= i1; i++) for (let y = y0; y <= y1; y++) for (let d = d0; d <= d1; d++) P(i, y, d, m); };
-const LOADS = [M.CAR_A, M.CAR_B, M.DOOR_G, M.SIGN, M.TRIM, M.TAXI, M.ROOF_R, M.TANK];
-function containerShip(x0, zc) {
-  begin('Container ship', 'boat', true);
-  const P = plotter(x0, zc, false);
-  hull(P, 86, 8, 9, M.TANK, M.CAR_A, 12, M.DARK);
-  for (let k = 0, i = 16; i + 7 <= 72; i += 8, k++) for (const [d0, d1] of [[-7, -1], [0, 6]]) {
-    const n = 1 + ((k * 3 + (d0 < 0 ? 1 : 2)) % 3);
-    for (let s = 0; s < n; s++) { const m = LOADS[(k * 5 + s * 3 + (d0 < 0 ? 0 : 4)) % LOADS.length], y = 10 + s * 5; pbox(P, i, y, d0, i + 6, y + 4, d1 - 1, m); for (let d = d0; d < d1; d += 2) pbox(P, i, y + 1, d, i, y + 3, d, M.DARK); }
-  }
-  pbox(P, 3, 10, -6, 11, 24, 5, M.TRIM); pbox(P, 3, 21, -7, 11, 22, 6, M.GLASS); pbox(P, 2, 25, -7, 12, 25, 6, M.TRIM);
-  pbox(P, 5, 26, -2, 8, 31, 1, M.CAR_A); pbox(P, 5, 32, -2, 8, 32, 1, M.DARK); pbox(P, 80, 10, 0, 80, 18, 0, M.DARK);
-}
-function pleasureBoat(x0, z0, roof) {
-  begin('Pleasure boat', 'boat', true);
-  const P = plotter(x0, z0, true);
-  hull(P, 38, 4, 3, M.TRUNK, M.DARK, 9, M.FLOOR);
-  for (let i = 6; i <= 27; i++) for (const d of [-3, 2]) for (let y = 4; y <= 8; y++) P(i, y, d, (i - 6) % 4 === 0 || i === 27 ? M.TRUNK : y >= 6 ? M.PL_W : M.WOOD);
-  for (let d = -3; d <= 2; d++) for (let y = 4; y <= 8; y++) { P(6, y, d, M.TRUNK); P(27, y, d, d === -1 || d === 0 ? 0 || M.DARK : M.TRUNK); }
-  pbox(P, 5, 9, -4, 28, 9, 3, roof); pbox(P, 5, 10, -2, 28, 10, 1, roof); pbox(P, 5, 11, -1, 28, 11, 0, M.ROOF_D);
-  for (let i = 6; i <= 27; i += 3) { P(i, 8, -4, M.LIT_R); P(i, 8, 3, M.LIT_R); }
-  pbox(P, 32, 4, -1, 32, 9, -1, M.TRUNK); P(32, 9, 0, M.LIT_R);
-}
+// ---- boats: the models in civilian/src, stood by src/civilians.js. Each is given by its middle and the way its bow points. ----
+const boat = (kind, x, z, fx, fz, opts, more) => vehicle(kind, x, z, fx, fz, { opts, ...more });
 
 export function tokyoExtras() {
   setSeed(1868);
@@ -113,8 +80,10 @@ export function tokyoExtras() {
   tower(TA, zr, M.TRIM, 'Rainbow Bridge', 74); tower(TB, zr, M.TRIM, 'Rainbow Bridge', 74); cables(zr, 75, 'Rainbow Bridge', M.TRIM);
   for (const x of [712, 780, 846]) { lampPost(x, zr - 15, 18); lampPost(x + 8, zr + 14, 18); }
   // a ship under the cranes and the pleasure boats on the river
-  containerShip(702, 857);
-  pleasureBoat(806, 270, M.ROOF_G); pleasureBoat(846, 420, M.ROOF_R); pleasureBoat(812, 580, M.ROOF_S); pleasureBoat(850, 700, M.ROOF_G); pleasureBoat(760, 960, M.ROOF_R);
+  // (the ship is 38 m long, nearly the width of the bay; the boats are 17 m, so each lies in the reach between two bridges)
+  boat('ship', 783, 853, 1, 0, { type: 'ship', paint: 'blue' }, { low: -1 });
+  boat('pleasure', 808, 291, 0, 1, { type: 'pleasure', paint: 'green' }); boat('pleasure', 848, 438, 0, 1, { type: 'pleasure', paint: 'red' }); boat('pleasure', 812, 585, 0, 1, { type: 'pleasure', paint: 'slate' });
+  boat('pleasure', 850, 707, 0, 1, { type: 'pleasure', paint: 'green' }); boat('pleasure', 760, 972, 0, 1, { type: 'pleasure', paint: 'red' });
 }
 
 // ---- the painted ground ---------------------------------------------------------------------------------------------

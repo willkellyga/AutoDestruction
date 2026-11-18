@@ -25,7 +25,8 @@ function ramp(R, u, out) {
   out.setRGB(a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t, a[3] + (b[3] - a[3]) * t);
 }
 
-export function makeBlockFx(scene, max = 7000) {
+// o.flash(p, power): the game's own flash for a blast, in place of the three point lights kept here for the viewer
+export function makeBlockFx(scene, max = 7000, o = {}) {
   const geo = new THREE.BoxGeometry(1, 1, 1);
   { // the cubes light themselves, so their faces are shaded by hand to keep each one reading as a block
     const sh = [0.8, 0.8, 1.12, 0.6, 0.94, 0.7], c = new Float32Array(72);
@@ -78,9 +79,9 @@ export function makeBlockFx(scene, max = 7000) {
   }
 
   // a short orange light for a blast
-  const lights = [0, 1, 2].map(() => { const light = new THREE.PointLight(0xffa040, 0, 90, 1.6); scene.add(light); return { light, t: 1, dur: 0.3, peak: 0 }; });
+  const lights = (o.flash ? [] : [0, 1, 2]).map(() => { const light = new THREE.PointLight(0xffa040, 0, 90, 1.6); scene.add(light); return { light, t: 1, dur: 0.3, peak: 0 }; });
   let li = 0;
-  function flash(p, power = 1) { const L = lights[li++ % lights.length]; L.light.position.set(p.x, p.y + 3, p.z); L.t = 0; L.dur = 0.34; L.peak = 320 * power; }
+  function flash(p, power = 1) { if (o.flash) { o.flash(p, power); return; } const L = lights[li++ % lights.length]; L.light.position.set(p.x, p.y + 3, p.z); L.t = 0; L.dur = 0.34; L.peak = 320 * power; }
 
   // ---- bursts ----
   const dirOut = (up = 0.25) => { const a = R() * 6.283, e = Math.asin(Math.min(1, -up + R() * (1 + up))), c = Math.cos(e); return [Math.cos(a) * c, Math.sin(e), Math.sin(a) * c]; };
@@ -151,6 +152,7 @@ export function makeBlockFx(scene, max = 7000) {
       const f = fires[i]; f.t += dt;
       if (f.t > f.life + 4 || !f.obj.parent) { fires.splice(i, 1); continue; }
       const k = Math.min(1, f.t * 2.5) * Math.max(0, 1 - Math.pow(f.t / f.life, 2.5)), s = f.size, n = f.spots.length;
+      if (!n) continue;   // nothing left of it to burn (a wreck blown or stamped to bits)
       f.obj.updateWorldMatrix(true, false);
       const at = () => { const sp = f.spots[Math.floor(R() * n)]; return _p.set(sp[0], sp[1], sp[2]).applyMatrix4(f.obj.matrixWorld); };
       // a spot that has gone under water is out: it steams for a while instead

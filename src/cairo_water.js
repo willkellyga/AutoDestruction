@@ -2,7 +2,7 @@
 // middle bridge, the sailing boats and a river cruiser; and the painted ground: sand and
 // its ripples, the green of the valley, the Nile and its island, the paving round the pyramids, sand over the desert roads.
 // The map is flat, so the water is paint, a bridge's deck is the street itself, and monsters wade.
-import { M, WX, WZ, STREET_X, STREET_Z, WALK, ROADW, set, box, begin, setSeed, ri } from './world.js';
+import { M, WX, WZ, STREET_X, STREET_Z, WALK, ROADW, set, box, begin, setSeed, ri, vehicle } from './world.js';
 import { lampPost } from './kit.js';
 import { NILE, ISLE, DESERT, GREAT_AT, KHAFRE_AT, MENK_AT, SPHINX_AT, CITADEL_AT, MUSEUM_AT, OPERA_AT, BARON_AT, RAMSES_AT, ABDEEN_AT, HALL_AT, wet, isle } from './cairo.js';
 import { palm, chain, rdisc } from './cairo_kit.js';
@@ -65,24 +65,6 @@ function felucca(x0, z0, back, paint) {
   pbox(P, 6, 4, 0, 6, 7, 0, M.TRUNK); pbox(P, 26, 4, 0, 26, 7, 0, M.TRUNK);
   pbox(P, 3, 4, -2, 5, 4, 1, M.AWN_R); pbox(P, 10, 4, -1, 11, 5, 0, M.WOOD);
 }
-// A river cruiser: three white decks of cabins, a sun deck under an awning, a funnel.
-function cruiser(x0, z0) {
-  begin('River cruiser', 'boat', true);
-  const P = plotter(x0, z0, false);
-  hull(P, 78, 7, 5, M.TRIM, M.CAR_B, 12, M.FLOOR);
-  for (let s = 0; s < 3; s++) {
-    const y = 6 + s * 7, a = 8 + s * 2, b = 62 - s * 3;
-    for (let i = a; i <= b; i++) for (const d of [-6, 5]) for (let yy = y; yy <= y + 5; yy++) P(i, yy, d, yy >= y + 2 && yy <= y + 4 && (i - a) % 4 !== 0 ? ((i * 3 + s) % 13 === 0 ? M.LIT : M.GLASS) : M.TRIM);
-    for (let d = -6; d <= 5; d++) for (let yy = y; yy <= y + 5; yy++) { P(a, yy, d, M.TRIM); P(b, yy, d, M.TRIM); }
-    pbox(P, a - 1, y + 6, -7, b + 1, y + 6, 6, s === 2 ? M.FLOOR : M.TRIM);
-    for (let i = a - 1; i <= b + 1; i += 2) { P(i, y + 7, -7, M.DARK); P(i, y + 7, 6, M.DARK); }
-  }
-  for (const i of [16, 30, 44, 56]) for (const d of [-6, 5]) pbox(P, i, 27, d, i, 33, d, M.STEEL);
-  pbox(P, 15, 34, -7, 57, 34, 6, M.AWN_B); for (let i = 15; i <= 57; i += 4) pbox(P, i, 34, -7, i + 1, 34, 6, M.AWN_W);
-  pbox(P, 20, 27, -2, 24, 38, 1, M.CAR_A); pbox(P, 20, 39, -2, 24, 39, 1, M.DARK);
-  pbox(P, 70, 6, 0, 70, 14, 0, M.DARK);
-}
-
 export function cairoExtras() {
   setSeed(1969);
   // the bridges, north to south. The middle one keeps its lions.
@@ -93,7 +75,8 @@ export function cairoExtras() {
   felucca(420, 30, false, M.WOOD); felucca(500, 190, true, M.PL_B); felucca(540, 40, false, M.TRUNK); felucca(455, 140, false, M.PL_W);
   felucca(412, 440, true, M.WOOD); felucca(548, 610, false, M.PL_G); felucca(414, 760, false, M.TRUNK); felucca(546, 300, true, M.WOOD);
   felucca(430, 925, false, M.PL_B); felucca(535, 1000, true, M.WOOD);
-  cruiser(486, 905);
+  // the cruiser is the ferry model in civilian/src (22 m), stood by src/civilians.js; the sailing boats are still built of voxels
+  vehicle('ferry', 486, 944, 0, 1, { opts: { type: 'ferry', paint: 'blue' }, name: 'River cruiser' });
   // palms along the island's banks and on its two points
   for (let z = ISLE.z0 + 34; z < ISLE.z1 - 30; z += 37) for (const x of [ISLE.x0 + 2, ISLE.x1 - 3]) if (STREET_Z.every((s) => Math.abs(z - s) > 24)) palm(x, z + ri(-3, 3), ri(16, 24));
   for (const [x, z] of [[470, 266], [492, 270], [481, 282], [462, 284], [500, 286], [468, 832], [494, 828], [481, 816], [460, 812], [502, 814]]) palm(x, z, ri(18, 26));
