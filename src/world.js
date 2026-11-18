@@ -102,6 +102,10 @@ export const LOT = 40, WALK = 6, ROADW = 24;
 export const STREET_Z = CAIRO ? [108, 230, 352, 524, 696, 868] : TOKYO ? [108, 230, 352, 524, 646, 768, 890] : NYC ? [150, 372, 494, 616, 738, 860] : PARIS ? [144, 266, 388, 560, 728, 850, 972] : CITY ? [80, 202, 324, 492, 614, 736, 858, 934] : tiled([80, 202, 324], TILE_Z);
 export const STREET_X = CAIRO ? [202, 373, 586, 757, 928] : TOKYO ? [156, 330, 504, 678, 936] : NYC ? [262, 436, 610, 738, 952] : PARIS ? [191, 365, 539, 759, 841] : CITY ? [80, 254, 382, 602, 776, 904] : tiled([80, 254, 428], TILE_X);
 export const SPAWN = CAIRO ? { x: 202, z: 352, yaw: 0 } : TOKYO ? { x: 936, z: 890, yaw: -1.8 } : NYC ? { x: 952, z: 860, yaw: -1.8 } : PARIS ? { x: 841, z: 972, yaw: -2.3 } : CITY ? { x: 80, z: 934, yaw: 2.55 } : { x: 80, z: 324, yaw: 2.3 };   // the south-west crossing, in the suburbs, looking up at the downtown skyline
+// Stretches of a street that are under water on this map, as [x0, z0, x1, z1]: New York's two ship berths, where the
+// street stops at a short pier and the liner and the carrier lie across its line. The army keeps off them.
+export const SHUT = NYC ? [[0, 474, 52, 514], [0, 718, 52, 758]] : [];
+export const shut = (x, z) => SHUT.some((r) => x >= r[0] && x < r[2] && z >= r[1] && z < r[3]);
 export let totalInit = 0;
 
 // ---- materials -----------------------------------------------------------
@@ -270,6 +274,22 @@ function tf(x, z) {
   else if (rot === 2) { wx = ox + osz - a; wz = oz + osz - b; }
   else if (rot === 3) { wx = ox + b; wz = oz + osz - a; }
   else { wx = ox + osz - b; wz = oz + a; }
+}
+// Vehicles, boats, trains and dock furniture are not voxels: a generator only records where one stands, and
+// src/civilians.js builds it from the models in civilian/src. x, z: its middle, in the same coordinates the generator
+// draws in (so 8 is the middle of voxels 0 to 15); fx, fz: which way its nose points. o: the model's own options.
+export const vehicles = [];
+export function vehicle(kind, x, z, fx, fz, o = {}) {
+  let X = x, Z = z, dx = fx, dz = fz;
+  if (rot >= 0) {
+    const a = x - LOC, b = z - LOC, e = osz + 1;
+    if (rot === 0) { X = ox + a; Z = oz + b; }
+    else if (rot === 2) { X = ox + e - a; Z = oz + e - b; dx = -fx; dz = -fz; }
+    else if (rot === 3) { X = ox + b; Z = oz + e - a; dx = fz; dz = -fx; }
+    else { X = ox + e - b; Z = oz + a; dx = -fz; dz = fx; }
+  }
+  const v = { kind, x: X, z: Z, yaw: Math.atan2(dx, dz), lot: ctx.lot, ...o };
+  vehicles.push(v); return v;
 }
 export function set(x, y, z, m) {
   tf(x, z); x = wx; z = wz;

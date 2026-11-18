@@ -1,6 +1,6 @@
 // The parts buildings are made of: wall faces, windows set back behind frames, doors, pitched roofs, voxel lettering,
 // furniture and street props. Everything is drawn at a quarter metre a voxel, and the detail steps up with ctx.L.
-import { M, set, put, clr, get, box, fill, walls, begin, rnd, ri, ctx } from './world.js';
+import { M, set, put, clr, get, box, fill, walls, begin, rnd, ri, ctx, vehicle } from './world.js';
 
 // A wall face of the rectangle x0..x1, z0..z1. u runs left to right as seen from outside, d is how far a voxel stands out.
 export function face(side, x0, z0, x1, z1) {
@@ -150,20 +150,9 @@ export function fence(x0, x1, z, gap0 = -1, gap1 = -1) {
   for (let x = x0; x <= x1; x++) { if (x >= gap0 && x <= gap1) continue; if (x & 1) { set(x, 1, z, M.TRIM); set(x, 3, z, M.TRIM); } else box(x, 0, z, x, 4, z, M.TRIM); }
 }
 export function gravestone(x, z) { begin('Gravestone', 'prop', false); box(x, 0, z, x + 2, 3, z, M.STONE); set(x + 1, 4, z, M.STONE); }
-// A small hatchback, nose toward low x. It goes up if it is wrecked.
-export function car(x, z, paint) {
-  const b = begin('Parked car', 'prop', false); b.explosive = 5;
-  for (const wx of [x + 2, x + 11]) for (const wz of [z, z + 6]) box(wx, 0, wz, wx + 2, 1, wz, M.TYRE);
-  box(x, 1, z + 1, x + 15, 1, z + 5, M.DARK);
-  walls(x, 2, z, x + 15, 3, z + 6, paint); box(x + 1, 3, z + 1, x + 4, 3, z + 5, paint); box(x + 13, 3, z + 1, x + 14, 3, z + 5, paint);
-  box(x + 1, 2, z + 1, x + 14, 2, z + 5, M.DARK);
-  walls(x + 5, 4, z, x + 12, 5, z + 6, M.GLASS);
-  for (const [cx, cz] of [[x + 5, z], [x + 5, z + 6], [x + 12, z], [x + 12, z + 6], [x + 9, z], [x + 9, z + 6]]) box(cx, 4, cz, cx, 5, cz, paint);
-  box(x + 5, 6, z, x + 12, 6, z + 6, paint);
-  box(x + 7, 2, z + 2, x + 8, 3, z + 4, M.FURN_B); box(x + 10, 2, z + 2, x + 11, 3, z + 4, M.FURN_B); set(x + 7, 2, z + 3, M.FUEL);
-  set(x, 3, z + 1, M.LIT_W); set(x, 3, z + 5, M.LIT_W); set(x + 15, 3, z + 1, M.LIT_R); set(x + 15, 3, z + 5, M.LIT_R);
-  box(x, 2, z + 2, x, 2, z + 4, M.METAL);
-}
+// A parked car, nose toward low x, standing where the old 16 x 7 voxel car stood. It is one of the models in
+// civilian/src, built by src/civilians.js: this only records where it stands. A taxi-yellow one is a taxi.
+export function car(x, z, paint) { return vehicle('car', x + 8, z + 3.5, -1, 0, { taxi: paint === M.TAXI }); }
 
 // ---- insides (level 3) -----------------------------------------------------
 const FREE = (x, y, z) => !get(x, y, z);

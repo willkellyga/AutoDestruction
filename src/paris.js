@@ -160,6 +160,12 @@ export const PARIS_KIT = { haussmann, lawn, place, market, eiffel, arc, notredam
 // ground colours for the lots (ground.js): Paris is pale gravel and paving, and green only where something grows
 export const PARIS_PAD = { haussmann: '#cbc4b3', place: '#d8cfba', market: '#d2c9b4', park: '#79aa62', lawn: '#79aa62', cottage: '#86b06c', rowhouse: '#86b06c', church: '#86b06c' };
 
+// is this spot water? (the island and the islet are roughly their painted shapes)
+export function wet(x, z) {
+  if (z < SEINE.z0 || z >= SEINE.z1) return false;
+  if (x >= ISLE.tip && x < ISLE.x1 && z >= ISLE.z0 && z < ISLE.z1) return false;
+  return !(x >= ISLET.x0 && x < ISLET.x1 && Math.abs(z - ISLET.z) < 7);
+}
 // where the street dressing (lamps, parked cars, trees) must stay away: the river, the round plaza and under the tower
 export function parisKeepOut(x, z) {
   if (z > SEINE.z0 - 8 && z < SEINE.z1 + 8) return true;

@@ -30,37 +30,57 @@ export class VoxPart {
   box(i0, j0, k0, i1, j1, k1, c) { for (let k = k0; k < k1; k++) for (let j = j0; j < j1; j++) for (let i = i0; i < i1; i++) this.set(i, j, k, c); }
   at(i, j, k) { return (i < 0 || j < 0 || k < 0 || i >= this.nx || j >= this.ny || k >= this.nz) ? -1 : this.col[(k * this.ny + j) * this.nx + i]; }
 
-  // (re)build the meshes; mats = [plain, glowing]
+  // (re)build the meshes; mats = [plain, glowing]. One quad for every cube face that shows, its corners darkened where
+  // neighbours crowd them. Written over flat arrays (count the faces, then fill): a big hull is rebuilt on every hit.
   build(mats, parent) {
-    const { nx, ny, nz, h } = this, x0 = this.i0 * h, y0 = this.j0 * h, z0 = this.k0 * h;
-    const out = [{ p: [], n: [], c: [], ix: [] }, { p: [], n: [], c: [], ix: [] }], tmp = new THREE.Color(), cell = [0, 0, 0], q = [0, 0, 0];
-    const solid = (c, a, da, u, du, v, dv) => { q[0] = c[0]; q[1] = c[1]; q[2] = c[2]; q[a] += da; q[u] += du; q[v] += dv; return this.at(q[0], q[1], q[2]) >= 0 ? 1 : 0; };
-    for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
-      const c = this.at(i, j, k); if (c < 0) continue;
+    const { nx, ny, nz, h, col } = this, x0 = this.i0 * h, y0 = this.j0 * h, z0 = this.k0 * h;
+    const D = [nx, ny, nz], ST = [1, nx, nx * ny], N = nx * ny * nz, cnt = [0, 0];
+    for (let n = 0, k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++, n++) {
+      const c = col[n]; if (c < 0) continue;
+      let f = 0;
+      if (i === nx - 1 || col[n + 1] < 0) f++; if (i === 0 || col[n - 1] < 0) f++;
+      if (j === ny - 1 || col[n + nx] < 0) f++; if (j === 0 || col[n - nx] < 0) f++;
+      if (k === nz - 1 || col[n + ST[2]] < 0) f++; if (k === 0 || col[n - ST[2]] < 0) f++;
+      cnt[c & GLOW ? 1 : 0] += f;
+    }
+    const out = cnt.map((f) => (f ? { p: new Float32Array(f * 12), n: new Float32Array(f * 12), c: new Float32Array(f * 12), ix: f * 4 > 65535 ? new Uint32Array(f * 6) : new Uint16Array(f * 6), v: 0, q: 0 } : null));
+    const tmp = new THREE.Color(), cell = [0, 0, 0], pos = [0, 0, 0], ao = [0, 0, 0, 0], seed = this.seed + 77;
+    for (let n = 0, k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++, n++) {
+      const c = col[n]; if (c < 0) continue;
       cell[0] = i; cell[1] = j; cell[2] = k;
-      const g = out[c & GLOW ? 1 : 0];
-      tmp.setHex(c & 0xffffff).multiplyScalar(0.95 + 0.1 * hash(i, j, k, this.seed + 77));
-      for (const [a, u, v] of AXES) for (const s of [1, -1]) {
-        if (solid(cell, a, s, u, 0, v, 0)) continue;
-        const base = g.p.length / 3, ao = [];
-        const corners = s > 0 ? [[0, 0], [1, 0], [1, 1], [0, 1]] : [[0, 0], [0, 1], [1, 1], [1, 0]];
-        for (const [cu, cv] of corners) {
-          const pos = [i, j, k]; pos[a] += s > 0 ? 1 : 0; pos[u] += cu; pos[v] += cv; g.p.push(x0 + pos[0] * h, y0 + pos[1] * h, z0 + pos[2] * h);
-          const nrm = [0, 0, 0]; nrm[a] = s; g.n.push(nrm[0], nrm[1], nrm[2]);
-          const du = cu ? 1 : -1, dv = cv ? 1 : -1, s1 = solid(cell, a, s, u, du, v, 0), s2 = solid(cell, a, s, u, 0, v, dv), cr = solid(cell, a, s, u, du, v, dv);
-          const o = s1 && s2 ? 0 : 3 - s1 - s2 - cr; ao.push(o);
-          const sh = 0.6 + 0.4 * o / 3; g.c.push(tmp.r * sh, tmp.g * sh, tmp.b * sh);
+      const g = out[c & GLOW ? 1 : 0]; let tinted = false, cr = 0, cg = 0, cb = 0;
+      for (let a = 0; a < 3; a++) {
+        const u = (a + 1) % 3, v = (a + 2) % 3, ca = cell[a], cu = cell[u], cv = cell[v], Du = D[u], Dv = D[v], su = ST[u], sv = ST[v];
+        for (let s = 1; s >= -1; s -= 2) {
+          const na = ca + s, inA = na >= 0 && na < D[a], nb = n + s * ST[a];
+          if (inA && col[nb] >= 0) continue;
+          if (!tinted) { tinted = true; tmp.setHex(c & 0xffffff).multiplyScalar(0.95 + 0.1 * hash(i, j, k, seed)); cr = tmp.r; cg = tmp.g; cb = tmp.b; }
+          const base = g.v / 3;
+          for (let q = 0; q < 4; q++) {
+            // the corners in turn: (0,0) (1,0) (1,1) (0,1) on a face that looks along +a, the other way round on one that looks along -a
+            const hi = q === 1 || q === 2, lo = q >= 2, fu = (s > 0 ? hi : lo) ? 1 : 0, fv = (s > 0 ? lo : hi) ? 1 : 0;
+            pos[0] = i; pos[1] = j; pos[2] = k; pos[a] += s > 0 ? 1 : 0; pos[u] += fu; pos[v] += fv;
+            const du = fu ? 1 : -1, dv = fv ? 1 : -1, uu = cu + du, vv = cv + dv, okU = uu >= 0 && uu < Du, okV = vv >= 0 && vv < Dv;
+            const s1 = inA && okU && col[nb + du * su] >= 0 ? 1 : 0, s2 = inA && okV && col[nb + dv * sv] >= 0 ? 1 : 0, s3 = inA && okU && okV && col[nb + du * su + dv * sv] >= 0 ? 1 : 0;
+            const o = s1 && s2 ? 0 : 3 - s1 - s2 - s3, sh = 0.6 + 0.4 * o / 3, w = g.v; ao[q] = o;
+            g.p[w] = x0 + pos[0] * h; g.p[w + 1] = y0 + pos[1] * h; g.p[w + 2] = z0 + pos[2] * h;
+            g.n[w + a] = s;
+            g.c[w] = cr * sh; g.c[w + 1] = cg * sh; g.c[w + 2] = cb * sh; g.v += 3;
+          }
+          const ix = g.ix, e = g.q;
+          if (ao[0] + ao[2] >= ao[1] + ao[3]) { ix[e] = base; ix[e + 1] = base + 1; ix[e + 2] = base + 2; ix[e + 3] = base; ix[e + 4] = base + 2; ix[e + 5] = base + 3; }
+          else { ix[e] = base + 1; ix[e + 1] = base + 2; ix[e + 2] = base + 3; ix[e + 3] = base + 1; ix[e + 4] = base + 3; ix[e + 5] = base; }
+          g.q += 6;
         }
-        if (ao[0] + ao[2] >= ao[1] + ao[3]) g.ix.push(base, base + 1, base + 2, base, base + 2, base + 3); else g.ix.push(base + 1, base + 2, base + 3, base + 1, base + 3, base);
       }
     }
     let tris = 0;
     out.forEach((g, gi) => {
       let m = this.meshes[gi];
-      if (!g.ix.length) { if (m) m.visible = false; return; }
+      if (!g) { if (m) m.visible = false; return; }
       const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.Float32BufferAttribute(g.p, 3)); geo.setAttribute('normal', new THREE.Float32BufferAttribute(g.n, 3));
-      geo.setAttribute('color', new THREE.Float32BufferAttribute(g.c, 3)); geo.setIndex(g.ix); tris += g.ix.length / 3;
+      geo.setAttribute('position', new THREE.BufferAttribute(g.p, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(g.n, 3));
+      geo.setAttribute('color', new THREE.BufferAttribute(g.c, 3)); geo.setIndex(new THREE.BufferAttribute(g.ix, 1)); tris += g.ix.length / 3;
       if (m) { m.geometry.dispose(); m.geometry = geo; m.visible = true; }
       else { m = this.meshes[gi] = new THREE.Mesh(geo, mats[gi]); m.castShadow = gi === 0; m.receiveShadow = gi === 0; parent.add(m); }
     });

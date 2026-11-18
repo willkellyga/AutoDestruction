@@ -385,6 +385,7 @@ function shatterPane(i0, dx, dy, dz) {
 
 // A hit: the core turns to dust, the shell is thrown as debris.
 export function blast(cx, cy, cz, r, o = {}) {
+  if (hooks.blast) hooks.blast(cx, cy, cz, r, o);   // the cars, boats and trains are not voxels: src/civilians.js takes the blow for them
   const push = o.push ?? 9, core = o.core ?? 0.45, maxDeb = (o.maxDebris ?? 260) * cfg.debrisMul, ys = o.ys ?? 1;
   const dx = o.dx || 0, dy = o.dy || 0, dz = o.dz || 0, hard = o.hard ?? 1, tough = o.tough ?? 1;
   const only = o.only;   // { kind: true }: hit only bodies of these kinds (street props, say) and leave the rest standing

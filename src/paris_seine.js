@@ -1,7 +1,7 @@
 // The Seine and what stands in and along it: the stone walls of the quays, the rails, lamps and piers of the five
 // bridges, the footbridge, the island, the islet with its little statue, and the boats. The water itself is painted
 // on the ground (the map is flat, so monsters wade and only the army needs the bridges).
-import { M, WX, STREET_X, set, box, walls, begin, setSeed, rnd, ri } from './world.js';
+import { M, WX, STREET_X, set, box, walls, begin, setSeed, rnd, ri, vehicle } from './world.js';
 import { tree, lampPost, bench, bin, disc } from './kit.js';
 import { SEINE, ISLE, ISLET, ETOILE, TOWER, NOTRE, PX, PZ, onBridge } from './paris.js';
 import { EIFFEL } from './paris_eiffel.js';
@@ -26,22 +26,8 @@ function pier(x, z, dir) {
   for (let k = 0; k < 7; k++) { const w = Math.max(0, 3 - (k >> 1)); box(x + dir * k, 0, z - w, x + dir * k, k < 5 ? 3 : 2, z + w, M.STONE); }
   for (let k = 0; k < 5; k++) { const w = Math.max(0, 2 - (k >> 1)); box(x + dir * k, 4, z - w, x + dir * k, 4, z + w, M.TRIM); }
 }
-// A tour boat: a long white hull under a glass roof. nose toward low x.
-function tourBoat(x, z, trim) {
-  begin('Tour boat', 'boat', true);
-  for (let i = 0; i < 44; i++) { const w = i < 4 ? i + 1 : i > 40 ? 44 - i + 1 : 5; box(x + i, 0, z - w, x + i, 2, z + w - 1, i === 0 || i === 43 ? M.TRIM : M.CAR_C); box(x + i, 3, z - w, x + i, 3, z + w - 1, M.FLOOR); if (i > 0 && i < 43) { set(x + i, 2, z - w, trim); set(x + i, 2, z + w - 1, trim); } }
-  for (let i = 8; i <= 36; i++) { const post = (i - 8) % 7 === 0; for (const s of [z - 5, z + 4]) for (let y = 4; y <= 7; y++) set(x + i, y, s, post ? M.TRIM : M.GLASS); for (let j = z - 5; j <= z + 4; j++) set(x + i, 8, j, i % 7 === 4 && (j === z - 1 || j === z) ? M.LIT : M.TRIM); }
-  for (const i of [8, 36]) for (let j = z - 4; j <= z + 3; j++) for (let y = 4; y <= 7; y++) set(x + i, y, j, j === z - 1 || j === z ? M.GLASS : M.TRIM);
-  for (let i = 11; i <= 33; i += 4) for (const j of [z - 3, z + 2]) { set(x + i, 4, j, M.FURN_A); set(x + i, 5, j, M.FURN_A); }
-  box(x + 39, 4, z - 1, x + 39, 9, z - 1, M.DARK); set(x + 39, 9, z, M.AWN_R); set(x + 39, 8, z, M.AWN_W); set(x + 39, 7, z, M.AWN_B);
-}
-// A barge: a dark hull loaded with sand or crates, a wheelhouse at the back.
-function barge(x, z, load) {
-  begin('Barge', 'boat', true);
-  for (let i = 0; i < 36; i++) { const w = i < 3 ? i + 2 : 4; box(x + i, 0, z - w, x + i, 2, z + w - 1, M.DARK); if (i > 0) { set(x + i, 3, z - w, M.CAR_A); set(x + i, 3, z + w - 1, M.CAR_A); } }
-  box(x + 4, 3, z - 3, x + 25, 3, z + 2, load); for (let i = 5; i <= 24; i += 2) for (let j = z - 2; j <= z + 1; j++) if ((i + j) % 3) set(x + i, 4, j, load);
-  walls(x + 28, 3, z - 3, x + 34, 7, z + 2, M.TRIM); box(x + 28, 5, z - 3, x + 28, 6, z + 2, M.GLASS); box(x + 27, 8, z - 4, x + 35, 8, z + 3, M.DOOR_G); box(x + 31, 9, z, x + 31, 11, z, M.DARK);
-}
+// A boat on the river: the models in civilian/src, stood by src/civilians.js, given by its middle and the way its bow points.
+const boat = (kind, x, z, fx, fz, opts) => vehicle(kind, x, z, fx, fz, { opts });
 
 export function parisExtras() {
   setSeed(1889);
@@ -97,8 +83,10 @@ export function parisExtras() {
     box(x + 4, 15, z + 1, x + 4, 18, z + 2, M.ROOF_G);                                                                         // the tablet
   }
   // boats: tour boats under way in mid-stream, barges moored along the quays
-  tourBoat(250, 440, M.CAR_B); tourBoat(430, 512, M.CAR_A); tourBoat(600, 456, M.AWN_G); tourBoat(60, 505, M.CAR_B);
-  barge(276, 533, M.PL_Y); barge(470, 415, M.WOOD); barge(628, 533, M.BRICK2); barge(100, 415, M.PL_Y); barge(905, 415, M.WOOD); barge(782, 533, M.PL_Y);
+  // (a tour boat is 20 m long and a barge 17 m, so each lies in the reach between two bridges)
+  boat('tour', 278, 440, -1, 0, { type: 'tour', paint: 'blue' }); boat('tour', 452, 512, -1, 0, { type: 'tour', paint: 'red' }); boat('tour', 640, 456, -1, 0, { type: 'tour', paint: 'green' }); boat('tour', 95, 505, -1, 0, { type: 'tour', paint: 'blue' });
+  boat('barge', 290, 528, -1, 0, { type: 'barge', load: 'sand', house: true }); boat('barge', 484, 420, 1, 0, { type: 'barge', load: 'crates', house: true, paint: 'green' }); boat('barge', 650, 528, -1, 0, { type: 'barge', load: 'gravel', house: true, paint: 'blue' });
+  boat('barge', 110, 420, 1, 0, { type: 'barge', load: 'sand', house: true, paint: 'green' }); boat('barge', 930, 420, 1, 0, { type: 'barge', load: 'coal', house: true }); boat('barge', 925, 526, -1, 0, { type: 'barge', load: 'gravel', house: true, paint: 'blue' });
 }
 
 // ---- the painted ground ---------------------------------------------------------------------------------------------
