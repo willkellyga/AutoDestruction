@@ -3,7 +3,7 @@
 // on the ground (the map is flat, so monsters wade and only the army needs the bridges).
 import { M, WX, STREET_X, set, box, walls, begin, setSeed, rnd, ri } from './world.js';
 import { tree, lampPost, bench, bin, disc } from './kit.js';
-import { SEINE, ISLE, ISLET, ETOILE, TOWER, PX, PZ, onBridge } from './paris.js';
+import { SEINE, ISLE, ISLET, ETOILE, TOWER, NOTRE, PX, PZ, onBridge } from './paris.js';
 import { EIFFEL } from './paris_eiffel.js';
 
 const FOOT = 690;   // the footbridge: x 690 to 697
@@ -77,13 +77,13 @@ export function parisExtras() {
     for (let z = a; z <= b; z++) { set(x, 0, z, M.DARK); set(x, 3, z, M.DARK); if ((z - a) % 2 === 0) { set(x, 1, z, M.DARK); set(x, 2, z, M.DARK); } }
   }
   for (const z of [z0 + 30, z0 + 68, z0 + 106]) { lampPost(FOOT + 1, z, 14); for (const x of [FOOT - 2, FOOT + 8]) { begin('Footbridge pier', 'prop', true); box(x, 0, z - 1, x + 1, 2, z + 1, M.DARK); } }
-  // the island: a low kerb round it, trees and benches until the cathedral is built
+  // the island: a low kerb round it, and trees and benches west of the cathedral
   for (let x = ISLE.x0; x < ISLE.x1 - 4; x += 26) for (const z of [ISLE.z0, ISLE.z1 - 1]) {
     const xb = Math.min(x + 23, ISLE.x1 - 6);
     if (onBridge(x) || onBridge(xb)) continue;
     begin('Island kerb', 'prop', true); box(x, 0, z, xb, 1, z, M.LIME2); box(x, 2, z, xb, 2, z, M.TRIM);
   }
-  for (let x = ISLE.x0 + 6; x < ISLE.x1 - 12; x += 22) { if (onBridge(x) || onBridge(x + 4)) continue; tree(x, ISLE.z0 + 9 + ri(0, 4), ri(11, 14), 5); tree(x + 9, ISLE.z1 - 12 - ri(0, 4), ri(11, 14), 5); if (rnd() < 0.5) bench(x + 4, ISLE.z0 + 30); else lampPost(x + 6, ISLE.z0 + 34, 18); }
+  for (let x = ISLE.x0 + 6; x < NOTRE.x - 24; x += 22) { if (onBridge(x) || onBridge(x + 4)) continue; tree(x, ISLE.z0 + 9 + ri(0, 4), ri(11, 14), 5); tree(x + 9, ISLE.z1 - 12 - ri(0, 4), ri(11, 14), 5); if (rnd() < 0.5) bench(x + 4, ISLE.z0 + 30); else lampPost(x + 6, ISLE.z0 + 34, 18); }
   tree(ISLE.tip + 12, 473, 13, 5);
   // the islet at the west end, with trees and the little statue on its plinth looking downstream
   for (let x = ISLET.x0 + 30; x < ISLET.x1 - 8; x += 13) tree(x, ISLET.z - 1 + ri(-1, 1), ri(9, 12), 4);
@@ -134,7 +134,7 @@ export function parisGround(g, GK, rect, speckle) {
   g.fillStyle = '#d3cab5'; P(isle);
   speckle(ISLE.x0, ISLE.z0, ISLE.x1, ISLE.z1, 16000, ['rgba(255,250,235,0.25)', 'rgba(120,108,84,0.18)']);
   g.fillStyle = '#79aa62'; P([[ISLE.tip + 4, 474], [ISLE.x0 - 2, ISLE.z0 + 6], [ISLE.x0 - 2, ISLE.z1 - 6]]);
-  for (let x = ISLE.x0 + 2; x < ISLE.x1 - 20; x += 22) { rect(x, ISLE.z0 + 5, x + 16, ISLE.z0 + 16); rect(x, ISLE.z1 - 16, x + 16, ISLE.z1 - 5); }
+  for (let x = ISLE.x0 + 2; x < NOTRE.x - 26; x += 22) { rect(x, ISLE.z0 + 5, x + 16, ISLE.z0 + 16); rect(x, ISLE.z1 - 16, x + 16, ISLE.z1 - 5); }
   g.fillStyle = 'rgba(30,70,84,0.4)'; g.beginPath(); g.ellipse((ISLET.x0 + ISLET.x1) / 2 * GK, ISLET.z * GK, ((ISLET.x1 - ISLET.x0) / 2 + 2) * GK, 9 * GK, 0, 0, Math.PI * 2); g.fill();
   g.fillStyle = '#7fae66'; g.beginPath(); g.ellipse((ISLET.x0 + ISLET.x1) / 2 * GK, ISLET.z * GK, (ISLET.x1 - ISLET.x0) / 2 * GK, 7 * GK, 0, 0, Math.PI * 2); g.fill();
   g.fillStyle = '#d3cab5'; rect(ISLET.x0 + 8, ISLET.z - 5, ISLET.x0 + 21, ISLET.z + 5);

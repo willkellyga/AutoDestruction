@@ -5,16 +5,21 @@ import { face, faces4, win, door, disc, text, textW, tree, lampPost, bench, bin,
 
 // ---- a Haussmann block: cut stone, a shop under an awning, tall windows, iron balconies on the second and top floors,
 // a zinc mansard with dormers, and chimney stacks with rows of pots along the party walls ------------------------------
-// o.floors: storeys below the roof, 5 or 6. o.wall, o.front (the shopfront's paint), o.awn, o.name and o.title (the shop).
+// o.floors: storeys below the roof, 3 to 6 (kept low so the monuments stand over the roofs). o.wall, o.front (the shopfront's paint), o.awn, o.name and o.title (the shop).
+// Paris blocks are close-knit: o.jl, o.jr and o.jb say the left side, the right side or the back stands against the
+// next building (paris.js works that out). A joined wall is pushed out to meet its neighbour (4 voxels at a side, 7 at
+// the back), is left blank, and the roof runs up to it as a party wall instead of sloping away.
 export function haussmann(lx, lz, L, o = {}) {
-  const x0 = lx + 1, x1 = lx + 38, z0 = lz + 6, z1 = lz + 35, n = o.floors || 6, G = 16, top = G + (n - 1) * 12 - 1;
+  const jl = !!o.jl, jr = !!o.jr, jb = !!o.jb;
+  const x0 = lx + (jl ? -3 : 1), x1 = lx + (jr ? 42 : 38), z0 = lz + 6, z1 = lz + (jb ? 42 : 35), n = o.floors || 6, G = 16, top = G + (n - 1) * 12 - 1;
   const wall = o.wall || M.LIME, front = o.front || M.DOOR_G, awn = o.awn || M.AWN_R, name = o.name || 'CAFE', roof = o.roof || M.ZINC;
   begin(o.title || 'Apartment block', 'apartment');
   walls(x0, 0, z0, x1, top, z1, wall);
   for (let s = 0; s < n - 1; s++) box(x0 + 1, G - 1 + s * 12, z0 + 1, x1 - 1, G - 1 + s * 12, z1 - 1, M.CONC);
   box(x0, top, z0, x1, top, z1, M.SLAB);
-  const [Ff, Fr, Fb, Fl] = faces4(x0, z0, x1, z1), W = Ff.W, bays = [2, 8, 14, 20, 26, 32];
-  if (L >= 1) for (const F of [Ff, Fr, Fb, Fl]) { F.box(0, 0, F.W - 1, 1, 0, 0, M.STONE); F.band(G - 1, G - 1, 1, M.TRIM); F.band(top, top, 1, M.TRIM); F.band(top - 1, top - 1, 1, wall); }
+  const [Ff, Fr, Fb, Fl] = faces4(x0, z0, x1, z1), W = Ff.W, nb = Math.floor((W - 2) / 6), bays = Array.from({ length: nb }, (_, i) => ((W - nb * 6 + 2) >> 1) + i * 6);
+  const open = [Ff, ...(jr ? [] : [Fr]), ...(jb ? [] : [Fb]), ...(jl ? [] : [Fl])];   // the faces that are not against a neighbour
+  if (L >= 1) for (const F of open) { F.box(0, 0, F.W - 1, 1, 0, 0, M.STONE); F.band(G - 1, G - 1, 1, M.TRIM); F.band(top, top, 1, M.TRIM); F.band(top - 1, top - 1, 1, wall); }
   if (L >= 1) Ff.band(top, top, 2, M.TRIM);
   // upper floors: six tall windows a floor, a balcony the width of the front on the second and the top floor
   for (let s = 1; s < n; s++) {
@@ -29,41 +34,49 @@ export function haussmann(lx, lz, L, o = {}) {
       for (const u of [0, W - 1]) { Ff.p(u, yb + 3, 1, M.DARK); Ff.box(u, yb, u, yb + 2, 1, 1, M.DARK); }
       if (L >= 2) for (const u of [5, 17, 29]) { Ff.p(u + 1, yb, 1, M.ROOF_R); Ff.p(u + 1, yb + 1, 1, (u + s) & 1 ? M.FLOWER_R : M.LEAF2); }
     } else if (L >= 1) Ff.box(0, yb - 1, W - 1, yb - 1, 1, 1, M.TRIM);
-    for (const u of [3, 10, 17, 24]) win(Fb, u + 3, yb + 3, 4, 6);
-    for (const F of [Fr, Fl]) for (const u of [6, 20]) win(F, u, yb + 3, 4, 6);
+    if (!jb) for (let u = 6; u + 4 <= W - 5; u += 7) win(Fb, u, yb + 3, 4, 6);
+    for (const F of [Fr, Fl]) if (open.includes(F)) for (let u = 6; u + 4 <= F.W - 5; u += 7) win(F, u, yb + 3, 4, 6);
   }
   // ground floor: the street door at one end, the shop across the rest
+  const sR = W - 2, ww = W >= 42 ? 11 : 9, w2 = sR - 1 - ww, du = ((10 + ww + w2) >> 1) - 1;   // the shop's right end, its two windows and the door between
   door(Ff, 2, 4, 11, o.door || M.DOOR_B, { light: true });
-  Ff.box(8, 0, 36, 1, 0, 0, front);
-  win(Ff, 10, 2, 9, 7, { frame: front, sill: false }); win(Ff, 26, 2, 9, 7, { frame: front, sill: false });
-  door(Ff, 21, 3, 9, front, { glass: true, frame: front });
-  Ff.box(8, 10, 36, 14, 0, 0, front);
-  door(Fb, 6, 4, 9, M.DARK, { step: false }); win(Fb, 16, 3, 5, 6); win(Fb, 28, 3, 5, 6);
+  Ff.box(8, 0, sR, 1, 0, 0, front);
+  win(Ff, 10, 2, ww, 7, { frame: front, sill: false }); win(Ff, w2, 2, ww, 7, { frame: front, sill: false });
+  door(Ff, du, 3, 9, front, { glass: true, frame: front });
+  Ff.box(8, 10, sR, 14, 0, 0, front);
+  if (!jb) { door(Fb, 6, 4, 9, M.DARK, { step: false }); win(Fb, 16, 3, 5, 6); win(Fb, 28, 3, 5, 6); }
   if (L >= 2) {
-    text(Ff, name, 9 + ((27 - textW(name)) >> 1), 10, 1, o.ink || M.BRASS);
-    for (let u = 9; u <= 35; u++) { if (u >= 20 && u <= 24) continue; const m = ((u >> 1) & 1) ? awn : M.AWN_W; for (let d = 1; d <= 5; d++) { const y = 9 - ((d - 1) >> 1); Ff.p(u, y, d, m); if (d > 1 && (d & 1)) Ff.p(u, y + 1, d, m); } Ff.p(u, 6, 5, m); }
+    text(Ff, name, 9 + ((sR - 9 - textW(name)) >> 1), 10, 1, o.ink || M.BRASS);
+    for (let u = 9; u <= sR - 1; u++) { if (u >= du - 1 && u <= du + 3) continue; const m = ((u >> 1) & 1) ? awn : M.AWN_W; for (let d = 1; d <= 5; d++) { const y = 9 - ((d - 1) >> 1); Ff.p(u, y, d, m); if (d > 1 && (d & 1)) Ff.p(u, y + 1, d, m); } Ff.p(u, 6, 5, m); }
     Ff.p(1, 9, 1, M.LIT); Ff.p(6, 9, 1, M.LIT);
-    for (let y = 0; y <= top; y++) Fl.p(2, y, 1, M.METAL);
+    if (!jl) for (let y = 0; y <= top; y++) Fl.p(2, y, 1, M.METAL);
   }
   // the mansard: steep zinc, two voxels deep so each course stands on the one below, a dormer over every bay
-  const R = 6;
-  for (let k = 0; k < R; k++) for (const j of [k, k + 1]) walls(x0 + j, top + 1 + 2 * k, z0 + j, x1 - j, top + 2 + 2 * k, z1 - j, roof);
-  box(x0 + R, top + 2 * R + 1, z0 + R, x1 - R, top + 2 * R + 1, z1 - R, roof);
+  // a slate roof is capped in zinc, as the old ones are. Against a neighbour the roof stops at a party wall.
+  const R = 6, cap = roof === M.ZINC ? roof : M.ZINC, L_ = (j) => (jl ? 0 : j), R_ = (j) => (jr ? 0 : j), B_ = (j) => (jb ? 0 : j);
+  for (let k = 0; k < R; k++) for (const j of [k, k + 1]) walls(x0 + L_(j), top + 1 + 2 * k, z0 + j, x1 - R_(j), top + 2 + 2 * k, z1 - B_(j), k >= R - 2 ? cap : roof);
+  box(x0 + L_(R), top + 2 * R + 1, z0 + R, x1 - R_(R), top + 2 * R + 1, z1 - B_(R), cap);
+  for (let k = 0; k < R; k++) {
+    const ya = top + 1 + 2 * k, yb = ya + 1;
+    if (jl) box(x0, ya, z0 + k, x0, yb, z1 - B_(k), wall);
+    if (jr) box(x1, ya, z0 + k, x1, yb, z1 - B_(k), wall);
+    if (jb) box(x0 + L_(k), ya, z1, x1 - R_(k), yb, z1, wall);
+  }
   if (L >= 1) {
     for (const u of bays) {
       Ff.box(u, top + 1, u + 3, top + 8, 0, 0, M.TRIM); Ff.box(u + 1, top + 3, u + 2, top + 7, 0, 0, M.GLASS);
       for (let d = 0; d <= 4; d++) { Ff.p(u, top + 9, -d, roof); Ff.p(u + 3, top + 9, -d, roof); Ff.q(u + 1, top + 9, -d, roof); Ff.q(u + 2, top + 9, -d, roof); }
       for (let y = top + 3; y <= top + 8; y++) for (let d = 1; d <= 3; d++) { Ff.q(u, y, -d, roof); Ff.q(u + 3, y, -d, roof); }
     }
-    for (const u of [5, 17, 29]) { Fb.box(u, top + 1, u + 3, top + 7, 0, 0, M.TRIM); Fb.box(u + 1, top + 3, u + 2, top + 6, 0, 0, M.GLASS); }
+    if (!jb) for (const u of [5, 17, 29]) { Fb.box(u, top + 1, u + 3, top + 7, 0, 0, M.TRIM); Fb.box(u + 1, top + 3, u + 2, top + 6, 0, 0, M.GLASS); }
   }
   // chimney stacks: a thin wall across the roof at each end and one between, capped and topped with clay pots
   const ct = top + 2 * R + 3;
-  for (const cx of [x0 + 1, x0 + 19, x1 - 2]) {
+  for (const cx of [x0 + 1, x0 + (W >> 1), x1 - 2]) {
     box(cx, top + 1, z0 + 8, cx + 1, ct, z1 - 8, wall); box(cx, ct + 1, z0 + 8, cx + 1, ct + 1, z1 - 8, M.TRIM);
     if (L >= 1) for (let z = z0 + 9; z <= z1 - 9; z += 2) { set(cx, ct + 2, z, M.ROOF_R); set(cx + 1, ct + 2, z + 1 <= z1 - 9 ? z + 1 : z, M.ROOF_R); }
   }
-  if (L >= 3) {
+  if (L >= 3 && o.inside !== false) {
     box(x0 + 1, 0, z0 + 1, x1 - 1, 0, z1 - 1, M.FLOOR);
     // the shop: a counter, shelves along the back wall and a few tables
     box(x0 + 9, 1, z0 + 12, x0 + 22, 3, z0 + 13, M.WOOD); box(x0 + 9, 4, z0 + 12, x0 + 22, 4, z0 + 13, M.TRIM);
