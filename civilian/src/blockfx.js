@@ -1,6 +1,8 @@
 // Effects made of small blocks, in the fine-grain style of the game's own fire (flameBlock in ../../src/main.js at
 // FX.detail 2): many small glowing cubes that cool from white-hot through orange and red to dark smoke, and do not swell.
 // A fireball, sparks, a dust skirt along the ground, tongues of flame and a smoke column for a burning wreck.
+// On water (set `water` on the object this returns: (x, z) -> the water level there, or null over land) a blast throws
+// up spray instead of dust, flames go out with a hiss where the wreck goes under, and there is foam for wakes.
 // Everything is in town voxels (4 to a metre).
 import * as THREE from 'three';
 
@@ -12,8 +14,10 @@ const SPARK = [[0, 1.8, 1.5, 0.7], [0.5, 1.6, 0.8, 0.15], [1, 0.8, 0.2, 0.03]];
 const SMOKE = [[0, 0.26, 0.18, 0.12], [0.2, 0.12, 0.115, 0.11], [1, 0.07, 0.07, 0.075]];
 const DUST = [[0, 0.62, 0.58, 0.5], [1, 0.48, 0.45, 0.4]];
 const STEAM = [[0, 0.85, 0.87, 0.88], [1, 0.6, 0.62, 0.64]];
-export const K = { FIRE: 0, LICK: 1, SPARK: 2, SMOKE: 3, DUST: 4, STEAM: 5, BLAST: 6 };
-const RAMPS = [HEAT, LICK, SPARK, SMOKE, DUST, STEAM, BLAST];
+const WATER = [[0, 0.93, 0.97, 1], [0.5, 0.74, 0.88, 0.97], [1, 0.5, 0.74, 0.9]];
+const FOAM = [[0, 0.96, 0.98, 1], [0.55, 0.84, 0.92, 0.96], [1, 0.5, 0.7, 0.82]];
+export const K = { FIRE: 0, LICK: 1, SPARK: 2, SMOKE: 3, DUST: 4, STEAM: 5, BLAST: 6, WATER: 7, FOAM: 8 };
+const RAMPS = [HEAT, LICK, SPARK, SMOKE, DUST, STEAM, BLAST, WATER, FOAM];
 function ramp(R, u, out) {
   let a = R[0], b = R[R.length - 1];
   for (let i = 1; i < R.length; i++) if (u <= R[i][0]) { a = R[i - 1]; b = R[i]; break; }
@@ -33,11 +37,14 @@ export function makeBlockFx(scene, max = 7000) {
   const blocks = [], wind = { x: 1.6, z: 0.7 };
   const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color();
   const R = Math.random;
+  const level = (x, z) => { const w = api.water ? api.water(x, z) : null; return w == null ? 0 : w; };
+  const wet = (x, z) => !!api.water && api.water(x, z) != null;
 
   // One block. drag slows it, rise lifts it late in its life (heat), g pulls it down, delay holds it back.
   function block(x, y, z, vx, vy, vz, size, life, kind = 0, drag = 3, rise = 0, g = 0, delay = 0) {
     if (blocks.length >= max) return null;
     const b = { x, y, z, vx, vy, vz, s: size, t: -delay, life, kind, drag, rise, g, ax: R() * 6.283, ay: R() * 6.283, wx: (R() - 0.5) * 8, wy: (R() - 0.5) * 8, j: 0.8 + R() * 0.4, blow: kind === K.SMOKE || kind === K.STEAM ? 1 : 0 };
+    if (kind === K.FOAM) { b.ax = 0; b.wx = 0; b.wy = 0; }   // foam lies flat on the water
     blocks.push(b); return b;
   }
   function update(dt) {
@@ -53,10 +60,14 @@ export function makeBlockFx(scene, max = 7000) {
       let size;
       if (b.kind === K.FIRE || b.kind === K.BLAST) size = b.s * (0.75 + 0.3 * Math.min(1, u / 0.5)) * (u > 0.72 ? (1 - u) / 0.28 : 1);
       else if (b.kind === K.SMOKE || b.kind === K.STEAM) size = b.s * (0.6 + 0.5 * Math.min(1, u / 0.3)) * (u > 0.65 ? (1 - u) / 0.35 : 1);
-      else if (b.kind === K.DUST) size = b.s * (u > 0.5 ? (1 - u) / 0.5 : 1);
+      else if (b.kind === K.DUST || b.kind === K.FOAM) size = b.s * (u > 0.5 ? (1 - u) / 0.5 : 1);
       else size = b.s * (1 - u * u);
-      const floor = size * 0.5;
-      if (b.y < floor) { b.y = floor; if (b.vy < 0) b.vy = b.kind === K.SPARK ? -b.vy * 0.35 : 0; }
+      let floor = size * 0.5;
+      if (b.y < floor) {
+        const w = api.water ? api.water(b.x, b.z) : null;
+        if (w != null) { if (b.y < w && b.vy < 0 && (b.kind === K.WATER || b.kind === K.SPARK)) { blocks[i] = blocks[blocks.length - 1]; blocks.pop(); continue; } floor = b.kind === K.FOAM ? w + 0.04 : w + size * 0.5; }   // spray falls back in, sparks go out
+        if (b.y < floor) { b.y = floor; if (b.vy < 0) b.vy = b.kind === K.SPARK ? -b.vy * 0.35 : 0; }
+      }
       b.ax += b.wx * dt; b.ay += b.wy * dt;
       _m.compose(_p.set(b.x, b.y, b.z), _q.setFromEuler(_e.set(b.ax, b.ay, 0)), _s.setScalar(Math.max(0.001, size)));
       mesh.setMatrixAt(n, _m); ramp(RAMPS[b.kind], u, _c); if (b.kind <= K.SPARK || b.kind === K.BLAST) _c.multiplyScalar(b.j); mesh.setColorAt(n, _c); n++;
@@ -98,13 +109,13 @@ export function makeBlockFx(scene, max = 7000) {
       const d = dirOut(0), v = r * (0.5 + R() * 1.5);
       block(p.x + d[0] * r * 0.5, p.y + r * 0.3 + R() * r * 0.6, p.z + d[2] * r * 0.5, d[0] * v, 5 + R() * 7, d[2] * v, r * (0.08 + R() * 0.08), 1.6 + R() * 1.8, K.SMOKE, 1.2, 4, 0, 0.25 + R() * 0.45);
     }
-    dust(p, Math.round(r * 18), r * 5.5);
+    if (wet(p.x, p.z)) splash(p, Math.round(r * 34), 0.5 + r * 0.16, r * 1.1); else dust(p, Math.round(r * 18), r * 5.5);
   }
   // dust thrown out along the ground from a point
   function dust(p, n = 50, speed = 18, kind = K.DUST) {
     for (let i = 0; i < n; i++) {
       const a = R() * 6.283, v = speed * (0.45 + R() * 0.75), rr = 0.6 + R() * 1.2;
-      block(p.x + Math.cos(a) * rr, 0.2 + R() * 0.5, p.z + Math.sin(a) * rr, Math.cos(a) * v, 1 + R() * 3.5, Math.sin(a) * v, 0.22 + R() * 0.26, 0.5 + R() * 0.6, kind, 3.6);
+      block(p.x + Math.cos(a) * rr, level(p.x, p.z) + 0.2 + R() * 0.5, p.z + Math.sin(a) * rr, Math.cos(a) * v, 1 + R() * 3.5, Math.sin(a) * v, 0.22 + R() * 0.26, 0.5 + R() * 0.6, kind, 3.6);
     }
   }
   function sparks(p, n = 12, speed = 18) {
@@ -113,6 +124,22 @@ export function makeBlockFx(scene, max = 7000) {
   function puff(p, n = 8, kind = K.SMOKE, size = 0.4) {
     for (let i = 0; i < n; i++) block(p.x + (R() - 0.5) * 2, p.y + R(), p.z + (R() - 0.5) * 2, (R() - 0.5) * 3, 3 + R() * 4, (R() - 0.5) * 3, size * (0.7 + R() * 0.6), 1 + R() * 1.2, kind, 1.4, 3);
   }
+
+  // Water thrown up from a point on the surface: a column of spray that falls back, and froth left where it was.
+  // power 1 is a car-sized lump going in; spread is how wide the patch is.
+  function splash(p, n = 40, power = 1, spread = 2) {
+    const y = level(p.x, p.z);
+    for (let i = 0; i < n; i++) {
+      const a = R() * 6.283, q = Math.sqrt(R()), rr = spread * q, up = power * (8 + R() * 17) * (1 - 0.55 * q), out = power * (0.8 + R() * 3.2 + 3 * q);
+      block(p.x + Math.cos(a) * rr, y + 0.15, p.z + Math.sin(a) * rr, Math.cos(a) * out, up, Math.sin(a) * out, 0.2 + R() * 0.26, 2.4, K.WATER, 0.25, 0, 40, R() * 0.1);
+    }
+    for (let i = 0; i < n * 0.5; i++) {
+      const a = R() * 6.283, rr = spread * (0.2 + 1.2 * Math.sqrt(R())), v = power * (0.6 + R() * 2.4);
+      block(p.x + Math.cos(a) * rr, y + 0.04, p.z + Math.sin(a) * rr, Math.cos(a) * v, 0, Math.sin(a) * v, 0.22 + R() * 0.26, 1.2 + R() * 1.8, K.FOAM, 1.6, 0, 0, 0.1 + R() * 0.5);
+    }
+  }
+  // one fleck of foam on the water, as for a wake
+  function foam(x, z, vx = 0, vz = 0, size = 0.3, life = 1.6) { block(x, level(x, z) + 0.04, z, vx, 0, vz, size * (0.7 + R() * 0.6), life * (0.6 + R() * 0.8), K.FOAM, 1.2); }
 
   // ---- fires that keep burning ----
   // obj: the Object3D the fire rides on; spots: points in its own space where the flames sit. A fire burns for `life`
@@ -126,23 +153,26 @@ export function makeBlockFx(scene, max = 7000) {
       const k = Math.min(1, f.t * 2.5) * Math.max(0, 1 - Math.pow(f.t / f.life, 2.5)), s = f.size, n = f.spots.length;
       f.obj.updateWorldMatrix(true, false);
       const at = () => { const sp = f.spots[Math.floor(R() * n)]; return _p.set(sp[0], sp[1], sp[2]).applyMatrix4(f.obj.matrixWorld); };
+      // a spot that has gone under water is out: it steams for a while instead
+      const drowned = (q) => { if (!api.water) return false; const w = api.water(q.x, q.z); if (w == null || q.y > w + 0.2) return false; if (k > 0.05 && R() < 0.1) { block(q.x, w + 0.3, q.z, (R() - 0.5) * 2, 3 + R() * 3, (R() - 0.5) * 2, 0.3 + R() * 0.3, 1 + R(), K.STEAM, 1.2, 2); f.hiss = true; } return true; };
       f.a += dt * 230 * k * Math.min(1, n / 8) * s;
       while (f.a >= 1) {   // tongues: small blocks, bright at the root, thinning as they climb
-        f.a -= 1; const q = at(), j = () => (R() - 0.5) * 1.1, big = R() < 0.35;
+        f.a -= 1; const q = at(), j = () => (R() - 0.5) * 1.1, big = R() < 0.35; if (drowned(q)) continue;
         block(q.x + j(), q.y + R() * 0.4, q.z + j(), wind.x * 0.6 + j() * 1.6, (big ? 3.5 + R() * 3 : 6 + R() * 7) * s, wind.z * 0.6 + j() * 1.6, (big ? 0.42 + R() * 0.2 : 0.22 + R() * 0.2) * s, big ? 0.3 + R() * 0.25 : 0.34 + R() * 0.4, K.LICK, 1.3);
       }
       f.b += dt * (16 + 46 * k);
       while (f.b >= 1) {   // the smoke column
-        f.b -= 1; const q = at(), j = () => (R() - 0.5) * 1.8;
+        f.b -= 1; const q = at(), j = () => (R() - 0.5) * 1.8; if (drowned(q)) continue;
         block(q.x + j(), q.y + 2.5 + R() * 2.5, q.z + j(), j(), 6 + R() * 4, j(), (0.3 + R() * 0.3) * s, 2.4 + R() * 1.8, K.SMOKE, 0.45, 2);
       }
       f.c += dt * 9 * k;
       while (f.c >= 1) {   // embers
-        f.c -= 1; const q = at();
+        f.c -= 1; const q = at(); if (drowned(q)) continue;
         block(q.x, q.y + 1, q.z, (R() - 0.5) * 6, 7 + R() * 8, (R() - 0.5) * 6, 0.1 + R() * 0.06, 0.8 + R() * 0.9, K.SPARK, 0.8, 0, 6);
       }
     }
   }
   function clear() { fires.length = 0; blocks.length = 0; mesh.count = 0; }
-  return { block, update, explode, dust, sparks, puff, burn, flash, clear, fires, get live() { return blocks.length; } };
+  const api = { block, update, explode, dust, sparks, puff, splash, foam, burn, flash, clear, fires, water: null, get live() { return blocks.length; } };
+  return api;
 }

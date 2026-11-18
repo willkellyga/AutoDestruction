@@ -307,7 +307,7 @@ function toss(p, i, j, k, c, debris, cx, cy, cz, push) {
 export function blowUp(u, debris) {
   if (u.blown) return; u.blown = true; u.dead = true; u.deadT = 0;
   u.root.updateWorldMatrix(true, true);
-  const wk = u.def.wk, seed = u.opts.seed || 0, clip = u.wreckClip || (u.crushed ? 'WreckStand' : wk.wrecks[seed % wk.wrecks.length]);
+  const wk = u.def.wk, seed = u.opts.seed || 0, clip = u.wreckClip || (u.crushed ? ('crushedWreck' in wk ? wk.crushedWreck : 'WreckStand') : wk.wrecks[seed % wk.wrecks.length]);   // null: it stays as it lies
   const O = wk.seat(u, clip);   // the seat of the blast, in body cubes
   u.blast = O;
   const c0 = u.bones.body.localToWorld(v3(u.parts[0]).set(O[0] * H, O[1] * H, O[2] * H)).clone();
@@ -326,7 +326,7 @@ export function blowUp(u, debris) {
     }
     p.dirty = true;
   }
-  u.play(clip, 0.04);
+  if (clip) u.play(clip, 0.04);
 }
 // A wreck goes on charring as it burns: call now and then with a small amount (0.1 or so).
 export function char(u, amt = 0.1) {
@@ -356,7 +356,7 @@ export function crush(u, debris, fx = 0, fz = 0) {
   // press the loose panels into the body's own grid (they sit on it cube for cube when shut); on a wreck they are already
   // hanging off, so they are scattered instead
   if (!again) for (const p of u.parts) {
-    if (p === body || (flat && /^w[FR]/.test(p.name))) continue;
+    if (p === body || (flat && /^w[FR]/.test(p.name)) || (u.blown && wk.adrift && wk.adrift.test(p.name))) continue;
     const { nx, ny, nz, col } = p, shut = !u.blown && !wk.loose.test(p.name);
     for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
       const n = (k * ny + j) * nx + i, c = col[n]; if (c < 0) continue;
@@ -372,8 +372,11 @@ export function crush(u, debris, fx = 0, fz = 0) {
   let g0 = -1, b0 = nb, b1 = -1;
   for (let m = 0; m < na && g0 < 0; m++) { const qa = sg > 0 ? m : na - 1 - m; for (let k = 0; k < nz && g0 < 0; k++) for (let qb = 0; qb < nb; qb++) if (col[at(qa, qb, k)] >= 0) { g0 = qa; break; } }
   if (g0 < 0) return;
+  // a boat is only flattened down to the water: the hull under it is left as it is
+  const based = a === 1 && wk.base ? Math.max(0, Math.min(na - 1, wk.base(sg) - org[1])) : -1;
+  if (based >= 0) g0 = based;
   for (let qb = 0; qb < nb; qb++) for (let k = 0; k < nz; k += 3) for (let qa = 0; qa < na; qa += 2) if (col[at(qa, qb, k)] >= 0) { if (qb < b0) b0 = qb; if (qb > b1) b1 = qb; }
-  const mid = flat ? fx - org[0] : (b0 + b1 + 1) / 2, lift = flat ? 1 : 0;   // upright, its floor comes down the last cube onto the road
+  const mid = flat ? fx - org[0] : (b0 + b1 + 1) / 2, lift = flat && based < 0 ? 1 : 0;   // upright, its floor comes down the last cube onto the road
   const out = new Int32Array(col.length).fill(-1);
   for (let k = 0; k < nz; k++) for (let qb = 0; qb < nb; qb++) {
     const z = org[2] + k + 0.5, d = Math.hypot((qb + 0.5 - mid) * wk.dx, z - fz);
@@ -381,6 +384,7 @@ export function crush(u, debris, fx = 0, fz = 0) {
     const keep = wk.keep(d, hash(fl((qb + org[b]) / 2), 7, fl(z / 2), seed)), whole = keep >= 1;
     const G = g0 - sg * Math.round(lift * clamp((1 - keep) * 3));
     let top = -1, mb = -1;
+    if (based >= 0) for (let qa = g0 - sg; qa >= 0 && qa < na; qa -= sg) { const n = at(qa, qb, k); if (col[n] >= 0) out[n] = col[n]; }
     for (let m = 0; m < na; m++) {
       const qa = g0 + sg * m; if (qa < 0 || qa >= na) break;
       const n = at(qa, qb, k), c = col[n]; if (c < 0) continue;
@@ -395,8 +399,9 @@ export function crush(u, debris, fx = 0, fz = 0) {
   }
   let count = 0; for (let n = 0; n < out.length; n++) if (out[n] >= 0) count++;
   body.col = out; body.count = count; body.dirty = true;
-  (u.crushes || (u.crushes = [])).push([fx, fz, again ? u.t : 0, flat]);
-  if (!again && (flat || !wk.recrush)) u.play('Crushed', 0);
+  const fresh = !again && (flat || !wk.recrush) && !(wk.boat && u.blown);   // a sunken wreck stays as it lies
+  (u.crushes || (u.crushes = [])).push([fx, fz, fresh ? 0 : u.t, flat]);
+  if (fresh) u.play('Crushed', 0);
 }
 
 // Where fires sit on a wreck: on whichever face of the body is uppermost as it lies now, at the cubes nearest the seat of
@@ -411,6 +416,7 @@ export function fireSpots(u, n = 12) {
     q[a] = sg > 0 ? dims[a] - 1 - m : m;
     if (a === 1 && sg > 0 && org[1] + q[1] > u.def.wk.fireTop) continue;   // upright: the fire is in the engine bay, the boot and the seats, not on the roof
     if (p.at(q[0], q[1], q[2]) < 0) continue;
+    if (a === 1 && sg > 0 && org[1] + q[1] < (u.def.wk.fireMin ?? -99)) break;   // a boat: nothing burns down in the flooded hull
     const w = [org[0] + q[0] + 0.5, org[1] + q[1] + 0.5, org[2] + q[2] + 0.5]; w[a] += 0.5 * sg;
     found.push([Math.hypot(w[b] - O[b], w[c] - O[c]) + (u.def.wk.spread || 7) * hash(q[b], 1, q[c], 2), w[0] * p.h, w[1] * p.h, w[2] * p.h]); break;
   }

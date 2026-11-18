@@ -2,7 +2,9 @@
 // cubes to the town's own debris instead (spawnDebris in src/sim.js), so this file is only for the viewer.
 import * as THREE from 'three';
 
-export function makeDebris(scene, max = 6000) {
+// water (optional): { at(x, z) -> the water level there, or null over land; splash(x, y, z, size) }. A cube that falls
+// into water is gone, with a splash.
+export function makeDebris(scene, max = 6000, water = null) {
   const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ roughness: 0.9 }), max);
   mesh.castShadow = true; mesh.frustumCulled = false; mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   const P = new Float32Array(max * 3), V = new Float32Array(max * 3), R = new Float32Array(max * 4), SZ = new Float32Array(max), AGE = new Float32Array(max), LIVE = new Uint8Array(max);
@@ -21,7 +23,9 @@ export function makeDebris(scene, max = 6000) {
       if (!LIVE[i]) continue;
       const a = i * 3, r = i * 4, half = SZ[i] / 2; AGE[i] += dt;
       V[a + 1] -= 60 * dt; P[a] += V[a] * dt; P[a + 1] += V[a + 1] * dt; P[a + 2] += V[a + 2] * dt;
-      if (P[a + 1] < half) { P[a + 1] = half; V[a + 1] = Math.abs(V[a + 1]) > 6 ? -V[a + 1] * 0.32 : 0; V[a] *= 0.6; V[a + 2] *= 0.6; R[r + 2] *= 0.5; R[r + 3] *= 0.5; }
+      const wl = water && P[a + 1] < half ? water.at(P[a], P[a + 2]) : null;
+      if (wl != null) { if (P[a + 1] < wl) { water.splash(P[a], wl, P[a + 2], SZ[i]); LIVE[i] = 0; live--; mesh.setMatrixAt(i, ZERO); continue; } }
+      else if (P[a + 1] < half) { P[a + 1] = half; V[a + 1] = Math.abs(V[a + 1]) > 6 ? -V[a + 1] * 0.32 : 0; V[a] *= 0.6; V[a + 2] *= 0.6; R[r + 2] *= 0.5; R[r + 3] *= 0.5; }
       R[r] += R[r + 2] * dt; R[r + 1] += R[r + 3] * dt;
       const k = AGE[i] > 5 ? Math.max(0, 1 - (AGE[i] - 5) / 1.2) : 1;
       if (k <= 0) { LIVE[i] = 0; live--; mesh.setMatrixAt(i, ZERO); continue; }

@@ -27,7 +27,7 @@ export function makeSfx(camera) {
     const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol, t + 0.008); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
     o.connect(g); g.connect(to); o.start(t); o.stop(t + dur + 0.05);
   }
-  const GAP = { boom: 70, crunch: 60, glass: 50, clang: 50, thud: 40, alarm: 2600, crackle: 60 };
+  const GAP = { boom: 70, crunch: 60, glass: 50, clang: 50, thud: 40, alarm: 2600, crackle: 60, splash: 90, hiss: 400 };
   const api = {
     on: true, init,
     play(name, p, vol = 1) {
@@ -48,6 +48,9 @@ export function makeSfx(camera) {
         case 'thud': noise(o, 0.1, 700 * r, 1, 0.5 * vol, 'bandpass', 0.5); tone(o, 150 * r, 70, 0.08, 0.3 * vol, 'triangle'); break;
         // a car alarm: six two-tone whoops
         case 'alarm': for (let i = 0; i < 6; i++) { tone(o, 980, 1400, 0.19, 0.045 * vol, 'square', i * 0.4); tone(o, 1400, 980, 0.19, 0.045 * vol, 'square', i * 0.4 + 0.2); } break;
+        // water thrown up and falling back: a soft slap, then a long wash of hiss
+        case 'splash': noise(o, 0.16, 900 * r, 0.8, 0.5 * vol, 'lowpass', 0.4); noise(o, 0.9, 2600 * r, 0.6, 0.34 * vol, 'bandpass', 0.5, 0.03); noise(o, 1.4, 5200, 0.5, 0.14 * vol, 'highpass', 0.8, 0.12); break;
+        case 'hiss': noise(o, 1.1, 6000 * r, 0.7, 0.1 * vol, 'highpass', 0.7); break;
         case 'crackle': noise(o, 0.05 + Math.random() * 0.05, 1800 + Math.random() * 2600, 2.5, 0.16 * vol, 'bandpass', 0.7); break;
       }
     },
