@@ -5,7 +5,9 @@ import * as THREE from 'three';
 // TILES repeats the whole town TILES x TILES times: a stress test for a much larger map (`python3 build.py big`).
 export const TILES = typeof __TILES__ === 'number' ? __TILES__ : 1, TILE_X = 512, TILE_Z = 416;
 export const tiled = (a, step) => Array.from({ length: TILES }, (_, t) => a.map((v) => v + t * step)).flat();
-export const WX = TILE_X * TILES, WY = 128, WZ = TILE_Z * TILES, CH = 16;
+// CITY builds the big city instead of the first town (`python3 build.py city`): about four times the map, and taller.
+export const CITY = typeof __CITY__ === 'boolean' && __CITY__;
+export const WX = CITY ? 1024 : TILE_X * TILES, WY = CITY ? 224 : 128, WZ = CITY ? 1024 : TILE_Z * TILES, CH = 16;
 export const NCX = WX / CH, NCZ = WZ / CH;
 
 // ---- storage ---------------------------------------------------------------
@@ -72,8 +74,10 @@ export function solid(x, y, z) {
 // Lots are 40 voxels square. Six streets (three each way) run edge to edge, so every route is at most two corners
 // (the army's street planner relies on that). Between them sit four blocks of six lots, back to back across alleys.
 export const LOT = 40, WALK = 6, ROADW = 24;
-export const STREET_Z = tiled([80, 202, 324], TILE_Z), STREET_X = tiled([80, 254, 428], TILE_X); // street centre lines
-export const SPAWN = { x: 80, z: 324, yaw: 2.3 };   // the south-west crossing, in the suburbs, looking up at the downtown skyline
+// street centre lines. The city's are unevenly spaced, so its blocks are 2, 3 or 4 lots across and 1, 2 or 3 rows deep (city.js).
+export const STREET_Z = CITY ? [80, 202, 324, 492, 614, 736, 858, 934] : tiled([80, 202, 324], TILE_Z);
+export const STREET_X = CITY ? [80, 254, 382, 602, 776, 904] : tiled([80, 254, 428], TILE_X);
+export const SPAWN = CITY ? { x: 80, z: 934, yaw: 2.55 } : { x: 80, z: 324, yaw: 2.3 };   // the south-west crossing, in the suburbs, looking up at the downtown skyline
 export let totalInit = 0;
 
 // ---- materials -----------------------------------------------------------

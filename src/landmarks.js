@@ -6,7 +6,8 @@ import { face, faces4, win, door, gableRoof, disc, text, textW, tree, lampPost, 
 
 // ---- the Sky Needle: an observation tower on four legs that pinch to a waist and flare out under a saucer ------------
 export function needle(lx, lz, L, o = {}) {
-  const cx = lx + 20, cz = lz + 20, SAUCER = 94, WAIST = 60;
+  // o.scale stretches the height (the saucer keeps its size): 1 is 127 voxels to the tip, 1.7 is 214
+  const cx = lx + 20, cz = lz + 20, K = o.scale || 1, SAUCER = Math.round(94 * K), WAIST = Math.round(60 * K), TIP = Math.round(126 * K);
   begin(o.title || 'Sky Needle', 'landmark');
   // how far each leg stands from the middle at height y
   const legR = (y) => (y <= WAIST ? Math.round(4 + 10 * Math.pow(1 - y / WAIST, 1.5)) : Math.round(4 + 4 * Math.pow((y - WAIST) / (SAUCER - WAIST), 1.3)));
@@ -18,7 +19,7 @@ export function needle(lx, lz, L, o = {}) {
   walls(cx - 2, 0, cz - 2, cx + 1, SAUCER, cz + 1, M.STEEL);
   for (let y = 9; y < SAUCER - 4; y++) { set(cx - 1, y, cz - 2, y % 6 < 4 ? M.GLASS : M.STEEL); set(cx, y, cz - 2, y % 6 < 4 ? M.LIT_W : M.STEEL); }
   // rings and struts that tie the legs to the shaft
-  for (const y of [18, 40, WAIST, 78]) {
+  for (const y of K === 1 ? [18, 40, WAIST, 78] : [Math.round(18 * K), Math.round(40 * K), WAIST, Math.round(78 * K), Math.round(30 * K - 9), Math.round(69 * K)]) {
     const r = legR(y), h = y === WAIST ? 1 : 0;
     walls(cx - 1 - r, y, cz - 1 - r, cx + r, y + h, cz + r, M.TRIM);
     box(cx - 1 - r, y, cz - 1, cx + r, y, cz, M.TRIM); box(cx - 1, y, cz - 1 - r, cx, y, cz + r, M.TRIM);
@@ -35,7 +36,7 @@ export function needle(lx, lz, L, o = {}) {
   for (let a = 0; a < 16; a++) { const x = Math.round(Math.cos(a * 0.3927) * 11.5 - 0.5), z = Math.round(Math.sin(a * 0.3927) * 11.5 - 0.5); set(cx + x, SAUCER - 1, cz + z, M.LIT_W); }
   if (L >= 3) { for (const [dx, dz] of [[-9, -1], [7, -1], [-1, -9], [-1, 7]]) { table(cx + dx, SAUCER + 1, cz + dz, 3, 3); } for (const [dx, dz] of [[-6, -6], [5, 5], [-6, 5], [5, -6]]) ceilingLight(cx + dx, SAUCER + 4, cz + dz); }
   box(cx - 1, SAUCER + 10, cz - 1, cx, SAUCER + 19, cz, M.METAL);
-  box(cx - 1, SAUCER + 20, cz - 1, cx - 1, 125, cz - 1, M.DARK); set(cx - 1, 126, cz - 1, M.LIT_R);
+  box(cx - 1, SAUCER + 20, cz - 1, cx - 1, TIP - 1, cz - 1, M.DARK); set(cx - 1, TIP, cz - 1, M.LIT_R);
   // a glass pavilion round the foot of the shaft
   walls(cx - 6, 0, cz - 6, cx + 5, 6, cz + 5, M.GLASS);
   for (const px of [cx - 6, cx + 5]) for (const pz of [cz - 6, cz + 5]) box(px, 0, pz, px, 6, pz, M.STEEL);
