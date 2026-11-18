@@ -1,0 +1,893 @@
+// Destruction: blasts, glass, fire, support checks, falling sections (free, toppling, pancake), debris, rubble and particles.
+// Tuned in the Wrecking Yard sandbox. Everything optional is behind a flag in `cfg`.
+import * as THREE from 'three';
+import { WX, WY, WZ, NCX, NCZ, vox, owner, gone, soot, burnF, idx, solid, bodies, rubbleBody, M, MAT_R, MAT_G, MAT_B, SOFT, CARRY, HARD, TOUGH, SHAPE, FLAM, BURN, CHARP, PANE, jitter } from './world.js';
+import { meshChunk, makeChunkMaterial, meshOpts } from './mesh.js';
+
+export const hooks = { destroyed() {}, bodyDown() {}, shake() {}, sound() {}, scorch() {}, impact() {}, explosion() {} };
+export const stats = { destroyed: 0, active: 0, asleep: 0, particles: 0, burning: 0, quads: 0, rubble: 0 };
+export const cfg = {
+  glass: true,        // whole panes shatter into shards
+  shapes: true,       // planks, shards, slabs and sheets instead of cubes
+  rebar: true,        // concrete leaves bars behind
+  topple: true,       // tall severed pieces hinge over like trees
+  rubble: true,       // settled debris becomes rubble voxels
+  linger: true,       // dust and smoke hang in the air
+  fireSpread: true, expFire: true, burnCap: 5000,
+  dust: 1,            // particle amount multiplier
+  hang: 0.45,         // share of dust that hangs in the air
+  debrisMul: 1,
+};
+const G = 68;
+const MARGIN = 3.0;
+let scene;
+
+// ---- chunks --------------------------------------------------------------
+// Chunks that lost voxels are redrawn at once, nearest the action first and inside a time budget. One that is hit
+// frame after frame (a wall coming down on it) is redrawn every third frame. Chunks that only gained rubble or soot
+// wait longer, so a rain of rubble does not redraw a chunk every frame.
+const chunkMesh = new Array(NCX * NCZ).fill(null);
+const dirty = new Set(), lazy = new Set(), built = new Int32Array(NCX * NCZ);
+let tick = 10;
+let chunkMat, focusX = WX / 2, focusZ = WZ / 2;
+export function setFocus(x, z) { focusX = x; focusZ = z; }
+function markLazy(x, z) { const k = (x >> 4) + (z >> 4) * NCX; if (!dirty.has(k)) lazy.add(k); }
+export function markDirty(x, z) {
+  const cx = x >> 4, cz = z >> 4;
+  dirty.add(cx + cz * NCX);
+  const lx = x & 15, lz = z & 15;
+  if (lx === 0 && cx > 0) dirty.add(cx - 1 + cz * NCX); else if (lx === 15 && cx < NCX - 1) dirty.add(cx + 1 + cz * NCX);
+  if (lz === 0 && cz > 0) dirty.add(cx + (cz - 1) * NCX); else if (lz === 15 && cz < NCZ - 1) dirty.add(cx + (cz + 1) * NCX);
+}
+function rebuildChunk(k) {
+  const cx = k % NCX, cz = (k / NCX) | 0;
+  built[k] = tick;
+  const geo = meshChunk(cx, cz);
+  let m = chunkMesh[k];
+  if (m) { stats.quads -= m.geometry.userData.quads || 0; m.geometry.dispose(); if (!geo) { scene.remove(m); chunkMesh[k] = null; return; } m.geometry = geo; stats.quads += geo.userData.quads; return; }
+  if (!geo) return;
+  m = new THREE.Mesh(geo, chunkMat);
+  m.castShadow = true; m.receiveShadow = true; m.matrixAutoUpdate = false;
+  scene.add(m); chunkMesh[k] = m; stats.quads += geo.userData.quads;
+}
+const order = [];
+const far = (k) => { const dx = (k % NCX) * 16 + 8 - focusX, dz = ((k / NCX) | 0) * 16 + 8 - focusZ; return dx * dx + dz * dz; };
+export function flushChunks(ms = 5) {
+  const t0 = performance.now();
+  let n = 0;
+  tick++;
+  if (dirty.size) {
+    order.length = 0;
+    for (const k of dirty) if (tick - built[k] >= 3) order.push(k);
+    if (order.length > 2) order.sort((a, b) => far(a) - far(b));
+    for (const k of order) { rebuildChunk(k); dirty.delete(k); lazy.delete(k); if (++n >= 2 && performance.now() - t0 > ms) break; }
+  }
+  n = 0;
+  for (const k of lazy) { if (n >= 2 || (n >= 1 && performance.now() - t0 > ms)) break; if (tick - built[k] < 10 || dirty.has(k)) continue; lazy.delete(k); rebuildChunk(k); n++; }
+}
+export function dirtyCount() { return dirty.size + lazy.size; }
+
+// ---- particles -----------------------------------------------------------
+class Particles {
+  constructor(n, additive) {
+    this.n = n; this.head = 0; this.live = 0;
+    this.pos = new Float32Array(n * 3); this.col = new Float32Array(n * 4); this.size = new Float32Array(n);
+    this.vel = new Float32Array(n * 3); this.life = new Float32Array(n); this.max = new Float32Array(n); this.grow = new Float32Array(n); this.s0 = new Float32Array(n); this.a0 = new Float32Array(n);
+    this.gy = new Float32Array(n); this.drag = new Float32Array(n);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(this.pos, 3));
+    g.setAttribute('pcol', new THREE.BufferAttribute(this.col, 4));
+    g.setAttribute('psize', new THREE.BufferAttribute(this.size, 1));
+    g.boundingSphere = new THREE.Sphere(new THREE.Vector3(WX / 2, 20, WZ / 2), 500);
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { scale: { value: 600 }, boost: { value: additive ? 1.5 : 1 } },
+      vertexShader: 'attribute vec4 pcol; attribute float psize; varying vec4 vc; uniform float scale; void main(){ vc=pcol; vec4 mv=modelViewMatrix*vec4(position,1.0); gl_PointSize=min(560.0, psize*scale/max(0.1,-mv.z)); gl_Position=projectionMatrix*mv; }',
+      fragmentShader: 'varying vec4 vc; uniform float boost; void main(){ vec2 d=gl_PointCoord-0.5; float r=dot(d,d)*4.0; if(r>1.0) discard; float a=vc.a*(1.0-r)*(1.0-r*0.4); gl_FragColor=vec4(vc.rgb*boost,a); }',
+      transparent: true, depthWrite: false, blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
+    });
+    this.mat = mat;
+    this.points = new THREE.Points(g, mat);
+    this.points.frustumCulled = false; this.points.renderOrder = additive ? 11 : 10;
+  }
+  spawn(x, y, z, vx, vy, vz, size, life, r, g, b, a, grow, gy = 0, drag = 2.2) {
+    const i = this.head; this.head = (i + 1) % this.n;
+    this.pos[i * 3] = x; this.pos[i * 3 + 1] = y; this.pos[i * 3 + 2] = z;
+    this.vel[i * 3] = vx; this.vel[i * 3 + 1] = vy; this.vel[i * 3 + 2] = vz;
+    this.col[i * 4] = r; this.col[i * 4 + 1] = g; this.col[i * 4 + 2] = b; this.col[i * 4 + 3] = a;
+    this.s0[i] = size; this.size[i] = size; this.life[i] = life; this.max[i] = life; this.grow[i] = grow; this.a0[i] = a; this.gy[i] = gy; this.drag[i] = drag;
+  }
+  update(dt) {
+    const { pos, vel, life, max, col, size } = this;
+    let live = 0;
+    for (let i = 0; i < this.n; i++) {
+      if (life[i] <= 0) continue;
+      life[i] -= dt;
+      if (life[i] <= 0) { col[i * 4 + 3] = 0; size[i] = 0; continue; }
+      live++;
+      const t = 1 - life[i] / max[i];
+      vel[i * 3 + 1] += this.gy[i] * dt;
+      pos[i * 3] += vel[i * 3] * dt; pos[i * 3 + 1] += vel[i * 3 + 1] * dt; pos[i * 3 + 2] += vel[i * 3 + 2] * dt;
+      if (pos[i * 3 + 1] < 0.2) { pos[i * 3 + 1] = 0.2; vel[i * 3 + 1] *= -0.3; }
+      const dr = Math.exp(-this.drag[i] * dt); vel[i * 3] *= dr; vel[i * 3 + 1] *= dr; vel[i * 3 + 2] *= dr;
+      size[i] = this.s0[i] * (1 + this.grow[i] * t);
+      col[i * 4 + 3] = this.a0[i] * (1 - t) * Math.min(1, t * 12);
+    }
+    this.live = live;
+    const g = this.points.geometry;
+    g.attributes.position.needsUpdate = true; g.attributes.pcol.needsUpdate = true; g.attributes.psize.needsUpdate = true;
+  }
+}
+let dustP, fireP;
+const wind = { x: 0.9, z: 0.35 };
+const amt = (n) => { const v = n * cfg.dust; return Math.floor(v) + (Math.random() < v % 1 ? 1 : 0); };
+export function dust(x, y, z, n, spread, r = 0.78, g = 0.74, b = 0.68) {
+  n = amt(n);
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * 6.283, s = Math.random() * spread, hang = cfg.linger && Math.random() < cfg.hang;
+    dustP.spawn(x + Math.cos(a) * s * 0.5, y + Math.random() * spread * 0.5, z + Math.sin(a) * s * 0.5,
+      Math.cos(a) * s * 1.6 + (hang ? wind.x * 2 : 0), 2 + Math.random() * 5, Math.sin(a) * s * 1.6 + (hang ? wind.z * 2 : 0),
+      4.5 + Math.random() * 5.5, hang ? 5 + Math.random() * 5 : 1.2 + Math.random() * 1.6, r, g, b, hang ? 0.26 + Math.random() * 0.14 : 0.5 + Math.random() * 0.25, hang ? 2.6 : 1.6, hang ? 0.25 : 0, hang ? 1.5 : 2.2);
+  }
+}
+// A low wall of dust thrown outward from a point, as if shoved by a shockwave: it races out and stalls near `reach`.
+// The move effects are sized in proportion to the monster: this scales their dust and motes with him.
+let fxK = 1;
+export function setFxScale(k) { fxK = k; }
+export function dustWave(x, y, z, n, reach, tall = 1, alpha = 0.6, r = 0.78, g = 0.74, b = 0.68) {
+  n = amt(n);
+  const a0 = Math.random() * 6.283;
+  for (let i = 0; i < n; i++) {
+    const a = a0 + (i + Math.random()) / n * 6.283, drag = 3.4, v = reach * drag * (0.7 + Math.random() * 0.45), s0 = reach * 0.06 * Math.random();
+    dustP.spawn(x + Math.cos(a) * s0, y + Math.random() * 1.5 * tall * fxK, z + Math.sin(a) * s0, Math.cos(a) * v, (0.5 + Math.random() * 3.5) * tall * fxK, Math.sin(a) * v,
+      (3.2 + Math.random() * 4.2) * (0.6 + 0.4 * tall) * fxK, 0.8 + Math.random() * 0.9, r, g, b, alpha * (0.8 + Math.random() * 0.4), 2.0, 0, drag);
+  }
+}
+// One puff of dust or one glowing mote with its own velocity, for effects that steer their particles themselves.
+export function puff(x, y, z, vx, vy, vz, size, life, a = 0.4, grow = 0.6, drag = 0) { if (Math.random() < cfg.dust * 1.4) dustP.spawn(x, y, z, vx, vy, vz, size * fxK, life, 0.78, 0.74, 0.68, a, grow, 0, drag); }
+export function mote(x, y, z, vx, vy, vz, size, life, r, g, b) { fireP.spawn(x, y, z, vx, vy, vz, size * fxK, life, r, g, b, 1, -0.5, 0, 0); }
+export function smoke(x, y, z, n, spread, dark = 0.16) {
+  n = amt(n);
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * 6.283, s = Math.random() * spread, life = cfg.linger ? 5 + Math.random() * 5 : 2 + Math.random() * 2, d = dark + Math.random() * 0.08;
+    dustP.spawn(x + Math.cos(a) * s, y + Math.random() * 2, z + Math.sin(a) * s, wind.x * 2.8 + Math.cos(a) * 1.4, 6 + Math.random() * 5, wind.z * 2.8 + Math.sin(a) * 1.4,
+      5.5 + Math.random() * 5.5, life, d, d * 0.95, d * 0.92, 0.42, 2.4, 0.9, 0.6);
+  }
+}
+export function fire(x, y, z, n, spread) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * 6.283, e = Math.random() * 3.14 - 1.57, s = spread * (0.3 + Math.random());
+    fireP.spawn(x, y, z, Math.cos(a) * Math.cos(e) * s * 3, Math.abs(Math.sin(e)) * s * 3 + 4, Math.sin(a) * Math.cos(e) * s * 3,
+      3.6 + Math.random() * 6, 0.35 + Math.random() * 0.5, 1.0, 0.45 + Math.random() * 0.35, 0.12, 0.9, 1.2);
+  }
+}
+function flame(x, y, z) {
+  fireP.spawn(x + (Math.random() - 0.5) * 0.9, y + 0.3, z + (Math.random() - 0.5) * 0.9, wind.x * 1.1 + (Math.random() - 0.5) * 2, 6 + Math.random() * 7, wind.z * 1.1 + (Math.random() - 0.5) * 2,
+    2 + Math.random() * 2.6, 0.4 + Math.random() * 0.45, 1.0, 0.26 + Math.random() * 0.3, 0.04, 0.5, -0.5, 3, 1.2);
+}
+export function sparks(x, y, z, n, r, g, b, speed = 26) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * 6.283, e = Math.random() * 1.4;
+    fireP.spawn(x, y, z, Math.cos(a) * Math.cos(e) * speed, Math.sin(e) * speed, Math.sin(a) * Math.cos(e) * speed, 1.1 + Math.random() * 1.2, 0.3 + Math.random() * 0.5, r, g, b, 1, 0, -46, 1.2);
+  }
+}
+
+// ---- debris --------------------------------------------------------------
+const ND = 16000;
+const dp = new Float32Array(ND * 3), dv = new Float32Array(ND * 3), dr = new Float32Array(ND * 3), dw = new Float32Array(ND * 3), ds = new Float32Array(ND * 3);
+const dh = new Float32Array(ND), dlife = new Float32Array(ND), dstate = new Uint8Array(ND), dmat = new Uint8Array(ND), dlvl = new Uint8Array(ND); // 0 free 1 active 2 asleep 3 turned to rubble, about to go
+let dmesh, dhead = 0, frame = 0;
+const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _s = new THREE.Vector3(), _p = new THREE.Vector3(), _c = new THREE.Color();
+const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
+export let debrisBudget = 8000;
+export function setDebrisBudget(n) {
+  n = Math.max(500, Math.min(ND, n));
+  for (let i = n; i < debrisBudget; i++) if (dstate[i]) { dstate[i] = 0; dmesh.setMatrixAt(i, ZERO); }
+  debrisBudget = n; if (dhead >= n) dhead = 0; dmesh.count = n; dmesh.instanceMatrix.needsUpdate = true;
+}
+function writeDebris(i) {
+  const k = dstate[i] === 2 && dlife[i] < 1 ? Math.max(0, dlife[i]) : 1;
+  _e.set(dr[i * 3], dr[i * 3 + 1], dr[i * 3 + 2]); _q.setFromEuler(_e);
+  _p.set(dp[i * 3], dp[i * 3 + 1], dp[i * 3 + 2]); _s.set(ds[i * 3] * k, ds[i * 3 + 1] * k, ds[i * 3 + 2] * k);
+  _m.compose(_p, _q, _s); dmesh.setMatrixAt(i, _m);
+}
+export function spawnDebris(x, y, z, vx, vy, vz, m, lvl = 1, size = 0) {
+  let i = -1;
+  for (let t = 0; t < 40; t++) { const k = (dhead + t) % debrisBudget; if (dstate[k] === 0) { i = k; break; } }
+  if (i < 0) { for (let t = 0; t < 200; t++) { const k = (dhead + t) % debrisBudget; if (dstate[k] === 2) { i = k; break; } } }
+  if (i < 0) return;
+  dhead = (i + 1) % debrisBudget;
+  const a = i * 3;
+  dp[a] = x; dp[a + 1] = y; dp[a + 2] = z;
+  dv[a] = vx; dv[a + 1] = vy; dv[a + 2] = vz;
+  dr[a] = Math.random() * 6; dr[a + 1] = Math.random() * 6; dr[a + 2] = Math.random() * 6;
+  dw[a] = (Math.random() - 0.5) * 12; dw[a + 1] = (Math.random() - 0.5) * 12; dw[a + 2] = (Math.random() - 0.5) * 12;
+  const sh = cfg.shapes ? SHAPE[m] : 0, s = size || (Math.random() < 0.25 ? 1.3 + Math.random() * 0.8 : 0.75 + Math.random() * 0.3);
+  let j = 0.85 + Math.random() * 0.25;
+  if (sh === 1) { ds[a] = 0.5; ds[a + 1] = 0.4; ds[a + 2] = 1.8 + Math.random() * 1.6; dh[i] = 0.22; }
+  else if (sh === 2) { const q = 0.5 + Math.random() * 0.8; ds[a] = q; ds[a + 1] = q * (0.5 + Math.random()); ds[a + 2] = 0.09; dh[i] = 0.08; j = 1.25; }
+  else if (sh === 3) { const rq = Math.random(), q = 0.9 + rq * rq * 1.3; ds[a] = q; ds[a + 1] = q * (0.6 + Math.random() * 0.4); ds[a + 2] = q * (0.7 + Math.random() * 0.4); dh[i] = q * 0.4; }
+  else if (sh === 4) { const q = 0.45 + Math.random() * 0.35; ds[a] = q; ds[a + 1] = q; ds[a + 2] = q; dh[i] = q * 0.5; dw[a] *= 0.4; }
+  else if (sh === 5) { const q = 0.6 + Math.random() * 0.4; ds[a] = q; ds[a + 1] = q * 1.3; ds[a + 2] = q; dh[i] = q * 0.5; }
+  else if (sh === 6) { const q = 1.1 + Math.random() * 0.9; ds[a] = q; ds[a + 1] = 0.18; ds[a + 2] = q * (0.6 + Math.random() * 0.4); dh[i] = 0.12; }
+  else { ds[a] = s; ds[a + 1] = s; ds[a + 2] = s; dh[i] = s * 0.5; }
+  dlife[i] = 12 + Math.random() * 14; dstate[i] = 1; dmat[i] = m; dlvl[i] = lvl;
+  if (sh === 5) dlife[i] = 3 + Math.random() * 2;
+  _c.setRGB(MAT_R[m] * j, MAT_G[m] * j, MAT_B[m] * j);
+  dmesh.setColorAt(i, _c); dmesh.instanceColor.needsUpdate = true;
+}
+export function pushDebris(cx, cy, cz, r, force, up = 0.5) {
+  const r2 = r * r;
+  for (let i = 0; i < debrisBudget; i++) {
+    if (!dstate[i] || dstate[i] === 3) continue;
+    const x = dp[i * 3] - cx, y = dp[i * 3 + 1] - cy, z = dp[i * 3 + 2] - cz, d2 = x * x + y * y + z * z;
+    if (d2 > r2) continue;
+    const d = Math.sqrt(d2) + 0.3, f = force * (1 - d / (r + 0.3)) / d;
+    dv[i * 3] += x * f; dv[i * 3 + 1] += y * f + force * up * (1 - d / (r + 0.3)); dv[i * 3 + 2] += z * f;
+    if (dstate[i] === 2) { dstate[i] = 1; dlife[i] = Math.max(dlife[i], 8); }
+  }
+}
+// Feet and tail shove loose pieces around.
+export function kickDebris(cx, cz, r, vx, vz, maxY) {
+  const r2 = r * r;
+  for (let i = 0; i < debrisBudget; i++) {
+    if (!dstate[i] || dstate[i] === 3) continue;
+    const a = i * 3;
+    if (dp[a + 1] > maxY) continue;
+    const x = dp[a] - cx, z = dp[a + 2] - cz, d2 = x * x + z * z;
+    if (d2 > r2) continue;
+    const d = Math.sqrt(d2) + 0.2;
+    dv[a] = vx * 0.9 + (x / d) * 14; dv[a + 2] = vz * 0.9 + (z / d) * 14; dv[a + 1] = 8 + Math.random() * 10;
+    dw[a] = (Math.random() - 0.5) * 14; dw[a + 2] = (Math.random() - 0.5) * 14;
+    if (dstate[i] === 2) { dstate[i] = 1; dlife[i] = Math.max(dlife[i], 8); }
+  }
+}
+// A settled piece becomes a rubble voxel of its own material, so heaps build up and can be hit again.
+function settle(i) {
+  const sh = SHAPE[dmat[i]];
+  if (!cfg.rubble || !(sh === 0 || sh === 3 || (sh === 1 && Math.random() < 0.3) || (sh === 6 && Math.random() < 0.25)) || Math.random() > 0.6) return false;
+  const a = i * 3, x = Math.floor(dp[a]), y = Math.floor(dp[a + 1] - dh[i] + 0.3), z = Math.floor(dp[a + 2]);
+  if (x < 1 || z < 1 || x >= WX - 1 || z >= WZ - 1 || y < 0 || y >= WY - 1) return false;
+  const k = idx(x, y, z);
+  if (vox[k] || (y > 0 && !vox[idx(x, y - 1, z)])) return false;
+  vox[k] = PANE[dmat[i]] ? M.STONE : dmat[i]; owner[k] = rubbleBody[dlvl[i]].id; gone[k] = 0;
+  markLazy(x, z); stats.rubble++;
+  dstate[i] = 3; dlife[i] = 0.4; // the piece stays in view until its voxel has been drawn
+  return true;
+}
+function updateDebris(dt) {
+  let active = 0, asleep = 0;
+  frame++;
+  for (let i = 0; i < debrisBudget; i++) {
+    const st = dstate[i];
+    if (!st) continue;
+    const a = i * 3;
+    if (st === 3) { dlife[i] -= dt; if (dlife[i] <= 0) { dstate[i] = 0; dmesh.setMatrixAt(i, ZERO); } continue; }
+    if (st === 2) {
+      asleep++;
+      dlife[i] -= dt;
+      if (dlife[i] <= 0) { dstate[i] = 0; dmesh.setMatrixAt(i, ZERO); continue; }
+      if (dlife[i] < 1) { writeDebris(i); continue; }
+      if ((i + frame) % 24 === 0) {
+        const h = dh[i];
+        if (dp[a + 1] > h + 0.2 && !solid(Math.floor(dp[a]), Math.floor(dp[a + 1] - h - 0.3), Math.floor(dp[a + 2]))) dstate[i] = 1;
+      }
+      continue;
+    }
+    active++;
+    const h = dh[i];
+    dv[a + 1] -= G * dt;
+    const px = dp[a], py = dp[a + 1], pz = dp[a + 2];
+    let nx = px + dv[a] * dt, ny = py + dv[a + 1] * dt, nz = pz + dv[a + 2] * dt, rest = false;
+    if (ny < h) {
+      ny = h;
+      if (dv[a + 1] > -6) { dv[a + 1] = 0; rest = true; } else dv[a + 1] *= -0.32;
+      dv[a] *= 0.72; dv[a + 2] *= 0.72; dw[a] *= 0.6; dw[a + 1] *= 0.6; dw[a + 2] *= 0.6;
+    } else if (solid(Math.floor(nx), Math.floor(ny - h * 0.6), Math.floor(nz))) {
+      if (!solid(Math.floor(px), Math.floor(ny - h * 0.6), Math.floor(pz))) {
+        nx = px; nz = pz; dv[a] *= -0.3; dv[a + 2] *= -0.3;
+      } else {
+        ny = py;
+        if (dv[a + 1] < 0) { if (dv[a + 1] > -6) { dv[a + 1] = 0; rest = true; } else dv[a + 1] *= -0.28; dv[a] *= 0.7; dv[a + 2] *= 0.7; dw[a] *= 0.6; dw[a + 1] *= 0.6; dw[a + 2] *= 0.6; }
+        else dv[a + 1] *= -0.3;
+        if (solid(Math.floor(nx), Math.floor(ny - h * 0.6), Math.floor(nz))) { nx = px; nz = pz; dv[a] *= -0.3; dv[a + 2] *= -0.3; }
+      }
+    }
+    dp[a] = nx; dp[a + 1] = ny; dp[a + 2] = nz;
+    dr[a] += dw[a] * dt; dr[a + 1] += dw[a + 1] * dt; dr[a + 2] += dw[a + 2] * dt;
+    if (rest && dv[a] * dv[a] + dv[a + 2] * dv[a + 2] < 2) {
+      dstate[i] = 2; dv[a] = dv[a + 2] = 0;
+      if (ds[a + 1] < 0.45 && ds[a + 2] > 1 || ds[a + 2] < 0.1) { dr[a] = ds[a + 2] < 0.1 ? Math.PI / 2 : 0; dr[a + 2] = 0; } // planks, sheets and shards lie flat
+      if (settle(i)) { writeDebris(i); continue; }
+    }
+    writeDebris(i);
+  }
+  dmesh.instanceMatrix.needsUpdate = true;
+  stats.active = active; stats.asleep = asleep;
+}
+
+// ---- voxel removal -------------------------------------------------------
+const pending = new Set();
+const failing = [];
+const explQueue = [];
+const glassQ = [];
+const burnT = new Map();
+function removeVoxel(i, x, y, z) {
+  const m = vox[i];
+  vox[i] = 0; gone[i] = 1;
+  if (burnF[i]) { burnF[i] = 0; burnT.delete(i); }
+  const b = bodies[owner[i]];
+  if (b && b.kind !== 'rubble') { b.count--; b.layers[y]--; b.carry[y] -= CARRY[m]; pending.add(b.id); stats.destroyed++; }
+  markDirty(x, z);
+  if (m === M.FUEL && b && !b.exploded) { b.exploded = true; explQueue.push([x + 0.5, y + 0.5, z + 0.5, b.explosive || 11, 0.25]); }
+  return m;
+}
+const lvlOf = (i) => { const b = bodies[owner[i]]; return b ? b.level : 1; };
+let lastHit = [0, 0, 0];
+const list = new Int32Array(400000);
+const NB = [1, -1, WX, -WX, WX * WZ, -WX * WZ];
+
+// Glass: one broken voxel takes the whole pane with it, as thin glinting shards.
+const paneStack = new Int32Array(4096);
+function shatterPane(i0, dx, dy, dz) {
+  if (!PANE[vox[i0]]) return 0;
+  let sp = 0, n = 0, sx = 0, sy = 0, sz = 0;
+  paneStack[sp++] = i0;
+  const lvl = lvlOf(i0);
+  while (sp && n < 600) {
+    const i = paneStack[--sp];
+    if (!PANE[vox[i]]) continue;
+    const x = i % WX, z = ((i / WX) | 0) % WZ, y = (i / (WX * WZ)) | 0;
+    const gm = removeVoxel(i, x, y, z); n++; sx += x; sy += y; sz += z;
+    if (Math.random() < 0.5 * cfg.debrisMul) spawnDebris(x + 0.5, y + 0.5, z + 0.5, dx * (8 + Math.random() * 12) + (Math.random() - 0.5) * 9, dy * 8 + Math.random() * 7, dz * (8 + Math.random() * 12) + (Math.random() - 0.5) * 9, gm, lvl);
+    for (let f = 0; f < 6; f++) { const k = i + NB[f]; if (k >= 0 && k < vox.length && PANE[vox[k]] && sp < 4090) paneStack[sp++] = k; }
+  }
+  if (n) {
+    const cx = sx / n + 0.5, cy = sy / n + 0.5, cz = sz / n + 0.5;
+    sparks(cx, cy, cz, Math.min(14, 2 + (n >> 2)), 0.85, 0.95, 1.0, 16);
+    hooks.sound('glass', Math.min(1, 0.4 + n / 120), cx, cy, cz);
+    hooks.destroyed(n, cx, cy, cz, true);
+  }
+  return n;
+}
+
+// A hit: the core turns to dust, the shell is thrown as debris.
+export function blast(cx, cy, cz, r, o = {}) {
+  const push = o.push ?? 9, core = o.core ?? 0.45, maxDeb = (o.maxDebris ?? 260) * cfg.debrisMul, ys = o.ys ?? 1;
+  const dx = o.dx || 0, dy = o.dy || 0, dz = o.dz || 0, hard = o.hard ?? 1, tough = o.tough ?? 1;
+  const only = o.only;   // { kind: true }: hit only bodies of these kinds (street props, say) and leave the rest standing
+  const R = r * 1.7;
+  const x0 = Math.max(0, Math.floor(cx - R)), x1 = Math.min(WX - 1, Math.floor(cx + R));
+  const y0 = Math.max(0, Math.floor(cy - R / ys)), y1 = Math.min(WY - 1, Math.floor(cy + R / ys));
+  const z0 = Math.max(0, Math.floor(cz - R)), z1 = Math.min(WZ - 1, Math.floor(cz + R));
+  let n = 0;
+  for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) {
+    let i = x0 + WX * (z + WZ * y);
+    for (let x = x0; x <= x1; x++, i++) {
+      const m = vox[i];
+      if (!m) continue;
+      if (only) { const b = bodies[owner[i]]; if (!b || !only[b.kind]) continue; }
+      const ex = x + 0.5 - cx, ey = (y + 0.5 - cy) * ys, ez = z + 0.5 - cz, re = r * SOFT[m] * (HARD[m] ? hard : 1);
+      const d2 = ex * ex + ey * ey + ez * ez;
+      if (d2 <= re * re && n < list.length && (d2 < re * re * 0.3 || Math.random() >= TOUGH[m] * tough)) list[n++] = i;
+    }
+  }
+  if (o.pushDebris !== false) pushDebris(cx, cy, cz, r * 1.6, push * 0.9);
+  if (!n) return 0;
+  lastHit = [cx, cy, cz];
+  const p = Math.min(1, maxDeb / (n * 0.8));
+  const rc2 = r * core * r * core;
+  let glassN = 0;
+  const before = stats.destroyed;
+  for (let k = 0; k < n; k++) {
+    const i = list[k], x = i % WX, z = ((i / WX) | 0) % WZ, y = (i / (WX * WZ)) | 0;
+    const ex = x + 0.5 - cx, ey = y + 0.5 - cy, ez = z + 0.5 - cz, d2 = ex * ex + ey * ey + ez * ez;
+    const lvl = lvlOf(i), m0 = vox[i];
+    if (m0 === M.CONC && cfg.rebar && lvl >= 1 && d2 > rc2 * 0.6 && Math.random() < 0.4) {
+      // the concrete breaks away and the bars stay, still tying the pieces together
+      const b = bodies[owner[i]];
+      vox[i] = M.REBAR; if (b && b.kind !== 'rubble') { b.carry[y] -= CARRY[M.CONC]; pending.add(b.id); }
+      markDirty(x, z);
+      if (Math.random() < p) { const d = Math.sqrt(d2) + 0.01, s = push * (0.45 + Math.random() * 0.75); spawnDebris(x + 0.5, y + 0.5, z + 0.5, ex / d * s + dx * push, ey / d * s + 5, ez / d * s + dz * push, M.CONC, lvl); }
+      continue;
+    }
+    if (PANE[m0]) glassN++;
+    const m = removeVoxel(i, x, y, z);
+    if ((d2 > rc2 || n < 80) && Math.random() < p) {
+      const d = Math.sqrt(d2) + 0.01, s = push * (0.45 + Math.random() * 0.75);
+      spawnDebris(x + 0.5, y + 0.5, z + 0.5, ex / d * s + dx * push, ey / d * s + dy * push + 5 + Math.random() * 7, ez / d * s + dz * push, m, lvl);
+    }
+  }
+  const real = stats.destroyed - before; // rubble that is hit again does not count a second time
+  if (cfg.glass && glassN) {
+    for (let k = 0; k < n; k++) {
+      const i = list[k];
+      for (let f = 0; f < 6; f++) { const j = i + NB[f]; if (j >= 0 && j < vox.length && PANE[vox[j]]) { const x = j % WX, z = ((j / WX) | 0) % WZ, y = (j / (WX * WZ)) | 0, ex = x - cx, ey = y - cy, ez = z - cz, d = Math.hypot(ex, ey, ez) + 0.01; shatterPane(j, ex / d, ey / d, ez / d); } }
+    }
+  }
+  dust(cx, cy, cz, Math.min(16, 2 + (n >> 6)), r * 1.2);
+  if (real) hooks.destroyed(real, cx, cy, cz);
+  return n;
+}
+
+// A flat cut, the tail sweep: everything in a low slab is knocked out sideways, so what stands on it has to fall.
+export function slice(cx, cy, cz, ax, az, half, depth, thick) {
+  const bx = -az, bz = ax;
+  const R = Math.max(half, depth) + 1;
+  const x0 = Math.max(1, Math.floor(cx - R)), x1 = Math.min(WX - 2, Math.floor(cx + R)), z0 = Math.max(1, Math.floor(cz - R)), z1 = Math.min(WZ - 2, Math.floor(cz + R));
+  const y0 = Math.max(0, Math.floor(cy - thick)), y1 = Math.min(WY - 1, Math.floor(cy + thick));
+  let n = 0;
+  for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) {
+    const i = idx(x, y, z), m = vox[i];
+    if (!m) continue;
+    const ex = x + 0.5 - cx, ez = z + 0.5 - cz, u = ex * ax + ez * az, v = ex * bx + ez * bz;
+    if (Math.abs(u) > half || Math.abs(v) > depth) continue;
+    if (HARD[m] && Math.random() < 0.25) continue;
+    const lvl = lvlOf(i);
+    removeVoxel(i, x, y, z); n++;
+    if (Math.random() < Math.min(1, 700 * cfg.debrisMul / (half * depth * 2))) spawnDebris(x + 0.5, y + 0.5, z + 0.5, ax * (18 + Math.random() * 18), 4 + Math.random() * 8, az * (18 + Math.random() * 18), m, lvl);
+  }
+  lastHit = [cx - ax * half, cy, cz - az * half];
+  if (n) { dust(cx, cy, cz, 10, half * 0.6); hooks.destroyed(n, cx, cy, cz); hooks.shake(0.3, cx, cy, cz); hooks.sound('crumble', 1, cx, cy, cz); }
+  return n;
+}
+
+// Remove whole storeys of one body. Used by the topple and pancake tools.
+export function cutBody(b, ya, yb, mode, hx = 0, hz = 0) {
+  let n = 0, sx = 0, sz = 0;
+  for (let y = ya; y <= yb; y++) for (let z = b.z0; z <= b.z1; z++) for (let x = b.x0; x <= b.x1; x++) {
+    const i = idx(x, y, z);
+    if (!vox[i] || owner[i] !== b.id) continue;
+    const m = removeVoxel(i, x, y, z); n++; sx += x; sz += z;
+    if (Math.random() < Math.min(1, 320 * cfg.debrisMul / Math.max(1, b.layers0[y] * (yb - ya + 1)))) spawnDebris(x + 0.5, y + 0.5, z + 0.5, (Math.random() - 0.5) * 22 - hx * 8, Math.random() * 5, (Math.random() - 0.5) * 22 - hz * 8, m, b.level);
+  }
+  if (!n) return 0;
+  const cx = (b.x0 + b.x1 + 1) / 2, cz = (b.z0 + b.z1 + 1) / 2;
+  b.nextMode = { mode, hx, hz };
+  lastHit = [cx + hx * 40, ya, cz + hz * 40];
+  dust(cx, ya + 1, cz, 14, (b.x1 - b.x0) * 0.6);
+  hooks.destroyed(n, cx, ya, cz, true); hooks.shake(0.35, cx, ya, cz); hooks.sound(mode === 'drop' ? 'collapse' : 'creak', 1, cx, ya, cz);
+  return n;
+}
+
+export function explode(x, y, z, r, shake = 0.5, o = {}) {
+  blast(x, y, z, r, { push: 40, core: 0.55, maxDebris: o.maxDebris ?? 460, tough: 0.4 });
+  pushDebris(x, y, z, r * 2.4, 48, 0.8);
+  fire(x, y + 2, z, 60, r); sparks(x, y + 2, z, 36, 1, 0.8, 0.3);
+  dust(x, y + 2, z, 18, r * 1.8, 0.25, 0.23, 0.22);
+  smoke(x, y + 4, z, 14, r * 0.6);
+  flash(x, y + 4, z, r); ring(x, 0.5, z, r * 3.2, 0xfff0d0, 0.5);
+  if (cfg.glass) blowGlass(x, y, z, r * 3.4, 90);
+  if (cfg.expFire && cfg.fireSpread && o.fire !== false) igniteAt(x, y, z, r * 1.25, 0.3);
+  hooks.scorch(x, z, r * 1.5); hooks.shake(shake, x, y, z); hooks.sound('boom', 1, x, y, z);
+  hooks.impact(o.impact ?? 0.7);
+  hooks.explosion(x, y, z, r);
+}
+
+// Queue every pane within reach to burst as the pressure front passes.
+export function blowGlass(cx, cy, cz, R, speed = 120) {
+  const x0 = Math.max(0, Math.floor(cx - R)), x1 = Math.min(WX - 1, Math.floor(cx + R)), y0 = Math.max(0, Math.floor(cy - R)), y1 = Math.min(WY - 1, Math.floor(cy + R)), z0 = Math.max(0, Math.floor(cz - R)), z1 = Math.min(WZ - 1, Math.floor(cz + R));
+  for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) {
+    let i = x0 + WX * (z + WZ * y);
+    for (let x = x0; x <= x1; x++, i++) {
+      if (!PANE[vox[i]]) continue;
+      const ex = x + 0.5 - cx, ey = y + 0.5 - cy, ez = z + 0.5 - cz, d = Math.sqrt(ex * ex + ey * ey + ez * ez);
+      if (d <= R) glassQ.push([i, d / speed + Math.random() * 0.05, ex / (d + 0.01), ey / (d + 0.01), ez / (d + 0.01)]);
+    }
+  }
+  glassQ.sort((a, b) => b[1] - a[1]);
+}
+export function shockwave(x, y, z, R) {
+  ring(x, 0.6, z, R, 0xffffff, 0.75); ring(x, 0.6, z, R * 0.7, 0xbfe8ff, 0.6);
+  if (cfg.glass) blowGlass(x, y, z, R, 120);
+  else {
+    // demo behaviour: glass simply goes
+    for (let i = 0; i < vox.length; i++) if (PANE[vox[i]]) { const gx = i % WX, gz = ((i / WX) | 0) % WZ, gy = (i / (WX * WZ)) | 0; if (Math.hypot(gx - x, gy - y, gz - z) <= R) removeVoxel(i, gx, gy, gz); }
+  }
+  pushDebris(x, y, z, R * 0.6, 26, 0.6);
+  dust(x, 2, z, 12, 20);
+  hooks.shake(0.4, x, y, z); hooks.sound('roar', 1, x, y, z);
+}
+
+// ---- fire ----------------------------------------------------------------
+const FN = [[1, 0, 0, 1], [-1, 0, 0, 1], [0, 0, 1, 1], [0, 0, -1, 1], [0, 1, 0, 2.6], [0, -1, 0, 0.3], [1, 1, 0, 1], [-1, 1, 0, 1], [0, 1, 1, 1], [0, 1, -1, 1]];
+const newFire = [];
+export const fireInfo = { n: 0, x: 0, y: 0, z: 0 };
+export function ignite(i) {
+  const m = vox[i];
+  if (!m || FLAM[m] <= 0 || burnF[i] || burnT.size >= cfg.burnCap) return false;
+  burnF[i] = 1; burnT.set(i, BURN[m] * (0.7 + Math.random() * 0.6));
+  const x = i % WX, z = ((i / WX) | 0) % WZ, y = (i / (WX * WZ)) | 0;
+  for (let f = 0; f < 6; f++) { const k = i + NB[f]; if (k >= 0 && k < vox.length && vox[k]) soot[k] = Math.min(255, soot[k] + 70); }
+  markLazy(x, z);
+  return true;
+}
+export function igniteAt(cx, cy, cz, r, chance = 1) {
+  let n = 0;
+  const x0 = Math.max(0, Math.floor(cx - r)), x1 = Math.min(WX - 1, Math.floor(cx + r)), y0 = Math.max(0, Math.floor(cy - r)), y1 = Math.min(WY - 1, Math.floor(cy + r)), z0 = Math.max(0, Math.floor(cz - r)), z1 = Math.min(WZ - 1, Math.floor(cz + r));
+  for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) {
+    const ex = x + 0.5 - cx, ey = y + 0.5 - cy, ez = z + 0.5 - cz;
+    if (ex * ex + ey * ey + ez * ez > r * r) continue;
+    const i = idx(x, y, z);
+    if (vox[i] && !FLAM[vox[i]]) soot[i] = Math.min(255, soot[i] + 110), markLazy(x, z);
+    if (Math.random() < chance && ignite(i)) n++;
+  }
+  return n;
+}
+let fireAcc = 0, crackleT = 0;
+function stepFire(dt) {
+  fireAcc += dt;
+  const h = 0.125;
+  if (fireAcc < h) return;
+  fireAcc -= h; if (fireAcc > h) fireAcc = 0;
+  const size = burnT.size;
+  stats.burning = size; fireInfo.n = size;
+  if (!size) return;
+  const pe = Math.min(1, 90 / size) * (cfg.dust > 0 ? 1 : 0.5);
+  let sx = 0, sy = 0, sz = 0, emb = -1;
+  for (const [i, t] of burnT) {
+    const m = vox[i];
+    if (!m) { burnT.delete(i); burnF[i] = 0; continue; }
+    const x = i % WX, z = ((i / WX) | 0) % WZ, y = (i / (WX * WZ)) | 0;
+    sx += x; sy += y; sz += z;
+    if (Math.random() < pe) { flame(x + 0.5, y + 0.5, z + 0.5); if (Math.random() < 0.3) smoke(x + 0.5, y + 2.5, z + 0.5, 1, 1); }
+    if (Math.random() < 0.002) emb = i;
+    if (cfg.fireSpread) for (let f = 0; f < FN.length; f++) {
+      const F = FN[f], nx = x + F[0], ny = y + F[1], nz = z + F[2];
+      if (nx < 0 || ny < 0 || nz < 0 || nx >= WX || ny >= WY || nz >= WZ) continue;
+      const k = idx(nx, ny, nz), nm = vox[k];
+      if (!nm || burnF[k]) continue;
+      if (nm === M.FUEL) { if (Math.random() < h * 1.0) removeVoxel(k, nx, ny, nz); continue; }
+      if (PANE[nm]) { if (Math.random() < h * 0.1) glassQ.push([k, 0, 0, 0.2, 0]); continue; }
+      if (FLAM[nm] > 0 && Math.random() < FLAM[nm] * h * 1.5 * F[3]) newFire.push(k);
+    }
+    const left = t - h;
+    if (left > 0) { burnT.set(i, left); continue; }
+    burnT.delete(i); burnF[i] = 0;
+    const b = bodies[owner[i]];
+    if (Math.random() < CHARP[m]) {
+      // burnt through: still there, but it carries nothing, so the storey rule can finish the job
+      vox[i] = M.CHAR; soot[i] = 0;
+      if (b && b.kind !== 'rubble') { b.carry[y] -= CARRY[m]; pending.add(b.id); }
+      markLazy(x, z);
+    } else { removeVoxel(i, x, y, z); if (Math.random() < 0.15) spawnDebris(x + 0.5, y + 0.5, z + 0.5, (Math.random() - 0.5) * 5, 1, (Math.random() - 0.5) * 5, M.CHAR, b ? b.level : 1, 0.7); }
+  }
+  for (let k = 0; k < newFire.length; k++) ignite(newFire[k]);
+  newFire.length = 0;
+  fireInfo.x = sx / size + 0.5; fireInfo.y = sy / size + 4; fireInfo.z = sz / size + 0.5;
+  // embers ride the wind and can start a new fire across the street
+  if (emb >= 0 && cfg.fireSpread) {
+    const x = emb % WX, z = ((emb / WX) | 0) % WZ, y = (emb / (WX * WZ)) | 0;
+    for (let s = 0; s < 6; s++) fireP.spawn(x + 0.5, y + 1, z + 0.5, wind.x * (11 + Math.random() * 14) + (Math.random() - 0.5) * 7, 9 + Math.random() * 10, wind.z * (11 + Math.random() * 14) + (Math.random() - 0.5) * 7, 1.0, 1.6 + Math.random(), 1, 0.6, 0.15, 1, 0, -11, 0.4);
+    const d = 14 + Math.random() * 24, tx = Math.floor(x + wind.x * d + (Math.random() - 0.5) * 12), tz = Math.floor(z + wind.z * d + (Math.random() - 0.5) * 12);
+    if (tx > 0 && tz > 0 && tx < WX - 1 && tz < WZ - 1) for (let ty = Math.min(WY - 1, y + 12); ty >= 0; ty--) { const k = idx(tx, ty, tz); if (vox[k]) { if (Math.random() < 0.7) ignite(k); break; } }
+  }
+  crackleT -= h;
+  if (crackleT <= 0) { crackleT = 0.18 + Math.random() * 0.25; hooks.sound('crackle', Math.min(1, 0.3 + size / 1800), fireInfo.x, fireInfo.y, fireInfo.z); }
+}
+
+// ---- flashes and shock rings ---------------------------------------------
+const flashes = [], rings = [];
+let flashGeo, ringGeo;
+export function flash(x, y, z, r) {
+  const m = new THREE.Mesh(flashGeo, new THREE.MeshBasicMaterial({ color: new THREE.Color(1.9, 1.25, 0.5), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
+  m.position.set(x, y, z); m.userData = { t: 0, r };
+  scene.add(m); flashes.push(m);
+}
+export function ring(x, y, z, r, color = 0xffffff, dur = 0.55, tilt = null) {
+  const m = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide }));
+  m.position.set(x, y, z);
+  if (tilt) m.quaternion.copy(tilt); else m.rotation.x = -Math.PI / 2;
+  m.userData = { t: 0, r, dur };
+  scene.add(m); rings.push(m);
+}
+function updateFx(dt) {
+  for (let i = flashes.length - 1; i >= 0; i--) {
+    const m = flashes[i], u = m.userData; u.t += dt;
+    const k = u.t / 0.28; m.scale.setScalar(u.r * (0.4 + k * 1.2)); m.material.opacity = 0.9 * (1 - k);
+    if (k >= 1) { scene.remove(m); m.material.dispose(); flashes.splice(i, 1); }
+  }
+  for (let i = rings.length - 1; i >= 0; i--) {
+    const m = rings[i], u = m.userData; u.t += dt;
+    const k = u.t / u.dur, e = 1 - (1 - k) * (1 - k); m.scale.setScalar(Math.max(0.01, u.r * e)); m.material.opacity = 0.8 * (1 - k);
+    if (k >= 1) { scene.remove(m); m.material.dispose(); rings.splice(i, 1); }
+  }
+}
+
+// ---- falling sections ----------------------------------------------------
+// free: tumbles as in the demo. hinge: pivots over its base edge like a felled tree. drop: comes straight down, floor onto floor.
+const sections = [];
+let boxGeo, secMat;
+class Section {
+  constructor(cells, n, hit, mode, lvl, hx, hz) {
+    this.n = n; this.alive = n; this.n0 = n; this.mode = mode; this.lvl = lvl;
+    this.off = new Float32Array(n * 3); this.mat = new Uint8Array(n); this.live = new Uint8Array(n).fill(1);
+    let sx = 0, sy = 0, sz = 0, minY = 1e9, maxY = 0;
+    for (let k = 0; k < n; k++) { const i = cells[k]; const x = i % WX, z = ((i / WX) | 0) % WZ, y = (i / (WX * WZ)) | 0; sx += x; sy += y; sz += z; if (y < minY) minY = y; if (y > maxY) maxY = y; }
+    const cx = sx / n + 0.5, cy = sy / n + 0.5, cz = sz / n + 0.5;
+    this.mesh = new THREE.InstancedMesh(boxGeo, secMat, n);
+    this.mesh.castShadow = true; this.mesh.frustumCulled = false;
+    let ext = 0;
+    for (let k = 0; k < n; k++) {
+      const i = cells[k]; const x = i % WX, z = ((i / WX) | 0) % WZ, y = (i / (WX * WZ)) | 0, m = vox[i];
+      this.off[k * 3] = x + 0.5 - cx; this.off[k * 3 + 1] = y + 0.5 - cy; this.off[k * 3 + 2] = z + 0.5 - cz; this.mat[k] = m;
+      _m.makeTranslation(this.off[k * 3], this.off[k * 3 + 1], this.off[k * 3 + 2]); this.mesh.setMatrixAt(k, _m);
+      const j = jitter(x, y, z) * (1 - soot[i] / 255 * 0.78); _c.setRGB(MAT_R[m] * j, MAT_G[m] * j, MAT_B[m] * j); this.mesh.setColorAt(k, _c);
+      if (y - minY < 6) { const e = this.off[k * 3] * hx + this.off[k * 3 + 2] * hz; if (e > ext) ext = e; }
+    }
+    this.pos = new THREE.Vector3(cx, cy, cz); this.vel = new THREE.Vector3(0, 0, 0); this.q = new THREE.Quaternion(); this.w = new THREE.Vector3();
+    this.height = maxY - minY + 1;
+    if (mode === 'hinge') {
+      this.axis = new THREE.Vector3(hz, 0, -hx);
+      this.pivot = new THREE.Vector3(cx + hx * (ext + 0.5), Math.max(0, minY - 1), cz + hz * (ext + 0.5));
+      this.c0 = new THREE.Vector3(cx, cy, cz);
+      this.theta = 0; this.omega = 0.38; this.k = 1.5 * G / Math.max(16, this.height);
+      this.slow = 0;
+    } else if (mode === 'free') {
+      let tx = hit[0] - cx, tz = hit[2] - cz; const hl = Math.hypot(tx, tz);
+      if (hl > 0.5) { tx /= hl; tz /= hl; const rate = 0.25 + Math.random() * 0.45; this.w.set(tz * rate, (Math.random() - 0.5) * 0.2, -tx * rate); this.vel.set(tx * 3, 0, tz * 3); }
+    }
+    this.age = 0; this.stuck = 0; this.pd = Math.min(0.9, 1000 * cfg.debrisMul / n); this.puff = 0;
+    this.mesh.position.copy(this.pos);
+    scene.add(this.mesh);
+  }
+  update(dt) {
+    this.age += dt;
+    const hinge = this.mode === 'hinge', drop = this.mode === 'drop';
+    if (hinge) {
+      this.omega += this.k * Math.sin(Math.max(0.1, this.theta)) * dt; this.theta += this.omega * dt;
+      this.q.setFromAxisAngle(this.axis, this.theta);
+      _p.copy(this.c0).sub(this.pivot).applyQuaternion(this.q); this.pos.copy(this.pivot).add(_p);
+      this.w.copy(this.axis).multiplyScalar(this.omega);
+    } else {
+      this.vel.y -= G * dt;
+      if (drop && this.vel.y < -30) this.vel.y = -30;
+      this.pos.addScaledVector(this.vel, dt);
+      const wl = this.w.length();
+      if (wl > 1e-4) { _q.setFromAxisAngle(_p.copy(this.w).multiplyScalar(1 / wl), wl * dt); this.q.premultiply(_q).normalize(); }
+    }
+    _m.makeRotationFromQuaternion(this.q);
+    const e = _m.elements, px = this.pos.x, py = this.pos.y, pz = this.pos.z, off = this.off;
+    const before = this.alive;
+    let contacts = 0, crushed = 0, cx = 0, cy = 0, cz = 0;
+    const speed = hinge ? this.omega * this.height * 0.6 : this.vel.length(), crushP = Math.min(hinge || drop ? 0.6 : 0.42, 0.08 + speed * 0.009);
+    const wx0 = this.w.x, wy0 = this.w.y, wz0 = this.w.z, pvx = hinge ? this.pivot.x : px, pvy = hinge ? this.pivot.y : py, pvz = hinge ? this.pivot.z : pz;
+    for (let k = 0; k < this.n; k++) {
+      if (!this.live[k]) continue;
+      const ox = off[k * 3], oy = off[k * 3 + 1], oz = off[k * 3 + 2];
+      const wx = px + e[0] * ox + e[4] * oy + e[8] * oz, wy = py + e[1] * ox + e[5] * oy + e[9] * oz, wz = pz + e[2] * ox + e[6] * oy + e[10] * oz;
+      let hit = wy < 0.5;
+      if (!hit) {
+        const gx = Math.floor(wx), gy = Math.floor(wy), gz = Math.floor(wz);
+        if (gx >= 0 && gz >= 0 && gx < WX && gz < WZ && gy < WY) {
+          const gi = gx + WX * (gz + WZ * gy);
+          if (vox[gi]) {
+            hit = true;
+            if (Math.random() < crushP) {
+              const lv = lvlOf(gi), m = removeVoxel(gi, gx, gy, gz); crushed++;
+              if (Math.random() < 0.3) spawnDebris(gx + 0.5, gy + 0.5, gz + 0.5, (Math.random() - 0.5) * 14, 4 + Math.random() * 5, (Math.random() - 0.5) * 14, m, lv);
+            }
+          }
+        }
+      }
+      if (hit) {
+        contacts++; cx += wx; cy += wy; cz += wz;
+        this.live[k] = 0; this.alive--; this.mesh.setMatrixAt(k, ZERO);
+        if (Math.random() < this.pd) {
+          const rx = wx - pvx, ry = wy - pvy, rz = wz - pvz;
+          const vx = this.vel.x + wy0 * rz - wz0 * ry, vy = this.vel.y + wz0 * rx - wx0 * rz, vz = this.vel.z + wx0 * ry - wy0 * rx;
+          spawnDebris(wx, Math.max(0.5, wy), wz, vx * 0.5 + (Math.random() - 0.5) * 12, Math.abs(vy) * 0.22 + Math.random() * 7, vz * 0.5 + (Math.random() - 0.5) * 12, this.mat[k], this.lvl);
+        }
+      }
+    }
+    if (contacts) {
+      this.mesh.instanceMatrix.needsUpdate = true;
+      const f = contacts / before;
+      if (hinge) this.omega *= 1 - Math.min(0.3, f * 1.5);
+      else if (!drop) { this.vel.multiplyScalar(Math.max(0.3, 1 - f * 3.5)); this.w.multiplyScalar(0.94); }
+      cx /= contacts; cy /= contacts; cz /= contacts;
+      if (speed > 8) {
+        const power = Math.min(1, contacts / 200) * Math.min(1, speed / 36);
+        this.puff -= dt;
+        if (drop) { if (this.puff <= 0) { this.puff = 0.07; const a = Math.random() * 6.283; dust(cx + Math.cos(a) * 12, cy + 0.5, cz + Math.sin(a) * 12, 3, 10); dust(cx, cy + 0.5, cz, 2, 18); } }
+        else if (Math.random() < 0.5) dust(cx, cy + 0.5, cz, 1 + Math.round(power * 5), 6 + power * 8);
+        hooks.shake(power * 0.35, cx, cy, cz); hooks.sound('crumble', 0.3 + power * 0.7, cx, cy, cz);
+      }
+      if (crushed) hooks.destroyed(crushed, cx, cy, cz, true);
+      if (!hinge && !drop && speed < 6) this.stuck += dt;
+    }
+    if (hinge) { if (this.omega < 0.06 && this.theta > 0.25) this.slow += dt; else this.slow = 0; }
+    this.mesh.position.copy(this.pos); this.mesh.quaternion.copy(this.q);
+    const done = hinge ? (this.theta > 1.5 || this.slow > 1.2) : (this.stuck > 0.45 || py < -20);
+    if (this.alive < Math.max(8, this.n0 * 0.06) || done || this.age > 9) { this.shatter(); return false; }
+    return true;
+  }
+  shatter() {
+    _m.makeRotationFromQuaternion(this.q);
+    const e = _m.elements, off = this.off, big = this.mode !== 'free';
+    const p = Math.min(1, (big ? 1500 : 400) * cfg.debrisMul / Math.max(1, this.alive));
+    const wx0 = this.w.x, wy0 = this.w.y, wz0 = this.w.z;
+    let minX = 1e9, maxX = -1e9, minZ = 1e9, maxZ = -1e9;
+    for (let k = 0; k < this.n; k++) {
+      if (!this.live[k]) continue;
+      const ox = off[k * 3], oy = off[k * 3 + 1], oz = off[k * 3 + 2];
+      const wx = this.pos.x + e[0] * ox + e[4] * oy + e[8] * oz, wy = this.pos.y + e[1] * ox + e[5] * oy + e[9] * oz, wz = this.pos.z + e[2] * ox + e[6] * oy + e[10] * oz;
+      if (wx < minX) minX = wx; if (wx > maxX) maxX = wx; if (wz < minZ) minZ = wz; if (wz > maxZ) maxZ = wz;
+      if (Math.random() < p) {
+        let vx = this.vel.x, vy = this.vel.y * 0.3, vz = this.vel.z;
+        if (this.mode === 'hinge') { const rx = wx - this.pivot.x, ry = wy - this.pivot.y, rz = wz - this.pivot.z; vx = (wy0 * rz - wz0 * ry) * 0.35; vy = 0; vz = (wx0 * ry - wy0 * rx) * 0.35; }
+        spawnDebris(wx, Math.max(0.5, wy), wz, vx + (Math.random() - 0.5) * 9, vy + Math.random() * 5, vz + (Math.random() - 0.5) * 9, this.mat[k], this.lvl);
+      }
+    }
+    if (big && this.alive > 240) {
+      const n = Math.min(26, 6 + (this.alive >> 9));
+      for (let i = 0; i < n; i++) dust(minX + Math.random() * (maxX - minX), 2, minZ + Math.random() * (maxZ - minZ), 2, 12);
+      hooks.shake(Math.min(0.9, 0.3 + this.alive / 36000), this.pos.x, 1, this.pos.z); hooks.sound('collapse', 1, this.pos.x, 1, this.pos.z);
+      hooks.impact(Math.min(1, this.n0 / 30000));
+    } else dust(this.pos.x, Math.max(1, this.pos.y), this.pos.z, 5, 10);
+    scene.remove(this.mesh); this.mesh.dispose();
+  }
+}
+
+// ---- support -------------------------------------------------------------
+let vis = new Uint8Array(1 << 16), stack = new Int32Array(1 << 16), comp = new Int32Array(1 << 16);
+function crushLayer(b, y) {
+  let n = 0, sx = 0, sz = 0;
+  for (let yy = y; yy <= Math.min(b.y1, y + 1); yy++) for (let z = b.z0; z <= b.z1; z++) for (let x = b.x0; x <= b.x1; x++) {
+    const i = idx(x, yy, z);
+    if (!vox[i] || owner[i] !== b.id) continue;
+    const m = removeVoxel(i, x, yy, z); n++; sx += x; sz += z;
+    if (Math.random() < 0.2 * cfg.debrisMul) spawnDebris(x + 0.5, yy + 0.5, z + 0.5, (Math.random() - 0.5) * 18, Math.random() * 5, (Math.random() - 0.5) * 18, m, b.level);
+  }
+  if (n) {
+    dust(sx / n, y, sz / n, 10, 14);
+    hooks.destroyed(n, sx / n, y, sz / n, true); hooks.shake(0.35, sx / n, y, sz / n); hooks.sound('collapse', 1, sx / n, y, sz / n);
+  }
+}
+function checkBody(b) {
+  if (b.kind === 'rubble') return;
+  if (b.count <= 0) { finish(b); return; }
+  if (b.structural) {
+    let above = 0, worst = -1, ratio = 1;
+    for (let y = b.y1; y >= 0; y--) {
+      const c = b.carry[y], n = b.layers[y];
+      if (b.dCarry[y] > 0 && n > 0 && above > 80) {
+        const r = c > 0 ? (above / b.dAbove[y]) * (b.dCarry[y] / c) / MARGIN : Infinity;
+        if (r > ratio) { worst = y; ratio = r; }
+      }
+      above += n;
+    }
+    // an overloaded storey groans for a moment before it gives way
+    if (worst >= 0 && !b.failing) { b.failing = true; b.failT = 0.35 + Math.random() * 0.35; b.failY = worst; failing.push(b); hooks.sound('creak', 1, (b.x0 + b.x1) / 2, worst, (b.z0 + b.z1) / 2); }
+  }
+  if (b.explosive && !b.exploded && b.count < b.init * 0.7) {
+    b.exploded = true;
+    explQueue.push([(b.x0 + b.x1 + 1) / 2, 4, (b.z0 + b.z1 + 1) / 2, b.explosive, 0.05]);
+  }
+  // flood fill from the ground
+  const w = b.x1 - b.x0 + 1, h = b.y1 + 1, d = b.z1 - b.z0 + 1, vol = w * h * d;
+  if (vol > vis.length) { vis = new Uint8Array(vol); stack = new Int32Array(vol); comp = new Int32Array(vol); }
+  vis.fill(0, 0, vol);
+  const id = b.id, wd = w * d;
+  let sp = 0;
+  for (let z = 0; z < d; z++) for (let x = 0; x < w; x++) {
+    const gi = idx(b.x0 + x, 0, b.z0 + z);
+    if (vox[gi] && owner[gi] === id) { vis[x + w * z] = 1; stack[sp++] = x + w * z; }
+  }
+  const flood = (mark, out) => {
+    let cn = 0;
+    while (sp) {
+      const l = stack[--sp];
+      if (out) out[cn++] = l;
+      const x = l % w, z = ((l / w) | 0) % d, y = (l / wd) | 0;
+      for (let f = 0; f < 6; f++) {
+        const nx = x + (f === 0) - (f === 1), ny = y + (f === 2) - (f === 3), nz = z + (f === 4) - (f === 5);
+        if (nx < 0 || ny < 0 || nz < 0 || nx >= w || ny >= h || nz >= d) continue;
+        const nl = nx + w * nz + wd * ny;
+        if (vis[nl]) continue;
+        const gi = idx(b.x0 + nx, ny, b.z0 + nz);
+        if (!vox[gi] || owner[gi] !== id) continue;
+        vis[nl] = mark; stack[sp++] = nl;
+      }
+    }
+    return cn;
+  };
+  flood(1, null);
+  let reached = 0;
+  for (let l = 0; l < vol; l++) if (vis[l] === 1) reached++;
+  if (reached < b.count) {
+    for (let y = 0; y < h; y++) for (let z = 0; z < d; z++) for (let x = 0; x < w; x++) {
+      const l = x + w * z + wd * y;
+      if (vis[l]) continue;
+      const gi = idx(b.x0 + x, y, b.z0 + z);
+      if (!vox[gi] || owner[gi] !== id) continue;
+      vis[l] = 2; stack[0] = l; sp = 1;
+      const cn = flood(2, comp);
+      for (let k = 0; k < cn; k++) { const c = comp[k]; comp[k] = idx(b.x0 + (c % w), (c / wd) | 0, b.z0 + (((c / w) | 0) % d)); }
+      detach(b, comp, cn);
+    }
+  }
+  b.nextMode = null;
+  if (!b.dead && b.count < b.init * 0.15) finish(b);
+}
+function finish(b) {
+  if (b.dead) return;
+  b.dead = true; hooks.bodyDown(b);
+}
+function detach(b, cells, n) {
+  let sec = null;
+  if (n >= 40 && sections.length < 26) {
+    let mode = 'free', hx = 0, hz = 0;
+    if (b.nextMode && n > 240) { mode = b.nextMode.mode; hx = b.nextMode.hx; hz = b.nextMode.hz; }
+    else if (cfg.topple && n > 600) {
+      // a tall piece cut loose at its foot falls like a tree, toward the side that was hit
+      let x0 = 1e9, x1 = -1, z0 = 1e9, z1 = -1, y0 = 1e9, y1 = -1, sx = 0, sz = 0;
+      for (let k = 0; k < n; k++) { const i = cells[k], x = i % WX, z = ((i / WX) | 0) % WZ, y = (i / (WX * WZ)) | 0; if (x < x0) x0 = x; if (x > x1) x1 = x; if (z < z0) z0 = z; if (z > z1) z1 = z; if (y < y0) y0 = y; if (y > y1) y1 = y; sx += x; sz += z; }
+      const hgt = y1 - y0 + 1, wid = Math.max(x1 - x0, z1 - z0) + 1;
+      if (hgt > wid * 1.5 && y0 <= 16) { hx = lastHit[0] - sx / n; hz = lastHit[2] - sz / n; const l = Math.hypot(hx, hz); if (l > 0.5) { hx /= l; hz /= l; mode = 'hinge'; } }
+    }
+    if (mode === 'hinge' && Math.hypot(hx, hz) < 0.5) mode = 'free';
+    sec = new Section(cells, n, lastHit, mode, b.level, hx, hz); sections.push(sec);
+  }
+  let sx = 0, sy = 0, sz = 0;
+  const p = Math.min(1, 90 / n);
+  for (let k = 0; k < n; k++) {
+    const i = cells[k], x = i % WX, z = ((i / WX) | 0) % WZ, y = (i / (WX * WZ)) | 0;
+    const m = removeVoxel(i, x, y, z); sx += x; sy += y; sz += z;
+    if (!sec && Math.random() < p) spawnDebris(x + 0.5, y + 0.5, z + 0.5, (Math.random() - 0.5) * 9, Math.random() * 4, (Math.random() - 0.5) * 9, m, b.level);
+  }
+  hooks.destroyed(n, sx / n, sy / n, sz / n, true);
+  if (sec && n > 900) { hooks.sound('collapse', Math.min(1, n / 6000), sx / n, sy / n, sz / n); hooks.shake(Math.min(0.5, n / 16000), sx / n, sy / n, sz / n); }
+  pending.delete(b.id);
+}
+
+// ---- lifecycle -----------------------------------------------------------
+export function initSim(sc) {
+  scene = sc;
+  chunkMat = makeChunkMaterial();
+  meshOpts.count = true;
+  for (let k = 0; k < NCX * NCZ; k++) rebuildChunk(k);
+  meshOpts.count = false;
+  boxGeo = new THREE.BoxGeometry(1, 1, 1);
+  secMat = new THREE.MeshLambertMaterial();
+  dmesh = new THREE.InstancedMesh(boxGeo, new THREE.MeshLambertMaterial(), ND);
+  dmesh.frustumCulled = false; dmesh.castShadow = true; dmesh.receiveShadow = true;
+  for (let i = 0; i < ND; i++) { dmesh.setMatrixAt(i, ZERO); dmesh.setColorAt(i, _c.setRGB(1, 1, 1)); }
+  dmesh.count = debrisBudget;
+  scene.add(dmesh);
+  dustP = new Particles(6000, false); fireP = new Particles(3200, true);
+  scene.add(dustP.points); scene.add(fireP.points);
+  flashGeo = new THREE.SphereGeometry(1, 16, 10);
+  ringGeo = new THREE.RingGeometry(0.9, 1, 64);
+}
+export function setParticleScale(h, fov) { const s = h / (2 * Math.tan(fov * Math.PI / 360)); dustP.mat.uniforms.scale.value = s; fireP.mat.uniforms.scale.value = s; }
+export function setShadows(on) { dmesh.castShadow = on; for (const m of chunkMesh) if (m) m.castShadow = on; }
+export function stepSim(dt) {
+  if (explQueue.length) {
+    for (let i = explQueue.length - 1; i >= 0; i--) {
+      const q = explQueue[i]; q[4] -= dt;
+      if (q[4] <= 0) { explQueue.splice(i, 1); explode(q[0], q[1], q[2], q[3], 0.6); }
+    }
+  }
+  if (glassQ.length) {
+    for (let i = 0; i < glassQ.length; i++) glassQ[i][1] -= dt;
+    let budget = 60;
+    while (glassQ.length && glassQ[glassQ.length - 1][1] <= 0 && budget > 0) { const q = glassQ.pop(); if (shatterPane(q[0], q[2], q[3], q[4])) budget--; }
+  }
+  for (let i = failing.length - 1; i >= 0; i--) {
+    const b = failing[i]; b.failT -= dt;
+    if (Math.random() < dt * 16) dust(b.x0 + Math.random() * (b.x1 - b.x0 + 1), b.failY + 0.5, b.z0 + Math.random() * (b.z1 - b.z0 + 1), 1, 4);
+    if (b.failT <= 0) { failing.splice(i, 1); b.failing = false; if (b.count > 0) { crushLayer(b, b.failY); pending.add(b.id); } }
+  }
+  stepFire(dt);
+  let n = 0;
+  const tc = performance.now();
+  for (const id of pending) { pending.delete(id); checkBody(bodies[id]); if (++n >= 4 || performance.now() - tc > 4) break; }
+  for (let i = sections.length - 1; i >= 0; i--) if (!sections[i].update(dt)) sections.splice(i, 1);
+  updateDebris(dt);
+  dustP.update(dt); fireP.update(dt);
+  stats.particles = dustP.live + fireP.live;
+  updateFx(dt);
+  flushChunks(4);
+}
+export function sectionCount() { return sections.length; }
+export function sectionVoxels() { let n = 0; for (const s of sections) n += s.alive; return n; }

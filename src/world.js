@@ -1,0 +1,211 @@
+// Crumbletown world: the voxel grid, materials, bodies and the primitives the town kit builds with.
+// One voxel is a quarter metre. y is up, chunks are 16 wide.
+import * as THREE from 'three';
+
+export const WX = 512, WY = 128, WZ = 416, CH = 16;
+export const NCX = WX / CH, NCZ = WZ / CH;
+export const NV = WX * WY * WZ;
+export const vox = new Uint8Array(NV);
+export const owner = new Uint16Array(NV);
+export const gone = new Uint8Array(NV);   // 1 where a voxel used to be: neighbours show a broken face
+export const soot = new Uint8Array(NV);   // 0..255 darkening from fire
+export const burnF = new Uint8Array(NV);  // 1 while burning
+export const idx = (x, y, z) => x + WX * (z + WZ * y);
+export function solid(x, y, z) {
+  if (x < 0 || y < 0 || z < 0 || x >= WX || y >= WY || z >= WZ) return 0;
+  return vox[x + WX * (z + WZ * y)];
+}
+
+// ---- layout ---------------------------------------------------------------
+// Lots are 40 voxels square. Six streets (three each way) run edge to edge, so every route is at most two corners
+// (the army's street planner relies on that). Between them sit four blocks of six lots, back to back across alleys.
+export const LOT = 40, WALK = 6, ROADW = 24;
+export const STREET_Z = [80, 202, 324], STREET_X = [80, 254, 428]; // street centre lines
+export const SPAWN = { x: 80, z: 324, yaw: 2.3 };   // the south-west crossing, in the suburbs, looking up at the downtown skyline
+export let totalInit = 0;
+
+// ---- materials -----------------------------------------------------------
+// kind picks the per-voxel look in the shader. shape: 0 cube, 1 plank, 2 shard, 3 chunk, 4 fleck, 5 drop, 6 sheet
+export const K = { PLAIN: 0, BRICK: 1, PLASTER: 2, ROOF: 3, CONC: 4, GLASS: 5, WOOD: 6, METAL: 7, LEAF: 8, STONE: 9, REBAR: 10, CHAR: 11, LIT: 12, CLOTH: 13, WATER: 14, BROKEN: 15 };
+export const M = {};
+export const NMAT = 72;
+export const MAT_R = new Float32Array(NMAT), MAT_G = new Float32Array(NMAT), MAT_B = new Float32Array(NMAT);
+export const SOFT = new Float32Array(NMAT), CARRY = new Uint8Array(NMAT), TOUGH = new Float32Array(NMAT), HARD = new Uint8Array(NMAT);
+export const KIND = new Uint8Array(NMAT), SHAPE = new Uint8Array(NMAT), SEE = new Uint8Array(NMAT);
+export const FLAM = new Float32Array(NMAT), BURN = new Float32Array(NMAT), CHARP = new Float32Array(NMAT);
+{
+  const c = new THREE.Color();
+  const def = (id, name, hex, soft, carry, tough, kind, shape, flam = 0, burn = 0, charp = 0) => {
+    M[name] = id; c.setHex(hex, THREE.SRGBColorSpace);
+    MAT_R[id] = c.r; MAT_G[id] = c.g; MAT_B[id] = c.b; SOFT[id] = soft; CARRY[id] = carry; TOUGH[id] = tough;
+    KIND[id] = kind; SHAPE[id] = shape; FLAM[id] = flam; BURN[id] = burn; CHARP[id] = charp;
+  };
+  def(1, 'BRICK', 0x9d5846, 0.95, 1, 0.5, K.BRICK, 0);
+  def(2, 'BRICK2', 0xc79a6c, 0.95, 1, 0.5, K.BRICK, 0);
+  def(3, 'CONC', 0xb9b6ae, 0.88, 1, 0.62, K.CONC, 3);
+  def(4, 'PL_W', 0xece4d2, 1.0, 1, 0.4, K.WOOD, 1, 0.55, 3, 0.55);
+  def(5, 'PL_Y', 0xdcb76a, 1.0, 1, 0.4, K.WOOD, 1, 0.55, 3, 0.55);
+  def(6, 'PL_B', 0x8dbbd4, 1.0, 1, 0.4, K.WOOD, 1, 0.55, 3, 0.55);
+  def(7, 'PL_P', 0xe29a8f, 1.0, 1, 0.4, K.WOOD, 1, 0.55, 3, 0.55);
+  def(8, 'ROOF_R', 0x8e4a3a, 1.05, 1, 0.35, K.ROOF, 6, 0.3, 2.5, 0.4);
+  def(9, 'ROOF_S', 0x4a5563, 1.05, 1, 0.35, K.ROOF, 6, 0.18, 2.5, 0.4);
+  def(10, 'GLASS', 0x8fc6d8, 1.7, 0, 0, K.GLASS, 2);
+  def(11, 'WOOD', 0x8a5a34, 1.1, 1, 0.3, K.WOOD, 1, 0.7, 3, 0.5);
+  def(12, 'LEAF', 0x4d8846, 1.25, 0, 0, K.LEAF, 4, 0.8, 1.2, 0);
+  def(13, 'LEAF2', 0x73a457, 1.25, 0, 0, K.LEAF, 4, 0.8, 1.2, 0);
+  def(14, 'TRUNK', 0x6b4a2e, 1.0, 1, 0.4, K.WOOD, 1, 0.4, 4, 0.8);
+  def(15, 'METAL', 0x7d8790, 0.9, 1, 0.55, K.METAL, 6);
+  def(16, 'TYRE', 0x24262b, 1.0, 1, 0.3, K.PLAIN, 0, 0.5, 5, 0.3);
+  def(17, 'SPANDREL', 0x4f7390, 1.1, 0, 0.2, K.METAL, 6);
+  def(18, 'STEEL', 0x56606c, 0.62, 4, 0.86, K.METAL, 6);
+  def(19, 'WATER', 0x4aa3df, 1.6, 0, 0, K.WATER, 5);
+  def(20, 'STONE', 0x9d988c, 0.9, 1, 0.6, K.STONE, 3);
+  def(21, 'AWN_R', 0xc94a40, 1.2, 0, 0, K.CLOTH, 6, 0.9, 1.2, 0);
+  def(22, 'AWN_W', 0xf5efe2, 1.2, 0, 0, K.CLOTH, 6, 0.9, 1.2, 0);
+  def(23, 'FUEL', 0xd2493a, 1.0, 1, 0, K.METAL, 6);
+  def(24, 'LIT', 0xffd98a, 1.5, 0, 0, K.LIT, 2);
+  def(25, 'TANK', 0x5f87a8, 0.95, 1, 0.5, K.METAL, 6);
+  def(26, 'TRIM', 0xf3eee2, 1.0, 1, 0.4, K.PLAIN, 3);
+  def(27, 'DARK', 0x363b45, 1.0, 1, 0.4, K.PLAIN, 0);
+  def(28, 'HEDGE', 0x3f7240, 1.25, 0, 0, K.LEAF, 4, 0.8, 1.2, 0);
+  def(29, 'ROOF_G', 0x3f7d6e, 1.05, 1, 0.35, K.ROOF, 6, 0.3, 2.5, 0.4);
+  def(30, 'SIGN', 0xf0a23a, 1.1, 1, 0, K.PLAIN, 6);
+  def(31, 'PL_G', 0x9aca98, 1.0, 1, 0.4, K.WOOD, 1, 0.55, 3, 0.55);
+  def(32, 'CHAR', 0x2c2724, 1.4, 0, 0, K.CHAR, 0);
+  def(33, 'REBAR', 0x8a5e4a, 0.8, 0, 0.45, K.REBAR, 1);
+  def(35, 'WP_A', 0xe6b5a6, 1.1, 0, 0.2, K.PLASTER, 0, 0.4, 2, 0.3);
+  def(36, 'WP_B', 0xa7c5d4, 1.1, 0, 0.2, K.PLASTER, 0, 0.4, 2, 0.3);
+  def(37, 'WP_C', 0xd6d198, 1.1, 0, 0.2, K.PLASTER, 0, 0.4, 2, 0.3);
+  def(38, 'FLOOR', 0xb58a5a, 1.1, 1, 0.3, K.WOOD, 1, 0.6, 3, 0.5);
+  def(39, 'FURN_A', 0xc8503c, 1.2, 0, 0, K.CLOTH, 0, 0.7, 2, 0.2);
+  def(40, 'FURN_B', 0x3d8f8a, 1.2, 0, 0, K.CLOTH, 0, 0.7, 2, 0.2);
+  def(41, 'FURN_C', 0xf1f1ee, 1.2, 0, 0, K.PLAIN, 0);
+  def(42, 'LIT_W', 0xfff6e0, 1.5, 0, 0, K.LIT, 2);
+  def(43, 'LIT_Y', 0xffd23a, 1.5, 0, 0, K.LIT, 2);
+  def(44, 'LIT_R', 0xff5a48, 1.5, 0, 0, K.LIT, 2);
+  def(45, 'DOOR_R', 0x99392f, 1.1, 0, 0.3, K.WOOD, 1, 0.6, 3, 0.5);
+  def(46, 'DOOR_B', 0x2f5f8f, 1.1, 0, 0.3, K.WOOD, 1, 0.6, 3, 0.5);
+  def(47, 'DOOR_G', 0x2f6b4f, 1.1, 0, 0.3, K.WOOD, 1, 0.6, 3, 0.5);
+  def(48, 'REND_C', 0xe6dcc6, 0.95, 1, 0.5, K.PLASTER, 3);
+  def(49, 'REND_Y', 0xd9b25a, 0.95, 1, 0.5, K.PLASTER, 3);
+  def(50, 'REND_T', 0x6fa9a0, 0.95, 1, 0.5, K.PLASTER, 3);
+  def(51, 'REND_P', 0xd98f7e, 0.95, 1, 0.5, K.PLASTER, 3);
+  def(52, 'CAR_A', 0xb7332b, 0.95, 1, 0.3, K.METAL, 6);
+  def(53, 'CAR_B', 0x3b6ea5, 0.95, 1, 0.3, K.METAL, 6);
+  def(54, 'CAR_C', 0xe8e2d0, 0.95, 1, 0.3, K.METAL, 6);
+  def(55, 'FLOWER_R', 0xe8527a, 1.3, 0, 0, K.LEAF, 4, 0.8, 1, 0);
+  def(56, 'FLOWER_Y', 0xf2c230, 1.3, 0, 0, K.LEAF, 4, 0.8, 1, 0);
+  def(57, 'SLAB', 0xc9c4b8, 0.9, 1, 0.6, K.CONC, 3);
+  def(58, 'LIT_B', 0x7fd8ff, 1.5, 0, 0, K.LIT, 2);
+  def(59, 'ROOF_D', 0x39404a, 1.05, 1, 0.35, K.ROOF, 6, 0.18, 2.5, 0.4);
+  def(60, 'STAIN_R', 0xc8453c, 1.6, 0, 0, K.GLASS, 2);
+  def(61, 'STAIN_B', 0x3f6fc4, 1.6, 0, 0, K.GLASS, 2);
+  def(62, 'STAIN_Y', 0xe8b83a, 1.6, 0, 0, K.GLASS, 2);
+  def(63, 'BRASS', 0xc9a24a, 0.9, 1, 0.5, K.METAL, 6);
+  def(64, 'AWN_B', 0x3f78b0, 1.2, 0, 0, K.CLOTH, 6, 0.9, 1.2, 0);
+  def(65, 'AWN_G', 0x3f8a5c, 1.2, 0, 0, K.CLOTH, 6, 0.9, 1.2, 0);
+  def(66, 'DIRT', 0x8a6f4d, 1.2, 0, 0, K.PLAIN, 0);
+  // tinted glazing for the office towers: green and bronze glass, each with its own spandrel panel
+  def(67, 'GLASS_G', 0x86c9b0, 1.7, 0, 0, K.GLASS, 2);
+  def(68, 'GLASS_Z', 0xd2ac7c, 1.7, 0, 0, K.GLASS, 2);
+  def(69, 'SPAN_G', 0x3f6f62, 1.1, 0, 0.2, K.METAL, 6);
+  def(70, 'SPAN_Z', 0x8a6238, 1.1, 0, 0.2, K.METAL, 6);
+  HARD[M.CONC] = HARD[M.METAL] = HARD[M.STONE] = HARD[M.STEEL] = HARD[M.SLAB] = 1;
+  SEE[M.REBAR] = 1;
+}
+// glass in any colour breaks as a pane
+export const PANE = new Uint8Array(NMAT);
+PANE[M.GLASS] = PANE[M.STAIN_R] = PANE[M.STAIN_B] = PANE[M.STAIN_Y] = PANE[M.GLASS_G] = PANE[M.GLASS_Z] = 1;
+
+export function jitter(x, y, z) {
+  const h = (Math.imul(x, 73856093) ^ Math.imul(y, 19349663) ^ Math.imul(z, 83492791)) >>> 0;
+  return 0.88 + (h % 1024) / 1024 * 0.24;
+}
+
+// ---- rng -----------------------------------------------------------------
+let seed = 1;
+export function setSeed(s) { seed = s | 0; }
+export function rnd() {
+  seed |= 0; seed = (seed + 0x6d2b79f5) | 0;
+  let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+export const ri = (a, b) => a + Math.floor(rnd() * (b - a + 1));
+
+// ---- bodies --------------------------------------------------------------
+export const bodies = [null];
+export const lots = [];
+export const rubbleBody = [];
+export const ctx = { L: 0, lot: -1 };
+let cur = null;
+export function begin(name, kind, structural = true) {
+  cur = {
+    id: bodies.length, name, kind, structural, level: ctx.L, lot: ctx.lot, lit: ctx.L >= 3,
+    x0: 1e9, y0: 0, z0: 1e9, x1: -1, y1: 0, z1: -1,
+    count: 0, init: 0, layers: new Int32Array(WY), carry: new Int32Array(WY), layers0: null, dCarry: null, dAbove: null,
+    dead: false, explosive: 0, exploded: false, failing: false, nextMode: null,
+  };
+  bodies.push(cur);
+  if (ctx.lot >= 0 && lots[ctx.lot].main === 0) lots[ctx.lot].main = cur.id;
+  return cur;
+}
+// Generators draw a lot around a local origin with its front toward low z. place() turns the lot to face its street:
+// 0 north (low z), 1 east (high x), 2 south (high z), 3 west (low x). -1 means plain world coordinates.
+export const LOC = 64;
+let rot = -1, ox = 0, oz = 0, osz = 39, wx = 0, wz = 0;
+export function place(x, z, r, size = LOT) { ox = x; oz = z; rot = r; osz = size - 1; }
+function tf(x, z) {
+  if (rot < 0) { wx = x; wz = z; return; }
+  const a = x - LOC, b = z - LOC;
+  if (rot === 0) { wx = ox + a; wz = oz + b; }
+  else if (rot === 2) { wx = ox + osz - a; wz = oz + osz - b; }
+  else if (rot === 3) { wx = ox + b; wz = oz + osz - a; }
+  else { wx = ox + osz - b; wz = oz + a; }
+}
+export function set(x, y, z, m) {
+  tf(x, z); x = wx; z = wz;
+  if (x < 1 || z < 1 || x >= WX - 1 || z >= WZ - 1 || y < 0 || y >= WY) return;
+  const i = idx(x, y, z);
+  vox[i] = m; owner[i] = cur.id;
+  if (x < cur.x0) cur.x0 = x; if (x > cur.x1) cur.x1 = x;
+  if (z < cur.z0) cur.z0 = z; if (z > cur.z1) cur.z1 = z;
+  if (y > cur.y1) cur.y1 = y;
+}
+export function get(x, y, z) { tf(x, z); return solid(wx, y, wz); }
+export function clr(x, y, z) { tf(x, z); x = wx; z = wz; if (x < 0 || y < 0 || z < 0 || x >= WX || y >= WY || z >= WZ) return; const i = idx(x, y, z); vox[i] = 0; owner[i] = 0; }
+export function put(x, y, z, m) { if (!get(x, y, z)) set(x, y, z, m); } // only into empty space
+export function box(x0, y0, z0, x1, y1, z1, m) {
+  for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) set(x, y, z, m);
+}
+export function fill(x0, y0, z0, x1, y1, z1, m) {
+  for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) put(x, y, z, m);
+}
+export function hole(x0, y0, z0, x1, y1, z1) {
+  for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) clr(x, y, z);
+}
+export function walls(x0, y0, z0, x1, y1, z1, m) {
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) { set(x, y, z0, m); set(x, y, z1, m); }
+    for (let z = z0; z <= z1; z++) { set(x0, y, z, m); set(x1, y, z, m); }
+  }
+}
+
+// ---- after building: counts and load tables --------------------------------
+export const levelStats = [];
+export function finalize() {
+  for (let r = 0; r < 4; r++) levelStats.push({ voxels: 0, quads: 0 });
+  for (let i = 0; i < NV; i++) {
+    const m = vox[i]; if (!m) continue;
+    const b = bodies[owner[i]], y = (i / (WX * WZ)) | 0;
+    b.count++; b.layers[y]++; b.carry[y] += CARRY[m];
+    levelStats[b.level].voxels++;
+  }
+  for (let i = 1; i < bodies.length; i++) {
+    const b = bodies[i];
+    b.init = b.count; b.layers0 = b.layers.slice(); b.dCarry = b.carry.slice();
+    b.dAbove = new Float64Array(WY);
+    for (let y = WY - 2; y >= 0; y--) b.dAbove[y] = b.dAbove[y + 1] + b.layers[y + 1];
+    totalInit += b.count;
+  }
+}
