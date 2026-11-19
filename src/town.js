@@ -1,19 +1,19 @@
 // Crumbletown's layout: twenty lots round a ring of four streets, each turned to face its street, plus the park,
 // street dressing and the trees round the edge.
-import { M, WX, WZ, CITY, PARIS, NYC, TOKYO, CAIRO, TILES, TILE_X, TILE_Z, tiled, LOC, LOT, STREET_X, STREET_Z, place, begin, set, box, ctx, lots, rubbleBody, setSeed, rnd, ri, finalize } from './world.js';
+import { M, WX, WZ, CITY, PARIS, NYC, TOKYO, CAIRO, TILES, TILE_X, TILE_Z, tiled, LOC, LOT, STREET_X, STREET_Z, shut, place, begin, set, box, ctx, lots, rubbleBody, setSeed, rnd, ri, finalize } from './world.js';
 import { disc, tree, lampPost, bench, bin, hydrant, planter, hedge, fence, car } from './kit.js';
 import { cottage, shop, fuel } from './buildings_a.js';
 import { apartment, watertower, church, tower } from './buildings_b.js';
 import { carpark, depot, plaza } from './lots_c.js';
 import { needle, stadium, factory, cinema, rowhouse } from './landmarks.js';
 import { cityLots, cityBlocks, cityAlleys } from './city.js';
-import { parisLots, parisKeepOut, PARIS_KIT } from './paris.js';
+import { parisLots, parisKeepOut, PARIS_KIT, wet as parisWet } from './paris.js';
 import { parisExtras } from './paris_seine.js';
-import { nycLots, nycKeepOut, NYC_KIT } from './nyc.js';
+import { nycLots, nycKeepOut, NYC_KIT, wet as nycWet } from './nyc.js';
 import { nycExtras } from './nyc_water.js';
-import { tokyoLots, tokyoKeepOut, TOKYO_KIT } from './tokyo.js';
+import { tokyoLots, tokyoKeepOut, TOKYO_KIT, wet as tokyoWet } from './tokyo.js';
 import { tokyoExtras } from './tokyo_water.js';
-import { cairoLots, cairoKeepOut, CAIRO_KIT } from './cairo.js';
+import { cairoLots, cairoKeepOut, CAIRO_KIT, wet as cairoWet } from './cairo.js';
 import { cairoExtras } from './cairo_water.js';
 import { palm } from './cairo_kit.js';
 
@@ -117,6 +117,9 @@ function park(lx, lz) {
 const KIT = { cottage, shop, fuel, apartment, watertower, church, tower, park, carpark, depot, plaza, needle, stadium, factory, cinema, rowhouse, ...PARIS_KIT, ...NYC_KIT, ...TOKYO_KIT, ...CAIRO_KIT };
 const off = CAIRO ? cairoKeepOut : TOKYO ? tokyoKeepOut : NYC ? nycKeepOut : PARIS ? parisKeepOut : () => false;   // Paris and New York keep the street dressing out of the water and off their set pieces
 
+// is this spot water? (the maps are flat: water is painted, and boats stand in it)
+const mapWet = CAIRO ? cairoWet : TOKYO ? tokyoWet : NYC ? nycWet : PARIS ? parisWet : null;
+export const wet = mapWet ? (x, z) => mapWet(x, z) && (shut(x, z) || (!STREET_X.some((s) => Math.abs(x - s) < 13) && !STREET_Z.some((s) => Math.abs(z - s) < 13))) : () => false;   // a street over water is a bridge
 export function generateTown() {
   ctx.L = 3;
   LOTS.forEach((L, i) => {

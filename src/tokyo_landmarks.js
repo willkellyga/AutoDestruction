@@ -3,7 +3,7 @@
 // and the wheel on the bay. The two towers and the wheel are our own takes under our own names (Shiba Tower, Sora
 // Tower, Bay Wheel); the temple, the palace and the station keep theirs.
 // Each is drawn round a local origin with its front toward low z and turned by place().
-import { M, set, put, box, hole, walls, begin, rnd, ri } from './world.js';
+import { M, set, put, box, hole, walls, begin, rnd, ri, vehicle } from './world.js';
 import { face, faces4, win, door, disc, text, textW, tree, lampPost, bench } from './kit.js';
 import { hipRoof, sakura, stoneLantern } from './tokyo_kit.js';
 
@@ -223,23 +223,6 @@ export function palace(lx, lz, L, o = {}) {
 // ---- Tokyo Station: the long red-brick front with its two domes, and behind it the platforms, with bullet trains
 // standing at them -----------------------------------------------------------------------------------------------------
 export const STATION = { S: 132, PLAT: [46, 66, 86, 106] };
-// a bullet train along x with its nose toward high x (or low x if `back`), standing on the ground
-function bullet(x0, zc, len, stripe, back) {
-  begin('Bullet train', 'monument');
-  for (let i = 0; i < len; i++) {
-    const t = Math.min(i, len - 1 - i), nose = t < 16, f = nose ? Math.pow((t + 1) / 16, 0.6) : 1, hw = nose ? Math.max(1, Math.round(4 * Math.pow((t + 1) / 16, 0.7))) : 4, ht = Math.round(3 + 7 * f), x = x0 + i;
-    const joint = !nose && i % 26 === 0;
-    for (let dz = -hw; dz < hw; dz++) for (let y = 0; y <= ht; y++) {
-      const side = dz === -hw || dz === hw - 1, round = side && (y === ht || y === 2);
-      if (round && hw > 2) continue;
-      let m = y < 2 ? ((i % 26 > 3 && i % 26 < 9) || (i % 26 > 17 && i % 26 < 23) || nose ? M.DARK : 0) : joint ? M.DARK : M.TRIM;
-      if (y >= 2 && !joint) { if (y === 4 && side) m = stripe; else if (y === 7 && side && !nose && i % 3) m = M.DARK; else if (nose && y >= ht - 1 && t >= 8 && t <= 12 && !side) m = M.DARK; }
-      if (m) set(x, y, zc + dz, m);
-    }
-    if (!nose && i % 26 === 13) box(x - 2, 11, zc - 1, x + 2, 11, zc, M.DARK);
-  }
-  set(back ? x0 : x0 + len - 1, 3, zc - 1, M.LIT_W); set(back ? x0 : x0 + len - 1, 3, zc, M.LIT_W);
-}
 export function station(lx, lz, L, o = {}) {
   const x0 = lx + 4, x1 = lx + 127, z0 = lz + 8, z1 = lz + 35, G = 12, top = 33;
   begin('Tokyo Station', 'landmark');
@@ -282,17 +265,12 @@ export function station(lx, lz, L, o = {}) {
     box(lx + 6, 16, lz + b - 1, lx + 125, 16, lz + b + 8, M.ZINC); box(lx + 6, 17, lz + b + 2, lx + 125, 17, lz + b + 5, M.ZINC);
     for (let a = 24; a <= 122; a += 28) { box(lx + a, 12, lz + b + 2, lx + a + 5, 14, lz + b + 2, M.DARK); set(lx + a + 1, 13, lz + b + 2, M.LIT_G); set(lx + a + 3, 13, lz + b + 2, M.LIT_Y); }
   }
-  // the trains: two bullet trains and a green commuter train between them
-  bullet(lx + 8, lz + 60, 112, M.CAR_B, false); bullet(lx + 12, lz + 100, 112, M.ROOF_G, true);
-  begin('Commuter train', 'monument');
-  for (let i = 0; i < 104; i++) {
-    const x = lx + 14 + i, joint = i % 26 === 0 || i === 103;
-    for (let dz = -4; dz < 4; dz++) for (let y = 0; y <= 10; y++) {
-      const side = dz === -4 || dz === 3;
-      const m = y < 2 ? ((i % 26 > 3 && i % 26 < 9) || (i % 26 > 17 && i % 26 < 23) ? M.DARK : 0) : joint ? M.DARK : !side && y > 2 && y < 10 ? 0 : y === 4 || y === 9 ? M.LIT_G : y >= 6 && y <= 7 && side && i % 5 ? M.GLASS : M.CHROME;
-      if (m) set(x, y, lz + 80 + dz, m);
-    }
-  }
+  // the trains (the models in civilian/src, stood by src/civilians.js): two express trains and a commuter train between
+  // them, each of two cars coupled back to back (the rear one is turned round), a voxel apart
+  const car = (kind, a, b, fx, type, paint, rear) => vehicle(kind, lx + a, lz + b, fx, 0, { opts: { type, paint, rear } });
+  car('express', 92.5, 60, 1, 'nose', 'blue', false); car('express', 35.5, 60, -1, 'nose', 'blue', true);
+  car('express', 39.5, 100, -1, 'nose', 'green', false); car('express', 96.5, 100, 1, 'nose', 'green', true);
+  car('commuter', 87, 80, 1, 'cab', 'green', false); car('commuter', 38, 80, -1, 'cab', 'green', true);
 }
 
 // ---- the Bay Wheel: a big wheel of white steel and coloured cabins on the waterfront ---------------------------------

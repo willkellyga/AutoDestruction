@@ -2,7 +2,7 @@
 // the lattice tower on the island, the pink museum and the opera house.
 // Our own voxel designs. The pyramids, the Sphinx, the Citadel and the museum are public monuments and keep their names;
 // the tower is our own take and is called the Lotus Tower.
-import { M, set, put, box, fill, hole, walls, begin, rnd, ri } from './world.js';
+import { M, set, put, box, fill, hole, walls, begin, rnd, ri, vehicle } from './world.js';
 import { face, faces4, win, door, text, textW, lampPost, bench } from './kit.js';
 import { palm, rdisc, dome, pointed } from './cairo_kit.js';
 
@@ -420,18 +420,6 @@ export function baron(lx, lz, L, o = {}) {
 
 // ---- Ramses Station: a striped front with a great pointed doorway in a taller middle, and behind it the train shed: a
 // barrel roof of zinc and glass over four tracks, with trains standing at the platforms --------------------------------
-function train(X, Z, a0, b0, cars, paint, band, title) {
-  begin(title, 'monument');
-  for (let c = 0; c < cars; c++) {
-    const b = b0 + c * 15, loco = c === 0;
-    for (const db of [1, 3, 9, 11]) box(X(a0 + 1), 0, Z(b + db), X(a0 + 5), 0, Z(b + db), M.DARK);
-    box(X(a0), 1, Z(b), X(a0 + 6), 8, Z(b + 12), loco ? band : paint); hole(X(a0 + 1), 2, Z(b + 1), X(a0 + 5), 7, Z(b + 11));
-    box(X(a0), 9, Z(b), X(a0 + 6), 9, Z(b + 12), M.ZINC); box(X(a0 + 1), 1, Z(b + 1), X(a0 + 5), 1, Z(b + 11), M.DARK);
-    for (const a of [a0, a0 + 6]) { box(X(a), 3, Z(b), X(a), 3, Z(b + 12), loco ? paint : band); if (loco) box(X(a), 5, Z(b + 1), X(a), 6, Z(b + 3), M.GLASS); else for (let k = 1; k < 12; k += 3) box(X(a), 5, Z(b + k), X(a), 6, Z(b + k + 1), M.GLASS); }
-    if (loco) { box(X(a0 + 1), 5, Z(b), X(a0 + 5), 6, Z(b), M.GLASS); set(X(a0 + 1), 2, Z(b), M.LIT_Y); set(X(a0 + 5), 2, Z(b), M.LIT_Y); box(X(a0 + 2), 10, Z(b + 6), X(a0 + 4), 10, Z(b + 9), M.DARK); }
-    if (c < cars - 1) box(X(a0 + 2), 2, Z(b + 13), X(a0 + 4), 3, Z(b + 14), M.DARK);
-  }
-}
 export function station(lx, lz, L, o = {}) {
   const X = (a) => lx + a, Z = (b) => lz + b, W = M.LIME, S2 = M.REND_P, T = M.TRIM, H = 28, H2 = 42;
   const stone = (y) => (y < 18 && (y >> 1) & 1 ? S2 : W);
@@ -466,8 +454,8 @@ export function station(lx, lz, L, o = {}) {
   for (let a = 4; a <= 81; a++) { const y = ry(a), lo = Math.min(y, a > 4 ? ry(a - 1) + 1 : y, a < 81 ? ry(a + 1) + 1 : y); box(X(a), lo, Z(34), X(a), y, Z(84), (a + 2) % 8 < 3 ? M.GLASS : M.ZINC); }
   for (const b of [34, 46, 59, 72, 84]) { for (let a = 4; a <= 81; a++) { const y = ry(a); box(X(a), y - 1, Z(b), X(a), y, Z(b), M.STEEL); } for (const a of [7, 28, 57, 78]) box(X(a), 2, Z(b), X(a), ry(a) - 1, Z(b), M.STEEL); }
   // trains at the platforms, their noses toward the hall
-  train(X, Z, 13, 38, 3, M.CAR_B, M.TAXI, 'Express train'); train(X, Z, 35, 52, 2, M.AWN_G, M.TRIM, 'Local train');
-  train(X, Z, 44, 38, 3, M.STAIN_R, M.TRIM, 'Express train'); train(X, Z, 65, 40, 3, M.TRIM, M.CAR_B, 'Local train');
+  // (the cars are the commuter train in civilian/src, stood by src/civilians.js: one 12 m cab car to a track, which fills the shed)
+  [[17, 'blue'], [43, 'orange'], [69, 'yellow']].forEach(([a, paint]) => vehicle('commuter', X(a), Z(60), 0, -1, { opts: { type: 'cab', paint } }));
   if (L >= 2) { lampPost(X(20), Z(4)); lampPost(X(65), Z(4)); bench(X(8), Z(3)); bench(X(66), Z(3)); palm(X(14), Z(3), 19); palm(X(74), Z(3), 21); }
 }
 

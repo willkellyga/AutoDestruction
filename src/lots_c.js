@@ -10,7 +10,7 @@ const PAINT = [M.CAR_A, M.CAR_B, M.CAR_C];
 // The ground paints the asphalt and the bay lines (ground.js).
 export function carpark(lx, lz, L, o = {}) {
   const full = o.full || 0.8;
-  for (const b of [4, 13, 22, 31]) for (const a of [2, 21]) if (rnd() < full) car(lx + a + ri(0, 1), lz + b, PAINT[ri(0, 2)]);
+  for (const b of [4, 13, 22, 31]) for (const a of [2, 21]) if (rnd() < full) car(lx + a + ri(0, 1), lz + b, PAINT[ri(0, 2)]).bay = true;   // a marked bay: the shorter car fits it
   begin('Pay booth', 'prop', true);
   walls(lx + 34, 0, lz + 0, lx + 38, 6, lz + 3, M.TRIM); box(lx + 34, 3, lz + 0, lx + 38, 4, lz + 0, M.GLASS);
   box(lx + 33, 7, lz - 1, lx + 39, 7, lz + 4, M.ROOF_D); set(lx + 36, 8, lz + 1, M.LIT_Y);

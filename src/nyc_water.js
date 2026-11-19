@@ -2,7 +2,7 @@
 // Brooklyn Bridge with its stone towers first among them), the small bridges over the Harlem River, the ships at the
 // Hudson piers, the ferry, and the painted ground: rivers, bay, the big park, the ballpark's field and Liberty Island.
 // The map is flat, so the water is paint, a bridge's deck is the street itself, and monsters wade.
-import { M, WX, WZ, STREET_X, STREET_Z, set, box, walls, begin, setSeed, rnd, ri } from './world.js';
+import { M, WX, WZ, STREET_X, STREET_Z, SHUT, shut, set, box, walls, begin, setSeed, rnd, ri, vehicle } from './world.js';
 import { tree, lampPost, bench, bollards, disc } from './kit.js';
 import { HARLEM, HUDSON, EAST, BAY, SOUTH, LIB, PARK, BALL, wet } from './nyc.js';
 import { BALLPARK, fieldAt } from './nyc_landmarks.js';
@@ -98,57 +98,33 @@ function archBridge(xc, m) {
   lampPost(xc - 15, HARLEM.z0 + 12, 18); lampPost(xc + 14, HARLEM.z0 + 34, 18);
 }
 
-// ---- ships: a hull along x with its bow to the east (toward Manhattan when moored at a Hudson pier) --------------------
-function hull(x0, zc, len, half, hgt, m, keel, bow = 14) {
-  const W = (i) => { const t = i >= len - bow ? (i - (len - bow) + 1) / bow : i < 4 ? (4 - i) / 10 : 0; return Math.max(1, Math.round(half * (1 - t * t))); };
-  for (let i = 0; i < len; i++) {
-    const w = W(i), wn = Math.min(i ? W(i - 1) : 0, i < len - 1 ? W(i + 1) : 0), x = x0 + i;
-    for (let dz = -w; dz < w; dz++) {
-      const skin = dz === -w || dz === w - 1 || dz < -wn || dz >= wn || i % 8 === 0;
-      for (let y = 0; y <= hgt; y++) if (y < 2 || y === hgt || skin) set(x, y, zc + dz, y < 2 ? keel : y === hgt ? M.FLOOR : m);
-    }
+// ---- ships, boats and the docks: the models in civilian/src, stood by src/civilians.js. A boat is given by its middle
+// and the way its bow points. The liner and the carrier are 46 m long, twice the gap between two Hudson piers, so each
+// lies along the shore across the line of a street, and that street stops at a short pier with a crane (world.SHUT). ----
+const boat = (kind, x, z, fx, fz, opts, more) => vehicle(kind, x, z, fx, fz, { opts, ...more });
+function docks() {
+  // the two great ships, each with the low side away from her pier
+  boat('liner', 36, 494, 0, -1, { type: 'liner', paint: 'red' }, { low: 1 });
+  boat('carrier', 29, 738, 0, 1, { type: 'carrier' }, { low: -1 });
+  // their short piers: a crane working the ship, and cargo waiting on the planks
+  for (const [z, paint, load, stacks] of [[494, 'green', 'crate', ['crates', 'sacks', 'drums']], [738, 'grey', 'drums', ['boxes', 'drums', 'crates']]]) {
+    vehicle('crane', 76, z + 1, -1, 0, { opts: { paint, load } });
+    vehicle('cargo', 59, z - 11, 1, 0, { opts: { type: stacks[0] } }); vehicle('cargo', 60, z + 11, 0, 1, { opts: { type: stacks[1] } }); vehicle('cargo', 90, z - 12, 1, 0, { opts: { type: stacks[2] } });
   }
-}
-function cabin(x0, y0, z0, x1, y1, z1, m, glassY) {
-  walls(x0, y0, z0, x1, y1, z1, m); box(x0, y1, z0, x1, y1, z1, m);
-  if (glassY) for (let x = x0 + 1; x < x1; x++) if ((x - x0) % 3) { set(x, glassY, z0, M.GLASS); set(x, glassY, z1, M.GLASS); }
-}
-function liner(x0, zc) {
-  begin('Ocean liner', 'boat', true);
-  hull(x0, zc, 84, 7, 9, M.DARK, M.CAR_A);
-  cabin(x0 + 12, 10, zc - 6, x0 + 64, 15, zc + 5, M.TRIM, 12); cabin(x0 + 18, 16, zc - 5, x0 + 58, 20, zc + 4, M.TRIM, 18);
-  for (const a of [24, 36, 48]) { box(x0 + a, 21, zc - 2, x0 + a + 4, 29, zc + 1, M.CAR_A); box(x0 + a, 30, zc - 2, x0 + a + 4, 31, zc + 1, M.DARK); }
-  for (const a of [6, 72]) box(x0 + a, 10, zc, x0 + a, 26, zc, M.DARK);
-  for (let a = 14; a < 62; a += 6) { box(x0 + a, 16, zc - 7, x0 + a + 3, 17, zc - 7, M.SIGN); box(x0 + a, 16, zc + 6, x0 + a + 3, 17, zc + 6, M.SIGN); set(x0 + a + 1, 15, zc - 7, M.DARK); set(x0 + a + 1, 15, zc + 6, M.DARK); }
-}
-function carrier(x0, zc) {
-  begin('Aircraft carrier', 'boat', true);
-  hull(x0, zc, 84, 9, 9, M.METAL, M.DARK, 10);
-  box(x0, 10, zc - 12, x0 + 80, 10, zc + 11, M.DARK);
-  for (let a = 4; a < 78; a += 6) box(x0 + a, 10, zc - 3, x0 + a + 2, 10, zc - 3, M.TRIM);
-  cabin(x0 + 34, 11, zc + 6, x0 + 46, 20, zc + 10, M.METAL, 18); box(x0 + 39, 21, zc + 8, x0 + 40, 30, zc + 8, M.STEEL); box(x0 + 37, 27, zc + 8, x0 + 42, 27, zc + 8, M.STEEL); set(x0 + 39, 31, zc + 8, M.LIT_R);
-  for (const [a, b, m] of [[6, -8, M.CONC], [20, -9, M.TRIM], [50, -8, M.CONC], [62, 2, M.TRIM], [14, 3, M.CONC]]) {
-    const x = x0 + a, z = zc + b;
-    box(x, 11, z, x + 8, 12, z + 1, m); box(x + 3, 11, z - 3, x + 5, 11, z + 4, m); box(x, 13, z, x + 1, 14, z, m); box(x, 11, z - 1, x + 1, 11, z + 2, m); set(x + 8, 12, z, M.GLASS); set(x + 8, 12, z + 1, M.GLASS);
-  }
-}
-function tug(x0, zc, m) {
-  begin('Tugboat', 'boat', true);
-  hull(x0, zc, 28, 4, 4, M.DARK, m, 8);
-  cabin(x0 + 9, 5, zc - 3, x0 + 18, 9, zc + 2, M.TRIM, 7); cabin(x0 + 13, 10, zc - 2, x0 + 17, 12, zc + 1, m, 11); box(x0 + 10, 10, zc - 1, x0 + 11, 15, zc, M.DARK);
-  for (let a = 5; a < 18; a += 4) set(x0 + a, 3, zc - 5, M.TYRE);
-}
-function ferry(x0, zc) {
-  begin('Harbor ferry', 'boat', true);
-  hull(x0, zc, 60, 7, 5, M.SIGN, M.DARK, 8);
-  cabin(x0 + 5, 6, zc - 6, x0 + 53, 11, zc + 5, M.SIGN, 8); cabin(x0 + 8, 12, zc - 5, x0 + 50, 16, zc + 4, M.SIGN, 14);
-  for (const a of [10, 44]) cabin(x0 + a, 17, zc - 2, x0 + a + 5, 20, zc + 1, M.TRIM, 19);
-  box(x0 + 28, 17, zc - 1, x0 + 31, 24, zc, M.DARK);
-}
-function barge(x0, zc, load) {
-  begin('Barge', 'boat', true);
-  hull(x0, zc, 36, 4, 3, M.DARK, M.CAR_A, 5);
-  for (let a = 4; a < 28; a += 6) box(x0 + a, 4, zc - 3, x0 + a + 4, 4 + ((a >> 1) & 3), zc + 2, load);
+  // the three long piers the streets still run out on: cargo down both edges, clear of the roadway
+  const LOADS = ['boxes', 'crates', 'drums', 'sacks', 'crates', 'boxes'];
+  [372, 616, 860].forEach((z, n) => { for (let k = 0; k < 6; k++) { const type = LOADS[(k + n * 2) % 6]; vehicle('cargo', 16 + k * 14 + (k & 1) * 3, z + (k & 1 ? 12.5 : -12.5), type === 'boxes' ? 1 : 0, type === 'boxes' ? 0 : 1, { opts: { type } }); } });
+  // the upper Hudson: a timber jetty out from the shore, a tug on one side of it and a barge on the other
+  vehicle('jetty', 80, 308, -1, 0, { opts: { type: 'span' }, y: -2.5 }); vehicle('jetty', 48, 308, -1, 0, { opts: { type: 'end', light: 'green' }, y: -2.5 });
+  boat('tug', 58, 290, 1, 0, { type: 'tug', paint: 'red' }, { low: -1 }); boat('barge', 56, 330, 1, 0, { type: 'barge', load: 'coal', house: true, paint: 'blue' }, { low: 1 });
+  // the harbor along the tip: the ferry in her slip, a tug and a barge
+  boat('ferry', 523, 1006, 1, 0, { type: 'ferry', paint: 'orange' }); boat('tug', 340, 1006, 1, 0, { type: 'tug', paint: 'green' }); boat('barge', 674, 1007, 1, 0, { type: 'barge', load: 'containers' });
+  // the East River, between the bridges
+  boat('tug', 800, 433, 0, -1, { type: 'tug', paint: 'blue' }); boat('barge', 850, 555, 0, 1, { type: 'barge', load: 'sand', house: true, paint: 'green' });
+  boat('tug', 806, 677, 0, -1, { type: 'tug', paint: 'yellow' }); boat('barge', 848, 799, 0, 1, { type: 'barge', load: 'crates' }); boat('tug', 836, 945, 0, 1, { type: 'tug', paint: 'red' });
+  // the bay: a jetty off the Battery with a tug alongside, and a barge under the east shore
+  for (const [k, type] of [[0, 'span'], [1, 'span'], [2, 'end']]) vehicle('jetty', 180, BAY.z + 16 + k * 32, 0, 1, { opts: { type, light: 'red' }, y: -2.5 });
+  boat('tug', 198, 934, 0, -1, { type: 'tug', paint: 'blue' }, { low: -1 }); boat('barge', 226, 946, 0, 1, { type: 'barge', load: 'containers' }, { low: 1 });
 }
 
 export function nycExtras() {
@@ -167,12 +143,13 @@ export function nycExtras() {
     deck(z);
   });
   STREET_X.forEach((x, i) => archBridge(x, [M.ROOF_G, M.STEEL, M.TANK, M.BRICK2, M.STEEL][i]));
-  // the Hudson piers: bollards down each side and a lamp at the end, with ships between them
-  for (const z of STREET_Z.slice(1)) { for (const s of [-17, 16]) bollards(10, z + s, 11, 8); lampPost(6, z - 14, 18); lampPost(50, z + 13, 18); }
-  liner(6, 433); carrier(6, 555); tug(14, 660, M.CAR_A); barge(50, 690, M.PL_Y); tug(50, 786, M.CAR_B); barge(10, 812, M.WOOD); tug(20, 300, M.DOOR_G); barge(52, 330, M.BRICK2);
-  // the harbor: the ferry at the tip, tugs and barges on the East River and a couple of boats in the bay
-  ferry(480, 1004); tug(300, 1008, M.CAR_A); barge(660, 1006, M.PL_Y);
-  tug(790, 432, M.CAR_B); barge(828, 560, M.WOOD); tug(800, 680, M.DOOR_G); barge(792, 800, M.BRICK2); tug(836, 940, M.CAR_A); barge(190, 1000, M.PL_Y); tug(196, 900, M.DOOR_G);
+  // the Hudson piers: bollards down each side and a lamp at the end. The two the big ships lie across are short.
+  for (const z of STREET_Z.slice(1)) {
+    const x0 = shut(10, z) ? 58 : 10;
+    for (const s of [-17, 16]) bollards(x0, z + s, Math.floor((90 - x0) / 8) + 1, 8);
+    if (x0 === 10) lampPost(6, z - 14, 18); lampPost(x0 === 10 ? 50 : 56, z + 13, 18);
+  }
+  docks();
   // the landing on Liberty Island
   for (const s of [-5, 4]) for (const b of [-13, -7]) bollards(LIB.x + s, LIB.z - LIB.r + b, 1);
 }
@@ -236,6 +213,13 @@ export function nycOver(g, GK, rect) {
     if (alongX) for (let x = xa; x < xb; x += 2) rect(x, za, x + 0.25, zb); else for (let z = za; z < zb; z += 2) rect(xa, z, xb, z + 0.25);
     g.fillStyle = 'rgba(40,28,16,0.5)'; if (alongX) { rect(xa, za, xb, za + 0.6); rect(xa, zb - 0.6, xb, zb); } else { rect(xa, za, xa + 0.6, zb); rect(xb - 0.6, za, xb, zb); }
   };
-  for (const z of STREET_Z.slice(1)) planks(0, z - 18, HUDSON - 1, z + 18, true);
+  for (const z of STREET_Z.slice(1)) planks(shut(10, z) ? 52 : 0, z - 18, HUDSON - 1, z + 18, true);
+  // where the liner and the carrier lie, the street stops at a short pier: beyond it is open water again
+  for (const [x0, z0, x1, z1] of SHUT) {
+    g.fillStyle = '#4e8fa6'; rect(x0, z0 - 2, x1, z1 + 2);
+    let s = 77 + z0; const r = () => { s = (s * 1664525 + 1013904223) | 0; return ((s >>> 8) & 0xffff) / 65536; };
+    for (let i = 0; i < 90; i++) { const x = Math.floor(x0 + r() * (x1 - x0 - 8)), z = Math.floor(z0 - 2 + r() * (z1 - z0 + 4)), w = 2 + Math.floor(r() * 6); g.fillStyle = r() < 0.5 ? 'rgba(190,232,240,0.28)' : 'rgba(24,70,96,0.22)'; rect(x, z, x + w, z + 1); }
+    g.fillStyle = 'rgba(22,58,78,0.42)'; rect(x1 - 2, z0 - 2, x1, z1 + 2);
+  }
   for (const x of STREET_X) if (x < EAST.x0) planks(x - 18, SOUTH + 1, x + 18, WZ, false);
 }
