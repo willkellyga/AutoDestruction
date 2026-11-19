@@ -8,7 +8,7 @@
 // The shader works the normal out from the face. The arrays are dropped once they are on the graphics card, so the drawn
 // town costs the page no memory of its own. (Full-size vertices cost 116 bytes a quad, kept twice.)
 import * as THREE from 'three';
-import { WX, WY, WZ, CH, voxAt, ownerAt, goneAt, sootAt, burnAt, slabUsed, idx, solid, bodies, levelStats, MAT_R, MAT_G, MAT_B, KIND, SEE, K, PANE } from './world.js';
+import { WX, WY, WZ, CH, NCX, NCZ, voxAt, ownerAt, goneAt, sootAt, burnAt, slabUsed, idx, solid, bodies, levelStats, MAT_R, MAT_G, MAT_B, KIND, SEE, K, PANE } from './world.js';
 
 // run: which in-plane axis a run of merged faces extends along (0 = u, 1 = v). alongZ: runs go along z, otherwise x.
 const FACES = [
@@ -39,14 +39,20 @@ function occ(x, y, z) {
 export const meshOpts = { merge: true, count: false };
 const ao = [0, 0, 0, 0];
 
-export function meshChunk(cx, cz) {
+export function meshChunk(cx, cz) { const q = chunkQuads(cx, cz); return finish(q, qTop); }
+// the same as packed arrays, for the meshing worker (src/mesh-worker.js) to hand back
+export function chunkPack(cx, cz) { const q = chunkQuads(cx, cz); return packQuads(q, qTop); }
+let qTop = -1;
+// Fill PA, PC and FLIP with chunk (cx, cz)'s faces; returns how many (qTop is its highest voxel layer).
+function chunkQuads(cx, cz) {
   const xs = cx * CH, zs = cz * CH;
   let top = -1;
   for (let by = (WY - 1) >> 3; by >= 0 && top < 0; by--) {
     if (!slabUsed(cx, cz, by)) continue;
     for (let y = by * 8 + 7; y >= by * 8 && top < 0; y--) for (let z = zs; z < zs + CH && top < 0; z++) { const a = idx(xs, y, z); for (let x = 0; x < CH; x++) if (voxAt(a + x)) { top = y; break; } }
   }
-  if (top < 0) return null;
+  qTop = top;
+  if (top < 0) return 0;
   let q = 0;
   for (let f = 0; f < 6; f++) {
     const F = FACES[f], n = F.n, u = F.u, v = F.v, far = FAR[F.run], axis = F.alongZ ? 1 : 0;
@@ -103,22 +109,121 @@ export function meshChunk(cx, cz) {
       }
     }
   }
+  return q;
+}
+// Build the geometry from the first q quads in PA, PC and FLIP.
+function finish(q, top, size = 16) { return geoFromPack(packQuads(q, top, size)); }
+// The first q quads in PA, PC and FLIP as the three arrays a geometry is made of (each its own buffer, so a worker can hand
+// them over without copying), or null when there are none.
+export function packQuads(q, top, size = 16) {
   if (!q) return null;
-  const geo = new THREE.BufferGeometry();
   const I = q * 4 > 65536 ? new Uint32Array(q * 6) : new Uint16Array(q * 6);
   for (let k = 0; k < q; k++) {
     const vi = k * 4, ii = k * 6;
     if (FLIP[k]) { I[ii] = vi + 1; I[ii + 1] = vi + 2; I[ii + 2] = vi + 3; I[ii + 3] = vi + 1; I[ii + 4] = vi + 3; I[ii + 5] = vi; }
     else { I[ii] = vi; I[ii + 1] = vi + 1; I[ii + 2] = vi + 2; I[ii + 3] = vi; I[ii + 4] = vi + 2; I[ii + 5] = vi + 3; }
   }
-  geo.setAttribute('pa', new THREE.BufferAttribute(PA.slice(0, q * 16), 4).onUpload(dropArray));
-  geo.setAttribute('pc', new THREE.BufferAttribute(PC.slice(0, q * 16), 4, true).onUpload(dropArray));
-  geo.setIndex(new THREE.BufferAttribute(I, 1).onUpload(dropArray));
-  geo.userData.bytes = q * 32 + I.byteLength;
-  const hy = (top + 1) / 2;
-  geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(8, hy, 8), Math.hypot(12, hy) + 1);   // the mesh sits at (xs, 0, zs)
+  return { q, top, size, pa: PA.slice(0, q * 16), pc: PC.slice(0, q * 16), ix: I };
+}
+export function geoFromPack(p) {
+  if (!p) return null;
+  const q = p.q, geo = new THREE.BufferGeometry();
+  geo.setAttribute('pa', new THREE.BufferAttribute(p.pa, 4).onUpload(dropArray));
+  geo.setAttribute('pc', new THREE.BufferAttribute(p.pc, 4, true).onUpload(dropArray));
+  geo.setIndex(new THREE.BufferAttribute(p.ix, 1).onUpload(dropArray));
+  geo.userData.bytes = q * 32 + p.ix.byteLength;
+  const hy = (p.top + 1) / 2, h = p.size / 2;
+  geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(h, hy, h), Math.hypot(h * 1.5, hy) + 1);   // the mesh sits at (xs, 0, zs)
   geo.userData.quads = q;
   return geo;
+}
+
+// ---- far chunks ---------------------------------------------------------------
+// Far away a chunk is drawn from a coarse copy: each s x s x s block of voxels becomes one cell with the material most of
+// its voxels have (see-through ones count as air; a block needs a quarter of its voxels filled), and only faces between a
+// full cell and an empty one are drawn, merged into runs, with no corner shade. At s = 2 that is about a quarter of the
+// faces, at s = 4 about a sixteenth. Bottom faces on the ground are left out. The shader's per-voxel look still applies.
+const CNT = new Uint16Array(256), SEEN = new Uint16Array(64);   // materials are one byte
+let CG = new Uint16Array(4096), CI = new Int32Array(4096);
+let cgCell = -1;   // the handle of one voxel of the winning material, from the last cellMat call
+function cellMat(X, Y, Z, s) {
+  const x0 = X * s, y0 = Y * s, z0 = Z * s;
+  if (x0 < 0 || z0 < 0 || x0 >= WX || z0 >= WZ || y0 >= WY) return 0;
+  if (!slabUsed(x0 >> 4, z0 >> 4, y0 >> 3)) return 0;
+  let ns = 0, best = 0, bc = 0, full = 0;
+  for (let y = y0; y < y0 + s && y < WY; y++) for (let z = z0; z < z0 + s; z++) {
+    const a = idx(x0, y, z);
+    for (let x = 0; x < s; x++) {
+      const m = voxAt(a + x);
+      if (!m || SEE[m]) continue;
+      full++;
+      if (CNT[m]++ === 0) SEEN[ns++] = m;
+      if (CNT[m] > bc) { bc = CNT[m]; best = m; cgCell = a + x; }
+    }
+  }
+  for (let i = 0; i < ns; i++) CNT[SEEN[i]] = 0;
+  return full * 4 >= s * s * s ? best : 0;
+}
+export function meshChunkCoarse(cx, cz, s) { const q = coarseQuads(cx, cz, s, 0, 0, 0); return finish(q, cTop); }
+// A square of R x R chunks in one mesh (fewer draws far away), placed at the first chunk's corner.
+export function meshRegionCoarse(cx0, cz0, R, s) { return geoFromPack(regionPack(cx0, cz0, R, s)); }
+export function regionPack(cx0, cz0, R, s) {
+  let q = 0, top = -1;
+  for (let cz = cz0; cz < Math.min(cz0 + R, NCZ); cz++) for (let cx = cx0; cx < Math.min(cx0 + R, NCX); cx++) { q = coarseQuads(cx, cz, s, q, (cx - cx0) * CH, (cz - cz0) * CH); if (cTop > top) top = cTop; }
+  return packQuads(q, top, R * CH);
+}
+let cTop = -1;
+function coarseQuads(cx, cz, s, q, ox0, oz0) {
+  const xs = cx * CH, zs = cz * CH, n = CH / s;
+  let top = -1;
+  for (let by = (WY - 1) >> 3; by >= 0 && top < 0; by--) if (slabUsed(cx, cz, by)) top = by * 8 + 7;
+  cTop = top;
+  if (top < 0) return q;
+  const ny = ((top + s) / s) | 0, W = n + 2, L = W * W;   // cells up, and the grid's width with a one-cell border
+  if (CG.length < L * (ny + 1)) { CG = new Uint16Array(L * (ny + 1) * 2); CI = new Int32Array(L * (ny + 1) * 2); }
+  const X0 = cx * n - 1, Z0 = cz * n - 1;
+  for (let Y = 0; Y <= ny; Y++) for (let gz = 0; gz < W; gz++) for (let gx = 0; gx < W; gx++) {
+    const g = gx + gz * W + Y * L;
+    if (Y === ny || ((gx === 0 || gx === W - 1) && (gz === 0 || gz === W - 1))) { CG[g] = 0; continue; }   // the corners are never looked at
+    CG[g] = cellMat(X0 + gx, Y, Z0 + gz, s); CI[g] = cgCell;
+  }
+  const h = s / 2;
+  for (let f = 0; f < 6; f++) {
+    const F = FACES[f], nv = F.n, u = F.u, v = F.v, far = FAR[F.run], axis = F.alongZ ? 1 : 0;
+    const dg = nv[0] + nv[2] * W + nv[1] * L;
+    for (let Y = 0; Y < ny; Y++) for (let b = 0; b < n; b++) {
+      let runKey = -1, runQ = -1;
+      for (let c = 0; c < n; c++) {
+        const lx = F.alongZ ? b : c, lz = F.alongZ ? c : b, g = (lx + 1) + (lz + 1) * W + Y * L, m = CG[g];
+        if (!m || (f === 3 && Y === 0) || CG[g + dg]) { runKey = -1; continue; }
+        const i = CI[g], body = bodies[ownerAt(i)], lvl = body ? body.level : 1;
+        const x = i & 1023, y = i >> 20, z = (i >> 10) & 1023;
+        let glow = 0;
+        if (burnAt(i)) glow = 3;
+        else if (KIND[m] === K.LIT) glow = 1;
+        else if (PANE[m] && body && body.lit && ((Math.imul(x >> 3, 7) + Math.imul((y / 12) | 0, 13) + Math.imul(z >> 3, 5) + body.id * 3) % 10) < 6) glow = 2;
+        const st = sootAt(i);
+        const key = m | (st >> 3) << 8 | glow << 14 | lvl << 16;
+        if (key === runKey) { PA[runQ * 16 + far[0] * 4 + axis] += s; PA[runQ * 16 + far[1] * 4 + axis] += s; continue; }
+        if (q >= cap) grow();
+        const dark = (1 - st / 255 * 0.78) * F.s;
+        let r = MAT_R[m] * dark, gg = MAT_G[m] * dark, bl = MAT_B[m] * dark;
+        if (glow === 3) { r = 1.0; gg = 0.5; bl = 0.12; }
+        const bits = f << 1 | glow << 4 | lvl << 6, kind = KIND[m];
+        const ox = ox0 + lx * s + h, oy = Y * s + h, oz = oz0 + lz * s + h;
+        for (let k = 0; k < 4; k++) {
+          const su = CORN[k][0], sv = CORN[k][1], o = q * 16 + k * 4;
+          const py = oy + h * (nv[1] + su * u[1] + sv * v[1]);
+          PA[o] = ox + h * (nv[0] + su * u[0] + sv * v[0]); PA[o + 1] = oz + h * (nv[2] + su * u[2] + sv * v[2]);
+          PA[o + 2] = py & 255; PA[o + 3] = bits | py >> 8;
+          PC[o] = Math.min(255, Math.sqrt(r) * 255); PC[o + 1] = Math.min(255, Math.sqrt(gg) * 255); PC[o + 2] = Math.min(255, Math.sqrt(bl) * 255); PC[o + 3] = kind;
+        }
+        FLIP[q] = 0;
+        runKey = key; runQ = q; q++;
+      }
+    }
+  }
+  return q;
 }
 
 // Lambert, plus the per-voxel look. detail 0 leaves every face flat (and level 0 buildings are always flat).

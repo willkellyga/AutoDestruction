@@ -1,8 +1,10 @@
 // Destruction: blasts, glass, fire, support checks, falling sections (free, toppling, pancake), debris, rubble and particles.
 // Tuned in the Wrecking Yard sandbox. Everything optional is behind a flag in `cfg`.
 import * as THREE from 'three';
-import { WX, WY, WZ, NCX, NCZ, SX, SXZ, XM, ZS, ZM, YS, NV, voxAt, brickEmpty, ownerAt, sootAt, burnAt, setVox, setCell, setGone, setSoot, setBurn, eachVoxel, idx, solid, bodies, rubbleBody, M, MAT_R, MAT_G, MAT_B, SOFT, CARRY, HARD, TOUGH, SHAPE, FLAM, BURN, CHARP, PANE, jitter } from './world.js';
-import { meshChunk, makeChunkMaterial, makeChunkDepthMaterial, meshOpts } from './mesh.js';
+import { cubeGeo, cubeMat, cubeMesh } from '../units/src/cube3.js';
+import { WX, WY, WZ, NCX, NCZ, SX, SXZ, XM, ZS, ZM, YS, NV, voxAt, brickEmpty, ownerAt, sootAt, burnAt, setVox, setCell, setGone, setSoot, setBurn, eachVoxel, idx, solid, bodies, rubbleBody, M, MAT_R, MAT_G, MAT_B, SOFT, CARRY, HARD, TOUGH, SHAPE, FLAM, BURN, CHARP, PANE, jitter, CITY, wlog, takeWrites, storeCopy } from './world.js';
+import { meshChunk, meshRegionCoarse, makeChunkMaterial, makeChunkDepthMaterial, meshOpts, geoFromPack, chunkPack } from './mesh.js';
+import MESH_WORKER_SRC from '../dist/mesh-worker.wtxt';
 
 export const hooks = { destroyed() {}, bodyDown() {}, shake() {}, sound() {}, scorch() {}, impact() {}, explosion() {} };
 export const stats = { destroyed: 0, active: 0, asleep: 0, particles: 0, burning: 0, quads: 0, rubble: 0 };
@@ -30,7 +32,7 @@ let scene;
 // wait longer, so a rain of rubble does not redraw a chunk every frame.
 const chunkMesh = new Array(NCX * NCZ).fill(null);
 const dirty = new Set(), lazy = new Set(), built = new Int32Array(NCX * NCZ);
-let tick = 10;
+let tick = 10, nearShadow = true;
 let chunkMat, chunkDepth, focusX = WX / 2, focusZ = WZ / 2;
 export function setFocus(x, z) { focusX = x; focusZ = z; }
 function markLazy(x, z) { const k = (x >> 4) + (z >> 4) * NCX; if (!dirty.has(k)) lazy.add(k); }
@@ -44,30 +46,293 @@ export function markDirty(x, z) {
 function rebuildChunk(k) {
   const cx = k % NCX, cz = (k / NCX) | 0;
   built[k] = tick;
+  if (mw) { askChunk(k); return; }
+  const t0 = performance.now();
   const geo = meshChunk(cx, cz);
+  stats.chunkMs = (stats.chunkMs || 0) + performance.now() - t0;   // for the playtest reports
+  placeChunk(k, geo);
+}
+// put chunk k's new geometry in the scene (or take its mesh out when it is empty now)
+function placeChunk(k, geo) {
+  const cx = k % NCX, cz = (k / NCX) | 0;
+  stats.rebuilt = (stats.rebuilt || 0) + 1;   // counted for the playtest reports (playtest/server.mjs)
+  nearOld[k] = 0;
+  if (nearAsk[k]) { nearAsk[k] = 0; nearStale[k] = 0; nearHeld[k] = 1; lodX = -1e9; }   // the far copy over it was waiting for this (nearReady)
+  // its far copies no longer match: they are built again before they are next shown (updateLod)
+  const c = cell(k); regStale[NRG + c] = 1; regStale[2 * NRG + up2(c)] = 1;
   let m = chunkMesh[k];
   if (m) { stats.quads -= m.geometry.userData.quads || 0; m.geometry.dispose(); if (!geo) { scene.remove(m); chunkMesh[k] = null; return; } m.geometry = geo; stats.quads += geo.userData.quads; return; }
   if (!geo) return;
-  m = new THREE.Mesh(geo, chunkMat); m.customDepthMaterial = chunkDepth; m.position.set(cx * 16, 0, cz * 16); m.updateMatrix(); m.updateMatrixWorld(true);
-  m.castShadow = true; m.receiveShadow = true; m.matrixAutoUpdate = false;
+  m = new THREE.Mesh(geo, chunkMat); m.name = 'near city'; m.customDepthMaterial = chunkDepth; m.position.set(cx * 16, 0, cz * 16); m.updateMatrix(); m.updateMatrixWorld(true);
+  m.castShadow = nearShadow; m.receiveShadow = true; m.matrixAutoUpdate = false; m.visible = lodNow[k] === 0;
   scene.add(m); chunkMesh[k] = m; stats.quads += geo.userData.quads;
 }
+
+// ---- the meshing worker (src/mesh-worker.js) ----
+// Once the world is built, changed chunks and far regions are meshed in a worker, so a slow device's frames do not wait for
+// them. The page sends the cells written since its last message with each request (world.js wlog), and puts each mesh in
+// the scene when it comes back. A chunk changed again while its mesh is being built stays dirty and is asked for again.
+// If the worker cannot start or fails, everything is meshed here as before. ?mw=0 turns it off, for comparing.
+let mw = null, mwJobs = [], chunksOut = 0, regsOut = 0;   // jobs sent (or about to be) and not back yet
+const mwBack = [], chunkAsked = new Uint8Array(NCX * NCZ);
+// How many jobs may be out at once. Near chunks come first: a bite should show at once, and the worker takes jobs in the
+// order they were sent, so only two far regions (the slow jobs) may be ahead of a chunk. While no chunk is waiting, as on
+// the menu, far regions get the whole worker, so the far city is ready by the time the round starts.
+const CHUNKS_OUT = 10, REGS_OUT = 2, REGS_IDLE = 8;
+function startMeshWorker() {
+  try {
+    if (typeof Worker === 'undefined' || typeof location !== 'undefined' && /[?&]mw=0/.test(location.search)) return;
+    const url = URL.createObjectURL(new Blob([MESH_WORKER_SRC], { type: 'text/javascript' }));
+    mw = new Worker(url, { name: 'mm-map=' + (CITY ? 'city' : 'town') });
+    mw.onmessage = (e) => { if (e.data.error) meshWorkerFailed(e.data.error); else mwBack.push(e.data); };
+    mw.onerror = (e) => meshWorkerFailed(e.message || 'worker error');
+    const st = storeCopy();
+    mw.postMessage({ store: st }, [st.tab.buffer, st.ftab.buffer, st.vox.buffer, st.own.buffer, st.fx.buffer, st.bod.buffer]);
+    wlog.on = true; wlog.n = 0;
+    stats.worker = true;
+  } catch (e) { meshWorkerFailed(e && e.message); }
+}
+function meshWorkerFailed(why) {
+  if (typeof console !== 'undefined') console.warn('meshing worker stopped, meshing on the page instead:', why);
+  if (mw) { try { mw.terminate(); } catch (e) { /* gone */ } }
+  mw = null; wlog.on = false; wlog.n = 0; mwJobs.length = 0; chunksOut = 0; regsOut = 0; mwBack.length = 0; stats.worker = false;
+  for (let k = 0; k < chunkAsked.length; k++) if (chunkAsked[k]) { chunkAsked[k] = 0; dirty.add(k); }
+  for (let r = 0; r < regAsked.length; r++) if (regAsked[r]) { regAsked[r] = 0; regTodo.add(r); }
+}
+function askChunk(k) { chunkAsked[k] = 1; chunksOut++; mwJobs.push([0, k, k % NCX, (k / NCX) | 0]); }
+function askRegion(r, rx, rz, n) { regAsked[r] = 1; regsOut++; mwJobs.push([1, r, rx, rz, n, n]); }
+// send what is waiting (the cells written since the last message go with it, even with no jobs, so the copy keeps up)
+function mwSend() {
+  if (!mw || (!mwJobs.length && wlog.n < 4096)) return;
+  const w = takeWrites();
+  mw.postMessage({ w, jobs: mwJobs }, [w.buffer]); mwJobs = [];
+}
+// For tests: has the worker's copy kept up with the world? Every chunk is meshed both here and in the worker and the arrays
+// compared. The game must be held still until it answers. window.__meshCheck() -> { chunks, same, differ: [first few] }
+function meshWorkerCheck() {
+  return new Promise((res) => {
+    if (!mw) { res({ worker: false }); return; }
+    const N = NCX * NCZ, jobs = [], differ = []; let n = 0, same = 0;
+    for (let k = 0; k < N; k++) jobs.push([2, k, k % NCX, (k / NCX) | 0]);
+    const eq = (a, b) => { if (a.length !== b.length) return false; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false; return true; };
+    const was = mw.onmessage;
+    mw.onmessage = (e) => {
+      const d = e.data;
+      if (d.error) { mw.onmessage = was; res({ error: d.error }); return; }
+      if (d.t !== 2) { was(e); return; }
+      const h = chunkPack(d.k % NCX, (d.k / NCX) | 0), w = d.p;
+      if ((!h && !w) || (h && w && h.q === w.q && h.top === w.top && eq(h.pa, w.pa) && eq(h.pc, w.pc) && eq(h.ix, w.ix))) same++;
+      else if (differ.length < 8) differ.push({ k: d.k, here: h && h.q, worker: w && w.q });
+      if (++n === N) { mw.onmessage = was; res({ chunks: N, same, differ }); }
+    };
+    const w = takeWrites(); mw.postMessage({ w, jobs }, [w.buffer]);
+  });
+}
+if (typeof window !== 'undefined') window.__meshCheck = meshWorkerCheck;
+// For tests: far copies shown that are older than a chunk under them (a wrecked building drawn whole), chunks drawn twice
+// (full copy and a region), and coarse chunks with nothing drawn.
+function lodCheck() {
+  let ghosts = 0, both = 0, holes = 0;
+  const seen = new Uint8Array(3 * NRG);
+  for (let k = 0; k < NCH; k++) {
+    const c = cell(k), r1 = NRG + c, r2 = 2 * NRG + up2(c), m = chunkMesh[k];
+    const on = regShown[r2] && regMesh[r2] ? r2 : regShown[r1] && regMesh[r1] ? r1 : -1;
+    if (m && m.visible && on >= 0) both++;
+    if (lodNow[k] && on < 0 && regMesh[lodNow[k] === 2 ? r2 : r1] === null) holes++;
+    if (on >= 0 && !seen[on] && built[k] > regBuilt[on] && !nearHeld[k] && !nearAsk[k]) { seen[on] = 1; ghosts++; }   // not one whose full copy was redrawn ahead of the swap (nearReady)
+  }
+  let nearGhosts = 0, nearest = 1e9;
+  for (let k = 0; k < NCH; k++) if (nearOld[k] && !lodNow[k] && chunkMesh[k] && chunkMesh[k].visible) { nearGhosts++; nearest = Math.min(nearest, Math.sqrt(far(k))); }
+  return { ghosts, both, holes, nearGhosts, nearest: nearGhosts ? Math.round(nearest) : null, shown: lodStats().regions };
+}
+if (typeof window !== 'undefined') window.__lodCheck = lodCheck;
+// put what came back in the scene
+function mwTake() {
+  if (!mwBack.length) return;
+  const t0 = performance.now();
+  for (const d of mwBack) {
+    stats.chunkMs = (stats.chunkMs || 0) + d.ms;   // the worker's time, for the playtest reports
+    const geo = geoFromPack(d.p); if (geo) stats.sentBytes = (stats.sentBytes || 0) + geo.userData.bytes;   // what the graphics card will be handed
+    if (d.t === 0) { chunksOut--; chunkAsked[d.k] = 0; placeChunk(d.k, geo); }
+    else { regsOut--; regAsked[d.k] = 0; stats.regions = (stats.regions || 0) + 1; stats.regionMs = (stats.regionMs || 0) + d.ms; placeRegion(d.k, geo); lodX = -1e9; }
+  }
+  mwBack.length = 0;
+  stats.takeMs = (stats.takeMs || 0) + performance.now() - t0;   // this frame's own share of the redraws
+}
+// how many changed chunks are redrawn each frame however long they take: two on a computer, one on a slow device
+let MIN_CHUNKS = 2;
+export function setMinChunks(n) { MIN_CHUNKS = n; }
 const order = [];
 const far = (k) => { const dx = (k % NCX) * 16 + 8 - focusX, dz = ((k / NCX) | 0) * 16 + 8 - focusZ; return dx * dx + dz * dz; };
 export function flushChunks(ms = 5) {
   const t0 = performance.now();
   let n = 0;
   tick++;
+  if (mwBack.length) mwTake();
+  updateLod();
+  // with the worker, the limit is how many jobs are out, not the time here
+  const room = () => chunksOut < CHUNKS_OUT;
   if (dirty.size) {
     order.length = 0;
-    for (const k of dirty) if (tick - built[k] >= 3) order.push(k);
+    for (const k of dirty) {
+      if (lodNow[k] && !nearAsk[k]) { dirty.delete(k); lazy.delete(k); staleFar(k); continue; }   // shown coarse: redraw that copy instead
+      if (tick - built[k] >= 3 && !chunkAsked[k]) order.push(k);
+    }
     if (order.length > 2) order.sort((a, b) => far(a) - far(b));
-    for (const k of order) { rebuildChunk(k); dirty.delete(k); lazy.delete(k); if (++n >= 2 && performance.now() - t0 > ms) break; }
+    for (const k of order) {
+      if (mw) { if (!room()) break; rebuildChunk(k); dirty.delete(k); lazy.delete(k); continue; }
+      rebuildChunk(k); dirty.delete(k); lazy.delete(k); if (++n >= MIN_CHUNKS && performance.now() - t0 > ms) break;
+    }
   }
   n = 0;
-  for (const k of lazy) { if (n >= 2 || (n >= 1 && performance.now() - t0 > ms)) break; if (tick - built[k] < 10 || dirty.has(k)) continue; lazy.delete(k); rebuildChunk(k); n++; }
+  for (const k of lazy) {
+    if (mw ? !room() : (n >= 2 || (n >= MIN_CHUNKS - 1 && performance.now() - t0 > ms))) break;
+    if (tick - built[k] < 10 || dirty.has(k) || chunkAsked[k]) continue;
+    lazy.delete(k); if (lodNow[k]) { staleFar(k); continue; } rebuildChunk(k); n++;
+  }
+  // coarse copies for far regions, nearest first, with whatever time is left (at least one every fourth frame)
+  if (mw) {
+    const regRoom = () => regsOut < (chunksOut ? REGS_OUT : REGS_IDLE);
+    if (regTodo.size && regRoom()) {
+      fOrder.length = 0; for (const r of regTodo) if (!regAsked[r] && (regMesh[r] === null || !regShown[r] || tick - regBuilt[r] >= (r >= 2 * NRG ? 90 : 30))) fOrder.push(r);
+      if (fOrder.length > 1) fOrder.sort((a, b) => regFar(a) - regFar(b));
+      for (const r of fOrder) { if (!regRoom()) break; regTodo.delete(r); buildRegion(r); }
+    }
+    mwSend();
+  } else if (regTodo.size && (performance.now() - t0 < ms || (tick & 3) === 0)) {
+    // a region that is already showing waits a while between redraws: far away a second's lag is not seen, and bots
+    // wrecking the far side of the city would otherwise redraw several regions every frame
+    fOrder.length = 0; for (const r of regTodo) if (regMesh[r] === null || !regShown[r] || tick - regBuilt[r] >= (r >= 2 * NRG ? 90 : 30)) fOrder.push(r);
+    if (fOrder.length > 1) fOrder.sort((a, b) => regFar(a) - regFar(b));
+    let m = 0;
+    for (const r of fOrder) {
+      if (m >= 1 && performance.now() - t0 > ms) break;
+      regTodo.delete(r); buildRegion(r); m++;
+    }
+    if (m) lodX = -1e9;   // show what was just built
+  }
 }
-export function dirtyCount() { return dirty.size + lazy.size; }
+
+// ---- far chunks: coarse copies (mesh.js meshRegionCoarse) ----------------------------------------------------------------
+// Past LOD1 voxels from the action, chunks are drawn by region: one mesh for 2 x 2 chunks at half the detail. Past LOD2,
+// one mesh for 4 x 4 chunks at a quarter of the detail. So the far city is a few hundred draws instead of thousands, with
+// a fraction of the triangles. Until a region's mesh is built, its chunks show the next finer copy that is ready.
+// A chunk that changes while shown coarse redraws only the region showing it; its full copy is redrawn when it comes near.
+// Regions are numbered r = level * NRG + (rx + rz * NRX) on a grid of 2 x 2 chunks; a level-2 region is named by its first
+// 2 x 2 cell (rx, rz both even).
+const NCH = NCX * NCZ, NRX = Math.ceil(NCX / 2), NRZ = Math.ceil(NCZ / 2), NRG = NRX * NRZ;
+const regMesh = new Array(3 * NRG).fill(null), regStale = new Uint8Array(3 * NRG), regShown = new Uint8Array(3 * NRG), regBuilt = new Int32Array(3 * NRG), regAsked = new Uint8Array(3 * NRG);
+const lodNow = new Uint8Array(NCH), nearStale = new Uint8Array(NCH), nearOld = new Uint8Array(NCH), nearAsk = new Uint8Array(NCH), nearHeld = new Uint8Array(NCH);   // what each chunk shows: 0 its full copy, 1 or 2 a region
+const regTodo = new Set(), fOrder = [];
+const cell = (k) => ((k % NCX) >> 1) + (((k / NCX) | 0) >> 1) * NRX;   // the 2 x 2 cell a chunk is in
+const up2 = (c) => ((c % NRX) & ~1) + (((c / NRX) | 0) & ~1) * NRX;   // the level-2 region's cell
+// How far off a region is, squared, for the far-detail distances. Measured from the action (the monster). On a small
+// screen (setLodEye) the half-detail distance is measured two ways and the nearer counts: from the monster, stretched by 1 / eyeA so that full
+// detail reaches only eyeA of the distance round him, and from the camera, stretched by 1 / eyeB. The camera sits well
+// behind a grown monster, so a disc round him alone is drawn in full out to where a voxel covers one pixel straight ahead,
+// while the pixels are spent beside the camera.
+let eyeOn = false, eyeX = 0, eyeZ = 0, eyeA = 1, eyeB = 1, eyeLX = -1e9, eyeLZ = -1e9;
+export function setLodEye(on, x, z, a, b) { if (on !== eyeOn || (on && (a !== eyeA || b !== eyeB))) lodX = -1e9; eyeOn = on; if (on) { eyeX = x; eyeZ = z; eyeA = a; eyeB = b; } }
+const regFar = (r) => {
+  const L = (r / NRG) | 0, c = r % NRG, n = L === 2 ? 4 : 2, x = ((c % NRX) * 2 + n / 2) * 16, z = (((c / NRX) | 0) * 2 + n / 2) * 16;
+  const dx = x - focusX, dz = z - focusZ, d = dx * dx + dz * dz;
+  if (!eyeOn || L === 2) return d;   // the quarter-detail distance is left alone: it is the skyline, and few triangles
+  const ex = x - eyeX, ez = z - eyeZ; return Math.min(d / (eyeA * eyeA), (ex * ex + ez * ez) / (eyeB * eyeB));
+};
+let LOD1 = Infinity, LOD2 = Infinity, lodX = -1e9, lodZ = -1e9;
+export function setLod(d1, d2) { if (d1 === LOD1 && d2 === LOD2) return; LOD1 = d1; LOD2 = d2; lodX = -1e9; }
+// Is this chunk's full copy standing in for a far copy? It lies past the first far-detail distance, where a far copy is
+// wanted, and is drawn in full because that copy is not built or not up to date yet (fresh() above). For the reports' count.
+export function standIn(m) { const c = ((m.position.x / 32) | 0) + ((m.position.z / 32) | 0) * NRX; return regFar(NRG + c) > LOD1 * LOD1; }
+export function lodStats() {
+  let a = 0, b = 0, r1 = 0, r2 = 0;
+  for (let k = 0; k < NCH; k++) { if (lodNow[k] === 1) a++; else if (lodNow[k] === 2) b++; }
+  for (let c = 0; c < NRG; c++) { r1 += regShown[NRG + c]; r2 += regShown[2 * NRG + c]; }
+  return { half: a, quarter: b, regions: r1 + r2, waiting: regTodo.size, dirty: dirty.size, lazy: lazy.size, out: chunksOut + regsOut };
+}
+function staleFar(k) {
+  nearStale[k] = 1;
+  const c = cell(k), r1 = NRG + c, r2 = 2 * NRG + up2(c);
+  regStale[r1] = 1; regStale[r2] = 1;
+  if (lodNow[k] === 1) regTodo.add(r1); else if (lodNow[k] === 2) regTodo.add(r2);
+}
+function buildRegion(r) {
+  const L = (r / NRG) | 0, c = r % NRG, rx = (c % NRX) * 2, rz = ((c / NRX) | 0) * 2, n = L === 2 ? 4 : 2;
+  regStale[r] = 0; regBuilt[r] = tick;
+  if (mw) { askRegion(r, rx, rz, n); return; }
+  const t = performance.now(), geo = meshRegionCoarse(rx, rz, n, n);
+  stats.regions = (stats.regions || 0) + 1; stats.regionMs = (stats.regionMs || 0) + performance.now() - t;   // for the playtest reports
+  placeRegion(r, geo);
+}
+function placeRegion(r, geo) {
+  const c = r % NRG, rx = (c % NRX) * 2, rz = ((c / NRX) | 0) * 2, m = regMesh[r];
+  if (m) { m.geometry.dispose(); if (geo) m.geometry = geo; else { scene.remove(m); regMesh[r] = false; } return; }
+  if (!geo) { regMesh[r] = false; return; }   // nothing there: built, and empty
+  const mm = new THREE.Mesh(geo, chunkMat); mm.name = 'far city'; mm.customDepthMaterial = chunkDepth; mm.position.set(rx * 16, 0, rz * 16); mm.updateMatrix(); mm.updateMatrixWorld(true);
+  mm.castShadow = false; mm.receiveShadow = true;   // far past the shadow box round the monster
+  mm.matrixAutoUpdate = false; mm.visible = !!regShown[r]; scene.add(mm); regMesh[r] = mm;
+}
+const ready = (r) => regMesh[r] !== null;   // built (a mesh, or false when the region is empty); may be stale
+// A far copy is switched to only when it is up to date, so a block wrecked up close is not drawn whole again from an older
+// copy when he walks away; until it is built again, the finer copy stays. One already showing stays while it is redrawn.
+const fresh = (r) => ready(r) && ((!regStale[r] && !regAsked[r]) || regShown[r] === 1);
+// Coming nearer, a half-detail copy gives way to its chunks' full copies. One that changed while it was far (a rival wrecked
+// it) has a full copy from before: shown as it is, the building stands whole again for a moment, then goes. So the far copy
+// stays until those full copies have been redrawn; this asks for them and says whether they are all up to date.
+function nearReady(c) {
+  let ok = true; const cx = c % NRX, cz = (c / NRX) | 0;
+  for (let q = 0; q < 4; q++) {
+    const kx = cx * 2 + (q & 1), kz = cz * 2 + (q >> 1);
+    if (kx >= NCX || kz >= NCZ) continue;
+    const k = kx + kz * NCX;
+    if (nearStale[k]) { ok = false; nearAsk[k] = 1; dirty.add(k); }
+  }
+  return ok;
+}
+function showRegion(r, on) { if (regShown[r] === on) return; regShown[r] = on; if (regMesh[r]) regMesh[r].visible = !!on; }
+function updateLod() {
+  const dx = focusX - lodX, dz = focusZ - lodZ, ex = eyeX - eyeLX, ez = eyeZ - eyeLZ;
+  if (dx * dx + dz * dz < 64 && !(eyeOn && ex * ex + ez * ez >= 64)) return;   // looked at again when the action (or, on a small screen, the camera) has moved 8 voxels
+  lodX = focusX; lodZ = focusZ; eyeLX = eyeX; eyeLZ = eyeZ;
+  const a = LOD1 * LOD1, b = LOD2 * LOD2;
+  for (let c2 = 0; c2 < NRG; c2++) {
+    if (((c2 % NRX) & 1) || (((c2 / NRX) | 0) & 1)) continue;   // level-2 regions start on even cells
+    const r2 = 2 * NRG + c2, want2 = regFar(r2) > b;
+    let show2 = want2 && fresh(r2) ? 1 : 0;
+    if (want2 && (!ready(r2) || regStale[r2])) regTodo.add(r2);
+    if (!want2 && regShown[r2] === 1) {
+      // coming nearer: the quarter-detail copy stays until no chunk under it would show an out-of-date full copy (nearReady)
+      for (let j = 0; j < 4; j++) {
+        const cx = (c2 % NRX) + (j & 1), cz = ((c2 / NRX) | 0) + (j >> 1);
+        if (cx >= NRX || cz >= NRZ) continue;
+        const c = cx + cz * NRX, r1 = NRG + c;
+        if (regFar(r1) > a) { if (fresh(r1)) continue; regTodo.add(r1); }
+        if (!nearReady(c)) show2 = 1;
+      }
+    }
+    showRegion(r2, show2);
+    for (let j = 0; j < 4; j++) {
+      const cx = (c2 % NRX) + (j & 1), cz = ((c2 / NRX) | 0) + (j >> 1);
+      if (cx >= NRX || cz >= NRZ) continue;
+      const c = cx + cz * NRX, r1 = NRG + c;
+      const want1 = !show2 && (want2 || regFar(r1) > a);
+      if (want1 && !want2 && (!ready(r1) || regStale[r1])) regTodo.add(r1);
+      let show1 = want1 && fresh(r1) ? 1 : 0;
+      if (!show2 && !want1 && regShown[r1] === 1 && !nearReady(c)) show1 = 1;
+      showRegion(r1, show1);
+      const L = show2 ? 2 : show1 ? 1 : 0;
+      for (let q = 0; q < 4; q++) {
+        const kx = cx * 2 + (q & 1), kz = cz * 2 + (q >> 1);
+        if (kx >= NCX || kz >= NCZ) continue;
+        const k = kx + kz * NCX;
+        if (lodNow[k] === L) continue;
+        lodNow[k] = L; nearHeld[k] = 0;
+        const near = chunkMesh[k]; if (near) near.visible = L === 0;
+        if (L === 0 && nearStale[k]) { nearStale[k] = 0; nearOld[k] = 1; stats.cameNearStale = (stats.cameNearStale || 0) + 1; dirty.add(k); }   // its full copy is out of date: redrawn in turn
+      }
+    }
+  }
+}
 
 // ---- particles -----------------------------------------------------------
 class Particles {
@@ -100,12 +365,12 @@ class Particles {
   }
   update(dt) {
     const { pos, vel, life, max, col, size } = this;
-    let live = 0;
+    let live = 0, lo = this.n, hi = -1;
     for (let i = 0; i < this.n; i++) {
       if (life[i] <= 0) continue;
       life[i] -= dt;
       if (life[i] <= 0) { col[i * 4 + 3] = 0; size[i] = 0; continue; }
-      live++;
+      live++; if (i < lo) lo = i; hi = i;
       const t = 1 - life[i] / max[i];
       vel[i * 3 + 1] += this.gy[i] * dt;
       pos[i * 3] += vel[i * 3] * dt; pos[i * 3 + 1] += vel[i * 3 + 1] * dt; pos[i * 3 + 2] += vel[i * 3 + 2] * dt;
@@ -115,8 +380,12 @@ class Particles {
       col[i * 4 + 3] = this.a0[i] * (1 - t) * Math.min(1, t * 12);
     }
     this.live = live;
+    // only the span that holds live particles is sent to the graphics card and drawn (it used to be all 9,200 every frame)
     const g = this.points.geometry;
-    g.attributes.position.needsUpdate = true; g.attributes.pcol.needsUpdate = true; g.attributes.psize.needsUpdate = true;
+    if (hi < 0) { g.setDrawRange(0, 0); return; }
+    g.setDrawRange(lo, hi - lo + 1);
+    const A = g.attributes;
+    for (const [at, w] of [[A.position, 3], [A.pcol, 4], [A.psize, 1]]) { at.clearUpdateRanges(); at.addUpdateRange(lo * w, (hi - lo + 1) * w); at.needsUpdate = true; }
   }
 }
 let dustP, fireP;
@@ -182,6 +451,7 @@ let dmesh, dhead = 0, frame = 0, hotNext = 0;   // hotNext: the next piece spawn
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _s = new THREE.Vector3(), _p = new THREE.Vector3(), _c = new THREE.Color();
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
 export let debrisBudget = 8000;
+let dShown = 0, cLo = 1e9, cHi = -1;
 export function setDebrisBudget(n) {
   n = Math.max(500, Math.min(ND, n));
   for (let i = n; i < debrisBudget; i++) if (dstate[i]) { dstate[i] = 0; dmesh.setMatrixAt(i, ZERO); }
@@ -221,11 +491,25 @@ export function writeFlame(te, o, f, size) {
   te[o + 8] = (xz + wy) * sc; te[o + 9] = (yz - wx) * sc; te[o + 10] = (1 - (xx + yy)) * sc; te[o + 11] = 0;
   te[o + 12] = f.x; te[o + 13] = f.y; te[o + 14] = f.z; te[o + 15] = 1;
 }
+// Loose pieces and falling sections are limited in number, and in a round with rivals most of the wrecking happens far from
+// the player: left alone, the far side of the city uses the pieces up and what the player bites just vanishes. So what is
+// near the action comes first. NEAR_FX is the distance (in voxels from the monster) inside which a piece is always shown;
+// past the second far-copy distance (LOD2, where the city is drawn at a quarter of its detail) only some are.
+const NEAR_FX = 240;
+const fromFocus = (x, z) => Math.hypot(x - focusX, z - focusZ);
+const farFx = () => Math.max(NEAR_FX * 1.25, Math.min(LOD2, 700));
 export function spawnDebris(x, y, z, vx, vy, vz, m, lvl = 1, size = 0) {
+  const d = fromFocus(x, z), near = d < NEAR_FX, T = stats.debris4 || (stats.debris4 = [0, 0, 0, 0]);   // counted for tests: near shown, near not, far shown, far not
+  if (!near && Math.random() > (d > farFx() ? 0.25 : 0.6)) { T[3]++; hotNext = 0; return; }   // far off: a quarter of the pieces; in between: six in ten
   let i = -1;
   for (let t = 0; t < 40; t++) { const k = (dhead + t) % debrisBudget; if (dstate[k] === 0) { i = k; break; } }
   if (i < 0) { for (let t = 0; t < 200; t++) { const k = (dhead + t) % debrisBudget; if (dstate[k] === 2) { i = k; break; } } }
-  if (i < 0) return;
+  if (i < 0 && near) {
+    // all in use, and this one is near: it takes the place of a piece that is far off (flying or lying)
+    for (let t = 0; t < 900; t++) { const k = (dhead + t) % debrisBudget; if (dstate[k] === 0 || (dstate[k] !== 3 && fromFocus(dp[k * 3], dp[k * 3 + 2]) > NEAR_FX)) { i = k; break; } }
+  }
+  T[(near ? 0 : 2) + (i < 0 ? 1 : 0)]++;
+  if (i < 0) { hotNext = 0; return; }
   dhead = (i + 1) % debrisBudget;
   const a = i * 3;
   dp[a] = x; dp[a + 1] = y; dp[a + 2] = z;
@@ -246,7 +530,7 @@ export function spawnDebris(x, y, z, vx, vy, vz, m, lvl = 1, size = 0) {
   dhot[i] = hotNext && cfg.fireSpread ? 2.2 + Math.random() * 3.8 : 0; hotNext = 0;
   if (dhot[i]) j *= 0.45;   // scorched
   _c.setRGB(MAT_R[m] * j, MAT_G[m] * j, MAT_B[m] * j);
-  dmesh.setColorAt(i, _c); dmesh.instanceColor.needsUpdate = true;
+  dmesh.setColorAt(i, _c); if (i < cLo) cLo = i; if (i > cHi) cHi = i;   // sent with the next update (updateDebris)
 }
 export function pushDebris(cx, cy, cz, r, force, up = 0.5) {
   const r2 = r * r;
@@ -291,9 +575,11 @@ function updateDebris(dt) {
   let active = 0, asleep = 0, hotN = 0;
   const hotP = Math.min(1, 90 / (stats.hot || 1));   // however many pieces are alight, they share a fixed budget of flames
   frame++;
+  let top = -1;
   for (let i = 0; i < debrisBudget; i++) {
     const st = dstate[i];
     if (!st) continue;
+    top = i;
     const a = i * 3;
     if (st === 3) { dlife[i] -= dt; if (dlife[i] <= 0) { dstate[i] = 0; dmesh.setMatrixAt(i, ZERO); } continue; }
     if (dhot[i] > 0) {
@@ -341,7 +627,11 @@ function updateDebris(dt) {
     }
     writeDebris(i);
   }
-  dmesh.instanceMatrix.needsUpdate = true;
+  // draw and send only up to the highest piece in use (it used to be all 8,000 boxes, drawn and sent every frame)
+  const shown = top + 1, im = dmesh.instanceMatrix, upTo = Math.max(shown, dShown);
+  dmesh.count = shown; dShown = shown;
+  if (upTo > 0) { const r = im.updateRanges[0], n = Math.max(upTo * 16, r ? r.count : 0); im.clearUpdateRanges(); im.addUpdateRange(0, n); im.needsUpdate = true; }   // with two steps before a frame, the first one's span still goes
+  if (cHi >= 0) { const ic = dmesh.instanceColor; ic.clearUpdateRanges(); ic.addUpdateRange(cLo * 3, (cHi - cLo + 1) * 3); ic.needsUpdate = true; cLo = 1e9; cHi = -1; }
   stats.active = active; stats.asleep = asleep; stats.hot = hotN;
 }
 
@@ -728,8 +1018,8 @@ class Section {
     let sx = 0, sy = 0, sz = 0, minY = 1e9, maxY = 0;
     for (let k = 0; k < n; k++) { const i = cells[k]; const x = (i & XM), z = ((i >> ZS) & ZM), y = (i >> YS); sx += x; sy += y; sz += z; if (y < minY) minY = y; if (y > maxY) maxY = y; }
     const cx = sx / n + 0.5, cy = sy / n + 0.5, cz = sz / n + 0.5;
-    this.mesh = new THREE.InstancedMesh(boxGeo, secMat, n);
-    this.mesh.castShadow = true; this.mesh.frustumCulled = false;
+    this.mesh = cubeMesh(boxGeo, secMat, n);
+    this.mesh.name = 'falling sections'; this.mesh.castShadow = true; this.mesh.frustumCulled = false;
     this.col = new Float32Array(n * 3);
     let ext = 0;
     for (let k = 0; k < n; k++) {
@@ -807,8 +1097,8 @@ class Section {
       let gx = 0, gy = 0, gz = 0, j = 0;
       for (let k = 0; k < n; k++) if (live[k] && grp[k] === g) { gx += off[k * 3]; gy += off[k * 3 + 1]; gz += off[k * 3 + 2]; }
       gx /= c; gy /= c; gz /= c;
-      s.mesh = new THREE.InstancedMesh(boxGeo, secMat, c);
-      s.mesh.castShadow = this.mesh.castShadow; s.mesh.frustumCulled = false;
+      s.mesh = cubeMesh(boxGeo, secMat, c);
+      s.mesh.name = 'falling sections'; s.mesh.castShadow = this.mesh.castShadow; s.mesh.frustumCulled = false;
       let my0 = 1e9, my1 = -1e9;
       for (let k = 0; k < n; k++) {
         if (!live[k] || grp[k] !== g) continue;
@@ -1040,46 +1330,53 @@ class Section {
 
 // ---- support -------------------------------------------------------------
 let vis = new Uint8Array(1 << 16), dist = new Uint8Array(1 << 16), qa = new Int32Array(1 << 16), qb = new Int32Array(1 << 16), comp = new Int32Array(1 << 16);
+let ga = new Int32Array(1 << 16), gb = new Int32Array(1 << 16), own = new Int16Array(1 << 16);
 // Fill `dist` over the body's box with how far sideways each of its voxels is from support (255: nothing reaches it).
 // Seeds are the body's voxels on the ground; a body built wholly on top of another (b.hung) is seeded where it touches one.
+// A cell is looked at from each of its six sides, and more than once as shorter ways to it turn up, so what the world
+// holds there is looked up once and kept in `own` for this fill (0: not yet looked up, -1: not this body's, else what it
+// is made of). Each cell waiting its turn has its place in the world beside it (ga, gb), so where it lies in the box
+// comes from shifts and not from divisions.
 function spanFill(b) {
-  const w = b.x1 - b.x0 + 1, h = b.y1 + 1, d = b.z1 - b.z0 + 1, vol = w * h * d, wd = w * d, id = b.id;
-  if (vol > dist.length) { vis = new Uint8Array(vol); dist = new Uint8Array(vol); qa = new Int32Array(vol); qb = new Int32Array(vol); comp = new Int32Array(vol); }
-  dist.fill(255, 0, vol);
+  const w = b.x1 - b.x0 + 1, h = b.y1 + 1, d = b.z1 - b.z0 + 1, vol = w * h * d, wd = w * d, id = b.id, x0 = b.x0, z0 = b.z0;
+  if (vol > dist.length) { vis = new Uint8Array(vol); dist = new Uint8Array(vol); qa = new Int32Array(vol); qb = new Int32Array(vol); comp = new Int32Array(vol); ga = new Int32Array(vol); gb = new Int32Array(vol); own = new Int16Array(vol); }
+  dist.fill(255, 0, vol); own.fill(0, 0, vol);
   let nc = 0;
   for (let z = 0; z < d; z++) for (let x = 0; x < w; x++) {
-    const gi = idx(b.x0 + x, 0, b.z0 + z);
-    if (voxAt(gi) && ownerAt(gi) === id) { dist[x + w * z] = 0; qa[nc++] = x + w * z; }
+    const gi = idx(x0 + x, 0, z0 + z);
+    if (voxAt(gi) && ownerAt(gi) === id) { dist[x + w * z] = 0; ga[nc] = gi; qa[nc++] = x + w * z; }
   }
   if (b.hung) for (let y = 0, l = 0; y < h; y++) for (let z = 0; z < d; z++) for (let x = 0; x < w; x++, l++) {
-    const gi = idx(b.x0 + x, y, b.z0 + z);
+    const gi = idx(x0 + x, y, z0 + z);
     if (!voxAt(gi) || ownerAt(gi) !== id) continue;
     for (let f = 0; f < 6; f++) {
       const k = gi + NB[f];
       if (k < 0 || k >= NV || !voxAt(k)) continue;
       const o = bodies[ownerAt(k)];
-      if (o && o !== b && o.kind !== 'rubble') { dist[l] = 0; qa[nc++] = l; break; }
+      if (o && o !== b && o.kind !== 'rubble') { dist[l] = 0; ga[nc] = gi; qa[nc++] = l; break; }
     }
   }
+  const xl = w - 1, zl = d - 1, yl = h - 1;
   for (let L = 0; nc && L < 254; L++) {
     let sp = nc, nn = 0;
     while (sp) {
       const l = qa[--sp];
       if (dist[l] !== L) continue;
-      const x = l % w, z = ((l / w) | 0) % d, y = (l / wd) | 0, g0 = idx(b.x0 + x, y, b.z0 + z);
+      const g0 = ga[sp], x = (g0 & XM) - x0, z = ((g0 >> ZS) & ZM) - z0, y = g0 >> YS;
       for (let f = 0; f < 6; f++) {
         let nl;
-        if (f === 0) { if (x === w - 1) continue; nl = l + 1; } else if (f === 1) { if (x === 0) continue; nl = l - 1; }
-        else if (f === 2) { if (z === d - 1) continue; nl = l + w; } else if (f === 3) { if (z === 0) continue; nl = l - w; }
-        else if (f === 4) { if (y === h - 1) continue; nl = l + wd; } else { if (y === 0) continue; nl = l - wd; }
+        if (f === 0) { if (x === xl) continue; nl = l + 1; } else if (f === 1) { if (x === 0) continue; nl = l - 1; }
+        else if (f === 2) { if (z === zl) continue; nl = l + w; } else if (f === 3) { if (z === 0) continue; nl = l - w; }
+        else if (f === 4) { if (y === yl) continue; nl = l + wd; } else { if (y === 0) continue; nl = l - wd; }
         if (dist[nl] <= L) continue;
-        const gi = g0 + NB[f], m = voxAt(gi);
-        if (!m || ownerAt(gi) !== id) continue;
-        if (f > 3 && CARRY[m]) { dist[nl] = L; qa[sp++] = nl; }
-        else if (dist[nl] > L + 1) { dist[nl] = L + 1; qb[nn++] = nl; }
+        const gi = g0 + NB[f]; let m = own[nl];
+        if (m === 0) { m = voxAt(gi); m = own[nl] = m && ownerAt(gi) === id ? m : -1; }
+        if (m < 0) continue;
+        if (f > 3 && CARRY[m]) { dist[nl] = L; ga[sp] = gi; qa[sp++] = nl; }
+        else if (dist[nl] > L + 1) { dist[nl] = L + 1; gb[nn] = gi; qb[nn++] = nl; }
       }
     }
-    const t = qa; qa = qb; qb = t; nc = nn;
+    let t = qa; qa = qb; qb = t; t = ga; ga = gb; gb = t; nc = nn;
   }
   return vol;
 }
@@ -1199,9 +1496,23 @@ function finish(b) {
   if (b.dead) return;
   b.dead = true; hooks.bodyDown(b);
 }
+// May a piece that broke away at (x, z) fall as a section? There are 26 at most. Far ones may use only some of them, and a
+// near one that finds them all taken ends the farthest far one (see NEAR_FX above).
+function sectionRoom(x, z) {
+  const d = fromFocus(x, z);
+  if (d >= NEAR_FX) return sections.length < (d > farFx() ? 8 : 16);
+  if (sections.length < 26) return true;
+  let worst = -1, wd = NEAR_FX;
+  for (let i = 0; i < sections.length; i++) { const q = sections[i], e = fromFocus(q.pos.x, q.pos.z); if (e > wd) { wd = e; worst = i; } }
+  if (worst < 0) return false;
+  const q = sections[worst]; sections.splice(worst, 1); scene.remove(q.mesh); q.mesh.dispose();   // gone without a sound: nobody is near it
+  return true;
+}
 function detach(b, cells, n) {
   let sec = null;
-  if (n >= 40 && sections.length < 26) {
+  const c0 = cells[n >> 1], px = c0 & XM, pz = (c0 >> ZS) & ZM, big = n >= 40, room = big && sectionRoom(px, pz);
+  if (big) { const T = stats.fell4 || (stats.fell4 = [0, 0, 0, 0]); T[(fromFocus(px, pz) < NEAR_FX ? 0 : 2) + (room ? 0 : 1)]++; }   // counted for tests: near falling, near not, far falling, far not
+  if (room) {
     let mode = 'free', hx = 0, hz = 0;
     if (b.nextMode && n > 240) { mode = b.nextMode.mode; hx = b.nextMode.hx; hz = b.nextMode.hz; }
     else if (cfg.topple && n > 600) {
@@ -1231,15 +1542,18 @@ export function initSim(sc) {
   scene = sc;
   chunkMat = makeChunkMaterial(); chunkDepth = makeChunkDepthMaterial();
   meshOpts.count = true;
+  const t0 = performance.now();
   for (let k = 0; k < NCX * NCZ; k++) rebuildChunk(k);
+  stats.meshAllMs = Math.round(performance.now() - t0);   // for the playtest reports
   meshOpts.count = false;
+  startMeshWorker();
   for (let i = 1; i < bodies.length; i++) { const b = bodies[i]; b.hung = b.kind !== 'rubble' && b.count > 0 && b.layers0[0] === 0; b.carry.fill(0); }
   eachVoxel((i, m) => { if (!CARRY[m]) return; const o = ownerAt(i), up = i + SXZ; if (ownerAt(up) === o && CARRY[voxAt(up)]) bodies[o].carry[i >> YS] += CARRY[m]; });
   for (let i = 1; i < bodies.length; i++) bodies[i].dCarry = bodies[i].carry.slice();
-  boxGeo = new THREE.BoxGeometry(1, 1, 1);
-  secMat = new THREE.MeshLambertMaterial();
-  dmesh = new THREE.InstancedMesh(boxGeo, new THREE.MeshLambertMaterial(), ND);
-  dmesh.frustumCulled = false; dmesh.castShadow = true; dmesh.receiveShadow = true;
+  boxGeo = cubeGeo();   // three faces a cube, turned to the camera in the shader (units/src/cube3.js)
+  secMat = cubeMat(new THREE.MeshLambertMaterial());
+  dmesh = cubeMesh(boxGeo, cubeMat(new THREE.MeshLambertMaterial()), ND);
+  dmesh.name = 'city debris'; dmesh.frustumCulled = false; dmesh.castShadow = true; dmesh.receiveShadow = true;
   for (let i = 0; i < ND; i++) { dmesh.setMatrixAt(i, ZERO); dmesh.setColorAt(i, _c.setRGB(1, 1, 1)); }
   dmesh.count = debrisBudget;
   scene.add(dmesh);
@@ -1249,7 +1563,7 @@ export function initSim(sc) {
   ringGeo = new THREE.RingGeometry(0.9, 1, 64);
 }
 export function setParticleScale(h, fov) { const s = h / (2 * Math.tan(fov * Math.PI / 360)); dustP.mat.uniforms.scale.value = s; fireP.mat.uniforms.scale.value = s; }
-export function setShadows(on) { dmesh.castShadow = on; for (const m of chunkMesh) if (m) m.castShadow = on; }
+export function setShadows(on) { dmesh.castShadow = on; nearShadow = on; for (const m of chunkMesh) if (m) m.castShadow = on; }
 // Time per part of a step, for the tuning runs (tools/tune): set globalThis.__stepT to an object and each part adds its
 // milliseconds to it. Costs nothing when it is not set.
 let _lt = 0;
@@ -1257,7 +1571,7 @@ const lap = (k) => { const P = globalThis.__stepT; if (!P) return; const n = per
 export { lap };
 export function stepSim(dt) {
   lap();
-  for (let i = soonQ.length - 1; i >= 0; i--) if (--soonQ[i][0] <= 0) { const f = soonQ[i][1]; soonQ.splice(i, 1); f(); }
+  for (let i = soonQ.length - 1; i >= 0; i--) if (--soonQ[i][0] <= 0) { const f = soonQ[i][1]; soonQ.splice(i, 1); const d0 = net.depth; net.depth = 0; try { f(); } finally { net.depth = d0; } }   // a call put off by its caller counts as the caller's
   if (explQueue.length) {
     for (let i = explQueue.length - 1; i >= 0; i--) {
       const q = explQueue[i]; q[4] -= dt;
@@ -1297,4 +1611,24 @@ export function stepSim(dt) {
   flushChunks(4); lap('sim.chunks');
 }
 export function sectionCount() { return sections.length; }
+if (typeof window !== 'undefined') window.__secs = () => sections.map((q) => Math.round(fromFocus(q.pos.x, q.pos.z)));   // for tests: how far each falling section is from the action
 export function sectionVoxels() { let n = 0; for (const s of sections) n += s.alive; return n; }
+
+// ---- playing together (src/net.js) ----------------------------------------------------------------------------------------
+// The calls from outside the sim that change the world, or show something happening, are recorded so that the other devices
+// in a round can make the same calls. What the sim then does by itself (inside stepSim, or inside a call already recorded)
+// is not sent: each device works that out for itself. `replay` is set while another device's calls are made here.
+export const net = { rec: null, depth: 0, replay: false };
+function tapped(name, fn) {
+  return function (...a) {
+    if (net.rec && net.depth === 0 && !net.replay) net.rec(name, a);
+    net.depth++;
+    try { return fn.apply(this, a); } finally { net.depth--; }
+  };
+}
+function inside(fn) { return function (...a) { net.depth++; try { return fn.apply(this, a); } finally { net.depth--; } }; }
+blast = tapped('blast', blast); slice = tapped('slice', slice); explode = tapped('explode', explode); blowGlass = tapped('blowGlass', blowGlass);
+shockwave = tapped('shockwave', shockwave); igniteAt = tapped('igniteAt', igniteAt);
+dust = tapped('dust', dust); dustWave = tapped('dustWave', dustWave); smoke = tapped('smoke', smoke); fire = tapped('fire', fire);
+sparks = tapped('sparks', sparks); flash = tapped('flash', flash); ring = tapped('ring', ring);
+stepSim = inside(stepSim);

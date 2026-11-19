@@ -5,6 +5,7 @@
 // up spray instead of dust, flames go out with a hiss where the wreck goes under, and there is foam for wakes.
 // Everything is in town voxels (4 to a metre).
 import * as THREE from 'three';
+import { cubeGeo, cubeMat, cubeMesh } from '../../units/src/cube3.js';
 
 // colour ramps: [how far through its life, r, g, b]
 const HEAT = [[0, 1.75, 1.3, 0.4], [0.1, 1.6, 0.9, 0.12], [0.34, 1.35, 0.4, 0.03], [0.6, 0.85, 0.12, 0.02], [0.78, 0.3, 0.07, 0.04], [1, 0.08, 0.075, 0.075]];
@@ -27,14 +28,12 @@ function ramp(R, u, out) {
 
 // o.flash(p, power): the game's own flash for a blast, in place of the three point lights kept here for the viewer
 export function makeBlockFx(scene, max = 7000, o = {}) {
-  const geo = new THREE.BoxGeometry(1, 1, 1);
-  { // the cubes light themselves, so their faces are shaded by hand to keep each one reading as a block
-    const sh = [0.8, 0.8, 1.12, 0.6, 0.94, 0.7], c = new Float32Array(72);
-    for (let i = 0; i < 24; i++) c.fill(sh[i >> 2], i * 3, i * 3 + 3);
-    geo.setAttribute('color', new THREE.BufferAttribute(c, 3));
-  }
-  const mesh = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, fog: false }), max);
-  mesh.frustumCulled = false; mesh.count = 0; mesh.setColorAt(0, new THREE.Color(1, 1, 1)); mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(mesh);
+  // the cubes light themselves, so their faces are shaded by hand to keep each one reading as a block
+  const geo = cubeGeo([0.8, 0.8, 1.12, 0.6, 0.94, 0.7]);   // three faces a cube, turned to the camera (units/src/cube3.js)
+  const mesh = cubeMesh(geo, cubeMat(new THREE.MeshBasicMaterial({ vertexColors: true, fog: false })), max);
+  mesh.name = 'block effects'; mesh.frustumCulled = false; mesh.count = 0; mesh.setColorAt(0, new THREE.Color(1, 1, 1)); mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(mesh);
+  mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+  const M = mesh.instanceMatrix.array, C = mesh.instanceColor.array;
   const blocks = [], wind = { x: 1.6, z: 0.7 };
   const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color();
   const R = Math.random;
@@ -70,10 +69,19 @@ export function makeBlockFx(scene, max = 7000, o = {}) {
         if (b.y < floor) { b.y = floor; if (b.vy < 0) b.vy = b.kind === K.SPARK ? -b.vy * 0.35 : 0; }
       }
       b.ax += b.wx * dt; b.ay += b.wy * dt;
-      _m.compose(_p.set(b.x, b.y, b.z), _q.setFromEuler(_e.set(b.ax, b.ay, 0)), _s.setScalar(Math.max(0.001, size)));
-      mesh.setMatrixAt(n, _m); ramp(RAMPS[b.kind], u, _c); if (b.kind <= K.SPARK || b.kind === K.BLAST) _c.multiplyScalar(b.j); mesh.setColorAt(n, _c); n++;
+      // the block's matrix written straight into the list (a turn about x, then y, times its size): thousands of blocks are
+      // alive after a row of cars goes up, and going by way of a quaternion took most of this loop's time
+      const sz = Math.max(0.001, size), ca = Math.cos(b.ax) * sz, sa = Math.sin(b.ax) * sz, cy = Math.cos(b.ay), sy = Math.sin(b.ay), w = n * 16;
+      M[w] = cy * sz; M[w + 1] = sa * sy; M[w + 2] = -ca * sy; M[w + 3] = 0;
+      M[w + 4] = 0; M[w + 5] = ca; M[w + 6] = sa; M[w + 7] = 0;
+      M[w + 8] = sy * sz; M[w + 9] = -sa * cy; M[w + 10] = ca * cy; M[w + 11] = 0;
+      M[w + 12] = b.x; M[w + 13] = b.y; M[w + 14] = b.z; M[w + 15] = 1;
+      ramp(RAMPS[b.kind], u, _c); const j = b.kind <= K.SPARK || b.kind === K.BLAST ? b.j : 1, v = n * 3;
+      C[v] = _c.r * j; C[v + 1] = _c.g * j; C[v + 2] = _c.b * j; n++;
     }
-    mesh.count = n; mesh.instanceMatrix.needsUpdate = true; if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    // only the blocks alive are sent (the whole list of 7,000 used to go every frame)
+    if (n || mesh.count) { mesh.instanceMatrix.clearUpdateRanges(); mesh.instanceMatrix.addUpdateRange(0, n * 16); mesh.instanceMatrix.needsUpdate = true; mesh.instanceColor.clearUpdateRanges(); mesh.instanceColor.addUpdateRange(0, n * 3); mesh.instanceColor.needsUpdate = true; }
+    mesh.count = n;
     for (const L of lights) { if (L.t >= L.dur) { L.light.intensity = 0; continue; } L.t += dt; const k = Math.max(0, 1 - L.t / L.dur); L.light.intensity = L.peak * k * k; }
     stepFires(dt);
   }

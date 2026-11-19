@@ -45,7 +45,7 @@ export class Unit {
       for (let i = 0; i < CH; i++) { const target = p[i] === undefined ? (i === 6 ? 1 : 0) : p[i]; o[i] = f[i] + (target - f[i]) * w; }
       b.rotation.set(r.rot[0] + o[0], r.rot[1] + o[1], r.rot[2] + o[2]); b.position.set(r.pos[0] + o[3], r.pos[1] + o[4], r.pos[2] + o[5]); b.scale.setScalar(Math.max(o[6], 0.0001));
     }
-    for (const p of this.parts) if (p.dirty) { p.build(this.mats, p.bone); p.dirty = false; }
+    for (const p of this.parts) if (p.dirty || p.more) { p.build(this.mats, p.bone); p.dirty = false; }   // `more`: a big part's rebuild is spread over frames (voxpart.js buildSlabs)
   }
   get finished() { return !this.clip.loop && this.t >= this.clip.dur; }
 
