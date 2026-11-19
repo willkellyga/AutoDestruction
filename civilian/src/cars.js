@@ -311,28 +311,51 @@ export function blowUp(u, debris) {
   const O = wk.seat(u, clip);   // the seat of the blast, in body cubes
   u.blast = O;
   const c0 = u.bones.body.localToWorld(v3(u.parts[0]).set(O[0] * H, O[1] * H, O[2] * H)).clone();
-  let thrown = 0;
+  const st = { O, seed, c0, thrown: 0, debris };
   for (const p of u.parts) {
     const { nx, ny, nz, col } = p; if (wk.lamps.test(p.name)) continue;
     // what hangs from it (a crane's rope and load) comes down in pieces
     if (wk.drop && wk.drop.test(p.name)) {
       let n1 = 0;
-      for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) { const n = (k * ny + j) * nx + i, c = col[n]; if (c < 0) continue; if (n1 < 220 && hash(i, j, k, 3) < 0.25) { n1++; toss(p, i, j, k, c, debris, c0.x, c0.y, c0.z, 8); } col[n] = -1; }
+      for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) { const n = (k * ny + j) * nx + i, c = col[n]; if (c < 0) continue; if (n1 < 220 && hash(i, j, k, 3) < 0.25) { n1++; toss(p, i, j, k, c, debris, c0.x, c0.y, c0.z, 12); } col[n] = -1; }
       p.count = 0; p.dirty = true; continue;
     }
-    for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
-      const n = (k * ny + j) * nx + i, c = col[n]; if (c < 0) continue;
-      const q = bodyPos(u, p, i, j, k, _q), d = Math.hypot(q[0] - O[0], q[1] - O[1], q[2] - O[2]);
-      const lump = hash(fl(q[0] / 2), fl(q[1] / 2), fl(q[2] / 2), seed + 41), grain = hash(fl(q[0]), fl(q[1]), fl(q[2]), seed + 5);
-      const gone = isGlass(c) || lump < 0.5 * clamp(1 - d / wk.R) || grain < 0.03;
-      if (gone) { col[n] = -1; p.count--; if (thrown < wk.max && grain < (isGlass(c) ? 0.3 : 0.7)) { thrown++; toss(p, i, j, k, isGlass(c) ? SHARD : tone(c & 0xffffff, 0.5), debris, c0.x, c0.y - 1, c0.z, wk.push); } continue; }
-      // soot: black at the seat of the blast, streaked further out, the paint still showing at the far end
-      const burn = clamp(Math.max(wk.sootMin ?? 0.34, 1.25 - d / wk.soot) + (lump - 0.5) * (wk.mottle ?? 0.5) + (grain - 0.5) * 0.2);
-      col[n] = tone(c & 0xffffff, 0.92 - 0.72 * burn);
+    // A big hull (a carrier's 3.7 million cells took 60 ms in one go) is done over a few frames: the layers at the seat of
+    // the blast now, and the rest outwards from there, `blowStep(u)` each frame while `u.blowing`. The soot spreads along
+    // her from the blast in a third of a second. What is left of her is the same as if it had been done at once.
+    if (col.length >= CHAR_SLICE * 2) {
+      const kc = Math.max(0, Math.min(nz - 1, fl(bodyPos(u, p, 0, 0, 0, _q)[2] <= O[2] ? O[2] - _q[2] : 0)));
+      (u.blowing || (u.blowing = [])).push({ p, st, lo: kc, hi: kc - 1 });
+      continue;
     }
+    blowSome(u, p, 0, nz - 1, st);
     p.dirty = true;
   }
+  if (u.blowing) blowStep(u);
   if (clip) u.play(clip, 0.04);
+}
+// The blast on layers k0 to k1 of one part: cubes torn off round the seat of it, every window out, soot over the rest.
+function blowSome(u, p, k0, k1, st) {
+  const { nx, ny, col } = p, wk = u.def.wk, { O, seed, c0, debris } = st;
+  for (let k = k0; k <= k1; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const n = (k * ny + j) * nx + i, c = col[n]; if (c < 0) continue;
+    const q = bodyPos(u, p, i, j, k, _q), d = Math.hypot(q[0] - O[0], q[1] - O[1], q[2] - O[2]);
+    const lump = hash(fl(q[0] / 2), fl(q[1] / 2), fl(q[2] / 2), seed + 41), grain = hash(fl(q[0]), fl(q[1]), fl(q[2]), seed + 5);
+    const gone = isGlass(c) || lump < 0.5 * clamp(1 - d / wk.R) || grain < 0.03;
+    if (gone) { col[n] = -1; p.count--; if (st.thrown < wk.max && grain < (isGlass(c) ? 0.3 : 0.7)) { st.thrown++; toss(p, i, j, k, isGlass(c) ? SHARD : tone(c & 0xffffff, 0.5), debris, c0.x, c0.y - 1, c0.z, wk.push); } continue; }
+    // soot: black at the seat of the blast, streaked further out, the paint still showing at the far end
+    const burn = clamp(Math.max(wk.sootMin ?? 0.34, 1.25 - d / wk.soot) + (lump - 0.5) * (wk.mottle ?? 0.5) + (grain - 0.5) * 0.2);
+    col[n] = tone(c & 0xffffff, 0.92 - 0.72 * burn);
+  }
+}
+// One frame's share of a big hull's blast: about CHAR_SLICE cells, half each way out from what is done.
+export function blowStep(u) {
+  const q = u.blowing, j = q && q[0]; if (!j) { u.blowing = null; return; }
+  const p = j.p, n = Math.max(1, Math.floor(CHAR_SLICE / (p.nx * p.ny) / 2));
+  const up = Math.min(p.nz - 1, j.hi + n), dn = Math.max(0, j.lo - n);
+  if (up > j.hi) { blowSome(u, p, j.hi + 1, up, j.st); p.touched(j.hi + 1, up); j.hi = up; }
+  if (dn < j.lo) { blowSome(u, p, dn, j.lo - 1, j.st); p.touched(dn, j.lo - 1); j.lo = dn; }
+  if (j.lo <= 0 && j.hi >= p.nz - 1) { q.shift(); if (!q.length) u.blowing = null; }
 }
 // A wreck goes on charring as it burns: call now and then with a small amount (0.1 or so). A big hull (a ship's 2.4
 // million cells took 90 ms in one go) is charred a slice a frame instead: `charStep(u)` each frame while `u.charring`.
@@ -354,6 +377,12 @@ export function charStep(u) {
   j.n = n1; if (n1 >= p.col.length) q.shift();
 }
 
+// How far from the foot (in body cubes along the hull) a column can give at all: past it `keep` is 1 whatever the grain.
+// A car never reaches 1 (the whole of it is squashed); a ship does, 24 to 36 cubes out.
+function reachOf(wk) {
+  if (wk.reach === undefined) { let r = Infinity; for (let d = 0; d <= 400; d++) if (wk.keep(d, 0) >= 1 && wk.keep(d, 1) >= 1) { r = d; break; } wk.reach = r; }
+  return wk.reach;
+}
 // Squash a vehicle where it stands, as when the monster steps on it. The bonnet, boot and doors are pressed into the body,
 // then every column of cubes is pushed down: hardest under the foot (fx, fz, in body cubes), less further off, so it
 // crumples instead of shrinking. The glass bursts out as shards. `debris` gets the shards and a few torn panels.
@@ -415,24 +444,27 @@ export function crush(u, debris, fx = 0, fz = 0) {
   // a boat is only flattened down to the water: the hull under it is left as it is
   const based = a === 1 && wk.base ? Math.max(0, Math.min(na - 1, wk.base(sg) - org[1])) : -1;
   if (based >= 0) g0 = based;
-  for (let qb = 0; qb < nb; qb++) for (let k = 0; k < nz; k += 3) for (let qa = 0; qa < na; qa += 2) if (col[at(qa, qb, k)] >= 0) { if (qb < b0) b0 = qb; if (qb > b1) b1 = qb; }
+  if (!flat) for (let qb = 0; qb < nb; qb++) for (let k = 0; k < nz; k += 3) for (let qa = 0; qa < na; qa += 2) if (col[at(qa, qb, k)] >= 0) { if (qb < b0) b0 = qb; if (qb > b1) b1 = qb; }
   const mid = flat ? fx - org[0] : (b0 + b1 + 1) / 2, lift = flat && based < 0 ? 1 : 0;   // upright, its floor comes down the last cube onto the road
-  // (most of a long hull is out of the foot's reach and stays as it is: start from a copy, and work only on the columns
-  // that give. On a ship that is a few thousand columns out of twenty thousand.)
-  const out = col.slice(); let ka = nz, kb = -1;
-  for (let k = 0; k < nz; k++) for (let qb = 0; qb < nb; qb++) {
+  // Most of a long hull is out of the foot's reach and stays as it is (on a ship a few thousand columns give, out of twenty
+  // thousand). So it is reworked where it lies, a column at a time from a copy of that column, and only in the layers a
+  // foot can reach; the cube count is kept by what each column lost. (A copy of the whole hull, and a count of all of it,
+  // were two thirds of a foot's cost on a carrier.)
+  const out = col, was = new Int32Array(na), reach = reachOf(wk); let ka = nz, kb = -1, count = body.count;
+  const kLo = Math.max(0, fl(fz - reach - org[2] - 0.5)), kHi = Math.min(nz - 1, Math.ceil(fz + reach - org[2] - 0.5));
+  for (let k = kLo; k <= kHi; k++) for (let qb = 0; qb < nb; qb++) {
     const z = org[2] + k + 0.5, d = Math.hypot((qb + 0.5 - mid) * wk.dx, z - fz);
     // how much of its height this column keeps
     const keep = wk.keep(d, hash(fl((qb + org[b]) / 2), 7, fl(z / 2), seed)), whole = keep >= 1;
     const G = g0 - sg * Math.round(lift * clamp((1 - keep) * 3));
     if (whole) continue;
     if (k < ka) ka = k; if (k > kb) kb = k;
-    for (let qa = 0; qa < na; qa++) out[at(qa, qb, k)] = -1;
+    for (let qa = 0; qa < na; qa++) { const n = at(qa, qb, k), c = col[n]; was[qa] = c; if (c >= 0) { count--; col[n] = -1; } }
     let top = -1, mb = -1;
-    if (based >= 0) for (let qa = g0 - sg; qa >= 0 && qa < na; qa -= sg) { const n = at(qa, qb, k); if (col[n] >= 0) out[n] = col[n]; }
+    if (based >= 0) for (let qa = g0 - sg; qa >= 0 && qa < na; qa -= sg) if (was[qa] >= 0) out[at(qa, qb, k)] = was[qa];
     for (let m = 0; m < na; m++) {
       const qa = g0 + sg * m; if (qa < 0 || qa >= na) break;
-      const n = at(qa, qb, k), c = col[n]; if (c < 0) continue;
+      const c = was[qa]; if (c < 0) continue;
       if (isGlass(c)) { if (shards < wk.max * 0.75 && hash(qa, qb, k, 9) < 0.55) { shards++; const ijk = a === 1 ? [qb, qa] : [qa, qb]; toss(body, ijk[0], ijk[1], k, SHARD, debris, c0.x, c0.y, c0.z, 12); } continue; }
       if (mb < 0) mb = m;
       const nm = Math.max(Math.round(m * keep), Math.min(m, wk.floor || 0)), t = at(Math.max(0, Math.min(na - 1, G + sg * nm)), qb, k);
@@ -442,9 +474,9 @@ export function crush(u, debris, fx = 0, fz = 0) {
     }
     // a hollow ship: what is pressed down is packed solid, so the dent is a mash of her own plating and not a few loose cubes
     if (wk.pack && !whole && top > 0) { let c = -1; for (let nm = top; nm >= 0; nm--) { const t = at(Math.max(0, Math.min(na - 1, G + sg * nm)), qb, k); if (out[t] >= 0) c = out[t]; else if (c >= 0) out[t] = tone(c & 0xffffff, 0.5 + 0.3 * hash(nm, qb, k, seed + 3)); } }
+    for (let qa = 0; qa < na; qa++) if (out[at(qa, qb, k)] >= 0) count++;
   }
-  let count = 0; for (let n = 0; n < out.length; n++) if (out[n] >= 0) count++;
-  body.col = out; body.count = count;
+  body.count = count;
   if (!again) body.dirty = true; else if (kb >= 0) body.touched(ka, kb);   // (the first time, loose panels were pressed into her anywhere)
   const fresh = !again && (flat || !wk.recrush) && !(wk.boat && u.blown);   // a sunken wreck stays as it lies
   (u.crushes || (u.crushes = [])).push([fx, fz, fresh ? 0 : u.t, flat]);
@@ -455,21 +487,40 @@ export function crush(u, debris, fx = 0, fz = 0) {
 // the blast, as points in the body bone's space. Call again once the wreck has come to rest.
 export function fireSpots(u, n = 12) {
   if (u.def.wk.fireAt && !u.crushed) return u.def.wk.fireAt(u, n);   // a crane burns in her machinery house, which is not part of the body
-  const p = u.parts.find((q) => q.name === 'body'), O = u.blast || [0, 4, 0], found = [], dims = [p.nx, p.ny, p.nz], org = [p.i0, p.j0, p.k0], { col } = p;
+  if (n <= 0) return [];
+  const p = u.parts.find((q) => q.name === 'body'), O = u.blast || [0, 4, 0], dims = [p.nx, p.ny, p.nz], org = [p.i0, p.j0, p.k0], { col } = p;
+  // Every column's top cube is a candidate, scored by how near the blast it is; the fires go on every `stride`-th of them
+  // in that order (a long ship takes a wide stride, so she burns from end to end). The scores go in one list of numbers,
+  // which sorts fast; listing and sorting a ship's 30,000 columns as small arrays took 35 ms each time a foot came down on
+  // a burning one.
+  const stride = u.def.wk.fireStride || 3, spread = u.def.wk.spread || 7; let N = 0, S = null, X = null;
   u.root.updateWorldMatrix(true, true);
   const e = p.bone.matrixWorld.elements, up = [e[1], e[5], e[9]];   // world up, seen from the body
   let a = 0; for (let m = 1; m < 3; m++) if (ab(up[m]) > ab(up[a])) a = m;
-  const sg = up[a] > 0 ? 1 : -1, b = (a + 1) % 3, c = (a + 2) % 3, q = [0, 0, 0];
-  for (q[b] = 0; q[b] < dims[b]; q[b]++) for (q[c] = 0; q[c] < dims[c]; q[c]++) for (let m = 0; m < dims[a]; m++) {
-    q[a] = sg > 0 ? dims[a] - 1 - m : m;
-    if (a === 1 && sg > 0 && org[1] + q[1] > u.def.wk.fireTop) continue;   // upright: the fire is in the engine bay, the boot and the seats, not on the roof
-    if (col[(q[2] * p.ny + q[1]) * p.nx + q[0]] < 0) continue;
-    if (a === 1 && sg > 0 && org[1] + q[1] < (u.def.wk.fireMin ?? -99)) break;   // a boat: nothing burns down in the flooded hull
+  const sg = up[a] > 0 ? 1 : -1, b = (a + 1) % 3, c = (a + 2) % 3, q = [0, 0, 0], wk = u.def.wk;
+  // each column is gone down from the top to its first cube. Upright, the fire is in the engine bay, the boot and the seats
+  // and not on the roof (nothing above fireTop), and on a boat nothing burns down in the flooded hull (a column whose first
+  // cube is under fireMin has none): so only that band of each column is looked at
+  const stp = [1, p.nx, p.nx * p.ny], sa = stp[a], sb = stp[b], sc = stp[c], na = dims[a], upright = a === 1 && sg > 0;
+  let q0 = sg > 0 ? na - 1 : 0, q1 = sg > 0 ? 0 : na - 1;
+  if (upright) { q0 = Math.min(q0, Math.floor((wk.fireTop ?? Infinity) - org[1])); q1 = Math.max(0, Math.ceil((wk.fireMin ?? -99) - org[1])); }
+  for (let qb = 0; qb < dims[b]; qb++) for (let qc = 0; qc < dims[c]; qc++) {
+    const base = qb * sb + qc * sc; let qa = q0;
+    if (sg > 0) { while (qa >= q1 && col[base + qa * sa] < 0) qa--; if (qa < q1) continue; }
+    else { while (qa <= q1 && col[base + qa * sa] < 0) qa++; if (qa > q1) continue; }
+    q[a] = qa; q[b] = qb; q[c] = qc;
     const w = [org[0] + q[0] + 0.5, org[1] + q[1] + 0.5, org[2] + q[2] + 0.5]; w[a] += 0.5 * sg;
-    found.push([Math.hypot(w[b] - O[b], w[c] - O[c]) + (u.def.wk.spread || 7) * hash(q[b], 1, q[c], 2), w[0] * p.h, w[1] * p.h, w[2] * p.h]); break;
+    if (!S) { S = new Float64Array(dims[b] * dims[c]); X = new Float64Array(S.length * 3); }
+    S[N] = Math.hypot(w[b] - O[b], w[c] - O[c]) + spread * hash(qb, 1, qc, 2); X[N * 3] = w[0] * p.h; X[N * 3 + 1] = w[1] * p.h; X[N * 3 + 2] = w[2] * p.h; N++;
   }
-  found.sort((x, y) => x[0] - y[0]);
-  const out = [], stride = u.def.wk.fireStride || 3; for (let m = 0; m < found.length && out.length < n; m += stride) out.push(found[m].slice(1));   // a long ship takes a wide stride, so she burns from end to end
+  const out = []; if (!N) return out;
+  const sorted = S.slice(0, N).sort();
+  for (let r = 0; r < N && out.length < n; r += stride) {
+    // the candidate of rank r: among equal scores, the earlier found comes first, as a sort that keeps their order would leave them
+    const v = sorted[r]; let lo = r; while (lo > 0 && sorted[lo - 1] === v) lo--;
+    let skip = r - lo, m = 0; for (; m < N; m++) if (S[m] === v && skip-- === 0) break;
+    out.push([X[m * 3], X[m * 3 + 1], X[m * 3 + 2]]);
+  }
   return out;
 }
 export const CAR_TYPES = ['sedan', 'hatch', 'taxi', 'police'];

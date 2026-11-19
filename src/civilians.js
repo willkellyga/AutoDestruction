@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import { Unit } from '../units/src/unit.js';
 import { hash } from '../units/src/voxpart.js';
 import { makeDebris } from '../units/src/debris.js';
-import { CAR, crush, fireSpots, char, charStep } from '../civilian/src/cars.js';
+import { CAR, crush, fireSpots, char, charStep, blowStep } from '../civilian/src/cars.js';
 import { CITY_BUS, SCHOOL_BUS } from '../civilian/src/buses.js';
 import { TUGBOAT, BARGE_BOAT, TOUR_BOAT, FERRY, LINER, CARRIER, CONTAINER_SHIP, PLEASURE_BOAT, DECK_JETS, WAIST, lowSide } from '../civilian/src/boats.js';
 import { EXPRESS_TRAIN, COMMUTER_TRAIN } from '../civilian/src/trains.js';
@@ -304,7 +304,7 @@ export function makeCivilians(o) {
   // like the copy an untouched one has. A car's is made in one go; a ship's a slice a frame (coarseHalf), one at a time.
   const still = (rec) => { const u = rec.unit;
     if (!u || u.gone || rec.far || rec.noFar || !(rec.touched || u.dead)) return false;   // (a car that was hit but not wrecked stays a model for the rest of the round: it counts too)
-    if ((u.dead && !u.finished) || (u.fire && u.fire.t < u.fire.life + 3) || u.charring || u.settleT > 0 || u.leakT > 0 || (!u.dead && rec.alarmT > 0)) return false;   // (a wreck's alarm clock stops with it)
+    if ((u.dead && !u.finished) || (u.fire && u.fire.t < u.fire.life + 3) || u.charring || u.blowing || u.settleT > 0 || u.leakT > 0 || (!u.dead && rec.alarmT > 0)) return false;   // (a wreck's alarm clock stops with it)
     for (const p of u.parts) if (p.dirty || p.more || p.owed) return false;
     return true; };
   let farJob = null; const REFAR = new URLSearchParams(location.search).get('refar') !== '0';   // ?refar=0: as it was, for comparing
@@ -466,10 +466,12 @@ export function makeCivilians(o) {
       const s = rec.size; local(rec, x, z, _l);
       const k = who === ARMY ? 0.2 : 0.55;   // how much of his foot has to be over it
       if (_l.x < s.fx0 - r * k || _l.x > s.fx1 + r * k || _l.z < s.fz0 - r * k || _l.z > s.fz1 + r * k) return;
+      const t0 = laps.on ? performance.now() : 0;
       if (r < 4.2 && who !== ARMY) {   // too small to flatten it: he kicks a hole in it as he pushes past
         if (clock - rec.treadT < 0.3) return; rec.treadT = clock;
         hit(rec, _d.set(x, rec.y + 1.5 + r * 0.3, z), r * 0.95, 10, who, false);
       } else tread(rec, _l.x, _l.z, who);
+      if (laps.on) { const d = performance.now() - t0; if (d > laps.footMs) { laps.footMs = d; laps.foot = rec.kind; } }
     });
   }
 
@@ -511,6 +513,7 @@ export function makeCivilians(o) {
     if (u.settleT > 0) { u.settleT -= dt; if (u.settleT <= 0 && u.fire && !u.crushed) u.fire.spots = fireSpots(u, u.def.wk.fires || 12); }   // once it has come to rest the fire moves to whatever is now on top
     if (u.fire && u.blown && u.charT > 0 && u.fire.t > u.charT && u.fire.t < u.fire.life) { u.charT += 3.5; char(u, u.def.wk.char ?? 0.13); }   // a burning wreck goes on charring
     if (u.charring) charStep(u);
+    if (u.blowing) blowStep(u);
   }
   // One far mesh of each kind holds every parked vehicle of that kind on the map, and the graphics card was handed all
   // of them every frame, behind the camera and past the haze too. Only the ones in a widened view are packed to the front
@@ -556,15 +559,25 @@ export function makeCivilians(o) {
       else if (d > nd + 40 && rec.stillT > 0) refar(rec);
     }
   }
+  // Where this step's time went, for the pause lines of the playtest reports (only measured where those are on): by part,
+  // and the one vehicle whose own step took longest, and the one a foot cost most on.
+  const laps = { on: false, lod: 0, feet: 0, jets: 0, units: 0, fuses: 0, far: 0, fx: 0, unit: '', unitMs: 0, foot: '', footMs: 0 };
+  let lapT = 0;
+  const lapC = (k) => { if (!laps.on) return; const n = performance.now(); if (k) laps[k] += n - lapT; lapT = n; };
   function update(dt, playing) {
     if (!(dt >= 0)) dt = 0;   // the very first frame has no time step yet
+    laps.on = !!globalThis.__stepT; laps.lod = laps.feet = laps.jets = laps.units = laps.fuses = laps.far = laps.fx = laps.unitMs = laps.footMs = 0; laps.unit = laps.foot = ''; lapC();
     clock += dt; lodT -= dt; if (lodT <= 0) { lodT = 0.2; lod(); }
-    sfx.on = !o.muted();
-    if (playing) { feet(); stepJets(dt); }
+    sfx.on = !o.muted(); lapC('lod');
+    if (playing) { feet(); lapC('feet'); stepJets(dt); lapC('jets'); }
     for (let i = live.length - 1; i >= 0; i--) {
       const rec = live[i], u = rec.unit;
       const away = rec.far && !u.root.visible;   // far off, and untouched or come to rest: its far copy stands in, and it need not move
-      if (!away) { stepUnit(rec, dt); rec.stillT = still(rec) ? (rec.stillT || 0) + dt : 0; }
+      if (!away) {
+        const t0 = laps.on ? performance.now() : 0;
+        stepUnit(rec, dt); rec.stillT = still(rec) ? (rec.stillT || 0) + dt : 0;
+        if (laps.on) { const d = performance.now() - t0; if (d > laps.unitMs) { laps.unitMs = d; laps.unit = rec.kind; } }
+      }
       if (rec.spec.solo) continue;
       if (away) { if (!u.dead) continue; rec.idle += dt; if (rec.idle > (u.crushed && !u.blown ? 70 : 45)) { pay(rec, 1, ARMY, true); unfar(rec); u.dispose(); rec.unit = null; rec.gone = true; live.splice(i, 1); } continue; }   // a far wreck's time is up: it goes without the show
       // a car that was only woken (an alarm, a near miss) is put back; a wreck lies a while, then crumbles
@@ -575,6 +588,7 @@ export function makeCivilians(o) {
         if (u.gone) { pay(rec, 1, ARMY, true); unfar(rec); u.dispose(); rec.unit = null; rec.gone = true; live.splice(i, 1); }
       }
     }
+    lapC('units');
     for (let i = fuses.length - 1; i >= 0; i--) {
       fuses[i][0] -= dt; if (fuses[i][0] > 0) continue;
       const [, rec, who] = fuses[i]; fuses.splice(i, 1);
@@ -582,9 +596,11 @@ export function makeCivilians(o) {
       if (rec.gone) continue;
       const u = rec.unit; if (u && u.blown) boom(rec, who, true); else kill(rec, who);
     }
+    lapC('fuses');
     if (fx.fires.length && Math.random() < dt * 14) sfx.play('crackle', fx.fires[Math.floor(Math.random() * fx.fires.length)].obj.getWorldPosition(_c), 0.8);
     if (farJob) farStep();
-    debris.update(dt); fx.update(dt);
+    lapC('far');
+    debris.update(dt); fx.update(dt); lapC('fx');
   }
 
   // ---- the carrier's jets. The two on her catapults take off in turn, make a strafing pass at the monster and fly
@@ -742,7 +758,7 @@ export function makeCivilians(o) {
 
   build();
   const api = { recs, live, variants, cells, air, sorties, rockets, fx, sfx, debris, update, damageJet, launch, kill, hit, tread, wake, near, packed, packFar,
-    get remakes() { return remakes; }, get farJob() { return farJob; },
+    get remakes() { return remakes; }, get farJob() { return farJob; }, get laps() { return laps; },
     detail(k) {
       nearD = NEAR * k; nearSoloD = NEAR_SOLO * k; lodT = 0;
       const l = k < 1 ? 1 : 0; if (l === farLvl) return;
