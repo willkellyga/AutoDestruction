@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import { Unit } from '../units/src/unit.js';
 import { hash } from '../units/src/voxpart.js';
 import { makeDebris } from '../units/src/debris.js';
-import { CAR, crush, fireSpots, char } from '../civilian/src/cars.js';
+import { CAR, crush, fireSpots, char, charStep } from '../civilian/src/cars.js';
 import { CITY_BUS, SCHOOL_BUS } from '../civilian/src/buses.js';
 import { TUGBOAT, BARGE_BOAT, TOUR_BOAT, FERRY, LINER, CARRIER, CONTAINER_SHIP, PLEASURE_BOAT, DECK_JETS, WAIST, lowSide } from '../civilian/src/boats.js';
 import { EXPRESS_TRAIN, COMMUTER_TRAIN } from '../civilian/src/trains.js';
@@ -429,8 +429,10 @@ export function makeCivilians(o) {
     const u = rec.unit;
     // a big hull is rebuilt at most a few times a second, however fast the blows land
     for (const p of u.parts) if (p.count > BIG_PART || p.owed) {
-      if (p.dirty) { if (clock - (p.builtAt || -9) < 0.22) { p.dirty = false; p.owed = true; } else p.builtAt = clock; }
-      else if (p.owed && clock - p.builtAt >= 0.22) { p.owed = false; p.dirty = true; p.builtAt = clock; }
+      if (p.more) continue;   // in the middle of a rebuild spread over frames: let it finish
+      // (`dirty` is true, or 2 for "only the layers noted": voxpart.js touched. What is owed keeps that, and true wins.)
+      if (p.dirty) { if (clock - (p.builtAt || -9) < 0.22) { p.owed = p.owed === true ? true : p.dirty; p.dirty = false; } else { if (p.owed === true) p.dirty = true; p.owed = false; p.builtAt = clock; } }
+      else if (p.owed && clock - p.builtAt >= 0.22) { p.dirty = p.owed; p.owed = false; p.builtAt = clock; }
     }
     u.update(dt);
     if (u.def.wk.boat) afloat(rec, dt);
@@ -438,6 +440,7 @@ export function makeCivilians(o) {
     if (u.leakT > 0) { u.leakT -= dt; if (u.leakT <= 0 && !u.blown) { const p = u.bones.body.localToWorld(new THREE.Vector3(0, 3, (u.crushes ? u.crushes[u.crushes.length - 1][1] : 0) * 0.5)); fx.explode(p.setY(rec.y + 1.2), 2.2); sfx.play('boom', p, 0.5); u.fire = fx.burn(u.bones.body, fireSpots(u, 8), { life: 9, size: 0.85 }); } }
     if (u.settleT > 0) { u.settleT -= dt; if (u.settleT <= 0 && u.fire && !u.crushed) u.fire.spots = fireSpots(u, u.def.wk.fires || 12); }   // once it has come to rest the fire moves to whatever is now on top
     if (u.fire && u.blown && u.charT > 0 && u.fire.t > u.charT && u.fire.t < u.fire.life) { u.charT += 3.5; char(u, u.def.wk.char ?? 0.13); }   // a burning wreck goes on charring
+    if (u.charring) charStep(u);
   }
   // One far mesh of each kind holds every parked vehicle of that kind on the map, and the graphics card was handed all
   // of them every frame, behind the camera and past the haze too. Only the ones in a widened view are packed to the front
