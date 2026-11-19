@@ -70,9 +70,12 @@ function placeChunk(k, geo) {
 // them. The page sends the cells written since its last message with each request (world.js wlog), and puts each mesh in
 // the scene when it comes back. A chunk changed again while its mesh is being built stays dirty and is asked for again.
 // If the worker cannot start or fails, everything is meshed here as before. ?mw=0 turns it off, for comparing.
-let mw = null, mwJobs = [], mwBusy = 0;
+let mw = null, mwJobs = [], chunksOut = 0, regsOut = 0;   // jobs sent (or about to be) and not back yet
 const mwBack = [], chunkAsked = new Uint8Array(NCX * NCZ);
-const MW_MAX = 6;   // jobs out at once
+// How many jobs may be out at once. Near chunks come first: a bite should show at once, and the worker takes jobs in the
+// order they were sent, so only two far regions (the slow jobs) may be ahead of a chunk. While no chunk is waiting, as on
+// the menu, far regions get the whole worker, so the far city is ready by the time the round starts.
+const CHUNKS_OUT = 10, REGS_OUT = 2, REGS_IDLE = 8;
 function startMeshWorker() {
   try {
     if (typeof Worker === 'undefined' || typeof location !== 'undefined' && /[?&]mw=0/.test(location.search)) return;
@@ -89,12 +92,12 @@ function startMeshWorker() {
 function meshWorkerFailed(why) {
   if (typeof console !== 'undefined') console.warn('meshing worker stopped, meshing on the page instead:', why);
   if (mw) { try { mw.terminate(); } catch (e) { /* gone */ } }
-  mw = null; wlog.on = false; wlog.n = 0; mwJobs.length = 0; mwBusy = 0; mwBack.length = 0; stats.worker = false;
+  mw = null; wlog.on = false; wlog.n = 0; mwJobs.length = 0; chunksOut = 0; regsOut = 0; mwBack.length = 0; stats.worker = false;
   for (let k = 0; k < chunkAsked.length; k++) if (chunkAsked[k]) { chunkAsked[k] = 0; dirty.add(k); }
   for (let r = 0; r < regAsked.length; r++) if (regAsked[r]) { regAsked[r] = 0; regTodo.add(r); }
 }
-function askChunk(k) { chunkAsked[k] = 1; mwBusy++; mwJobs.push([0, k, k % NCX, (k / NCX) | 0]); }
-function askRegion(r, rx, rz, n) { regAsked[r] = 1; mwBusy++; mwJobs.push([1, r, rx, rz, n, n]); }
+function askChunk(k) { chunkAsked[k] = 1; chunksOut++; mwJobs.push([0, k, k % NCX, (k / NCX) | 0]); }
+function askRegion(r, rx, rz, n) { regAsked[r] = 1; regsOut++; mwJobs.push([1, r, rx, rz, n, n]); }
 // send what is waiting (the cells written since the last message go with it, even with no jobs, so the copy keeps up)
 function mwSend() {
   if (!mw || (!mwJobs.length && wlog.n < 4096)) return;
@@ -141,10 +144,9 @@ if (typeof window !== 'undefined') window.__lodCheck = lodCheck;
 // put what came back in the scene
 function mwTake() {
   for (const d of mwBack) {
-    mwBusy--;
     stats.chunkMs = (stats.chunkMs || 0) + d.ms;   // the worker's time, for the playtest reports
-    if (d.t === 0) { chunkAsked[d.k] = 0; placeChunk(d.k, geoFromPack(d.p)); }
-    else { regAsked[d.k] = 0; stats.regions = (stats.regions || 0) + 1; stats.regionMs = (stats.regionMs || 0) + d.ms; placeRegion(d.k, geoFromPack(d.p)); lodX = -1e9; }
+    if (d.t === 0) { chunksOut--; chunkAsked[d.k] = 0; placeChunk(d.k, geoFromPack(d.p)); }
+    else { regsOut--; regAsked[d.k] = 0; stats.regions = (stats.regions || 0) + 1; stats.regionMs = (stats.regionMs || 0) + d.ms; placeRegion(d.k, geoFromPack(d.p)); lodX = -1e9; }
   }
   mwBack.length = 0;
 }
@@ -160,7 +162,7 @@ export function flushChunks(ms = 5) {
   if (mwBack.length) mwTake();
   updateLod();
   // with the worker, the limit is how many jobs are out, not the time here
-  const room = () => (mw ? mwBusy + mwJobs.length < MW_MAX : true);
+  const room = () => chunksOut < CHUNKS_OUT;
   if (dirty.size) {
     order.length = 0;
     for (const k of dirty) {
@@ -181,10 +183,11 @@ export function flushChunks(ms = 5) {
   }
   // coarse copies for far regions, nearest first, with whatever time is left (at least one every fourth frame)
   if (mw) {
-    if (regTodo.size && room()) {
-      fOrder.length = 0; for (const r of regTodo) if (!regAsked[r] && (regMesh[r] === null || !regShown[r] || tick - regBuilt[r] >= (r >= 2 * NRG ? 30 : 10))) fOrder.push(r);
+    const regRoom = () => regsOut < (chunksOut ? REGS_OUT : REGS_IDLE);
+    if (regTodo.size && regRoom()) {
+      fOrder.length = 0; for (const r of regTodo) if (!regAsked[r] && (regMesh[r] === null || !regShown[r] || tick - regBuilt[r] >= (r >= 2 * NRG ? 90 : 30))) fOrder.push(r);
       if (fOrder.length > 1) fOrder.sort((a, b) => regFar(a) - regFar(b));
-      for (const r of fOrder) { if (!room()) break; regTodo.delete(r); buildRegion(r); }
+      for (const r of fOrder) { if (!regRoom()) break; regTodo.delete(r); buildRegion(r); }
     }
     mwSend();
   } else if (regTodo.size && (performance.now() - t0 < ms || (tick & 3) === 0)) {
@@ -224,7 +227,7 @@ export function lodStats() {
   let a = 0, b = 0, r1 = 0, r2 = 0;
   for (let k = 0; k < NCH; k++) { if (lodNow[k] === 1) a++; else if (lodNow[k] === 2) b++; }
   for (let c = 0; c < NRG; c++) { r1 += regShown[NRG + c]; r2 += regShown[2 * NRG + c]; }
-  return { half: a, quarter: b, regions: r1 + r2, waiting: regTodo.size };
+  return { half: a, quarter: b, regions: r1 + r2, waiting: regTodo.size, dirty: dirty.size, lazy: lazy.size, out: chunksOut + regsOut };
 }
 function staleFar(k) {
   nearStale[k] = 1;
