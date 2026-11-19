@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import { Unit } from '../units/src/unit.js';
 import { hash } from '../units/src/voxpart.js';
 import { makeDebris } from '../units/src/debris.js';
-import { CAR, crush, fireSpots, char } from '../civilian/src/cars.js';
+import { CAR, crush, fireSpots, char, charStep, blowStep } from '../civilian/src/cars.js';
 import { CITY_BUS, SCHOOL_BUS } from '../civilian/src/buses.js';
 import { TUGBOAT, BARGE_BOAT, TOUR_BOAT, FERRY, LINER, CARRIER, CONTAINER_SHIP, PLEASURE_BOAT, DECK_JETS, WAIST, lowSide } from '../civilian/src/boats.js';
 import { EXPRESS_TRAIN, COMMUTER_TRAIN } from '../civilian/src/trains.js';
@@ -46,56 +46,119 @@ const SPEC = {
   commuter: { def: COMMUTER_TRAIN, n: 1500, solo: true },
 };
 const NEAR = 200, NEAR_SOLO = 300;   // inside this distance of the camera a model is drawn in full
+const FAR_SOLO = 600;                // past this a ship or a crane's far copy is the one in bigger cubes, on every quality step
 const CELL = 128;                    // parked cars are grouped by squares of the map this size, so whole groups can be left out
 const BIG_PART = 9000;               // a part with more cubes than this is not rebuilt more than a few times a second
 const JET_HP = 2;
 
-// ---- the far copy: the whole model redrawn as one shell of cubes twice the size (the town's own), a flat colour each ----
-function coarse(u) {
-  const v = new THREE.Vector3(), box = new THREE.Box3(), list = [];
+// ---- the far copy: the whole model redrawn as one shell of cubes the size of the town's own, a flat colour each ----
+// Returns two: [0] in cubes of one voxel, [1] in cubes of two (a quarter of the faces), for far off and for the lighter
+// quality steps. Each face is four corners and two triangles, with its own normal.
+// `inv` (the inverse of the unit's own place in the world) is given for a unit that already stands in the town, so the
+// copy comes out in the unit's own space like one made before it was placed.
+function coarse(u, inv = null) {
+  const v = new THREE.Vector3(), box = new THREE.Box3(), list = [], mats = [];
   for (const p of u.parts) {
     if (p.bone.getWorldScale(v).x < 0.5 || !p.count) continue;   // lamps that are switched off
-    list.push(p);
-    for (const i of [p.i0, p.i0 + p.nx]) for (const j of [p.j0, p.j0 + p.ny]) for (const k of [p.k0, p.k0 + p.nz]) box.expandByPoint(v.set(i * p.h, j * p.h, k * p.h).applyMatrix4(p.bone.matrixWorld));
+    const mw = inv ? new THREE.Matrix4().multiplyMatrices(inv, p.bone.matrixWorld) : p.bone.matrixWorld;
+    list.push(p); mats.push(mw);
+    for (const i of [p.i0, p.i0 + p.nx]) for (const j of [p.j0, p.j0 + p.ny]) for (const k of [p.k0, p.k0 + p.nz]) box.expandByPoint(v.set(i * p.h, j * p.h, k * p.h).applyMatrix4(mw));
   }
-  const s = 1, a0 = Math.floor(box.min.x / s) - 1, b0 = Math.floor(box.min.y / s) - 1, c0 = Math.floor(box.min.z / s) - 1;
-  const X = Math.ceil(box.max.x / s) - a0 + 2, Y = Math.ceil(box.max.y / s) - b0 + 2, Z = Math.ceil(box.max.z / s) - c0 + 2, M = X * Y * Z;
-  const cnt = new Uint8Array(M), sr = new Float32Array(M), sg = new Float32Array(M), sb = new Float32Array(M);
-  for (const p of list) {
-    const mw = p.bone.matrixWorld, h = p.h;
+  if (!list.length) return null;   // nothing of it left to draw
+  const a0 = Math.floor(box.min.x) - 1, b0 = Math.floor(box.min.y) - 1, c0 = Math.floor(box.min.z) - 1;
+  const X = Math.ceil(box.max.x) - a0 + 2, Y = Math.ceil(box.max.y) - b0 + 2, Z = Math.ceil(box.max.z) - c0 + 2, M = X * Y * Z;
+  const cnt = new Uint16Array(M), sr = new Float32Array(M), sg = new Float32Array(M), sb = new Float32Array(M);
+  list.forEach((p, pi) => {
+    const mw = mats[pi], h = p.h;
     for (let n = 0, k = 0; k < p.nz; k++) for (let j = 0; j < p.ny; j++) for (let i = 0; i < p.nx; i++, n++) {
       const c = p.col[n]; if (c < 0) continue;
       v.set((p.i0 + i + 0.5) * h, (p.j0 + j + 0.5) * h, (p.k0 + k + 0.5) * h).applyMatrix4(mw);
-      const m = ((Math.floor(v.z / s) - c0) * Y + Math.floor(v.y / s) - b0) * X + Math.floor(v.x / s) - a0;
-      if (cnt[m] < 255) cnt[m]++; sr[m] += (c >> 16) & 255; sg[m] += (c >> 8) & 255; sb[m] += c & 255;
+      const m = ((Math.floor(v.z) - c0) * Y + Math.floor(v.y) - b0) * X + Math.floor(v.x) - a0;
+      if (cnt[m] < 65535) { cnt[m]++; sr[m] += (c >> 16) & 255; sg[m] += (c >> 8) & 255; sb[m] += c & 255; }
+    }
+  });
+  const fine = { cnt, sr, sg, sb, X, Y, Z, a0, b0, c0 };
+  return [shell(fine, 1, 2), shell(halved(fine), 2, 4)];
+}
+// The same for a big model that is already in the town (a damaged ship): only the copy in cubes of two voxels, counted
+// straight into the bigger cells, and a slice at a time. It is a generator: each `next()` does about COARSE_SLICE cells,
+// and the last one returns the geometry. The cells are the ones `halved(fine)` would give, so the copy looks the same.
+const COARSE_SLICE = 200000;
+function* coarseHalf(u, inv) {
+  const v = new THREE.Vector3(), box = new THREE.Box3(), list = [], mats = [];
+  for (const p of u.parts) {
+    if (p.bone.getWorldScale(v).x < 0.5 || !p.count) continue;
+    const mw = new THREE.Matrix4().multiplyMatrices(inv, p.bone.matrixWorld);
+    list.push(p); mats.push(mw);
+    for (const i of [p.i0, p.i0 + p.nx]) for (const j of [p.j0, p.j0 + p.ny]) for (const k of [p.k0, p.k0 + p.nz]) box.expandByPoint(v.set(i * p.h, j * p.h, k * p.h).applyMatrix4(mw));
+  }
+  if (!list.length) return null;
+  const fa = Math.floor(box.min.x) - 1, fb = Math.floor(box.min.y) - 1, fc = Math.floor(box.min.z) - 1;
+  const FX = Math.ceil(box.max.x) - fa + 2, FY = Math.ceil(box.max.y) - fb + 2, FZ = Math.ceil(box.max.z) - fc + 2;
+  const a0 = Math.floor(fa / 2) - 1, b0 = Math.floor(fb / 2) - 1, c0 = Math.floor(fc / 2) - 1;
+  const X = Math.floor((fa + FX - 1) / 2) - a0 + 2, Y = Math.floor((fb + FY - 1) / 2) - b0 + 2, Z = Math.floor((fc + FZ - 1) / 2) - c0 + 2, M = X * Y * Z;
+  const cnt = new Uint32Array(M), sr = new Float32Array(M), sg = new Float32Array(M), sb = new Float32Array(M);
+  let done = 0;
+  for (let pi = 0; pi < list.length; pi++) {
+    const p = list[pi], e = mats[pi].elements, h = p.h, L = p.nx * p.ny;
+    for (let k = 0; k < p.nz; k++) {
+      for (let n = k * L, j = 0; j < p.ny; j++) for (let i = 0; i < p.nx; i++, n++) {
+        const c = p.col[n]; if (c < 0) continue;
+        const x = (p.i0 + i + 0.5) * h, y = (p.j0 + j + 0.5) * h, z = (p.k0 + k + 0.5) * h;
+        const wx = e[0] * x + e[4] * y + e[8] * z + e[12], wy = e[1] * x + e[5] * y + e[9] * z + e[13], wz = e[2] * x + e[6] * y + e[10] * z + e[14];
+        const m = ((Math.floor(Math.floor(wz) / 2) - c0) * Y + Math.floor(Math.floor(wy) / 2) - b0) * X + Math.floor(Math.floor(wx) / 2) - a0;
+        cnt[m]++; sr[m] += (c >> 16) & 255; sg[m] += (c >> 8) & 255; sb[m] += c & 255;
+      }
+      done += L; if (done >= COARSE_SLICE) { done = 0; yield; }
     }
   }
+  yield;
+  return shell({ cnt, sr, sg, sb, X, Y, Z, a0, b0, c0 }, 2, 4);
+}
+// the same count-and-colour grid in cells twice the size
+function halved(G) {
+  const a0 = Math.floor(G.a0 / 2) - 1, b0 = Math.floor(G.b0 / 2) - 1, c0 = Math.floor(G.c0 / 2) - 1;
+  const X = Math.floor((G.a0 + G.X - 1) / 2) - a0 + 2, Y = Math.floor((G.b0 + G.Y - 1) / 2) - b0 + 2, Z = Math.floor((G.c0 + G.Z - 1) / 2) - c0 + 2, M = X * Y * Z;
+  const cnt = new Uint32Array(M), sr = new Float32Array(M), sg = new Float32Array(M), sb = new Float32Array(M);
+  for (let c = 0, n = 0; c < G.Z; c++) for (let b = 0; b < G.Y; b++) for (let a = 0; a < G.X; a++, n++) {
+    if (!G.cnt[n]) continue;
+    const m = ((Math.floor((c + G.c0) / 2) - c0) * Y + Math.floor((b + G.b0) / 2) - b0) * X + Math.floor((a + G.a0) / 2) - a0;
+    cnt[m] += G.cnt[n]; sr[m] += G.sr[n]; sg[m] += G.sg[n]; sb[m] += G.sb[n];
+  }
+  return { cnt, sr, sg, sb, X, Y, Z, a0, b0, c0 };
+}
+// the outside of a grid as cubes of side s; a cell counts as solid with at least `need` of the model's cubes in it
+function shell(G, s, need) {
+  const { cnt, sr, sg, sb, X, Y, Z, a0, b0, c0 } = G, M = X * Y * Z;
   // only the outside shows: flood the air in from a corner, and whatever it cannot reach counts as solid
   const air = new Uint8Array(M), stack = [0], D = [1, -1, X, -X, X * Y, -X * Y]; air[0] = 1;
   while (stack.length) {
     const m = stack.pop(), a = m % X, b = Math.floor(m / X) % Y, c = Math.floor(m / (X * Y));
     for (let d = 0; d < 6; d++) {
       if ((d === 0 && a === X - 1) || (d === 1 && a === 0) || (d === 2 && b === Y - 1) || (d === 3 && b === 0) || (d === 4 && c === Z - 1) || (d === 5 && c === 0)) continue;
-      const k = m + D[d]; if (air[k] || cnt[k] >= 2) continue;
+      const k = m + D[d]; if (air[k] || cnt[k] >= need) continue;
       air[k] = 1; stack.push(k);
     }
   }
-  const P = [], C = [], col = new THREE.Color(), q = [0, 0, 0], dim = [X, Y, Z];
+  const P = [], N = [], C = [], I = [], col = new THREE.Color(), q = [0, 0, 0], nrm = [0, 0, 0];
   for (let c = 1; c < Z - 1; c++) for (let b = 1; b < Y - 1; b++) for (let a = 1; a < X - 1; a++) {
-    const m = (c * Y + b) * X + a, n = cnt[m]; if (n < 2) continue;
+    const m = (c * Y + b) * X + a, n = cnt[m]; if (n < need) continue;
     let tinted = false;
     for (let ax = 0; ax < 3; ax++) for (const sg2 of [1, -1]) {
       if (!air[m + sg2 * D[ax * 2]]) continue;
       if (!tinted) { tinted = true; col.setRGB(sr[m] / n / 255, sg[m] / n / 255, sb[m] / n / 255, THREE.SRGBColorSpace).multiplyScalar(0.84 + 0.1 * hash(a, b, c, 5)); }
-      const uu = (ax + 1) % 3, vv = (ax + 2) % 3, cs = sg2 > 0 ? [[0, 0], [1, 0], [1, 1], [0, 0], [1, 1], [0, 1]] : [[0, 0], [1, 1], [1, 0], [0, 0], [0, 1], [1, 1]];
+      const uu = (ax + 1) % 3, vv = (ax + 2) % 3, cs = sg2 > 0 ? [[0, 0], [1, 0], [1, 1], [0, 1]] : [[0, 0], [1, 1], [1, 0], [0, 1]], base = P.length / 3;
+      nrm[0] = nrm[1] = nrm[2] = 0; nrm[ax] = sg2;
       for (const [cu, cv] of cs) {
         q[0] = a + a0; q[1] = b + b0; q[2] = c + c0; q[ax] += sg2 > 0 ? 1 : 0; q[uu] += cu; q[vv] += cv;
-        P.push(q[0] * s, q[1] * s, q[2] * s); C.push(col.r, col.g, col.b);
+        P.push(q[0] * s, q[1] * s, q[2] * s); N.push(nrm[0], nrm[1], nrm[2]); C.push(col.r, col.g, col.b);
       }
+      if (sg2 > 0) I.push(base, base + 1, base + 2, base, base + 2, base + 3); else I.push(base, base + 1, base + 2, base, base + 3, base + 1);
     }
   }
   const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(C, 3)); g.computeVertexNormals();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(C, 3));
+  g.setIndex(P.length / 3 > 65535 ? new THREE.Uint32BufferAttribute(I, 1) : new THREE.Uint16BufferAttribute(I, 1));
   return g;
 }
 // every part of a unit as it stands, in one mesh (gi 0: painted cubes, 1: the lit ones), or null if it has none
@@ -140,6 +203,7 @@ export function makeCivilians(o) {
   const recs = [], live = [], cells = new Map(), variants = new Map(), grid = new Map(), fuses = [], air = [], sorties = [], rockets = [];
   const ZERO = new THREE.Matrix4().makeScale(0, 0, 0), UP = new THREE.Vector3(0, 1, 0), _c = new THREE.Vector3(), _d = new THREE.Vector3(), _w = new THREE.Vector3(), _q = new THREE.Quaternion(), _e = new THREE.Euler(0, 0, 0, 'YXZ'), _s = new THREE.Vector3(1, 1, 1);
   let clock = 0, quiet = false, lodT = 0, stamp = 0, carrier = null, jetT = 26, toldJets = false;
+  let nearD = NEAR, nearSoloD = NEAR_SOLO, farLvl = 0;   // the lighter quality steps draw models in full less far out, and their far copies in bigger cubes (detail() below)
 
   // ---- which model stands where ----
   const hx = (v, s) => hash(Math.round(v.x), s, Math.round(v.z), 17);
@@ -174,7 +238,7 @@ export function makeCivilians(o) {
       if (spec.solo) {
         const u = stand(rec, { ...opts, seed: 3 + n, low: v.low });
         rec.size = sizeOf(u); u.half = Math.round(rec.size.fz1 - rec.size.fz0) - 2;
-        rec.far = new THREE.Mesh(coarse(u), mats[0]); rec.far.receiveShadow = true; rec.far.matrixAutoUpdate = false; rec.far.matrix.copy(rec.m); rec.far.matrixWorldNeedsUpdate = true; rec.far.visible = false; scene.add(rec.far);
+        rec.farG = coarse(u); rec.far = new THREE.Mesh(rec.farG[farLvl], mats[0]); rec.far.name = 'far copies of vehicles'; rec.far.receiveShadow = true; rec.far.matrixAutoUpdate = false; rec.far.matrix.copy(rec.m); rec.far.matrixWorldNeedsUpdate = true; rec.far.visible = false; scene.add(rec.far);
         u.root.position.set(rec.x, rec.y, rec.z); u.root.rotation.y = rec.yaw; scene.add(u.root);
         if (spec.clip) u.play(spec.clip, 0);
         if (kind === 'carrier') carrier = rec;
@@ -192,13 +256,14 @@ export function makeCivilians(o) {
     });
     // the shared meshes: one far copy of each kind for the whole map, and the full model once for each square it stands in
     for (const V of variants.values()) {
-      V.farMesh = new THREE.InstancedMesh(V.far, mats[0], V.recs.length); V.farMesh.frustumCulled = false; V.farMesh.receiveShadow = true; scene.add(V.farMesh);
-      V.recs.forEach((r) => V.farMesh.setMatrixAt(r.farSlot, r.m));
+      V.farMesh = new THREE.InstancedMesh(V.far[farLvl], mats[0], V.recs.length); V.farMesh.name = 'parked, far'; V.farMesh.frustumCulled = false; V.farMesh.receiveShadow = true; scene.add(V.farMesh);
+      V.farMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      V.recs.forEach((r) => { r.farOn = true; V.farMesh.setMatrixAt(r.farSlot, r.m); });
     }
     for (const c of cells.values()) {
       const by = new Map(); for (const r of c.recs) { if (!by.has(r.V)) by.set(r.V, []); by.get(r.V).push(r); }
       for (const [V, list] of by) {
-        const ms = V.near.map((g, gi) => { if (!g) return null; const m = new THREE.InstancedMesh(g, mats[gi], list.length); m.castShadow = gi === 0; m.receiveShadow = gi === 0; m.visible = false; scene.add(m); c.meshes.push(m); return m; });
+        const ms = V.near.map((g, gi) => { if (!g) return null; const m = new THREE.InstancedMesh(g, mats[gi], list.length); m.name = 'parked, near'; m.castShadow = gi === 0; m.receiveShadow = gi === 0; m.visible = false; scene.add(m); c.meshes.push(m); return m; });
         list.forEach((r, i) => { r.slot = i; r.nearMeshes = ms; for (const m of ms) if (m) m.setMatrixAt(i, r.m); });
         for (const m of ms) if (m) m.computeBoundingSphere();
       }
@@ -215,7 +280,7 @@ export function makeCivilians(o) {
   // ---- a parked car becomes a unit, and goes back to being a drawing if nothing came of it ----
   function draw(rec, on) {
     for (const m of rec.nearMeshes) if (m) { m.setMatrixAt(rec.slot, on ? rec.m : ZERO); m.instanceMatrix.needsUpdate = true; }
-    rec.V.farMesh.setMatrixAt(rec.farSlot, on && !rec.cell.near ? rec.m : ZERO); rec.V.farMesh.instanceMatrix.needsUpdate = true;
+    rec.farOn = on && !rec.cell.near; farDirty = true;
   }
   function wake(rec) {
     if (rec.unit || rec.gone) return rec.unit;
@@ -226,10 +291,40 @@ export function makeCivilians(o) {
   }
   function sleep(rec) { rec.unit.dispose(); rec.unit = null; draw(rec, true); }
   const pristine = (rec) => { const u = rec.unit; return u && !u.dead && !u.gone && u.voxels === u.voxels0 && !rec.touched; };
-  function touch(rec) {   // the first time a boat or crane is damaged its far copy is put away for good
-    rec.touched = true; rec.idle = 0;
-    if (rec.far) { rec.far.removeFromParent(); rec.far.geometry.dispose(); rec.far = null; rec.unit.root.visible = true; }
+  function unfar(rec) { if (rec.far) { rec.far.removeFromParent(); for (const g of rec.farG) g.dispose(); rec.far = rec.farG = null; rec.remade = false; if (rec.unit) rec.unit.root.visible = true; } }
+  function touch(rec) {   // damaged: its far copy no longer looks like it, and is put away until it has come to rest (refar below)
+    rec.touched = true; rec.idle = 0; rec.stillT = 0; rec.noFar = false;
+    unfar(rec);
   }
+  // ---- a far copy for what has been damaged ----
+  // A wrecked car stays a model of 11 to 15 meshes for the 45 to 70 s it lies there, and a ship that had been touched was
+  // drawn in full from then on, at any distance (a tug is 77,000 triangles, the carrier 300,000). Late in a round on the
+  // lowest quality step these were a third of the draw calls. Once such a model has come to rest (its wreck clip over,
+  // the fire out, no rebuild owed) and is far enough off, a far copy is made of it as it now stands and takes its place,
+  // like the copy an untouched one has. A car's is made in one go; a ship's a slice a frame (coarseHalf), one at a time.
+  const still = (rec) => { const u = rec.unit;
+    if (!u || u.gone || rec.far || rec.noFar || !(rec.touched || u.dead)) return false;   // (a car that was hit but not wrecked stays a model for the rest of the round: it counts too)
+    if ((u.dead && !u.finished) || (u.fire && u.fire.t < u.fire.life + 3) || u.charring || u.blowing || u.settleT > 0 || u.leakT > 0 || (!u.dead && rec.alarmT > 0)) return false;   // (a wreck's alarm clock stops with it)
+    for (const p of u.parts) if (p.dirty || p.more || p.owed) return false;
+    return true; };
+  let farJob = null; const REFAR = new URLSearchParams(location.search).get('refar') !== '0';   // ?refar=0: as it was, for comparing
+  function refar(rec) {   // called from lod() for one that is still and far enough: start its copy if nothing else is being made
+    if (!REFAR || farJob || !(rec.stillT > (rec.spec.solo ? 3 : 1.5))) return;
+    const u = rec.unit; u.root.updateWorldMatrix(true, true);
+    const at = u.root.matrixWorld.clone(), inv = at.clone().invert(); let cells = 0; for (const p of u.parts) cells += p.col.length;
+    farJob = { rec, at, big: cells > COARSE_SLICE, gen: cells > COARSE_SLICE ? coarseHalf(u, inv) : null, inv };
+  }
+  function farStep() {
+    const j = farJob, rec = j.rec, u = rec.unit;
+    if (!u || u.gone || rec.gone || rec.far || !(rec.stillT > 0)) { farJob = null; return; }   // it was hit again meanwhile
+    let G;
+    if (j.big) { const r = j.gen.next(); if (!r.done) return; G = r.value && [r.value, r.value]; } else G = coarse(u, j.inv);
+    farJob = null;
+    if (!G) { rec.noFar = true; return; }   // (nothing left of it)
+    rec.farG = G; rec.remade = true; rec.far = new THREE.Mesh(G[farLvl], mats[0]); rec.far.name = 'far copies of vehicles'; rec.far.receiveShadow = true; rec.far.matrixAutoUpdate = false; rec.far.matrix.copy(j.at); rec.far.matrixWorldNeedsUpdate = true; rec.far.visible = false; scene.add(rec.far);
+    remakes++; lodT = 0;
+  }
+  let remakes = 0;
 
   // ---- look-up ----
   function near(x, z, r, fn) {
@@ -312,6 +407,7 @@ export function makeCivilians(o) {
     if (r <= 0.3 || rec.gone) return 0;
     const u = wake(rec); if (!u || u.gone) return 0;
     const n = u.hit(p, r, cube, push);
+    if (!n && rec.far) for (const q of u.parts) if (q.dirty) { touch(rec); break; }   // only scorched: its far copy is out of date all the same
     if (n) { touch(rec); if (u.blown && !u.boomed) { u.boomed = true; boom(rec, who, later); } else if (!u.blown && Math.random() < 0.3) sfx.play('clang', p, 0.6); }
     return n;
   }
@@ -370,10 +466,12 @@ export function makeCivilians(o) {
       const s = rec.size; local(rec, x, z, _l);
       const k = who === ARMY ? 0.2 : 0.55;   // how much of his foot has to be over it
       if (_l.x < s.fx0 - r * k || _l.x > s.fx1 + r * k || _l.z < s.fz0 - r * k || _l.z > s.fz1 + r * k) return;
+      const t0 = laps.on ? performance.now() : 0;
       if (r < 4.2 && who !== ARMY) {   // too small to flatten it: he kicks a hole in it as he pushes past
         if (clock - rec.treadT < 0.3) return; rec.treadT = clock;
         hit(rec, _d.set(x, rec.y + 1.5 + r * 0.3, z), r * 0.95, 10, who, false);
       } else tread(rec, _l.x, _l.z, who);
+      if (laps.on) { const d = performance.now() - t0; if (d > laps.footMs) { laps.footMs = d; laps.foot = rec.kind; } }
     });
   }
 
@@ -403,8 +501,10 @@ export function makeCivilians(o) {
     const u = rec.unit;
     // a big hull is rebuilt at most a few times a second, however fast the blows land
     for (const p of u.parts) if (p.count > BIG_PART || p.owed) {
-      if (p.dirty) { if (clock - (p.builtAt || -9) < 0.22) { p.dirty = false; p.owed = true; } else p.builtAt = clock; }
-      else if (p.owed && clock - p.builtAt >= 0.22) { p.owed = false; p.dirty = true; p.builtAt = clock; }
+      if (p.more) continue;   // in the middle of a rebuild spread over frames: let it finish
+      // (`dirty` is true, or 2 for "only the layers noted": voxpart.js touched. What is owed keeps that, and true wins.)
+      if (p.dirty) { if (clock - (p.builtAt || -9) < 0.22) { p.owed = p.owed === true ? true : p.dirty; p.dirty = false; } else { if (p.owed === true) p.dirty = true; p.owed = false; p.builtAt = clock; } }
+      else if (p.owed && clock - p.builtAt >= 0.22) { p.dirty = p.owed; p.owed = false; p.builtAt = clock; }
     }
     u.update(dt);
     if (u.def.wk.boat) afloat(rec, dt);
@@ -412,35 +512,98 @@ export function makeCivilians(o) {
     if (u.leakT > 0) { u.leakT -= dt; if (u.leakT <= 0 && !u.blown) { const p = u.bones.body.localToWorld(new THREE.Vector3(0, 3, (u.crushes ? u.crushes[u.crushes.length - 1][1] : 0) * 0.5)); fx.explode(p.setY(rec.y + 1.2), 2.2); sfx.play('boom', p, 0.5); u.fire = fx.burn(u.bones.body, fireSpots(u, 8), { life: 9, size: 0.85 }); } }
     if (u.settleT > 0) { u.settleT -= dt; if (u.settleT <= 0 && u.fire && !u.crushed) u.fire.spots = fireSpots(u, u.def.wk.fires || 12); }   // once it has come to rest the fire moves to whatever is now on top
     if (u.fire && u.blown && u.charT > 0 && u.fire.t > u.charT && u.fire.t < u.fire.life) { u.charT += 3.5; char(u, u.def.wk.char ?? 0.13); }   // a burning wreck goes on charring
+    if (u.charring) charStep(u);
+    if (u.blowing) blowStep(u);
+  }
+  // One far mesh of each kind holds every parked vehicle of that kind on the map, and the graphics card was handed all
+  // of them every frame, behind the camera and past the haze too. Only the ones in a widened view are packed to the front
+  // of the list and drawn; the list is packed again when the camera has moved or turned by part of that margin.
+  let farDirty = true;
+  const wide = new THREE.PerspectiveCamera(), frustum = new THREE.Frustum(), _pm = new THREE.Matrix4(), _ball = new THREE.Sphere(), _fw = new THREE.Vector3(), packed = { x: 1e9, z: 0, fx: 0, fy: 0, fz: 0, far: 0, fov: 0, shown: 0, of: 0, packs: 0 };
+  function packFar() {
+    camera.getWorldDirection(_fw);
+    const p = camera.position, turned = _fw.x * packed.fx + _fw.y * packed.fy + _fw.z * packed.fz < 0.9925;   // 7 degrees
+    if (!farDirty && !turned && Math.abs(p.x - packed.x) + Math.abs(p.z - packed.z) < 12 && camera.far === packed.far && camera.fov === packed.fov) return;
+    farDirty = false; packed.x = p.x; packed.z = p.z; packed.fx = _fw.x; packed.fy = _fw.y; packed.fz = _fw.z; packed.far = camera.far; packed.fov = camera.fov; packed.packs++;
+    wide.fov = Math.min(150, camera.fov + 30); wide.aspect = camera.aspect; wide.near = camera.near; wide.far = camera.far * 1.05; wide.updateProjectionMatrix();
+    camera.updateMatrixWorld(); wide.matrixWorldInverse.copy(camera.matrixWorld).invert();
+    frustum.setFromProjectionMatrix(_pm.multiplyMatrices(wide.projectionMatrix, wide.matrixWorldInverse));
+    let shown = 0, of = 0;
+    for (const V of variants.values()) {
+      const mesh = V.farMesh; if (!mesh) continue;
+      const arr = mesh.instanceMatrix.array; let n = 0;
+      for (const r of V.recs) {
+        if (!r.farOn) continue;
+        of++; _ball.center.set(r.x, r.y + 2, r.z); _ball.radius = r.reach + 4;
+        if (!frustum.intersectsSphere(_ball)) continue;
+        r.m.toArray(arr, n * 16); n++;
+      }
+      if (mesh.count !== n || n) { mesh.count = n; mesh.instanceMatrix.clearUpdateRanges(); mesh.instanceMatrix.addUpdateRange(0, n * 16); mesh.instanceMatrix.needsUpdate = true; }
+      shown += n;
+    }
+    packed.shown = shown; packed.of = of;
   }
   function lod() {
     const cx = camera.position.x, cz = camera.position.z, cy = camera.position.y;
     for (const c of cells.values()) {
-      const d = Math.hypot(Math.max(c.x0 - cx, 0, cx - c.x0 - CELL), Math.max(c.z0 - cz, 0, cz - c.z0 - CELL), cy * 0.5), want = d < (c.near ? NEAR + 30 : NEAR);
+      const d = Math.hypot(Math.max(c.x0 - cx, 0, cx - c.x0 - CELL), Math.max(c.z0 - cz, 0, cz - c.z0 - CELL), cy * 0.5), want = d < (c.near ? nearD + 30 : nearD);
       if (want === c.near) continue;
       c.near = want; for (const m of c.meshes) m.visible = want;
-      for (const r of c.recs) if (!r.unit && !r.gone) { r.V.farMesh.setMatrixAt(r.farSlot, want ? ZERO : r.m); r.V.farMesh.instanceMatrix.needsUpdate = true; }
+      for (const r of c.recs) if (!r.unit && !r.gone) r.farOn = !want;
+      farDirty = true;
     }
-    for (const rec of live) if (rec.far) { const d = Math.hypot(rec.x - cx, rec.z - cz) - rec.reach, want = d < (rec.unit.root.visible ? NEAR_SOLO + 40 : NEAR_SOLO); rec.unit.root.visible = want; rec.far.visible = !want; }
+    // On the lighter steps (o.cubePx) a boat inside that distance still gives way to its far copy in one-voxel cubes
+    // while its own cubes, half that size, would cover less than so many pixels, measured to the nearest point of its
+    // footprint. A big ship is 200,000 to 440,000 triangles, and on a phone's screen two of them in view were half of
+    // everything drawn, with cubes under a pixel. One that has been hit is left alone: its copy is in bigger cubes. Only
+    // boats: a far copy stands still (see `away` in update), and a crane at work would be seen to stop.
+    const P = o.cubePx ? o.cubePx() : 0, vh = P ? (o.viewH ? o.viewH() : window.innerHeight) / (2 * Math.tan(camera.fov * Math.PI / 360)) : 0;
+    for (const rec of live) {
+      // how near a model is drawn in full: a ship's remade copy is in the bigger cubes only, so on the better steps it waits for the distance at which an untouched ship's is too
+      const nd = !rec.spec.solo ? nearD : rec.remade && !farLvl ? FAR_SOLO : nearSoloD, d = Math.hypot(rec.x - cx, rec.z - cz) - rec.reach;
+      if (rec.far) {
+        let want = d < (rec.unit.root.visible ? nd + 40 : nd), mid = false;
+        if (want && P && rec.unit.def.wk.boat && !rec.remade) {
+          const b = rec.size.box; local(rec, cx, cz, _l);
+          const gap = Math.hypot(Math.max(b.min.x - _l.x, 0, _l.x - b.max.x), Math.max(b.min.z - _l.z, 0, _l.z - b.max.z), Math.max(0, cy - rec.y - b.max.y));
+          if (rec.unit.def.h * vh / Math.max(1, gap) < (rec.unit.root.visible ? P * 0.85 : P)) { want = false; mid = true; }
+        }
+        rec.unit.root.visible = want; rec.far.visible = !want;
+        if (!want) { const g = rec.farG[mid ? 0 : farLvl || d > FAR_SOLO ? 1 : 0]; if (rec.far.geometry !== g) rec.far.geometry = g; }
+      }
+      else if (d > nd + 40 && rec.stillT > 0) refar(rec);
+    }
   }
+  // Where this step's time went, for the pause lines of the playtest reports (only measured where those are on): by part,
+  // and the one vehicle whose own step took longest, and the one a foot cost most on.
+  const laps = { on: false, lod: 0, feet: 0, jets: 0, units: 0, fuses: 0, far: 0, fx: 0, unit: '', unitMs: 0, foot: '', footMs: 0 };
+  let lapT = 0;
+  const lapC = (k) => { if (!laps.on) return; const n = performance.now(); if (k) laps[k] += n - lapT; lapT = n; };
   function update(dt, playing) {
     if (!(dt >= 0)) dt = 0;   // the very first frame has no time step yet
+    laps.on = !!globalThis.__stepT; laps.lod = laps.feet = laps.jets = laps.units = laps.fuses = laps.far = laps.fx = laps.unitMs = laps.footMs = 0; laps.unit = laps.foot = ''; lapC();
     clock += dt; lodT -= dt; if (lodT <= 0) { lodT = 0.2; lod(); }
-    sfx.on = !o.muted();
-    if (playing) { feet(); stepJets(dt); }
+    sfx.on = !o.muted(); lapC('lod');
+    if (playing) { feet(); lapC('feet'); stepJets(dt); lapC('jets'); }
     for (let i = live.length - 1; i >= 0; i--) {
       const rec = live[i], u = rec.unit;
-      if (rec.far && !u.root.visible) continue;   // far off and untouched: its far copy stands in, and it need not move
-      stepUnit(rec, dt);
+      const away = rec.far && !u.root.visible;   // far off, and untouched or come to rest: its far copy stands in, and it need not move
+      if (!away) {
+        const t0 = laps.on ? performance.now() : 0;
+        stepUnit(rec, dt); rec.stillT = still(rec) ? (rec.stillT || 0) + dt : 0;
+        if (laps.on) { const d = performance.now() - t0; if (d > laps.unitMs) { laps.unitMs = d; laps.unit = rec.kind; } }
+      }
       if (rec.spec.solo) continue;
+      if (away) { if (!u.dead) continue; rec.idle += dt; if (rec.idle > (u.crushed && !u.blown ? 70 : 45)) { pay(rec, 1, ARMY, true); unfar(rec); u.dispose(); rec.unit = null; rec.gone = true; live.splice(i, 1); } continue; }   // a far wreck's time is up: it goes without the show
       // a car that was only woken (an alarm, a near miss) is put back; a wreck lies a while, then crumbles
       if (pristine(rec) && !(rec.alarmT > 0)) { rec.idle += dt; if (rec.idle > 2) { sleep(rec); live.splice(i, 1); } continue; }
       if (u.dead) {
         rec.idle += dt; const burning = u.fire && u.fire.t < u.fire.life + 3;
         if (!u.gone && !burning && rec.idle > (u.crushed && !u.blown ? 70 : 45)) u.burst(cube, null, 5, 0.15);
-        if (u.gone) { pay(rec, 1, ARMY, true); u.dispose(); rec.unit = null; rec.gone = true; live.splice(i, 1); }
+        if (u.gone) { pay(rec, 1, ARMY, true); unfar(rec); u.dispose(); rec.unit = null; rec.gone = true; live.splice(i, 1); }
       }
     }
+    lapC('units');
     for (let i = fuses.length - 1; i >= 0; i--) {
       fuses[i][0] -= dt; if (fuses[i][0] > 0) continue;
       const [, rec, who] = fuses[i]; fuses.splice(i, 1);
@@ -448,8 +611,11 @@ export function makeCivilians(o) {
       if (rec.gone) continue;
       const u = rec.unit; if (u && u.blown) boom(rec, who, true); else kill(rec, who);
     }
+    lapC('fuses');
     if (fx.fires.length && Math.random() < dt * 14) sfx.play('crackle', fx.fires[Math.floor(Math.random() * fx.fires.length)].obj.getWorldPosition(_c), 0.8);
-    debris.update(dt); fx.update(dt);
+    if (farJob) farStep();
+    lapC('far');
+    debris.update(dt); fx.update(dt); lapC('fx');
   }
 
   // ---- the carrier's jets. The two on her catapults take off in turn, make a strafing pass at the monster and fly
@@ -478,7 +644,7 @@ export function makeCivilians(o) {
   function endSortie(s, lost) {
     sorties.splice(sorties.indexOf(s), 1); air.splice(air.indexOf(s), 1); s.dead = true; s.u.dispose();
     // a fresh jet comes up to the catapult, unless she has been wrecked or stepped on meanwhile
-    fuses.push([lost ? 9 : 4, () => { const cv = s.cv, part = cv.parts.find((p) => p.name === 'p' + (s.n + 1)), sv = cv.away && cv.away[s.n]; if (!sv || cv.dead || cv.gone) return; part.col.set(sv.col); part.count = sv.count; part.dirty = true; cv.away[s.n] = null; }]);
+    fuses.push([lost ? 9 : 4, () => { const cv = s.cv, part = cv.parts.find((p) => p.name === 'p' + (s.n + 1)), sv = cv.away && cv.away[s.n]; if (!sv || cv.dead || cv.gone) return; touch(carrier); part.col.set(sv.col); part.count = sv.count; part.dirty = true; cv.away[s.n] = null; }]);
   }
   function damageJet(s, d) {
     if (s.phase !== 'air' || !(d > 0)) return;
@@ -606,7 +772,13 @@ export function makeCivilians(o) {
   }
 
   build();
-  const api = { recs, live, variants, cells, air, sorties, rockets, fx, sfx, debris, update, damageJet, launch, kill, hit, tread, wake, near,
+  const api = { recs, live, variants, cells, air, sorties, rockets, fx, sfx, debris, update, damageJet, launch, kill, hit, tread, wake, near, packed, packFar,
+    get remakes() { return remakes; }, get farJob() { return farJob; }, get laps() { return laps; },
+    detail(k) {
+      nearD = NEAR * k; nearSoloD = NEAR_SOLO * k; lodT = 0;
+      const l = k < 1 ? 1 : 0; if (l === farLvl) return;
+      farLvl = l; for (const V of variants.values()) if (V.farMesh) V.farMesh.geometry = V.far[l];
+    },
     get carrier() { return carrier; },
     counts() { const n = {}; for (const r of recs) n[r.kind] = (n[r.kind] || 0) + 1; return n; } };
   window.__civ = api;

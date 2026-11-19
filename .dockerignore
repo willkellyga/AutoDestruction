@@ -1,0 +1,11 @@
+.git
+node_modules
+dist
+archive
+rea-work
+playtest/www
+playtest/reports.jsonl
+playtest/vendor/cloudflared*
+*.html
+!src/**/*.html
+**/.DS_Store

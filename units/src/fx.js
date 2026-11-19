@@ -316,5 +316,7 @@ export function makeFx(scene, { target, debris, audio, shake = () => {}, world =
   }
   function setScale(heightPx, fov) { const s = heightPx / (2 * Math.tan(fov * Math.PI / 360)); dustP.mat.uniforms.scale.value = s; fireP.mat.uniforms.scale.value = s; }
   function clear() { for (const s of shots) if (s.mesh) { scene.remove(s.mesh); rocketPool.push(s.mesh); } shots.length = 0; }
-  return { fire, backblast, casing, explode, update, setScale, clear, shots, stats: () => ({ shots: shots.length, particles: dustP.live + fireP.live, scorched: target ? target.scorched : 0 }) };
+  // each short-lived effect once, out of sight and of no size, so a game can have their shaders made before a round
+  function warm() { _p.set(0, -900, 0); flash(_p, 0.01, 0.05); ring(_p, 0.01, 0.05); crater(0, 0, 0); const m = rocketMesh(); scene.remove(m); rocketPool.push(m); }
+  return { warm, fire, backblast, casing, explode, update, setScale, clear, shots, stats: () => ({ shots: shots.length, particles: dustP.live + fireP.live, scorched: target ? target.scorched : 0 }) };
 }
