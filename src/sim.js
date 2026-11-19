@@ -226,9 +226,18 @@ const lodNow = new Uint8Array(NCH), nearStale = new Uint8Array(NCH), nearOld = n
 const regTodo = new Set(), fOrder = [];
 const cell = (k) => ((k % NCX) >> 1) + (((k / NCX) | 0) >> 1) * NRX;   // the 2 x 2 cell a chunk is in
 const up2 = (c) => ((c % NRX) & ~1) + (((c / NRX) | 0) & ~1) * NRX;   // the level-2 region's cell
+// How far off a region is, squared, for the far-detail distances. Measured from the action (the monster). On a small
+// screen (setLodEye) the half-detail distance is measured two ways and the nearer counts: from the monster, stretched by 1 / eyeA so that full
+// detail reaches only eyeA of the distance round him, and from the camera, stretched by 1 / eyeB. The camera sits well
+// behind a grown monster, so a disc round him alone is drawn in full out to where a voxel covers one pixel straight ahead,
+// while the pixels are spent beside the camera.
+let eyeOn = false, eyeX = 0, eyeZ = 0, eyeA = 1, eyeB = 1, eyeLX = -1e9, eyeLZ = -1e9;
+export function setLodEye(on, x, z, a, b) { if (on !== eyeOn || (on && (a !== eyeA || b !== eyeB))) lodX = -1e9; eyeOn = on; if (on) { eyeX = x; eyeZ = z; eyeA = a; eyeB = b; } }
 const regFar = (r) => {
-  const L = (r / NRG) | 0, c = r % NRG, n = L === 2 ? 4 : 2;
-  const dx = ((c % NRX) * 2 + n / 2) * 16 - focusX, dz = (((c / NRX) | 0) * 2 + n / 2) * 16 - focusZ; return dx * dx + dz * dz;
+  const L = (r / NRG) | 0, c = r % NRG, n = L === 2 ? 4 : 2, x = ((c % NRX) * 2 + n / 2) * 16, z = (((c / NRX) | 0) * 2 + n / 2) * 16;
+  const dx = x - focusX, dz = z - focusZ, d = dx * dx + dz * dz;
+  if (!eyeOn || L === 2) return d;   // the quarter-detail distance is left alone: it is the skyline, and few triangles
+  const ex = x - eyeX, ez = z - eyeZ; return Math.min(d / (eyeA * eyeA), (ex * ex + ez * ez) / (eyeB * eyeB));
 };
 let LOD1 = Infinity, LOD2 = Infinity, lodX = -1e9, lodZ = -1e9;
 export function setLod(d1, d2) { if (d1 === LOD1 && d2 === LOD2) return; LOD1 = d1; LOD2 = d2; lodX = -1e9; }
@@ -282,9 +291,9 @@ function nearReady(c) {
 }
 function showRegion(r, on) { if (regShown[r] === on) return; regShown[r] = on; if (regMesh[r]) regMesh[r].visible = !!on; }
 function updateLod() {
-  const dx = focusX - lodX, dz = focusZ - lodZ;
-  if (dx * dx + dz * dz < 64) return;   // looked at again when the action has moved 8 voxels
-  lodX = focusX; lodZ = focusZ;
+  const dx = focusX - lodX, dz = focusZ - lodZ, ex = eyeX - eyeLX, ez = eyeZ - eyeLZ;
+  if (dx * dx + dz * dz < 64 && !(eyeOn && ex * ex + ez * ez >= 64)) return;   // looked at again when the action (or, on a small screen, the camera) has moved 8 voxels
+  lodX = focusX; lodZ = focusZ; eyeLX = eyeX; eyeLZ = eyeZ;
   const a = LOD1 * LOD1, b = LOD2 * LOD2;
   for (let c2 = 0; c2 < NRG; c2++) {
     if (((c2 % NRX) & 1) || (((c2 / NRX) | 0) & 1)) continue;   // level-2 regions start on even cells

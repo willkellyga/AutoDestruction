@@ -552,10 +552,25 @@ export function makeCivilians(o) {
       for (const r of c.recs) if (!r.unit && !r.gone) r.farOn = !want;
       farDirty = true;
     }
+    // On the lighter steps (o.cubePx) a boat inside that distance still gives way to its far copy in one-voxel cubes
+    // while its own cubes, half that size, would cover less than so many pixels, measured to the nearest point of its
+    // footprint. A big ship is 200,000 to 440,000 triangles, and on a phone's screen two of them in view were half of
+    // everything drawn, with cubes under a pixel. One that has been hit is left alone: its copy is in bigger cubes. Only
+    // boats: a far copy stands still (see `away` in update), and a crane at work would be seen to stop.
+    const P = o.cubePx ? o.cubePx() : 0, vh = P ? (o.viewH ? o.viewH() : window.innerHeight) / (2 * Math.tan(camera.fov * Math.PI / 360)) : 0;
     for (const rec of live) {
       // how near a model is drawn in full: a ship's remade copy is in the bigger cubes only, so on the better steps it waits for the distance at which an untouched ship's is too
       const nd = !rec.spec.solo ? nearD : rec.remade && !farLvl ? FAR_SOLO : nearSoloD, d = Math.hypot(rec.x - cx, rec.z - cz) - rec.reach;
-      if (rec.far) { const want = d < (rec.unit.root.visible ? nd + 40 : nd); rec.unit.root.visible = want; rec.far.visible = !want; if (!want) { const g = rec.farG[farLvl || d > FAR_SOLO ? 1 : 0]; if (rec.far.geometry !== g) rec.far.geometry = g; } }
+      if (rec.far) {
+        let want = d < (rec.unit.root.visible ? nd + 40 : nd), mid = false;
+        if (want && P && rec.unit.def.wk.boat && !rec.remade) {
+          const b = rec.size.box; local(rec, cx, cz, _l);
+          const gap = Math.hypot(Math.max(b.min.x - _l.x, 0, _l.x - b.max.x), Math.max(b.min.z - _l.z, 0, _l.z - b.max.z), Math.max(0, cy - rec.y - b.max.y));
+          if (rec.unit.def.h * vh / Math.max(1, gap) < (rec.unit.root.visible ? P * 0.85 : P)) { want = false; mid = true; }
+        }
+        rec.unit.root.visible = want; rec.far.visible = !want;
+        if (!want) { const g = rec.farG[mid ? 0 : farLvl || d > FAR_SOLO ? 1 : 0]; if (rec.far.geometry !== g) rec.far.geometry = g; }
+      }
       else if (d > nd + 40 && rec.stillT > 0) refar(rec);
     }
   }
