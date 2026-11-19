@@ -55,6 +55,8 @@ function rebuildChunk(k) {
 function placeChunk(k, geo) {
   const cx = k % NCX, cz = (k / NCX) | 0;
   stats.rebuilt = (stats.rebuilt || 0) + 1;   // counted for the playtest reports (playtest/server.mjs)
+  // its far copies no longer match: they are built again before they are next shown (updateLod)
+  const c = cell(k); regStale[NRG + c] = 1; regStale[2 * NRG + up2(c)] = 1;
   let m = chunkMesh[k];
   if (m) { stats.quads -= m.geometry.userData.quads || 0; m.geometry.dispose(); if (!geo) { scene.remove(m); chunkMesh[k] = null; return; } m.geometry = geo; stats.quads += geo.userData.quads; return; }
   if (!geo) return;
@@ -121,6 +123,21 @@ function meshWorkerCheck() {
   });
 }
 if (typeof window !== 'undefined') window.__meshCheck = meshWorkerCheck;
+// For tests: far copies shown that are older than a chunk under them (a wrecked building drawn whole), chunks drawn twice
+// (full copy and a region), and coarse chunks with nothing drawn.
+function lodCheck() {
+  let ghosts = 0, both = 0, holes = 0;
+  const seen = new Uint8Array(3 * NRG);
+  for (let k = 0; k < NCH; k++) {
+    const c = cell(k), r1 = NRG + c, r2 = 2 * NRG + up2(c), m = chunkMesh[k];
+    const on = regShown[r2] && regMesh[r2] ? r2 : regShown[r1] && regMesh[r1] ? r1 : -1;
+    if (m && m.visible && on >= 0) both++;
+    if (lodNow[k] && on < 0 && regMesh[lodNow[k] === 2 ? r2 : r1] === null) holes++;
+    if (on >= 0 && !seen[on] && built[k] > regBuilt[on]) { seen[on] = 1; ghosts++; }
+  }
+  return { ghosts, both, holes, shown: lodStats().regions };
+}
+if (typeof window !== 'undefined') window.__lodCheck = lodCheck;
 // put what came back in the scene
 function mwTake() {
   for (const d of mwBack) {
@@ -165,7 +182,7 @@ export function flushChunks(ms = 5) {
   // coarse copies for far regions, nearest first, with whatever time is left (at least one every fourth frame)
   if (mw) {
     if (regTodo.size && room()) {
-      fOrder.length = 0; for (const r of regTodo) if (!regAsked[r] && (regMesh[r] === null || tick - regBuilt[r] >= (r >= 2 * NRG ? 90 : 30))) fOrder.push(r);
+      fOrder.length = 0; for (const r of regTodo) if (!regAsked[r] && (regMesh[r] === null || !regShown[r] || tick - regBuilt[r] >= (r >= 2 * NRG ? 30 : 10))) fOrder.push(r);
       if (fOrder.length > 1) fOrder.sort((a, b) => regFar(a) - regFar(b));
       for (const r of fOrder) { if (!room()) break; regTodo.delete(r); buildRegion(r); }
     }
@@ -173,7 +190,7 @@ export function flushChunks(ms = 5) {
   } else if (regTodo.size && (performance.now() - t0 < ms || (tick & 3) === 0)) {
     // a region that is already showing waits a while between redraws: far away a second's lag is not seen, and bots
     // wrecking the far side of the city would otherwise redraw several regions every frame
-    fOrder.length = 0; for (const r of regTodo) if (regMesh[r] === null || tick - regBuilt[r] >= (r >= 2 * NRG ? 90 : 30)) fOrder.push(r);
+    fOrder.length = 0; for (const r of regTodo) if (regMesh[r] === null || !regShown[r] || tick - regBuilt[r] >= (r >= 2 * NRG ? 90 : 30)) fOrder.push(r);
     if (fOrder.length > 1) fOrder.sort((a, b) => regFar(a) - regFar(b));
     let m = 0;
     for (const r of fOrder) {
@@ -232,6 +249,9 @@ function placeRegion(r, geo) {
   mm.matrixAutoUpdate = false; mm.visible = !!regShown[r]; scene.add(mm); regMesh[r] = mm;
 }
 const ready = (r) => regMesh[r] !== null;   // built (a mesh, or false when the region is empty); may be stale
+// A far copy is switched to only when it is up to date, so a block wrecked up close is not drawn whole again from an older
+// copy when he walks away; until it is built again, the finer copy stays. One already showing stays while it is redrawn.
+const fresh = (r) => ready(r) && ((!regStale[r] && !regAsked[r]) || regShown[r] === 1);
 function showRegion(r, on) { if (regShown[r] === on) return; regShown[r] = on; if (regMesh[r]) regMesh[r].visible = !!on; }
 function updateLod() {
   const dx = focusX - lodX, dz = focusZ - lodZ;
@@ -240,7 +260,7 @@ function updateLod() {
   const a = LOD1 * LOD1, b = LOD2 * LOD2;
   for (let c2 = 0; c2 < NRG; c2++) {
     if (((c2 % NRX) & 1) || (((c2 / NRX) | 0) & 1)) continue;   // level-2 regions start on even cells
-    const r2 = 2 * NRG + c2, want2 = regFar(r2) > b, show2 = want2 && ready(r2) ? 1 : 0;
+    const r2 = 2 * NRG + c2, want2 = regFar(r2) > b, show2 = want2 && fresh(r2) ? 1 : 0;
     if (want2 && (!ready(r2) || regStale[r2])) regTodo.add(r2);
     showRegion(r2, show2);
     for (let j = 0; j < 4; j++) {
@@ -249,7 +269,7 @@ function updateLod() {
       const c = cx + cz * NRX, r1 = NRG + c;
       const want1 = !show2 && (want2 || regFar(r1) > a);
       if (want1 && !want2 && (!ready(r1) || regStale[r1])) regTodo.add(r1);
-      const show1 = want1 && ready(r1) ? 1 : 0;
+      const show1 = want1 && fresh(r1) ? 1 : 0;
       showRegion(r1, show1);
       const L = show2 ? 2 : show1 ? 1 : 0;
       for (let q = 0; q < 4; q++) {
