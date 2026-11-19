@@ -1,8 +1,9 @@
 // Destruction: blasts, glass, fire, support checks, falling sections (free, toppling, pancake), debris, rubble and particles.
 // Tuned in the Wrecking Yard sandbox. Everything optional is behind a flag in `cfg`.
 import * as THREE from 'three';
-import { WX, WY, WZ, NCX, NCZ, SX, SXZ, XM, ZS, ZM, YS, NV, voxAt, brickEmpty, ownerAt, sootAt, burnAt, setVox, setCell, setGone, setSoot, setBurn, eachVoxel, idx, solid, bodies, rubbleBody, M, MAT_R, MAT_G, MAT_B, SOFT, CARRY, HARD, TOUGH, SHAPE, FLAM, BURN, CHARP, PANE, jitter } from './world.js';
-import { meshChunk, meshRegionCoarse, makeChunkMaterial, makeChunkDepthMaterial, meshOpts } from './mesh.js';
+import { WX, WY, WZ, NCX, NCZ, SX, SXZ, XM, ZS, ZM, YS, NV, voxAt, brickEmpty, ownerAt, sootAt, burnAt, setVox, setCell, setGone, setSoot, setBurn, eachVoxel, idx, solid, bodies, rubbleBody, M, MAT_R, MAT_G, MAT_B, SOFT, CARRY, HARD, TOUGH, SHAPE, FLAM, BURN, CHARP, PANE, jitter, CITY, wlog, takeWrites, storeCopy } from './world.js';
+import { meshChunk, meshRegionCoarse, makeChunkMaterial, makeChunkDepthMaterial, meshOpts, geoFromPack, chunkPack } from './mesh.js';
+import MESH_WORKER_SRC from '../dist/mesh-worker.wtxt';
 
 export const hooks = { destroyed() {}, bodyDown() {}, shake() {}, sound() {}, scorch() {}, impact() {}, explosion() {} };
 export const stats = { destroyed: 0, active: 0, asleep: 0, particles: 0, burning: 0, quads: 0, rubble: 0 };
@@ -43,17 +44,92 @@ export function markDirty(x, z) {
 }
 function rebuildChunk(k) {
   const cx = k % NCX, cz = (k / NCX) | 0;
-  stats.rebuilt = (stats.rebuilt || 0) + 1;   // counted for the playtest reports (playtest/server.mjs)
   built[k] = tick;
+  if (mw) { askChunk(k); return; }
   const t0 = performance.now();
   const geo = meshChunk(cx, cz);
   stats.chunkMs = (stats.chunkMs || 0) + performance.now() - t0;   // for the playtest reports
+  placeChunk(k, geo);
+}
+// put chunk k's new geometry in the scene (or take its mesh out when it is empty now)
+function placeChunk(k, geo) {
+  const cx = k % NCX, cz = (k / NCX) | 0;
+  stats.rebuilt = (stats.rebuilt || 0) + 1;   // counted for the playtest reports (playtest/server.mjs)
   let m = chunkMesh[k];
   if (m) { stats.quads -= m.geometry.userData.quads || 0; m.geometry.dispose(); if (!geo) { scene.remove(m); chunkMesh[k] = null; return; } m.geometry = geo; stats.quads += geo.userData.quads; return; }
   if (!geo) return;
   m = new THREE.Mesh(geo, chunkMat); m.customDepthMaterial = chunkDepth; m.position.set(cx * 16, 0, cz * 16); m.updateMatrix(); m.updateMatrixWorld(true);
-  m.castShadow = nearShadow; m.receiveShadow = true; m.matrixAutoUpdate = false;
+  m.castShadow = nearShadow; m.receiveShadow = true; m.matrixAutoUpdate = false; m.visible = lodNow[k] === 0;
   scene.add(m); chunkMesh[k] = m; stats.quads += geo.userData.quads;
+}
+
+// ---- the meshing worker (src/mesh-worker.js) ----
+// Once the world is built, changed chunks and far regions are meshed in a worker, so a slow device's frames do not wait for
+// them. The page sends the cells written since its last message with each request (world.js wlog), and puts each mesh in
+// the scene when it comes back. A chunk changed again while its mesh is being built stays dirty and is asked for again.
+// If the worker cannot start or fails, everything is meshed here as before. ?mw=0 turns it off, for comparing.
+let mw = null, mwJobs = [], mwBusy = 0;
+const mwBack = [], chunkAsked = new Uint8Array(NCX * NCZ);
+const MW_MAX = 6;   // jobs out at once
+function startMeshWorker() {
+  try {
+    if (typeof Worker === 'undefined' || typeof location !== 'undefined' && /[?&]mw=0/.test(location.search)) return;
+    const url = URL.createObjectURL(new Blob([MESH_WORKER_SRC], { type: 'text/javascript' }));
+    mw = new Worker(url, { name: 'mm-map=' + (CITY ? 'city' : 'town') });
+    mw.onmessage = (e) => { if (e.data.error) meshWorkerFailed(e.data.error); else mwBack.push(e.data); };
+    mw.onerror = (e) => meshWorkerFailed(e.message || 'worker error');
+    const st = storeCopy();
+    mw.postMessage({ store: st }, [st.tab.buffer, st.ftab.buffer, st.vox.buffer, st.own.buffer, st.fx.buffer, st.bod.buffer]);
+    wlog.on = true; wlog.n = 0;
+    stats.worker = true;
+  } catch (e) { meshWorkerFailed(e && e.message); }
+}
+function meshWorkerFailed(why) {
+  if (typeof console !== 'undefined') console.warn('meshing worker stopped, meshing on the page instead:', why);
+  if (mw) { try { mw.terminate(); } catch (e) { /* gone */ } }
+  mw = null; wlog.on = false; wlog.n = 0; mwJobs.length = 0; mwBusy = 0; mwBack.length = 0; stats.worker = false;
+  for (let k = 0; k < chunkAsked.length; k++) if (chunkAsked[k]) { chunkAsked[k] = 0; dirty.add(k); }
+  for (let r = 0; r < regAsked.length; r++) if (regAsked[r]) { regAsked[r] = 0; regTodo.add(r); }
+}
+function askChunk(k) { chunkAsked[k] = 1; mwBusy++; mwJobs.push([0, k, k % NCX, (k / NCX) | 0]); }
+function askRegion(r, rx, rz, n) { regAsked[r] = 1; mwBusy++; mwJobs.push([1, r, rx, rz, n, n]); }
+// send what is waiting (the cells written since the last message go with it, even with no jobs, so the copy keeps up)
+function mwSend() {
+  if (!mw || (!mwJobs.length && wlog.n < 4096)) return;
+  const w = takeWrites();
+  mw.postMessage({ w, jobs: mwJobs }, [w.buffer]); mwJobs = [];
+}
+// For tests: has the worker's copy kept up with the world? Every chunk is meshed both here and in the worker and the arrays
+// compared. The game must be held still until it answers. window.__meshCheck() -> { chunks, same, differ: [first few] }
+function meshWorkerCheck() {
+  return new Promise((res) => {
+    if (!mw) { res({ worker: false }); return; }
+    const N = NCX * NCZ, jobs = [], differ = []; let n = 0, same = 0;
+    for (let k = 0; k < N; k++) jobs.push([2, k, k % NCX, (k / NCX) | 0]);
+    const eq = (a, b) => { if (a.length !== b.length) return false; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false; return true; };
+    const was = mw.onmessage;
+    mw.onmessage = (e) => {
+      const d = e.data;
+      if (d.error) { mw.onmessage = was; res({ error: d.error }); return; }
+      if (d.t !== 2) { was(e); return; }
+      const h = chunkPack(d.k % NCX, (d.k / NCX) | 0), w = d.p;
+      if ((!h && !w) || (h && w && h.q === w.q && h.top === w.top && eq(h.pa, w.pa) && eq(h.pc, w.pc) && eq(h.ix, w.ix))) same++;
+      else if (differ.length < 8) differ.push({ k: d.k, here: h && h.q, worker: w && w.q });
+      if (++n === N) { mw.onmessage = was; res({ chunks: N, same, differ }); }
+    };
+    const w = takeWrites(); mw.postMessage({ w, jobs }, [w.buffer]);
+  });
+}
+if (typeof window !== 'undefined') window.__meshCheck = meshWorkerCheck;
+// put what came back in the scene
+function mwTake() {
+  for (const d of mwBack) {
+    mwBusy--;
+    stats.chunkMs = (stats.chunkMs || 0) + d.ms;   // the worker's time, for the playtest reports
+    if (d.t === 0) { chunkAsked[d.k] = 0; placeChunk(d.k, geoFromPack(d.p)); }
+    else { regAsked[d.k] = 0; stats.regions = (stats.regions || 0) + 1; stats.regionMs = (stats.regionMs || 0) + d.ms; placeRegion(d.k, geoFromPack(d.p)); lodX = -1e9; }
+  }
+  mwBack.length = 0;
 }
 // how many changed chunks are redrawn each frame however long they take: two on a computer, one on a slow device
 let MIN_CHUNKS = 2;
@@ -64,20 +140,37 @@ export function flushChunks(ms = 5) {
   const t0 = performance.now();
   let n = 0;
   tick++;
+  if (mwBack.length) mwTake();
   updateLod();
+  // with the worker, the limit is how many jobs are out, not the time here
+  const room = () => (mw ? mwBusy + mwJobs.length < MW_MAX : true);
   if (dirty.size) {
     order.length = 0;
     for (const k of dirty) {
       if (lodNow[k]) { dirty.delete(k); lazy.delete(k); staleFar(k); continue; }   // shown coarse: redraw that copy instead
-      if (tick - built[k] >= 3) order.push(k);
+      if (tick - built[k] >= 3 && !chunkAsked[k]) order.push(k);
     }
     if (order.length > 2) order.sort((a, b) => far(a) - far(b));
-    for (const k of order) { rebuildChunk(k); dirty.delete(k); lazy.delete(k); if (++n >= MIN_CHUNKS && performance.now() - t0 > ms) break; }
+    for (const k of order) {
+      if (mw) { if (!room()) break; rebuildChunk(k); dirty.delete(k); lazy.delete(k); continue; }
+      rebuildChunk(k); dirty.delete(k); lazy.delete(k); if (++n >= MIN_CHUNKS && performance.now() - t0 > ms) break;
+    }
   }
   n = 0;
-  for (const k of lazy) { if (n >= 2 || (n >= MIN_CHUNKS - 1 && performance.now() - t0 > ms)) break; if (tick - built[k] < 10 || dirty.has(k)) continue; lazy.delete(k); if (lodNow[k]) { staleFar(k); continue; } rebuildChunk(k); n++; }
+  for (const k of lazy) {
+    if (mw ? !room() : (n >= 2 || (n >= MIN_CHUNKS - 1 && performance.now() - t0 > ms))) break;
+    if (tick - built[k] < 10 || dirty.has(k) || chunkAsked[k]) continue;
+    lazy.delete(k); if (lodNow[k]) { staleFar(k); continue; } rebuildChunk(k); n++;
+  }
   // coarse copies for far regions, nearest first, with whatever time is left (at least one every fourth frame)
-  if (regTodo.size && (performance.now() - t0 < ms || (tick & 3) === 0)) {
+  if (mw) {
+    if (regTodo.size && room()) {
+      fOrder.length = 0; for (const r of regTodo) if (!regAsked[r] && (regMesh[r] === null || tick - regBuilt[r] >= (r >= 2 * NRG ? 90 : 30))) fOrder.push(r);
+      if (fOrder.length > 1) fOrder.sort((a, b) => regFar(a) - regFar(b));
+      for (const r of fOrder) { if (!room()) break; regTodo.delete(r); buildRegion(r); }
+    }
+    mwSend();
+  } else if (regTodo.size && (performance.now() - t0 < ms || (tick & 3) === 0)) {
     // a region that is already showing waits a while between redraws: far away a second's lag is not seen, and bots
     // wrecking the far side of the city would otherwise redraw several regions every frame
     fOrder.length = 0; for (const r of regTodo) if (regMesh[r] === null || tick - regBuilt[r] >= (r >= 2 * NRG ? 90 : 30)) fOrder.push(r);
@@ -99,7 +192,7 @@ export function flushChunks(ms = 5) {
 // Regions are numbered r = level * NRG + (rx + rz * NRX) on a grid of 2 x 2 chunks; a level-2 region is named by its first
 // 2 x 2 cell (rx, rz both even).
 const NCH = NCX * NCZ, NRX = Math.ceil(NCX / 2), NRZ = Math.ceil(NCZ / 2), NRG = NRX * NRZ;
-const regMesh = new Array(3 * NRG).fill(null), regStale = new Uint8Array(3 * NRG), regShown = new Uint8Array(3 * NRG), regBuilt = new Int32Array(3 * NRG);
+const regMesh = new Array(3 * NRG).fill(null), regStale = new Uint8Array(3 * NRG), regShown = new Uint8Array(3 * NRG), regBuilt = new Int32Array(3 * NRG), regAsked = new Uint8Array(3 * NRG);
 const lodNow = new Uint8Array(NCH), nearStale = new Uint8Array(NCH);   // what each chunk shows: 0 its full copy, 1 or 2 a region
 const regTodo = new Set(), fOrder = [];
 const cell = (k) => ((k % NCX) >> 1) + (((k / NCX) | 0) >> 1) * NRX;   // the 2 x 2 cell a chunk is in
@@ -124,9 +217,14 @@ function staleFar(k) {
 }
 function buildRegion(r) {
   const L = (r / NRG) | 0, c = r % NRG, rx = (c % NRX) * 2, rz = ((c / NRX) | 0) * 2, n = L === 2 ? 4 : 2;
-  const t = performance.now(), geo = meshRegionCoarse(rx, rz, n, L === 2 ? 4 : 2), m = regMesh[r];
-  stats.regions = (stats.regions || 0) + 1; stats.regionMs = (stats.regionMs || 0) + performance.now() - t;   // for the playtest reports
   regStale[r] = 0; regBuilt[r] = tick;
+  if (mw) { askRegion(r, rx, rz, n); return; }
+  const t = performance.now(), geo = meshRegionCoarse(rx, rz, n, n);
+  stats.regions = (stats.regions || 0) + 1; stats.regionMs = (stats.regionMs || 0) + performance.now() - t;   // for the playtest reports
+  placeRegion(r, geo);
+}
+function placeRegion(r, geo) {
+  const c = r % NRG, rx = (c % NRX) * 2, rz = ((c / NRX) | 0) * 2, m = regMesh[r];
   if (m) { m.geometry.dispose(); if (geo) m.geometry = geo; else { scene.remove(m); regMesh[r] = false; } return; }
   if (!geo) { regMesh[r] = false; return; }   // nothing there: built, and empty
   const mm = new THREE.Mesh(geo, chunkMat); mm.customDepthMaterial = chunkDepth; mm.position.set(rx * 16, 0, rz * 16); mm.updateMatrix(); mm.updateMatrixWorld(true);
@@ -1340,8 +1438,11 @@ export function initSim(sc) {
   scene = sc;
   chunkMat = makeChunkMaterial(); chunkDepth = makeChunkDepthMaterial();
   meshOpts.count = true;
+  const t0 = performance.now();
   for (let k = 0; k < NCX * NCZ; k++) rebuildChunk(k);
+  stats.meshAllMs = Math.round(performance.now() - t0);   // for the playtest reports
   meshOpts.count = false;
+  startMeshWorker();
   for (let i = 1; i < bodies.length; i++) { const b = bodies[i]; b.hung = b.kind !== 'rubble' && b.count > 0 && b.layers0[0] === 0; b.carry.fill(0); }
   eachVoxel((i, m) => { if (!CARRY[m]) return; const o = ownerAt(i), up = i + SXZ; if (ownerAt(up) === o && CARRY[voxAt(up)]) bodies[o].carry[i >> YS] += CARRY[m]; });
   for (let i = 1; i < bodies.length; i++) bodies[i].dCarry = bodies[i].carry.slice();

@@ -39,14 +39,20 @@ function occ(x, y, z) {
 export const meshOpts = { merge: true, count: false };
 const ao = [0, 0, 0, 0];
 
-export function meshChunk(cx, cz) {
+export function meshChunk(cx, cz) { const q = chunkQuads(cx, cz); return finish(q, qTop); }
+// the same as packed arrays, for the meshing worker (src/mesh-worker.js) to hand back
+export function chunkPack(cx, cz) { const q = chunkQuads(cx, cz); return packQuads(q, qTop); }
+let qTop = -1;
+// Fill PA, PC and FLIP with chunk (cx, cz)'s faces; returns how many (qTop is its highest voxel layer).
+function chunkQuads(cx, cz) {
   const xs = cx * CH, zs = cz * CH;
   let top = -1;
   for (let by = (WY - 1) >> 3; by >= 0 && top < 0; by--) {
     if (!slabUsed(cx, cz, by)) continue;
     for (let y = by * 8 + 7; y >= by * 8 && top < 0; y--) for (let z = zs; z < zs + CH && top < 0; z++) { const a = idx(xs, y, z); for (let x = 0; x < CH; x++) if (voxAt(a + x)) { top = y; break; } }
   }
-  if (top < 0) return null;
+  qTop = top;
+  if (top < 0) return 0;
   let q = 0;
   for (let f = 0; f < 6; f++) {
     const F = FACES[f], n = F.n, u = F.u, v = F.v, far = FAR[F.run], axis = F.alongZ ? 1 : 0;
@@ -103,23 +109,30 @@ export function meshChunk(cx, cz) {
       }
     }
   }
-  return finish(q, top);
+  return q;
 }
 // Build the geometry from the first q quads in PA, PC and FLIP.
-function finish(q, top, size = 16) {
+function finish(q, top, size = 16) { return geoFromPack(packQuads(q, top, size)); }
+// The first q quads in PA, PC and FLIP as the three arrays a geometry is made of (each its own buffer, so a worker can hand
+// them over without copying), or null when there are none.
+export function packQuads(q, top, size = 16) {
   if (!q) return null;
-  const geo = new THREE.BufferGeometry();
   const I = q * 4 > 65536 ? new Uint32Array(q * 6) : new Uint16Array(q * 6);
   for (let k = 0; k < q; k++) {
     const vi = k * 4, ii = k * 6;
     if (FLIP[k]) { I[ii] = vi + 1; I[ii + 1] = vi + 2; I[ii + 2] = vi + 3; I[ii + 3] = vi + 1; I[ii + 4] = vi + 3; I[ii + 5] = vi; }
     else { I[ii] = vi; I[ii + 1] = vi + 1; I[ii + 2] = vi + 2; I[ii + 3] = vi; I[ii + 4] = vi + 2; I[ii + 5] = vi + 3; }
   }
-  geo.setAttribute('pa', new THREE.BufferAttribute(PA.slice(0, q * 16), 4).onUpload(dropArray));
-  geo.setAttribute('pc', new THREE.BufferAttribute(PC.slice(0, q * 16), 4, true).onUpload(dropArray));
-  geo.setIndex(new THREE.BufferAttribute(I, 1).onUpload(dropArray));
-  geo.userData.bytes = q * 32 + I.byteLength;
-  const hy = (top + 1) / 2, h = size / 2;
+  return { q, top, size, pa: PA.slice(0, q * 16), pc: PC.slice(0, q * 16), ix: I };
+}
+export function geoFromPack(p) {
+  if (!p) return null;
+  const q = p.q, geo = new THREE.BufferGeometry();
+  geo.setAttribute('pa', new THREE.BufferAttribute(p.pa, 4).onUpload(dropArray));
+  geo.setAttribute('pc', new THREE.BufferAttribute(p.pc, 4, true).onUpload(dropArray));
+  geo.setIndex(new THREE.BufferAttribute(p.ix, 1).onUpload(dropArray));
+  geo.userData.bytes = q * 32 + p.ix.byteLength;
+  const hy = (p.top + 1) / 2, h = p.size / 2;
   geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(h, hy, h), Math.hypot(h * 1.5, hy) + 1);   // the mesh sits at (xs, 0, zs)
   geo.userData.quads = q;
   return geo;
@@ -153,10 +166,11 @@ function cellMat(X, Y, Z, s) {
 }
 export function meshChunkCoarse(cx, cz, s) { const q = coarseQuads(cx, cz, s, 0, 0, 0); return finish(q, cTop); }
 // A square of R x R chunks in one mesh (fewer draws far away), placed at the first chunk's corner.
-export function meshRegionCoarse(cx0, cz0, R, s) {
+export function meshRegionCoarse(cx0, cz0, R, s) { return geoFromPack(regionPack(cx0, cz0, R, s)); }
+export function regionPack(cx0, cz0, R, s) {
   let q = 0, top = -1;
   for (let cz = cz0; cz < Math.min(cz0 + R, NCZ); cz++) for (let cx = cx0; cx < Math.min(cx0 + R, NCX); cx++) { q = coarseQuads(cx, cz, s, q, (cx - cx0) * CH, (cz - cz0) * CH); if (cTop > top) top = cTop; }
-  return finish(q, top, R * CH);
+  return packQuads(q, top, R * CH);
 }
 let cTop = -1;
 function coarseQuads(cx, cz, s, q, ox0, oz0) {

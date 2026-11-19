@@ -19,7 +19,8 @@ export const TOKYO = typeof __TOKYO__ === 'boolean' && __TOKYO__;
 export const CAIRO = typeof __CAIRO__ === 'boolean' && __CAIRO__;
 export const MAP_FIXED = PARIS || NYC || TOKYO || CAIRO || (typeof __CITY__ === 'boolean' && __CITY__) || (typeof __STUDIO__ === 'boolean' && __STUDIO__) || TILES > 1;
 function chosenMap() {
-  if (typeof window === 'undefined') return '';
+  // the meshing worker (src/mesh-worker.js) is started with the page's map in its name
+  if (typeof window === 'undefined') { const m = typeof self !== 'undefined' && /mm-map=(\w+)/.exec(self.name || ''); return m ? m[1] : ''; }
   if (window.__MAP) return window.__MAP;
   try { const v = sessionStorage.getItem('mm-map'); if (v) return v; } catch (e) { /* no storage here: the window's name carries it */ }
   const m = /mm-map=(\w+)/.exec(window.name || ''); return m ? m[1] : '';
@@ -72,12 +73,50 @@ export function ownerAt(i) { return ownP[tab[brickOf(i)] + cellOf(i)]; }
 export function goneAt(i) { return fxP[ftab[brickOf(i)] + cellOf(i)] & 1; }
 export function burnAt(i) { return fxP[ftab[brickOf(i)] + cellOf(i)] >> 1 & 1; }
 export function sootAt(i) { return fxP[ftab[brickOf(i)] + cellOf(i)] & 252; }
-export function setVox(i, m) { const b = brickOf(i); let o = tab[b]; if (!o) { if (!m) return; o = alloc(b); } voxP[o + cellOf(i)] = m; }
-export function setCell(i, m, id) { const b = brickOf(i), o = (tab[b] || alloc(b)) + cellOf(i); voxP[o] = m; ownP[o] = id; }
-function setFx(i, keep, v) { const b = brickOf(i); let o = ftab[b]; if (!o) { if (!v) return; o = falloc(b); } o += cellOf(i); fxP[o] = fxP[o] & keep | v; }
+export function setVox(i, m) { const b = brickOf(i); let o = tab[b]; if (!o) { if (!m) return; o = alloc(b); } voxP[o + cellOf(i)] = m; if (wlog.on) note(i); }
+export function setCell(i, m, id) { const b = brickOf(i), o = (tab[b] || alloc(b)) + cellOf(i); voxP[o] = m; ownP[o] = id; if (wlog.on) note(i); }
+function setFx(i, keep, v) { const b = brickOf(i); let o = ftab[b]; if (!o) { if (!v) return; o = falloc(b); } o += cellOf(i); fxP[o] = fxP[o] & keep | v; if (wlog.on) note(i); }
 export function setGone(i, v) { setFx(i, 254, v ? 1 : 0); }
 export function setBurn(i, v) { setFx(i, 253, v ? 2 : 0); }
 export function setSoot(i, v) { setFx(i, 3, v > 252 ? 252 : v & 252); }
+
+// ---- the meshing worker's copy (src/mesh-worker.js) ----
+// The worker keeps its own copy of the world to build chunk meshes from. storeCopy() is sent to it once the world is built;
+// from then on (wlog.on) every write above notes the cell's handle, and takeWrites() packs those cells' new values to send
+// with the next request: [handle, material | owner << 8, damage byte] for each. A cell written twice is sent twice.
+export const wlog = { on: false, a: new Int32Array(8192), n: 0 };
+function note(i) { if (wlog.n === wlog.a.length) { const b = new Int32Array(wlog.n * 2); b.set(wlog.a); wlog.a = b; } wlog.a[wlog.n++] = i; }
+export function takeWrites() {
+  const n = wlog.n, a = wlog.a, w = new Int32Array(n * 3);
+  for (let j = 0; j < n; j++) { const i = a[j], b = brickOf(i), c = cellOf(i), o = tab[b], f = ftab[b]; w[j * 3] = i; w[j * 3 + 1] = o ? voxP[o + c] | ownP[o + c] << 8 : 0; w[j * 3 + 2] = f ? fxP[f + c] : 0; }
+  wlog.n = 0; return w;
+}
+// the pools as they are now (copies, to hand over), and what the mesher needs of each body: level, rubble and lit
+export function storeCopy() {
+  const bod = new Uint8Array(bodies.length);
+  for (let i = 1; i < bodies.length; i++) { const b = bodies[i]; bod[i] = b.level | (b.kind === 'rubble' ? 8 : 0) | (b.lit ? 16 : 0); }
+  return { WX, WY, WZ, used, fused, tab: tab.slice(), ftab: ftab.slice(), vox: voxP.slice(0, used * BN), own: ownP.slice(0, used * BN), fx: fxP.slice(0, fused * BN), bod,
+    rgb: [MAT_R.slice(), MAT_G.slice(), MAT_B.slice()] };
+}
+// in the worker: take over a copy, and apply written cells
+export function storeLoad(s) {
+  if (s.WX !== WX || s.WY !== WY || s.WZ !== WZ) throw new Error('map size differs: ' + [s.WX, s.WY, s.WZ] + ' here ' + [WX, WY, WZ]);
+  MAT_R.set(s.rgb[0]); MAT_G.set(s.rgb[1]); MAT_B.set(s.rgb[2]);   // the page's colours (the worker is built without three.js)
+  tab.set(s.tab); ftab.set(s.ftab); used = s.used; fused = s.fused;
+  cap = used + STEP; voxP = new Uint8Array(cap * BN); ownP = new Uint16Array(cap * BN); voxP.set(s.vox); ownP.set(s.own);
+  fcap = fused + STEP; fxP = new Uint8Array(fcap * BN); fxP.set(s.fx);
+  bodies.length = 1;
+  for (let i = 1; i < s.bod.length; i++) { const v = s.bod[i]; bodies.push({ id: i, level: v & 7, kind: v & 8 ? 'rubble' : '', lit: !!(v & 16) }); }
+}
+export function putCells(w) {
+  for (let j = 0; j < w.length; j += 3) {
+    const i = w[j], v = w[j + 1], d = w[j + 2], b = brickOf(i), c = cellOf(i);
+    let o = tab[b]; if (!o && v) o = alloc(b);
+    if (o) { voxP[o + c] = v & 255; ownP[o + c] = v >>> 8; }
+    let f = ftab[b]; if (!f && d) f = falloc(b);
+    if (f) fxP[f + c] = d;
+  }
+}
 // 1 if any brick of the 16 x 8 x 16 slab of chunk column (cx, cz) at brick layer by holds anything; for skipping air
 export function slabUsed(cx, cz, by) { const b = cx * 2 | cz * 2 << 7 | by << 14; return (tab[b] | tab[b + 1] | tab[b + 128] | tab[b + 129]) ? 1 : 0; }
 // Call fn(handle, material) for every solid voxel.
