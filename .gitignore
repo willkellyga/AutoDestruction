@@ -4,3 +4,4 @@ node_modules/
 dist/
 playtest/www/
 playtest/reports.jsonl
+playtest/vendor/cloudflared*
