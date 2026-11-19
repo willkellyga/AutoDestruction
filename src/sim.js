@@ -1,6 +1,7 @@
 // Destruction: blasts, glass, fire, support checks, falling sections (free, toppling, pancake), debris, rubble and particles.
 // Tuned in the Wrecking Yard sandbox. Everything optional is behind a flag in `cfg`.
 import * as THREE from 'three';
+import { cubeGeo, cubeMat, cubeMesh } from '../units/src/cube3.js';
 import { WX, WY, WZ, NCX, NCZ, SX, SXZ, XM, ZS, ZM, YS, NV, voxAt, brickEmpty, ownerAt, sootAt, burnAt, setVox, setCell, setGone, setSoot, setBurn, eachVoxel, idx, solid, bodies, rubbleBody, M, MAT_R, MAT_G, MAT_B, SOFT, CARRY, HARD, TOUGH, SHAPE, FLAM, BURN, CHARP, PANE, jitter, CITY, wlog, takeWrites, storeCopy } from './world.js';
 import { meshChunk, meshRegionCoarse, makeChunkMaterial, makeChunkDepthMaterial, meshOpts, geoFromPack, chunkPack } from './mesh.js';
 import MESH_WORKER_SRC from '../dist/mesh-worker.wtxt';
@@ -1005,7 +1006,7 @@ class Section {
     let sx = 0, sy = 0, sz = 0, minY = 1e9, maxY = 0;
     for (let k = 0; k < n; k++) { const i = cells[k]; const x = (i & XM), z = ((i >> ZS) & ZM), y = (i >> YS); sx += x; sy += y; sz += z; if (y < minY) minY = y; if (y > maxY) maxY = y; }
     const cx = sx / n + 0.5, cy = sy / n + 0.5, cz = sz / n + 0.5;
-    this.mesh = new THREE.InstancedMesh(boxGeo, secMat, n);
+    this.mesh = cubeMesh(boxGeo, secMat, n);
     this.mesh.castShadow = true; this.mesh.frustumCulled = false;
     this.col = new Float32Array(n * 3);
     let ext = 0;
@@ -1084,7 +1085,7 @@ class Section {
       let gx = 0, gy = 0, gz = 0, j = 0;
       for (let k = 0; k < n; k++) if (live[k] && grp[k] === g) { gx += off[k * 3]; gy += off[k * 3 + 1]; gz += off[k * 3 + 2]; }
       gx /= c; gy /= c; gz /= c;
-      s.mesh = new THREE.InstancedMesh(boxGeo, secMat, c);
+      s.mesh = cubeMesh(boxGeo, secMat, c);
       s.mesh.castShadow = this.mesh.castShadow; s.mesh.frustumCulled = false;
       let my0 = 1e9, my1 = -1e9;
       for (let k = 0; k < n; k++) {
@@ -1530,9 +1531,9 @@ export function initSim(sc) {
   for (let i = 1; i < bodies.length; i++) { const b = bodies[i]; b.hung = b.kind !== 'rubble' && b.count > 0 && b.layers0[0] === 0; b.carry.fill(0); }
   eachVoxel((i, m) => { if (!CARRY[m]) return; const o = ownerAt(i), up = i + SXZ; if (ownerAt(up) === o && CARRY[voxAt(up)]) bodies[o].carry[i >> YS] += CARRY[m]; });
   for (let i = 1; i < bodies.length; i++) bodies[i].dCarry = bodies[i].carry.slice();
-  boxGeo = new THREE.BoxGeometry(1, 1, 1);
-  secMat = new THREE.MeshLambertMaterial();
-  dmesh = new THREE.InstancedMesh(boxGeo, new THREE.MeshLambertMaterial(), ND);
+  boxGeo = cubeGeo();   // three faces a cube, turned to the camera in the shader (units/src/cube3.js)
+  secMat = cubeMat(new THREE.MeshLambertMaterial());
+  dmesh = cubeMesh(boxGeo, cubeMat(new THREE.MeshLambertMaterial()), ND);
   dmesh.frustumCulled = false; dmesh.castShadow = true; dmesh.receiveShadow = true;
   for (let i = 0; i < ND; i++) { dmesh.setMatrixAt(i, ZERO); dmesh.setColorAt(i, _c.setRGB(1, 1, 1)); }
   dmesh.count = debrisBudget;
