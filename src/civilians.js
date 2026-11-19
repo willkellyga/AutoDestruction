@@ -54,27 +54,66 @@ const JET_HP = 2;
 // ---- the far copy: the whole model redrawn as one shell of cubes the size of the town's own, a flat colour each ----
 // Returns two: [0] in cubes of one voxel, [1] in cubes of two (a quarter of the faces), for far off and for the lighter
 // quality steps. Each face is four corners and two triangles, with its own normal.
-function coarse(u) {
-  const v = new THREE.Vector3(), box = new THREE.Box3(), list = [];
+// `inv` (the inverse of the unit's own place in the world) is given for a unit that already stands in the town, so the
+// copy comes out in the unit's own space like one made before it was placed.
+function coarse(u, inv = null) {
+  const v = new THREE.Vector3(), box = new THREE.Box3(), list = [], mats = [];
   for (const p of u.parts) {
     if (p.bone.getWorldScale(v).x < 0.5 || !p.count) continue;   // lamps that are switched off
-    list.push(p);
-    for (const i of [p.i0, p.i0 + p.nx]) for (const j of [p.j0, p.j0 + p.ny]) for (const k of [p.k0, p.k0 + p.nz]) box.expandByPoint(v.set(i * p.h, j * p.h, k * p.h).applyMatrix4(p.bone.matrixWorld));
+    const mw = inv ? new THREE.Matrix4().multiplyMatrices(inv, p.bone.matrixWorld) : p.bone.matrixWorld;
+    list.push(p); mats.push(mw);
+    for (const i of [p.i0, p.i0 + p.nx]) for (const j of [p.j0, p.j0 + p.ny]) for (const k of [p.k0, p.k0 + p.nz]) box.expandByPoint(v.set(i * p.h, j * p.h, k * p.h).applyMatrix4(mw));
   }
+  if (!list.length) return null;   // nothing of it left to draw
   const a0 = Math.floor(box.min.x) - 1, b0 = Math.floor(box.min.y) - 1, c0 = Math.floor(box.min.z) - 1;
   const X = Math.ceil(box.max.x) - a0 + 2, Y = Math.ceil(box.max.y) - b0 + 2, Z = Math.ceil(box.max.z) - c0 + 2, M = X * Y * Z;
   const cnt = new Uint16Array(M), sr = new Float32Array(M), sg = new Float32Array(M), sb = new Float32Array(M);
-  for (const p of list) {
-    const mw = p.bone.matrixWorld, h = p.h;
+  list.forEach((p, pi) => {
+    const mw = mats[pi], h = p.h;
     for (let n = 0, k = 0; k < p.nz; k++) for (let j = 0; j < p.ny; j++) for (let i = 0; i < p.nx; i++, n++) {
       const c = p.col[n]; if (c < 0) continue;
       v.set((p.i0 + i + 0.5) * h, (p.j0 + j + 0.5) * h, (p.k0 + k + 0.5) * h).applyMatrix4(mw);
       const m = ((Math.floor(v.z) - c0) * Y + Math.floor(v.y) - b0) * X + Math.floor(v.x) - a0;
       if (cnt[m] < 65535) { cnt[m]++; sr[m] += (c >> 16) & 255; sg[m] += (c >> 8) & 255; sb[m] += c & 255; }
     }
-  }
+  });
   const fine = { cnt, sr, sg, sb, X, Y, Z, a0, b0, c0 };
   return [shell(fine, 1, 2), shell(halved(fine), 2, 4)];
+}
+// The same for a big model that is already in the town (a damaged ship): only the copy in cubes of two voxels, counted
+// straight into the bigger cells, and a slice at a time. It is a generator: each `next()` does about COARSE_SLICE cells,
+// and the last one returns the geometry. The cells are the ones `halved(fine)` would give, so the copy looks the same.
+const COARSE_SLICE = 200000;
+function* coarseHalf(u, inv) {
+  const v = new THREE.Vector3(), box = new THREE.Box3(), list = [], mats = [];
+  for (const p of u.parts) {
+    if (p.bone.getWorldScale(v).x < 0.5 || !p.count) continue;
+    const mw = new THREE.Matrix4().multiplyMatrices(inv, p.bone.matrixWorld);
+    list.push(p); mats.push(mw);
+    for (const i of [p.i0, p.i0 + p.nx]) for (const j of [p.j0, p.j0 + p.ny]) for (const k of [p.k0, p.k0 + p.nz]) box.expandByPoint(v.set(i * p.h, j * p.h, k * p.h).applyMatrix4(mw));
+  }
+  if (!list.length) return null;
+  const fa = Math.floor(box.min.x) - 1, fb = Math.floor(box.min.y) - 1, fc = Math.floor(box.min.z) - 1;
+  const FX = Math.ceil(box.max.x) - fa + 2, FY = Math.ceil(box.max.y) - fb + 2, FZ = Math.ceil(box.max.z) - fc + 2;
+  const a0 = Math.floor(fa / 2) - 1, b0 = Math.floor(fb / 2) - 1, c0 = Math.floor(fc / 2) - 1;
+  const X = Math.floor((fa + FX - 1) / 2) - a0 + 2, Y = Math.floor((fb + FY - 1) / 2) - b0 + 2, Z = Math.floor((fc + FZ - 1) / 2) - c0 + 2, M = X * Y * Z;
+  const cnt = new Uint32Array(M), sr = new Float32Array(M), sg = new Float32Array(M), sb = new Float32Array(M);
+  let done = 0;
+  for (let pi = 0; pi < list.length; pi++) {
+    const p = list[pi], e = mats[pi].elements, h = p.h, L = p.nx * p.ny;
+    for (let k = 0; k < p.nz; k++) {
+      for (let n = k * L, j = 0; j < p.ny; j++) for (let i = 0; i < p.nx; i++, n++) {
+        const c = p.col[n]; if (c < 0) continue;
+        const x = (p.i0 + i + 0.5) * h, y = (p.j0 + j + 0.5) * h, z = (p.k0 + k + 0.5) * h;
+        const wx = e[0] * x + e[4] * y + e[8] * z + e[12], wy = e[1] * x + e[5] * y + e[9] * z + e[13], wz = e[2] * x + e[6] * y + e[10] * z + e[14];
+        const m = ((Math.floor(Math.floor(wz) / 2) - c0) * Y + Math.floor(Math.floor(wy) / 2) - b0) * X + Math.floor(Math.floor(wx) / 2) - a0;
+        cnt[m]++; sr[m] += (c >> 16) & 255; sg[m] += (c >> 8) & 255; sb[m] += c & 255;
+      }
+      done += L; if (done >= COARSE_SLICE) { done = 0; yield; }
+    }
+  }
+  yield;
+  return shell({ cnt, sr, sg, sb, X, Y, Z, a0, b0, c0 }, 2, 4);
 }
 // the same count-and-colour grid in cells twice the size
 function halved(G) {
@@ -252,10 +291,40 @@ export function makeCivilians(o) {
   }
   function sleep(rec) { rec.unit.dispose(); rec.unit = null; draw(rec, true); }
   const pristine = (rec) => { const u = rec.unit; return u && !u.dead && !u.gone && u.voxels === u.voxels0 && !rec.touched; };
-  function touch(rec) {   // the first time a boat or crane is damaged its far copy is put away for good
-    rec.touched = true; rec.idle = 0;
-    if (rec.far) { rec.far.removeFromParent(); for (const g of rec.farG) g.dispose(); rec.far = rec.farG = null; rec.unit.root.visible = true; }
+  function unfar(rec) { if (rec.far) { rec.far.removeFromParent(); for (const g of rec.farG) g.dispose(); rec.far = rec.farG = null; rec.remade = false; if (rec.unit) rec.unit.root.visible = true; } }
+  function touch(rec) {   // damaged: its far copy no longer looks like it, and is put away until it has come to rest (refar below)
+    rec.touched = true; rec.idle = 0; rec.stillT = 0; rec.noFar = false;
+    unfar(rec);
   }
+  // ---- a far copy for what has been damaged ----
+  // A wrecked car stays a model of 11 to 15 meshes for the 45 to 70 s it lies there, and a ship that had been touched was
+  // drawn in full from then on, at any distance (a tug is 77,000 triangles, the carrier 300,000). Late in a round on the
+  // lowest quality step these were a third of the draw calls. Once such a model has come to rest (its wreck clip over,
+  // the fire out, no rebuild owed) and is far enough off, a far copy is made of it as it now stands and takes its place,
+  // like the copy an untouched one has. A car's is made in one go; a ship's a slice a frame (coarseHalf), one at a time.
+  const still = (rec) => { const u = rec.unit;
+    if (!u || u.gone || rec.far || rec.noFar || !(rec.touched || u.dead)) return false;   // (a car that was hit but not wrecked stays a model for the rest of the round: it counts too)
+    if ((u.dead && !u.finished) || (u.fire && u.fire.t < u.fire.life + 3) || u.charring || u.settleT > 0 || u.leakT > 0 || (!u.dead && rec.alarmT > 0)) return false;   // (a wreck's alarm clock stops with it)
+    for (const p of u.parts) if (p.dirty || p.more || p.owed) return false;
+    return true; };
+  let farJob = null; const REFAR = new URLSearchParams(location.search).get('refar') !== '0';   // ?refar=0: as it was, for comparing
+  function refar(rec) {   // called from lod() for one that is still and far enough: start its copy if nothing else is being made
+    if (!REFAR || farJob || !(rec.stillT > (rec.spec.solo ? 3 : 1.5))) return;
+    const u = rec.unit; u.root.updateWorldMatrix(true, true);
+    const at = u.root.matrixWorld.clone(), inv = at.clone().invert(); let cells = 0; for (const p of u.parts) cells += p.col.length;
+    farJob = { rec, at, big: cells > COARSE_SLICE, gen: cells > COARSE_SLICE ? coarseHalf(u, inv) : null, inv };
+  }
+  function farStep() {
+    const j = farJob, rec = j.rec, u = rec.unit;
+    if (!u || u.gone || rec.gone || rec.far || !(rec.stillT > 0)) { farJob = null; return; }   // it was hit again meanwhile
+    let G;
+    if (j.big) { const r = j.gen.next(); if (!r.done) return; G = r.value && [r.value, r.value]; } else G = coarse(u, j.inv);
+    farJob = null;
+    if (!G) { rec.noFar = true; return; }   // (nothing left of it)
+    rec.farG = G; rec.remade = true; rec.far = new THREE.Mesh(G[farLvl], mats[0]); rec.far.receiveShadow = true; rec.far.matrixAutoUpdate = false; rec.far.matrix.copy(j.at); rec.far.matrixWorldNeedsUpdate = true; rec.far.visible = false; scene.add(rec.far);
+    remakes++; lodT = 0;
+  }
+  let remakes = 0;
 
   // ---- look-up ----
   function near(x, z, r, fn) {
@@ -338,6 +407,7 @@ export function makeCivilians(o) {
     if (r <= 0.3 || rec.gone) return 0;
     const u = wake(rec); if (!u || u.gone) return 0;
     const n = u.hit(p, r, cube, push);
+    if (!n && rec.far) for (const q of u.parts) if (q.dirty) { touch(rec); break; }   // only scorched: its far copy is out of date all the same
     if (n) { touch(rec); if (u.blown && !u.boomed) { u.boomed = true; boom(rec, who, later); } else if (!u.blown && Math.random() < 0.3) sfx.play('clang', p, 0.6); }
     return n;
   }
@@ -479,7 +549,12 @@ export function makeCivilians(o) {
       for (const r of c.recs) if (!r.unit && !r.gone) r.farOn = !want;
       farDirty = true;
     }
-    for (const rec of live) if (rec.far) { const d = Math.hypot(rec.x - cx, rec.z - cz) - rec.reach, want = d < (rec.unit.root.visible ? nearSoloD + 40 : nearSoloD); rec.unit.root.visible = want; rec.far.visible = !want; if (!want) { const g = rec.farG[farLvl || d > FAR_SOLO ? 1 : 0]; if (rec.far.geometry !== g) rec.far.geometry = g; } }
+    for (const rec of live) {
+      // how near a model is drawn in full: a ship's remade copy is in the bigger cubes only, so on the better steps it waits for the distance at which an untouched ship's is too
+      const nd = !rec.spec.solo ? nearD : rec.remade && !farLvl ? FAR_SOLO : nearSoloD, d = Math.hypot(rec.x - cx, rec.z - cz) - rec.reach;
+      if (rec.far) { const want = d < (rec.unit.root.visible ? nd + 40 : nd); rec.unit.root.visible = want; rec.far.visible = !want; if (!want) { const g = rec.farG[farLvl || d > FAR_SOLO ? 1 : 0]; if (rec.far.geometry !== g) rec.far.geometry = g; } }
+      else if (d > nd + 40 && rec.stillT > 0) refar(rec);
+    }
   }
   function update(dt, playing) {
     if (!(dt >= 0)) dt = 0;   // the very first frame has no time step yet
@@ -488,15 +563,16 @@ export function makeCivilians(o) {
     if (playing) { feet(); stepJets(dt); }
     for (let i = live.length - 1; i >= 0; i--) {
       const rec = live[i], u = rec.unit;
-      if (rec.far && !u.root.visible) continue;   // far off and untouched: its far copy stands in, and it need not move
-      stepUnit(rec, dt);
+      const away = rec.far && !u.root.visible;   // far off, and untouched or come to rest: its far copy stands in, and it need not move
+      if (!away) { stepUnit(rec, dt); rec.stillT = still(rec) ? (rec.stillT || 0) + dt : 0; }
       if (rec.spec.solo) continue;
+      if (away) { if (!u.dead) continue; rec.idle += dt; if (rec.idle > (u.crushed && !u.blown ? 70 : 45)) { pay(rec, 1, ARMY, true); unfar(rec); u.dispose(); rec.unit = null; rec.gone = true; live.splice(i, 1); } continue; }   // a far wreck's time is up: it goes without the show
       // a car that was only woken (an alarm, a near miss) is put back; a wreck lies a while, then crumbles
       if (pristine(rec) && !(rec.alarmT > 0)) { rec.idle += dt; if (rec.idle > 2) { sleep(rec); live.splice(i, 1); } continue; }
       if (u.dead) {
         rec.idle += dt; const burning = u.fire && u.fire.t < u.fire.life + 3;
         if (!u.gone && !burning && rec.idle > (u.crushed && !u.blown ? 70 : 45)) u.burst(cube, null, 5, 0.15);
-        if (u.gone) { pay(rec, 1, ARMY, true); u.dispose(); rec.unit = null; rec.gone = true; live.splice(i, 1); }
+        if (u.gone) { pay(rec, 1, ARMY, true); unfar(rec); u.dispose(); rec.unit = null; rec.gone = true; live.splice(i, 1); }
       }
     }
     for (let i = fuses.length - 1; i >= 0; i--) {
@@ -507,6 +583,7 @@ export function makeCivilians(o) {
       const u = rec.unit; if (u && u.blown) boom(rec, who, true); else kill(rec, who);
     }
     if (fx.fires.length && Math.random() < dt * 14) sfx.play('crackle', fx.fires[Math.floor(Math.random() * fx.fires.length)].obj.getWorldPosition(_c), 0.8);
+    if (farJob) farStep();
     debris.update(dt); fx.update(dt);
   }
 
@@ -536,7 +613,7 @@ export function makeCivilians(o) {
   function endSortie(s, lost) {
     sorties.splice(sorties.indexOf(s), 1); air.splice(air.indexOf(s), 1); s.dead = true; s.u.dispose();
     // a fresh jet comes up to the catapult, unless she has been wrecked or stepped on meanwhile
-    fuses.push([lost ? 9 : 4, () => { const cv = s.cv, part = cv.parts.find((p) => p.name === 'p' + (s.n + 1)), sv = cv.away && cv.away[s.n]; if (!sv || cv.dead || cv.gone) return; part.col.set(sv.col); part.count = sv.count; part.dirty = true; cv.away[s.n] = null; }]);
+    fuses.push([lost ? 9 : 4, () => { const cv = s.cv, part = cv.parts.find((p) => p.name === 'p' + (s.n + 1)), sv = cv.away && cv.away[s.n]; if (!sv || cv.dead || cv.gone) return; touch(carrier); part.col.set(sv.col); part.count = sv.count; part.dirty = true; cv.away[s.n] = null; }]);
   }
   function damageJet(s, d) {
     if (s.phase !== 'air' || !(d > 0)) return;
@@ -665,6 +742,7 @@ export function makeCivilians(o) {
 
   build();
   const api = { recs, live, variants, cells, air, sorties, rockets, fx, sfx, debris, update, damageJet, launch, kill, hit, tread, wake, near, packed, packFar,
+    get remakes() { return remakes; }, get farJob() { return farJob; },
     detail(k) {
       nearD = NEAR * k; nearSoloD = NEAR_SOLO * k; lodT = 0;
       const l = k < 1 ? 1 : 0; if (l === farLvl) return;

@@ -147,12 +147,16 @@ function lodCheck() {
 if (typeof window !== 'undefined') window.__lodCheck = lodCheck;
 // put what came back in the scene
 function mwTake() {
+  if (!mwBack.length) return;
+  const t0 = performance.now();
   for (const d of mwBack) {
     stats.chunkMs = (stats.chunkMs || 0) + d.ms;   // the worker's time, for the playtest reports
-    if (d.t === 0) { chunksOut--; chunkAsked[d.k] = 0; placeChunk(d.k, geoFromPack(d.p)); }
-    else { regsOut--; regAsked[d.k] = 0; stats.regions = (stats.regions || 0) + 1; stats.regionMs = (stats.regionMs || 0) + d.ms; placeRegion(d.k, geoFromPack(d.p)); lodX = -1e9; }
+    const geo = geoFromPack(d.p); if (geo) stats.sentBytes = (stats.sentBytes || 0) + geo.userData.bytes;   // what the graphics card will be handed
+    if (d.t === 0) { chunksOut--; chunkAsked[d.k] = 0; placeChunk(d.k, geo); }
+    else { regsOut--; regAsked[d.k] = 0; stats.regions = (stats.regions || 0) + 1; stats.regionMs = (stats.regionMs || 0) + d.ms; placeRegion(d.k, geo); lodX = -1e9; }
   }
   mwBack.length = 0;
+  stats.takeMs = (stats.takeMs || 0) + performance.now() - t0;   // this frame's own share of the redraws
 }
 // how many changed chunks are redrawn each frame however long they take: two on a computer, one on a slow device
 let MIN_CHUNKS = 2;
