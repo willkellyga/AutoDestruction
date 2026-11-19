@@ -25,6 +25,7 @@ export function makeDebris(scene, max = 6000, water = null) {
   function update(dt) {
     if (!live) return;
     const was = top; top = 0;
+    const MA = mesh.instanceMatrix.array;
     for (let i = 0; i < was; i++) {
       if (!LIVE[i]) continue;
       const a = i * 3, r = i * 4, half = SZ[i] / 2; AGE[i] += dt;
@@ -36,7 +37,13 @@ export function makeDebris(scene, max = 6000, water = null) {
       const k = AGE[i] > 5 ? Math.max(0, 1 - (AGE[i] - 5) / 1.2) : 1;
       if (k <= 0) { LIVE[i] = 0; live--; free[nfree++] = i; mesh.setMatrixAt(i, ZERO); continue; }
       top = i + 1;
-      p.set(P[a], P[a + 1], P[a + 2]); q.setFromEuler(e.set(R[r], R[r + 1], 0)); s.setScalar(SZ[i] * k); mesh.setMatrixAt(i, m.compose(p, q, s));
+      // the cube's matrix written straight into the list (a turn about x, then y, times its size); going by way of a
+      // quaternion took most of this loop's time when thousands of cubes are loose
+      const sz = SZ[i] * k, ca = Math.cos(R[r]) * sz, sa = Math.sin(R[r]) * sz, cy = Math.cos(R[r + 1]), sy = Math.sin(R[r + 1]), w = i * 16;
+      MA[w] = cy * sz; MA[w + 1] = sa * sy; MA[w + 2] = -ca * sy; MA[w + 3] = 0;
+      MA[w + 4] = 0; MA[w + 5] = ca; MA[w + 6] = sa; MA[w + 7] = 0;
+      MA[w + 8] = sy * sz; MA[w + 9] = -sa * cy; MA[w + 10] = ca * cy; MA[w + 11] = 0;
+      MA[w + 12] = P[a]; MA[w + 13] = P[a + 1]; MA[w + 14] = P[a + 2]; MA[w + 15] = 1;
     }
     if (!live) { head = 0; refill(); }   // all gone: hand slots out from the bottom again
     mesh.count = top;
