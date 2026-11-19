@@ -46,11 +46,14 @@ const SPEC = {
   commuter: { def: COMMUTER_TRAIN, n: 1500, solo: true },
 };
 const NEAR = 200, NEAR_SOLO = 300;   // inside this distance of the camera a model is drawn in full
+const FAR_SOLO = 600;                // past this a ship or a crane's far copy is the one in bigger cubes, on every quality step
 const CELL = 128;                    // parked cars are grouped by squares of the map this size, so whole groups can be left out
 const BIG_PART = 9000;               // a part with more cubes than this is not rebuilt more than a few times a second
 const JET_HP = 2;
 
-// ---- the far copy: the whole model redrawn as one shell of cubes twice the size (the town's own), a flat colour each ----
+// ---- the far copy: the whole model redrawn as one shell of cubes the size of the town's own, a flat colour each ----
+// Returns two: [0] in cubes of one voxel, [1] in cubes of two (a quarter of the faces), for far off and for the lighter
+// quality steps. Each face is four corners and two triangles, with its own normal.
 function coarse(u) {
   const v = new THREE.Vector3(), box = new THREE.Box3(), list = [];
   for (const p of u.parts) {
@@ -58,44 +61,65 @@ function coarse(u) {
     list.push(p);
     for (const i of [p.i0, p.i0 + p.nx]) for (const j of [p.j0, p.j0 + p.ny]) for (const k of [p.k0, p.k0 + p.nz]) box.expandByPoint(v.set(i * p.h, j * p.h, k * p.h).applyMatrix4(p.bone.matrixWorld));
   }
-  const s = 1, a0 = Math.floor(box.min.x / s) - 1, b0 = Math.floor(box.min.y / s) - 1, c0 = Math.floor(box.min.z / s) - 1;
-  const X = Math.ceil(box.max.x / s) - a0 + 2, Y = Math.ceil(box.max.y / s) - b0 + 2, Z = Math.ceil(box.max.z / s) - c0 + 2, M = X * Y * Z;
-  const cnt = new Uint8Array(M), sr = new Float32Array(M), sg = new Float32Array(M), sb = new Float32Array(M);
+  const a0 = Math.floor(box.min.x) - 1, b0 = Math.floor(box.min.y) - 1, c0 = Math.floor(box.min.z) - 1;
+  const X = Math.ceil(box.max.x) - a0 + 2, Y = Math.ceil(box.max.y) - b0 + 2, Z = Math.ceil(box.max.z) - c0 + 2, M = X * Y * Z;
+  const cnt = new Uint16Array(M), sr = new Float32Array(M), sg = new Float32Array(M), sb = new Float32Array(M);
   for (const p of list) {
     const mw = p.bone.matrixWorld, h = p.h;
     for (let n = 0, k = 0; k < p.nz; k++) for (let j = 0; j < p.ny; j++) for (let i = 0; i < p.nx; i++, n++) {
       const c = p.col[n]; if (c < 0) continue;
       v.set((p.i0 + i + 0.5) * h, (p.j0 + j + 0.5) * h, (p.k0 + k + 0.5) * h).applyMatrix4(mw);
-      const m = ((Math.floor(v.z / s) - c0) * Y + Math.floor(v.y / s) - b0) * X + Math.floor(v.x / s) - a0;
-      if (cnt[m] < 255) cnt[m]++; sr[m] += (c >> 16) & 255; sg[m] += (c >> 8) & 255; sb[m] += c & 255;
+      const m = ((Math.floor(v.z) - c0) * Y + Math.floor(v.y) - b0) * X + Math.floor(v.x) - a0;
+      if (cnt[m] < 65535) { cnt[m]++; sr[m] += (c >> 16) & 255; sg[m] += (c >> 8) & 255; sb[m] += c & 255; }
     }
   }
+  const fine = { cnt, sr, sg, sb, X, Y, Z, a0, b0, c0 };
+  return [shell(fine, 1, 2), shell(halved(fine), 2, 4)];
+}
+// the same count-and-colour grid in cells twice the size
+function halved(G) {
+  const a0 = Math.floor(G.a0 / 2) - 1, b0 = Math.floor(G.b0 / 2) - 1, c0 = Math.floor(G.c0 / 2) - 1;
+  const X = Math.floor((G.a0 + G.X - 1) / 2) - a0 + 2, Y = Math.floor((G.b0 + G.Y - 1) / 2) - b0 + 2, Z = Math.floor((G.c0 + G.Z - 1) / 2) - c0 + 2, M = X * Y * Z;
+  const cnt = new Uint32Array(M), sr = new Float32Array(M), sg = new Float32Array(M), sb = new Float32Array(M);
+  for (let c = 0, n = 0; c < G.Z; c++) for (let b = 0; b < G.Y; b++) for (let a = 0; a < G.X; a++, n++) {
+    if (!G.cnt[n]) continue;
+    const m = ((Math.floor((c + G.c0) / 2) - c0) * Y + Math.floor((b + G.b0) / 2) - b0) * X + Math.floor((a + G.a0) / 2) - a0;
+    cnt[m] += G.cnt[n]; sr[m] += G.sr[n]; sg[m] += G.sg[n]; sb[m] += G.sb[n];
+  }
+  return { cnt, sr, sg, sb, X, Y, Z, a0, b0, c0 };
+}
+// the outside of a grid as cubes of side s; a cell counts as solid with at least `need` of the model's cubes in it
+function shell(G, s, need) {
+  const { cnt, sr, sg, sb, X, Y, Z, a0, b0, c0 } = G, M = X * Y * Z;
   // only the outside shows: flood the air in from a corner, and whatever it cannot reach counts as solid
   const air = new Uint8Array(M), stack = [0], D = [1, -1, X, -X, X * Y, -X * Y]; air[0] = 1;
   while (stack.length) {
     const m = stack.pop(), a = m % X, b = Math.floor(m / X) % Y, c = Math.floor(m / (X * Y));
     for (let d = 0; d < 6; d++) {
       if ((d === 0 && a === X - 1) || (d === 1 && a === 0) || (d === 2 && b === Y - 1) || (d === 3 && b === 0) || (d === 4 && c === Z - 1) || (d === 5 && c === 0)) continue;
-      const k = m + D[d]; if (air[k] || cnt[k] >= 2) continue;
+      const k = m + D[d]; if (air[k] || cnt[k] >= need) continue;
       air[k] = 1; stack.push(k);
     }
   }
-  const P = [], C = [], col = new THREE.Color(), q = [0, 0, 0], dim = [X, Y, Z];
+  const P = [], N = [], C = [], I = [], col = new THREE.Color(), q = [0, 0, 0], nrm = [0, 0, 0];
   for (let c = 1; c < Z - 1; c++) for (let b = 1; b < Y - 1; b++) for (let a = 1; a < X - 1; a++) {
-    const m = (c * Y + b) * X + a, n = cnt[m]; if (n < 2) continue;
+    const m = (c * Y + b) * X + a, n = cnt[m]; if (n < need) continue;
     let tinted = false;
     for (let ax = 0; ax < 3; ax++) for (const sg2 of [1, -1]) {
       if (!air[m + sg2 * D[ax * 2]]) continue;
       if (!tinted) { tinted = true; col.setRGB(sr[m] / n / 255, sg[m] / n / 255, sb[m] / n / 255, THREE.SRGBColorSpace).multiplyScalar(0.84 + 0.1 * hash(a, b, c, 5)); }
-      const uu = (ax + 1) % 3, vv = (ax + 2) % 3, cs = sg2 > 0 ? [[0, 0], [1, 0], [1, 1], [0, 0], [1, 1], [0, 1]] : [[0, 0], [1, 1], [1, 0], [0, 0], [0, 1], [1, 1]];
+      const uu = (ax + 1) % 3, vv = (ax + 2) % 3, cs = sg2 > 0 ? [[0, 0], [1, 0], [1, 1], [0, 1]] : [[0, 0], [1, 1], [1, 0], [0, 1]], base = P.length / 3;
+      nrm[0] = nrm[1] = nrm[2] = 0; nrm[ax] = sg2;
       for (const [cu, cv] of cs) {
         q[0] = a + a0; q[1] = b + b0; q[2] = c + c0; q[ax] += sg2 > 0 ? 1 : 0; q[uu] += cu; q[vv] += cv;
-        P.push(q[0] * s, q[1] * s, q[2] * s); C.push(col.r, col.g, col.b);
+        P.push(q[0] * s, q[1] * s, q[2] * s); N.push(nrm[0], nrm[1], nrm[2]); C.push(col.r, col.g, col.b);
       }
+      if (sg2 > 0) I.push(base, base + 1, base + 2, base, base + 2, base + 3); else I.push(base, base + 1, base + 2, base, base + 3, base + 1);
     }
   }
   const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(C, 3)); g.computeVertexNormals();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(C, 3));
+  g.setIndex(P.length / 3 > 65535 ? new THREE.Uint32BufferAttribute(I, 1) : new THREE.Uint16BufferAttribute(I, 1));
   return g;
 }
 // every part of a unit as it stands, in one mesh (gi 0: painted cubes, 1: the lit ones), or null if it has none
@@ -140,6 +164,7 @@ export function makeCivilians(o) {
   const recs = [], live = [], cells = new Map(), variants = new Map(), grid = new Map(), fuses = [], air = [], sorties = [], rockets = [];
   const ZERO = new THREE.Matrix4().makeScale(0, 0, 0), UP = new THREE.Vector3(0, 1, 0), _c = new THREE.Vector3(), _d = new THREE.Vector3(), _w = new THREE.Vector3(), _q = new THREE.Quaternion(), _e = new THREE.Euler(0, 0, 0, 'YXZ'), _s = new THREE.Vector3(1, 1, 1);
   let clock = 0, quiet = false, lodT = 0, stamp = 0, carrier = null, jetT = 26, toldJets = false;
+  let nearD = NEAR, nearSoloD = NEAR_SOLO, farLvl = 0;   // the lighter quality steps draw models in full less far out, and their far copies in bigger cubes (detail() below)
 
   // ---- which model stands where ----
   const hx = (v, s) => hash(Math.round(v.x), s, Math.round(v.z), 17);
@@ -174,7 +199,7 @@ export function makeCivilians(o) {
       if (spec.solo) {
         const u = stand(rec, { ...opts, seed: 3 + n, low: v.low });
         rec.size = sizeOf(u); u.half = Math.round(rec.size.fz1 - rec.size.fz0) - 2;
-        rec.far = new THREE.Mesh(coarse(u), mats[0]); rec.far.receiveShadow = true; rec.far.matrixAutoUpdate = false; rec.far.matrix.copy(rec.m); rec.far.matrixWorldNeedsUpdate = true; rec.far.visible = false; scene.add(rec.far);
+        rec.farG = coarse(u); rec.far = new THREE.Mesh(rec.farG[farLvl], mats[0]); rec.far.receiveShadow = true; rec.far.matrixAutoUpdate = false; rec.far.matrix.copy(rec.m); rec.far.matrixWorldNeedsUpdate = true; rec.far.visible = false; scene.add(rec.far);
         u.root.position.set(rec.x, rec.y, rec.z); u.root.rotation.y = rec.yaw; scene.add(u.root);
         if (spec.clip) u.play(spec.clip, 0);
         if (kind === 'carrier') carrier = rec;
@@ -192,7 +217,7 @@ export function makeCivilians(o) {
     });
     // the shared meshes: one far copy of each kind for the whole map, and the full model once for each square it stands in
     for (const V of variants.values()) {
-      V.farMesh = new THREE.InstancedMesh(V.far, mats[0], V.recs.length); V.farMesh.frustumCulled = false; V.farMesh.receiveShadow = true; scene.add(V.farMesh);
+      V.farMesh = new THREE.InstancedMesh(V.far[farLvl], mats[0], V.recs.length); V.farMesh.frustumCulled = false; V.farMesh.receiveShadow = true; scene.add(V.farMesh);
       V.recs.forEach((r) => V.farMesh.setMatrixAt(r.farSlot, r.m));
     }
     for (const c of cells.values()) {
@@ -228,7 +253,7 @@ export function makeCivilians(o) {
   const pristine = (rec) => { const u = rec.unit; return u && !u.dead && !u.gone && u.voxels === u.voxels0 && !rec.touched; };
   function touch(rec) {   // the first time a boat or crane is damaged its far copy is put away for good
     rec.touched = true; rec.idle = 0;
-    if (rec.far) { rec.far.removeFromParent(); rec.far.geometry.dispose(); rec.far = null; rec.unit.root.visible = true; }
+    if (rec.far) { rec.far.removeFromParent(); for (const g of rec.farG) g.dispose(); rec.far = rec.farG = null; rec.unit.root.visible = true; }
   }
 
   // ---- look-up ----
@@ -416,12 +441,12 @@ export function makeCivilians(o) {
   function lod() {
     const cx = camera.position.x, cz = camera.position.z, cy = camera.position.y;
     for (const c of cells.values()) {
-      const d = Math.hypot(Math.max(c.x0 - cx, 0, cx - c.x0 - CELL), Math.max(c.z0 - cz, 0, cz - c.z0 - CELL), cy * 0.5), want = d < (c.near ? NEAR + 30 : NEAR);
+      const d = Math.hypot(Math.max(c.x0 - cx, 0, cx - c.x0 - CELL), Math.max(c.z0 - cz, 0, cz - c.z0 - CELL), cy * 0.5), want = d < (c.near ? nearD + 30 : nearD);
       if (want === c.near) continue;
       c.near = want; for (const m of c.meshes) m.visible = want;
       for (const r of c.recs) if (!r.unit && !r.gone) { r.V.farMesh.setMatrixAt(r.farSlot, want ? ZERO : r.m); r.V.farMesh.instanceMatrix.needsUpdate = true; }
     }
-    for (const rec of live) if (rec.far) { const d = Math.hypot(rec.x - cx, rec.z - cz) - rec.reach, want = d < (rec.unit.root.visible ? NEAR_SOLO + 40 : NEAR_SOLO); rec.unit.root.visible = want; rec.far.visible = !want; }
+    for (const rec of live) if (rec.far) { const d = Math.hypot(rec.x - cx, rec.z - cz) - rec.reach, want = d < (rec.unit.root.visible ? nearSoloD + 40 : nearSoloD); rec.unit.root.visible = want; rec.far.visible = !want; if (!want) { const g = rec.farG[farLvl || d > FAR_SOLO ? 1 : 0]; if (rec.far.geometry !== g) rec.far.geometry = g; } }
   }
   function update(dt, playing) {
     if (!(dt >= 0)) dt = 0;   // the very first frame has no time step yet
@@ -607,6 +632,11 @@ export function makeCivilians(o) {
 
   build();
   const api = { recs, live, variants, cells, air, sorties, rockets, fx, sfx, debris, update, damageJet, launch, kill, hit, tread, wake, near,
+    detail(k) {
+      nearD = NEAR * k; nearSoloD = NEAR_SOLO * k; lodT = 0;
+      const l = k < 1 ? 1 : 0; if (l === farLvl) return;
+      farLvl = l; for (const V of variants.values()) if (V.farMesh) V.farMesh.geometry = V.far[l];
+    },
     get carrier() { return carrier; },
     counts() { const n = {}; for (const r of recs) n[r.kind] = (n[r.kind] || 0) + 1; return n; } };
   window.__civ = api;

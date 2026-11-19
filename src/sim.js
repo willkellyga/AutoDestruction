@@ -570,7 +570,7 @@ function updateDebris(dt) {
   // draw and send only up to the highest piece in use (it used to be all 8,000 boxes, drawn and sent every frame)
   const shown = top + 1, im = dmesh.instanceMatrix, upTo = Math.max(shown, dShown);
   dmesh.count = shown; dShown = shown;
-  if (upTo > 0) { im.clearUpdateRanges(); im.addUpdateRange(0, upTo * 16); im.needsUpdate = true; }
+  if (upTo > 0) { const r = im.updateRanges[0], n = Math.max(upTo * 16, r ? r.count : 0); im.clearUpdateRanges(); im.addUpdateRange(0, n); im.needsUpdate = true; }   // with two steps before a frame, the first one's span still goes
   if (cHi >= 0) { const ic = dmesh.instanceColor; ic.clearUpdateRanges(); ic.addUpdateRange(cLo * 3, (cHi - cLo + 1) * 3); ic.needsUpdate = true; cLo = 1e9; cHi = -1; }
   stats.active = active; stats.asleep = asleep; stats.hot = hotN;
 }
