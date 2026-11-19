@@ -238,7 +238,7 @@ export function makeCivilians(o) {
       if (spec.solo) {
         const u = stand(rec, { ...opts, seed: 3 + n, low: v.low });
         rec.size = sizeOf(u); u.half = Math.round(rec.size.fz1 - rec.size.fz0) - 2;
-        rec.farG = coarse(u); rec.far = new THREE.Mesh(rec.farG[farLvl], mats[0]); rec.far.receiveShadow = true; rec.far.matrixAutoUpdate = false; rec.far.matrix.copy(rec.m); rec.far.matrixWorldNeedsUpdate = true; rec.far.visible = false; scene.add(rec.far);
+        rec.farG = coarse(u); rec.far = new THREE.Mesh(rec.farG[farLvl], mats[0]); rec.far.name = 'far copies of vehicles'; rec.far.receiveShadow = true; rec.far.matrixAutoUpdate = false; rec.far.matrix.copy(rec.m); rec.far.matrixWorldNeedsUpdate = true; rec.far.visible = false; scene.add(rec.far);
         u.root.position.set(rec.x, rec.y, rec.z); u.root.rotation.y = rec.yaw; scene.add(u.root);
         if (spec.clip) u.play(spec.clip, 0);
         if (kind === 'carrier') carrier = rec;
@@ -256,14 +256,14 @@ export function makeCivilians(o) {
     });
     // the shared meshes: one far copy of each kind for the whole map, and the full model once for each square it stands in
     for (const V of variants.values()) {
-      V.farMesh = new THREE.InstancedMesh(V.far[farLvl], mats[0], V.recs.length); V.farMesh.frustumCulled = false; V.farMesh.receiveShadow = true; scene.add(V.farMesh);
+      V.farMesh = new THREE.InstancedMesh(V.far[farLvl], mats[0], V.recs.length); V.farMesh.name = 'parked, far'; V.farMesh.frustumCulled = false; V.farMesh.receiveShadow = true; scene.add(V.farMesh);
       V.farMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       V.recs.forEach((r) => { r.farOn = true; V.farMesh.setMatrixAt(r.farSlot, r.m); });
     }
     for (const c of cells.values()) {
       const by = new Map(); for (const r of c.recs) { if (!by.has(r.V)) by.set(r.V, []); by.get(r.V).push(r); }
       for (const [V, list] of by) {
-        const ms = V.near.map((g, gi) => { if (!g) return null; const m = new THREE.InstancedMesh(g, mats[gi], list.length); m.castShadow = gi === 0; m.receiveShadow = gi === 0; m.visible = false; scene.add(m); c.meshes.push(m); return m; });
+        const ms = V.near.map((g, gi) => { if (!g) return null; const m = new THREE.InstancedMesh(g, mats[gi], list.length); m.name = 'parked, near'; m.castShadow = gi === 0; m.receiveShadow = gi === 0; m.visible = false; scene.add(m); c.meshes.push(m); return m; });
         list.forEach((r, i) => { r.slot = i; r.nearMeshes = ms; for (const m of ms) if (m) m.setMatrixAt(i, r.m); });
         for (const m of ms) if (m) m.computeBoundingSphere();
       }
@@ -321,7 +321,7 @@ export function makeCivilians(o) {
     if (j.big) { const r = j.gen.next(); if (!r.done) return; G = r.value && [r.value, r.value]; } else G = coarse(u, j.inv);
     farJob = null;
     if (!G) { rec.noFar = true; return; }   // (nothing left of it)
-    rec.farG = G; rec.remade = true; rec.far = new THREE.Mesh(G[farLvl], mats[0]); rec.far.receiveShadow = true; rec.far.matrixAutoUpdate = false; rec.far.matrix.copy(j.at); rec.far.matrixWorldNeedsUpdate = true; rec.far.visible = false; scene.add(rec.far);
+    rec.farG = G; rec.remade = true; rec.far = new THREE.Mesh(G[farLvl], mats[0]); rec.far.name = 'far copies of vehicles'; rec.far.receiveShadow = true; rec.far.matrixAutoUpdate = false; rec.far.matrix.copy(j.at); rec.far.matrixWorldNeedsUpdate = true; rec.far.visible = false; scene.add(rec.far);
     remakes++; lodT = 0;
   }
   let remakes = 0;

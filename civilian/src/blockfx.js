@@ -31,7 +31,7 @@ export function makeBlockFx(scene, max = 7000, o = {}) {
   // the cubes light themselves, so their faces are shaded by hand to keep each one reading as a block
   const geo = cubeGeo([0.8, 0.8, 1.12, 0.6, 0.94, 0.7]);   // three faces a cube, turned to the camera (units/src/cube3.js)
   const mesh = cubeMesh(geo, cubeMat(new THREE.MeshBasicMaterial({ vertexColors: true, fog: false })), max);
-  mesh.frustumCulled = false; mesh.count = 0; mesh.setColorAt(0, new THREE.Color(1, 1, 1)); mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(mesh);
+  mesh.name = 'block effects'; mesh.frustumCulled = false; mesh.count = 0; mesh.setColorAt(0, new THREE.Color(1, 1, 1)); mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(mesh);
   mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
   const M = mesh.instanceMatrix.array, C = mesh.instanceColor.array;
   const blocks = [], wind = { x: 1.6, z: 0.7 };

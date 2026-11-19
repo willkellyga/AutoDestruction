@@ -7,7 +7,7 @@ import { cubeGeo, cubeMat, cubeMesh } from './cube3.js';
 // into water is gone, with a splash.
 export function makeDebris(scene, max = 6000, water = null) {
   const mesh = cubeMesh(cubeGeo(), cubeMat(new THREE.MeshStandardMaterial({ roughness: 0.9 })), max);   // three faces a cube (cube3.js)
-  mesh.castShadow = true; mesh.frustumCulled = false; mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  mesh.name = 'unit debris'; mesh.castShadow = true; mesh.frustumCulled = false; mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   const P = new Float32Array(max * 3), V = new Float32Array(max * 3), R = new Float32Array(max * 4), SZ = new Float32Array(max), AGE = new Float32Array(max);
   const col = new THREE.Color(), ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
   for (let i = 0; i < max; i++) { mesh.setMatrixAt(i, ZERO); mesh.setColorAt(i, col.set(0)); }
