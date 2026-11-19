@@ -196,7 +196,7 @@ export function makeCivilians(o) {
   const fx = makeBlockFx(scene, 7000, { flash: (p, power) => flash(p.x, p.y + 3, p.z, 5 * power) }); fx.water = waterAt;
   const debris = makeDebris(scene, 6000, { at: waterAt, splash: (x, y, z) => { if (Math.random() < 0.3) { fx.block(x, y + 0.1, z, (Math.random() - 0.5) * 3, 5 + Math.random() * 6, (Math.random() - 0.5) * 3, 0.14 + Math.random() * 0.12, 1.5, K.WATER, 0.3, 0, 40); fx.foam(x, z, 0, 0, 0.3, 1.2); } } });
   const cube = (x, y, z, vx, vy, vz, c, s) => debris.spawn(x, y, z, vx, vy, vz, c, s);
-  const sfx = makeSfx(camera);
+  const sfx = o.mixer ? o.mixer.module('c.', 'city') : makeSfx(camera);
   const wakeSound = () => sfx.init(); window.addEventListener('pointerdown', wakeSound); window.addEventListener('keydown', wakeSound);
   const shake = (a, p) => hooks.shake(a, p.x, p.y, p.z);
 
