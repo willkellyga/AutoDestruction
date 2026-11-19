@@ -218,7 +218,8 @@ export function makeCivilians(o) {
     // the shared meshes: one far copy of each kind for the whole map, and the full model once for each square it stands in
     for (const V of variants.values()) {
       V.farMesh = new THREE.InstancedMesh(V.far[farLvl], mats[0], V.recs.length); V.farMesh.frustumCulled = false; V.farMesh.receiveShadow = true; scene.add(V.farMesh);
-      V.recs.forEach((r) => V.farMesh.setMatrixAt(r.farSlot, r.m));
+      V.farMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      V.recs.forEach((r) => { r.farOn = true; V.farMesh.setMatrixAt(r.farSlot, r.m); });
     }
     for (const c of cells.values()) {
       const by = new Map(); for (const r of c.recs) { if (!by.has(r.V)) by.set(r.V, []); by.get(r.V).push(r); }
@@ -240,7 +241,7 @@ export function makeCivilians(o) {
   // ---- a parked car becomes a unit, and goes back to being a drawing if nothing came of it ----
   function draw(rec, on) {
     for (const m of rec.nearMeshes) if (m) { m.setMatrixAt(rec.slot, on ? rec.m : ZERO); m.instanceMatrix.needsUpdate = true; }
-    rec.V.farMesh.setMatrixAt(rec.farSlot, on && !rec.cell.near ? rec.m : ZERO); rec.V.farMesh.instanceMatrix.needsUpdate = true;
+    rec.farOn = on && !rec.cell.near; farDirty = true;
   }
   function wake(rec) {
     if (rec.unit || rec.gone) return rec.unit;
@@ -438,13 +439,42 @@ export function makeCivilians(o) {
     if (u.settleT > 0) { u.settleT -= dt; if (u.settleT <= 0 && u.fire && !u.crushed) u.fire.spots = fireSpots(u, u.def.wk.fires || 12); }   // once it has come to rest the fire moves to whatever is now on top
     if (u.fire && u.blown && u.charT > 0 && u.fire.t > u.charT && u.fire.t < u.fire.life) { u.charT += 3.5; char(u, u.def.wk.char ?? 0.13); }   // a burning wreck goes on charring
   }
+  // One far mesh of each kind holds every parked vehicle of that kind on the map, and the graphics card was handed all
+  // of them every frame, behind the camera and past the haze too. Only the ones in a widened view are packed to the front
+  // of the list and drawn; the list is packed again when the camera has moved or turned by part of that margin.
+  let farDirty = true;
+  const wide = new THREE.PerspectiveCamera(), frustum = new THREE.Frustum(), _pm = new THREE.Matrix4(), _ball = new THREE.Sphere(), _fw = new THREE.Vector3(), packed = { x: 1e9, z: 0, fx: 0, fy: 0, fz: 0, far: 0, fov: 0, shown: 0, of: 0, packs: 0 };
+  function packFar() {
+    camera.getWorldDirection(_fw);
+    const p = camera.position, turned = _fw.x * packed.fx + _fw.y * packed.fy + _fw.z * packed.fz < 0.9925;   // 7 degrees
+    if (!farDirty && !turned && Math.abs(p.x - packed.x) + Math.abs(p.z - packed.z) < 12 && camera.far === packed.far && camera.fov === packed.fov) return;
+    farDirty = false; packed.x = p.x; packed.z = p.z; packed.fx = _fw.x; packed.fy = _fw.y; packed.fz = _fw.z; packed.far = camera.far; packed.fov = camera.fov; packed.packs++;
+    wide.fov = Math.min(150, camera.fov + 30); wide.aspect = camera.aspect; wide.near = camera.near; wide.far = camera.far * 1.05; wide.updateProjectionMatrix();
+    camera.updateMatrixWorld(); wide.matrixWorldInverse.copy(camera.matrixWorld).invert();
+    frustum.setFromProjectionMatrix(_pm.multiplyMatrices(wide.projectionMatrix, wide.matrixWorldInverse));
+    let shown = 0, of = 0;
+    for (const V of variants.values()) {
+      const mesh = V.farMesh; if (!mesh) continue;
+      const arr = mesh.instanceMatrix.array; let n = 0;
+      for (const r of V.recs) {
+        if (!r.farOn) continue;
+        of++; _ball.center.set(r.x, r.y + 2, r.z); _ball.radius = r.reach + 4;
+        if (!frustum.intersectsSphere(_ball)) continue;
+        r.m.toArray(arr, n * 16); n++;
+      }
+      if (mesh.count !== n || n) { mesh.count = n; mesh.instanceMatrix.clearUpdateRanges(); mesh.instanceMatrix.addUpdateRange(0, n * 16); mesh.instanceMatrix.needsUpdate = true; }
+      shown += n;
+    }
+    packed.shown = shown; packed.of = of;
+  }
   function lod() {
     const cx = camera.position.x, cz = camera.position.z, cy = camera.position.y;
     for (const c of cells.values()) {
       const d = Math.hypot(Math.max(c.x0 - cx, 0, cx - c.x0 - CELL), Math.max(c.z0 - cz, 0, cz - c.z0 - CELL), cy * 0.5), want = d < (c.near ? nearD + 30 : nearD);
       if (want === c.near) continue;
       c.near = want; for (const m of c.meshes) m.visible = want;
-      for (const r of c.recs) if (!r.unit && !r.gone) { r.V.farMesh.setMatrixAt(r.farSlot, want ? ZERO : r.m); r.V.farMesh.instanceMatrix.needsUpdate = true; }
+      for (const r of c.recs) if (!r.unit && !r.gone) r.farOn = !want;
+      farDirty = true;
     }
     for (const rec of live) if (rec.far) { const d = Math.hypot(rec.x - cx, rec.z - cz) - rec.reach, want = d < (rec.unit.root.visible ? nearSoloD + 40 : nearSoloD); rec.unit.root.visible = want; rec.far.visible = !want; if (!want) { const g = rec.farG[farLvl || d > FAR_SOLO ? 1 : 0]; if (rec.far.geometry !== g) rec.far.geometry = g; } }
   }
@@ -631,7 +661,7 @@ export function makeCivilians(o) {
   }
 
   build();
-  const api = { recs, live, variants, cells, air, sorties, rockets, fx, sfx, debris, update, damageJet, launch, kill, hit, tread, wake, near,
+  const api = { recs, live, variants, cells, air, sorties, rockets, fx, sfx, debris, update, damageJet, launch, kill, hit, tread, wake, near, packed, packFar,
     detail(k) {
       nearD = NEAR * k; nearSoloD = NEAR_SOLO * k; lodT = 0;
       const l = k < 1 ? 1 : 0; if (l === farLvl) return;
