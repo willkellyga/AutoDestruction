@@ -45,7 +45,9 @@ function rebuildChunk(k) {
   const cx = k % NCX, cz = (k / NCX) | 0;
   stats.rebuilt = (stats.rebuilt || 0) + 1;   // counted for the playtest reports (playtest/server.mjs)
   built[k] = tick;
+  const t0 = performance.now();
   const geo = meshChunk(cx, cz);
+  stats.chunkMs = (stats.chunkMs || 0) + performance.now() - t0;   // for the playtest reports
   let m = chunkMesh[k];
   if (m) { stats.quads -= m.geometry.userData.quads || 0; m.geometry.dispose(); if (!geo) { scene.remove(m); chunkMesh[k] = null; return; } m.geometry = geo; stats.quads += geo.userData.quads; return; }
   if (!geo) return;
@@ -1363,7 +1365,7 @@ const lap = (k) => { const P = globalThis.__stepT; if (!P) return; const n = per
 export { lap };
 export function stepSim(dt) {
   lap();
-  for (let i = soonQ.length - 1; i >= 0; i--) if (--soonQ[i][0] <= 0) { const f = soonQ[i][1]; soonQ.splice(i, 1); f(); }
+  for (let i = soonQ.length - 1; i >= 0; i--) if (--soonQ[i][0] <= 0) { const f = soonQ[i][1]; soonQ.splice(i, 1); const d0 = net.depth; net.depth = 0; try { f(); } finally { net.depth = d0; } }   // a call put off by its caller counts as the caller's
   if (explQueue.length) {
     for (let i = explQueue.length - 1; i >= 0; i--) {
       const q = explQueue[i]; q[4] -= dt;
@@ -1404,3 +1406,22 @@ export function stepSim(dt) {
 }
 export function sectionCount() { return sections.length; }
 export function sectionVoxels() { let n = 0; for (const s of sections) n += s.alive; return n; }
+
+// ---- playing together (src/net.js) ----------------------------------------------------------------------------------------
+// The calls from outside the sim that change the world, or show something happening, are recorded so that the other devices
+// in a round can make the same calls. What the sim then does by itself (inside stepSim, or inside a call already recorded)
+// is not sent: each device works that out for itself. `replay` is set while another device's calls are made here.
+export const net = { rec: null, depth: 0, replay: false };
+function tapped(name, fn) {
+  return function (...a) {
+    if (net.rec && net.depth === 0 && !net.replay) net.rec(name, a);
+    net.depth++;
+    try { return fn.apply(this, a); } finally { net.depth--; }
+  };
+}
+function inside(fn) { return function (...a) { net.depth++; try { return fn.apply(this, a); } finally { net.depth--; } }; }
+blast = tapped('blast', blast); slice = tapped('slice', slice); explode = tapped('explode', explode); blowGlass = tapped('blowGlass', blowGlass);
+shockwave = tapped('shockwave', shockwave); igniteAt = tapped('igniteAt', igniteAt);
+dust = tapped('dust', dust); dustWave = tapped('dustWave', dustWave); smoke = tapped('smoke', smoke); fire = tapped('fire', fire);
+sparks = tapped('sparks', sparks); flash = tapped('flash', flash); ring = tapped('ring', ring);
+stepSim = inside(stepSim);
