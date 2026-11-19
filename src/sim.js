@@ -63,7 +63,7 @@ function placeChunk(k, geo) {
   let m = chunkMesh[k];
   if (m) { stats.quads -= m.geometry.userData.quads || 0; m.geometry.dispose(); if (!geo) { scene.remove(m); chunkMesh[k] = null; return; } m.geometry = geo; stats.quads += geo.userData.quads; return; }
   if (!geo) return;
-  m = new THREE.Mesh(geo, chunkMat); m.customDepthMaterial = chunkDepth; m.position.set(cx * 16, 0, cz * 16); m.updateMatrix(); m.updateMatrixWorld(true);
+  m = new THREE.Mesh(geo, chunkMat); m.name = 'near city'; m.customDepthMaterial = chunkDepth; m.position.set(cx * 16, 0, cz * 16); m.updateMatrix(); m.updateMatrixWorld(true);
   m.castShadow = nearShadow; m.receiveShadow = true; m.matrixAutoUpdate = false; m.visible = lodNow[k] === 0;
   scene.add(m); chunkMesh[k] = m; stats.quads += geo.userData.quads;
 }
@@ -232,6 +232,9 @@ const regFar = (r) => {
 };
 let LOD1 = Infinity, LOD2 = Infinity, lodX = -1e9, lodZ = -1e9;
 export function setLod(d1, d2) { if (d1 === LOD1 && d2 === LOD2) return; LOD1 = d1; LOD2 = d2; lodX = -1e9; }
+// Is this chunk's full copy standing in for a far copy? It lies past the first far-detail distance, where a far copy is
+// wanted, and is drawn in full because that copy is not built or not up to date yet (fresh() above). For the reports' count.
+export function standIn(m) { const c = ((m.position.x / 32) | 0) + ((m.position.z / 32) | 0) * NRX; return regFar(NRG + c) > LOD1 * LOD1; }
 export function lodStats() {
   let a = 0, b = 0, r1 = 0, r2 = 0;
   for (let k = 0; k < NCH; k++) { if (lodNow[k] === 1) a++; else if (lodNow[k] === 2) b++; }
@@ -256,7 +259,7 @@ function placeRegion(r, geo) {
   const c = r % NRG, rx = (c % NRX) * 2, rz = ((c / NRX) | 0) * 2, m = regMesh[r];
   if (m) { m.geometry.dispose(); if (geo) m.geometry = geo; else { scene.remove(m); regMesh[r] = false; } return; }
   if (!geo) { regMesh[r] = false; return; }   // nothing there: built, and empty
-  const mm = new THREE.Mesh(geo, chunkMat); mm.customDepthMaterial = chunkDepth; mm.position.set(rx * 16, 0, rz * 16); mm.updateMatrix(); mm.updateMatrixWorld(true);
+  const mm = new THREE.Mesh(geo, chunkMat); mm.name = 'far city'; mm.customDepthMaterial = chunkDepth; mm.position.set(rx * 16, 0, rz * 16); mm.updateMatrix(); mm.updateMatrixWorld(true);
   mm.castShadow = false; mm.receiveShadow = true;   // far past the shadow box round the monster
   mm.matrixAutoUpdate = false; mm.visible = !!regShown[r]; scene.add(mm); regMesh[r] = mm;
 }
@@ -1318,46 +1321,53 @@ class Section {
 
 // ---- support -------------------------------------------------------------
 let vis = new Uint8Array(1 << 16), dist = new Uint8Array(1 << 16), qa = new Int32Array(1 << 16), qb = new Int32Array(1 << 16), comp = new Int32Array(1 << 16);
+let ga = new Int32Array(1 << 16), gb = new Int32Array(1 << 16), own = new Int16Array(1 << 16);
 // Fill `dist` over the body's box with how far sideways each of its voxels is from support (255: nothing reaches it).
 // Seeds are the body's voxels on the ground; a body built wholly on top of another (b.hung) is seeded where it touches one.
+// A cell is looked at from each of its six sides, and more than once as shorter ways to it turn up, so what the world
+// holds there is looked up once and kept in `own` for this fill (0: not yet looked up, -1: not this body's, else what it
+// is made of). Each cell waiting its turn has its place in the world beside it (ga, gb), so where it lies in the box
+// comes from shifts and not from divisions.
 function spanFill(b) {
-  const w = b.x1 - b.x0 + 1, h = b.y1 + 1, d = b.z1 - b.z0 + 1, vol = w * h * d, wd = w * d, id = b.id;
-  if (vol > dist.length) { vis = new Uint8Array(vol); dist = new Uint8Array(vol); qa = new Int32Array(vol); qb = new Int32Array(vol); comp = new Int32Array(vol); }
-  dist.fill(255, 0, vol);
+  const w = b.x1 - b.x0 + 1, h = b.y1 + 1, d = b.z1 - b.z0 + 1, vol = w * h * d, wd = w * d, id = b.id, x0 = b.x0, z0 = b.z0;
+  if (vol > dist.length) { vis = new Uint8Array(vol); dist = new Uint8Array(vol); qa = new Int32Array(vol); qb = new Int32Array(vol); comp = new Int32Array(vol); ga = new Int32Array(vol); gb = new Int32Array(vol); own = new Int16Array(vol); }
+  dist.fill(255, 0, vol); own.fill(0, 0, vol);
   let nc = 0;
   for (let z = 0; z < d; z++) for (let x = 0; x < w; x++) {
-    const gi = idx(b.x0 + x, 0, b.z0 + z);
-    if (voxAt(gi) && ownerAt(gi) === id) { dist[x + w * z] = 0; qa[nc++] = x + w * z; }
+    const gi = idx(x0 + x, 0, z0 + z);
+    if (voxAt(gi) && ownerAt(gi) === id) { dist[x + w * z] = 0; ga[nc] = gi; qa[nc++] = x + w * z; }
   }
   if (b.hung) for (let y = 0, l = 0; y < h; y++) for (let z = 0; z < d; z++) for (let x = 0; x < w; x++, l++) {
-    const gi = idx(b.x0 + x, y, b.z0 + z);
+    const gi = idx(x0 + x, y, z0 + z);
     if (!voxAt(gi) || ownerAt(gi) !== id) continue;
     for (let f = 0; f < 6; f++) {
       const k = gi + NB[f];
       if (k < 0 || k >= NV || !voxAt(k)) continue;
       const o = bodies[ownerAt(k)];
-      if (o && o !== b && o.kind !== 'rubble') { dist[l] = 0; qa[nc++] = l; break; }
+      if (o && o !== b && o.kind !== 'rubble') { dist[l] = 0; ga[nc] = gi; qa[nc++] = l; break; }
     }
   }
+  const xl = w - 1, zl = d - 1, yl = h - 1;
   for (let L = 0; nc && L < 254; L++) {
     let sp = nc, nn = 0;
     while (sp) {
       const l = qa[--sp];
       if (dist[l] !== L) continue;
-      const x = l % w, z = ((l / w) | 0) % d, y = (l / wd) | 0, g0 = idx(b.x0 + x, y, b.z0 + z);
+      const g0 = ga[sp], x = (g0 & XM) - x0, z = ((g0 >> ZS) & ZM) - z0, y = g0 >> YS;
       for (let f = 0; f < 6; f++) {
         let nl;
-        if (f === 0) { if (x === w - 1) continue; nl = l + 1; } else if (f === 1) { if (x === 0) continue; nl = l - 1; }
-        else if (f === 2) { if (z === d - 1) continue; nl = l + w; } else if (f === 3) { if (z === 0) continue; nl = l - w; }
-        else if (f === 4) { if (y === h - 1) continue; nl = l + wd; } else { if (y === 0) continue; nl = l - wd; }
+        if (f === 0) { if (x === xl) continue; nl = l + 1; } else if (f === 1) { if (x === 0) continue; nl = l - 1; }
+        else if (f === 2) { if (z === zl) continue; nl = l + w; } else if (f === 3) { if (z === 0) continue; nl = l - w; }
+        else if (f === 4) { if (y === yl) continue; nl = l + wd; } else { if (y === 0) continue; nl = l - wd; }
         if (dist[nl] <= L) continue;
-        const gi = g0 + NB[f], m = voxAt(gi);
-        if (!m || ownerAt(gi) !== id) continue;
-        if (f > 3 && CARRY[m]) { dist[nl] = L; qa[sp++] = nl; }
-        else if (dist[nl] > L + 1) { dist[nl] = L + 1; qb[nn++] = nl; }
+        const gi = g0 + NB[f]; let m = own[nl];
+        if (m === 0) { m = voxAt(gi); m = own[nl] = m && ownerAt(gi) === id ? m : -1; }
+        if (m < 0) continue;
+        if (f > 3 && CARRY[m]) { dist[nl] = L; ga[sp] = gi; qa[sp++] = nl; }
+        else if (dist[nl] > L + 1) { dist[nl] = L + 1; gb[nn] = gi; qb[nn++] = nl; }
       }
     }
-    const t = qa; qa = qb; qb = t; nc = nn;
+    let t = qa; qa = qb; qb = t; t = ga; ga = gb; gb = t; nc = nn;
   }
   return vol;
 }
