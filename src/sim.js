@@ -55,6 +55,8 @@ function rebuildChunk(k) {
 function placeChunk(k, geo) {
   const cx = k % NCX, cz = (k / NCX) | 0;
   stats.rebuilt = (stats.rebuilt || 0) + 1;   // counted for the playtest reports (playtest/server.mjs)
+  nearOld[k] = 0;
+  if (nearAsk[k]) { nearAsk[k] = 0; nearStale[k] = 0; nearHeld[k] = 1; lodX = -1e9; }   // the far copy over it was waiting for this (nearReady)
   // its far copies no longer match: they are built again before they are next shown (updateLod)
   const c = cell(k); regStale[NRG + c] = 1; regStale[2 * NRG + up2(c)] = 1;
   let m = chunkMesh[k];
@@ -136,9 +138,11 @@ function lodCheck() {
     const on = regShown[r2] && regMesh[r2] ? r2 : regShown[r1] && regMesh[r1] ? r1 : -1;
     if (m && m.visible && on >= 0) both++;
     if (lodNow[k] && on < 0 && regMesh[lodNow[k] === 2 ? r2 : r1] === null) holes++;
-    if (on >= 0 && !seen[on] && built[k] > regBuilt[on]) { seen[on] = 1; ghosts++; }
+    if (on >= 0 && !seen[on] && built[k] > regBuilt[on] && !nearHeld[k] && !nearAsk[k]) { seen[on] = 1; ghosts++; }   // not one whose full copy was redrawn ahead of the swap (nearReady)
   }
-  return { ghosts, both, holes, shown: lodStats().regions };
+  let nearGhosts = 0, nearest = 1e9;
+  for (let k = 0; k < NCH; k++) if (nearOld[k] && !lodNow[k] && chunkMesh[k] && chunkMesh[k].visible) { nearGhosts++; nearest = Math.min(nearest, Math.sqrt(far(k))); }
+  return { ghosts, both, holes, nearGhosts, nearest: nearGhosts ? Math.round(nearest) : null, shown: lodStats().regions };
 }
 if (typeof window !== 'undefined') window.__lodCheck = lodCheck;
 // put what came back in the scene
@@ -166,7 +170,7 @@ export function flushChunks(ms = 5) {
   if (dirty.size) {
     order.length = 0;
     for (const k of dirty) {
-      if (lodNow[k]) { dirty.delete(k); lazy.delete(k); staleFar(k); continue; }   // shown coarse: redraw that copy instead
+      if (lodNow[k] && !nearAsk[k]) { dirty.delete(k); lazy.delete(k); staleFar(k); continue; }   // shown coarse: redraw that copy instead
       if (tick - built[k] >= 3 && !chunkAsked[k]) order.push(k);
     }
     if (order.length > 2) order.sort((a, b) => far(a) - far(b));
@@ -213,7 +217,7 @@ export function flushChunks(ms = 5) {
 // 2 x 2 cell (rx, rz both even).
 const NCH = NCX * NCZ, NRX = Math.ceil(NCX / 2), NRZ = Math.ceil(NCZ / 2), NRG = NRX * NRZ;
 const regMesh = new Array(3 * NRG).fill(null), regStale = new Uint8Array(3 * NRG), regShown = new Uint8Array(3 * NRG), regBuilt = new Int32Array(3 * NRG), regAsked = new Uint8Array(3 * NRG);
-const lodNow = new Uint8Array(NCH), nearStale = new Uint8Array(NCH);   // what each chunk shows: 0 its full copy, 1 or 2 a region
+const lodNow = new Uint8Array(NCH), nearStale = new Uint8Array(NCH), nearOld = new Uint8Array(NCH), nearAsk = new Uint8Array(NCH), nearHeld = new Uint8Array(NCH);   // what each chunk shows: 0 its full copy, 1 or 2 a region
 const regTodo = new Set(), fOrder = [];
 const cell = (k) => ((k % NCX) >> 1) + (((k / NCX) | 0) >> 1) * NRX;   // the 2 x 2 cell a chunk is in
 const up2 = (c) => ((c % NRX) & ~1) + (((c / NRX) | 0) & ~1) * NRX;   // the level-2 region's cell
@@ -255,6 +259,19 @@ const ready = (r) => regMesh[r] !== null;   // built (a mesh, or false when the 
 // A far copy is switched to only when it is up to date, so a block wrecked up close is not drawn whole again from an older
 // copy when he walks away; until it is built again, the finer copy stays. One already showing stays while it is redrawn.
 const fresh = (r) => ready(r) && ((!regStale[r] && !regAsked[r]) || regShown[r] === 1);
+// Coming nearer, a half-detail copy gives way to its chunks' full copies. One that changed while it was far (a rival wrecked
+// it) has a full copy from before: shown as it is, the building stands whole again for a moment, then goes. So the far copy
+// stays until those full copies have been redrawn; this asks for them and says whether they are all up to date.
+function nearReady(c) {
+  let ok = true; const cx = c % NRX, cz = (c / NRX) | 0;
+  for (let q = 0; q < 4; q++) {
+    const kx = cx * 2 + (q & 1), kz = cz * 2 + (q >> 1);
+    if (kx >= NCX || kz >= NCZ) continue;
+    const k = kx + kz * NCX;
+    if (nearStale[k]) { ok = false; nearAsk[k] = 1; dirty.add(k); }
+  }
+  return ok;
+}
 function showRegion(r, on) { if (regShown[r] === on) return; regShown[r] = on; if (regMesh[r]) regMesh[r].visible = !!on; }
 function updateLod() {
   const dx = focusX - lodX, dz = focusZ - lodZ;
@@ -263,8 +280,19 @@ function updateLod() {
   const a = LOD1 * LOD1, b = LOD2 * LOD2;
   for (let c2 = 0; c2 < NRG; c2++) {
     if (((c2 % NRX) & 1) || (((c2 / NRX) | 0) & 1)) continue;   // level-2 regions start on even cells
-    const r2 = 2 * NRG + c2, want2 = regFar(r2) > b, show2 = want2 && fresh(r2) ? 1 : 0;
+    const r2 = 2 * NRG + c2, want2 = regFar(r2) > b;
+    let show2 = want2 && fresh(r2) ? 1 : 0;
     if (want2 && (!ready(r2) || regStale[r2])) regTodo.add(r2);
+    if (!want2 && regShown[r2] === 1) {
+      // coming nearer: the quarter-detail copy stays until no chunk under it would show an out-of-date full copy (nearReady)
+      for (let j = 0; j < 4; j++) {
+        const cx = (c2 % NRX) + (j & 1), cz = ((c2 / NRX) | 0) + (j >> 1);
+        if (cx >= NRX || cz >= NRZ) continue;
+        const c = cx + cz * NRX, r1 = NRG + c;
+        if (regFar(r1) > a) { if (fresh(r1)) continue; regTodo.add(r1); }
+        if (!nearReady(c)) show2 = 1;
+      }
+    }
     showRegion(r2, show2);
     for (let j = 0; j < 4; j++) {
       const cx = (c2 % NRX) + (j & 1), cz = ((c2 / NRX) | 0) + (j >> 1);
@@ -272,7 +300,8 @@ function updateLod() {
       const c = cx + cz * NRX, r1 = NRG + c;
       const want1 = !show2 && (want2 || regFar(r1) > a);
       if (want1 && !want2 && (!ready(r1) || regStale[r1])) regTodo.add(r1);
-      const show1 = want1 && fresh(r1) ? 1 : 0;
+      let show1 = want1 && fresh(r1) ? 1 : 0;
+      if (!show2 && !want1 && regShown[r1] === 1 && !nearReady(c)) show1 = 1;
       showRegion(r1, show1);
       const L = show2 ? 2 : show1 ? 1 : 0;
       for (let q = 0; q < 4; q++) {
@@ -280,9 +309,9 @@ function updateLod() {
         if (kx >= NCX || kz >= NCZ) continue;
         const k = kx + kz * NCX;
         if (lodNow[k] === L) continue;
-        lodNow[k] = L;
+        lodNow[k] = L; nearHeld[k] = 0;
         const near = chunkMesh[k]; if (near) near.visible = L === 0;
-        if (L === 0 && nearStale[k]) { nearStale[k] = 0; dirty.add(k); }   // its full copy is out of date: redrawn in turn
+        if (L === 0 && nearStale[k]) { nearStale[k] = 0; nearOld[k] = 1; stats.cameNearStale = (stats.cameNearStale || 0) + 1; dirty.add(k); }   // its full copy is out of date: redrawn in turn
       }
     }
   }
@@ -445,11 +474,25 @@ export function writeFlame(te, o, f, size) {
   te[o + 8] = (xz + wy) * sc; te[o + 9] = (yz - wx) * sc; te[o + 10] = (1 - (xx + yy)) * sc; te[o + 11] = 0;
   te[o + 12] = f.x; te[o + 13] = f.y; te[o + 14] = f.z; te[o + 15] = 1;
 }
+// Loose pieces and falling sections are limited in number, and in a round with rivals most of the wrecking happens far from
+// the player: left alone, the far side of the city uses the pieces up and what the player bites just vanishes. So what is
+// near the action comes first. NEAR_FX is the distance (in voxels from the monster) inside which a piece is always shown;
+// past the second far-copy distance (LOD2, where the city is drawn at a quarter of its detail) only some are.
+const NEAR_FX = 240;
+const fromFocus = (x, z) => Math.hypot(x - focusX, z - focusZ);
+const farFx = () => Math.max(NEAR_FX * 1.25, Math.min(LOD2, 700));
 export function spawnDebris(x, y, z, vx, vy, vz, m, lvl = 1, size = 0) {
+  const d = fromFocus(x, z), near = d < NEAR_FX, T = stats.debris4 || (stats.debris4 = [0, 0, 0, 0]);   // counted for tests: near shown, near not, far shown, far not
+  if (!near && Math.random() > (d > farFx() ? 0.25 : 0.6)) { T[3]++; hotNext = 0; return; }   // far off: a quarter of the pieces; in between: six in ten
   let i = -1;
   for (let t = 0; t < 40; t++) { const k = (dhead + t) % debrisBudget; if (dstate[k] === 0) { i = k; break; } }
   if (i < 0) { for (let t = 0; t < 200; t++) { const k = (dhead + t) % debrisBudget; if (dstate[k] === 2) { i = k; break; } } }
-  if (i < 0) return;
+  if (i < 0 && near) {
+    // all in use, and this one is near: it takes the place of a piece that is far off (flying or lying)
+    for (let t = 0; t < 900; t++) { const k = (dhead + t) % debrisBudget; if (dstate[k] === 0 || (dstate[k] !== 3 && fromFocus(dp[k * 3], dp[k * 3 + 2]) > NEAR_FX)) { i = k; break; } }
+  }
+  T[(near ? 0 : 2) + (i < 0 ? 1 : 0)]++;
+  if (i < 0) { hotNext = 0; return; }
   dhead = (i + 1) % debrisBudget;
   const a = i * 3;
   dp[a] = x; dp[a + 1] = y; dp[a + 2] = z;
@@ -1429,9 +1472,23 @@ function finish(b) {
   if (b.dead) return;
   b.dead = true; hooks.bodyDown(b);
 }
+// May a piece that broke away at (x, z) fall as a section? There are 26 at most. Far ones may use only some of them, and a
+// near one that finds them all taken ends the farthest far one (see NEAR_FX above).
+function sectionRoom(x, z) {
+  const d = fromFocus(x, z);
+  if (d >= NEAR_FX) return sections.length < (d > farFx() ? 8 : 16);
+  if (sections.length < 26) return true;
+  let worst = -1, wd = NEAR_FX;
+  for (let i = 0; i < sections.length; i++) { const q = sections[i], e = fromFocus(q.pos.x, q.pos.z); if (e > wd) { wd = e; worst = i; } }
+  if (worst < 0) return false;
+  const q = sections[worst]; sections.splice(worst, 1); scene.remove(q.mesh); q.mesh.dispose();   // gone without a sound: nobody is near it
+  return true;
+}
 function detach(b, cells, n) {
   let sec = null;
-  if (n >= 40 && sections.length < 26) {
+  const c0 = cells[n >> 1], px = c0 & XM, pz = (c0 >> ZS) & ZM, big = n >= 40, room = big && sectionRoom(px, pz);
+  if (big) { const T = stats.fell4 || (stats.fell4 = [0, 0, 0, 0]); T[(fromFocus(px, pz) < NEAR_FX ? 0 : 2) + (room ? 0 : 1)]++; }   // counted for tests: near falling, near not, far falling, far not
+  if (room) {
     let mode = 'free', hx = 0, hz = 0;
     if (b.nextMode && n > 240) { mode = b.nextMode.mode; hx = b.nextMode.hx; hz = b.nextMode.hz; }
     else if (cfg.topple && n > 600) {
@@ -1530,6 +1587,7 @@ export function stepSim(dt) {
   flushChunks(4); lap('sim.chunks');
 }
 export function sectionCount() { return sections.length; }
+if (typeof window !== 'undefined') window.__secs = () => sections.map((q) => Math.round(fromFocus(q.pos.x, q.pos.z)));   // for tests: how far each falling section is from the action
 export function sectionVoxels() { let n = 0; for (const s of sections) n += s.alive; return n; }
 
 // ---- playing together (src/net.js) ----------------------------------------------------------------------------------------
