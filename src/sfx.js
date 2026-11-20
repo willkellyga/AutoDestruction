@@ -30,7 +30,7 @@ const CUES = {
   // the monsters (src/main.js, src/rivals.js, src/rival-moves.js, src/rival-full.js)
   roar:     { gap: 0.6, n: 2, pri: 3, len: 1.4, clip: 'roar', duck: true },
   stomp:    { gap: 0.12, n: 3, pri: 2, len: 0.7, clip: 'stomp' },
-  step:     { gap: 0.12, n: 2, pri: 3, len: 0.6, clip: 'stomp' },   // each footfall while he walks or runs
+  step:     { gap: 0.08, n: 4, pri: 3, len: 0.35, clip: 'stomp' },   // each footfall while he walks or runs
   quake:    { gap: 0.5, n: 2, pri: 3, len: 1.6, clip: 'quake', duck: true },
   bite:     { gap: 0.09, n: 2, pri: 2, len: 0.3, clip: 'bite' },
   swipe:    { gap: 0.09, n: 2, pri: 1, len: 0.3, clip: 'swipe' },
@@ -200,8 +200,12 @@ const CLIP_GAIN = { roar: 0.9, stomp: 1.2, quake: 1, bite: 1, swipe: 0.9, hit: 0
   splash: 0.6, hiss: 0.3, jet: 0.55, catapult: 0.5, gun: 0.75 };
 
 export function makeMixer({ camera }) {
-  let ctx = null, master = null, noiseBuf = null, clock = 0, duckT = 0, bank = null, sfxBus = null;
+  let ctx = null, master = null, noiseBuf = null, clock = 0, duckT = 0, bank = null, sfxBus = null, analyser = null;
   const vol = { music: 0.8, sfx: 0.8 };
+  // the mixer console's trims (src/mixer-panel.js): a gain for each cue ('step'), owner ('grp:me') and loop ('loop:scrape')
+  const trim = {};
+  const T = (k) => (trim[k] === undefined ? 1 : trim[k]);
+  const recent = {};   // when each cue last started and how loud, for the console's meters
   const buffers = {}, lastAt = {}, oldLast = {}, voices = [], busOf = {};
   const st = newStats();
   function newStats() { return { req: {}, played: {}, drop: {}, old: {}, sec: [], peak: 0, peakOld: 0, oldVoices: [], t0: 0 }; }
@@ -213,6 +217,7 @@ export function makeMixer({ camera }) {
       master = ctx.createGain(); master.gain.value = 0.6;
       const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -16; comp.knee.value = 8; comp.ratio.value = 5; comp.attack.value = 0.004; comp.release.value = 0.2;
       master.connect(comp); comp.connect(ctx.destination);
+      analyser = ctx.createAnalyser(); analyser.fftSize = 1024; comp.connect(analyser);   // the console's output meter
       sfxBus = ctx.createGain(); sfxBus.gain.value = vol.sfx * vol.sfx; sfxBus.connect(master);   // the player's sound effects volume
       for (const g in GROUPS) { const b = ctx.createGain(); b.gain.value = GROUPS[g].gain; b.connect(sfxBus); busOf[g] = b; }
       noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
@@ -268,12 +273,13 @@ export function makeMixer({ camera }) {
     if (grp !== 'me' && grp !== 'ui' && duckT > clock) g *= 0.5;
     // footsteps sit under the action, as games mix them: quieter while he is grinding through a building
     if (cue === 'step') { const L = loopState.scrape, D = LOOPS.scrape; if (L) g *= 1 - 0.6 * (1 - Math.exp(-L.drive / D.scale)); }
+    g *= T(cue) * T('grp:' + grp);
     if (g * GROUPS[grp].gain < QUIET) return drop(cue, 'quiet');
     reap();
     const pri = C.pri + (grp === 'me' || grp === 'ui' ? 1 : 0) + g;   // own sounds and loud ones win
     const same = voices.filter((v) => v.cue === cue), inGrp = voices.filter((v) => v.grp === grp);
     let victim = null;
-    if (same.length >= C.n) victim = weakest(same, pri);
+    if (same.length >= C.n) victim = same[0];   // a cue already at its most-at-once count: the newest takes the oldest's place
     else if (inGrp.length >= GROUPS[grp].voices) victim = weakest(inGrp, pri);
     else if (voices.length >= MAX_VOICES) victim = weakest(voices, pri);
     if (victim === false) return drop(cue, same.length >= C.n ? 'cue full' : inGrp.length >= GROUPS[grp].voices ? 'group full' : 'mix full');
@@ -284,6 +290,7 @@ export function makeMixer({ camera }) {
     if (C.duck && grp === 'me') duckT = clock + 0.7;
     const v = { cue, grp, pri, g, end: clock + C.len, node: null };
     if (ctx && ctx.state === 'running') v.node = sound(cue, C, g, at, grp, v, size);
+    recent[cue] = { t: clock, g };
     voices.push(v); if (counting) { count(st.played, cue, grp); sb.played++; }
     st.peak = Math.max(st.peak, voices.length);
     return true;
@@ -383,7 +390,8 @@ export function makeMixer({ camera }) {
         L.node = { s, g, cur: 0 };
       }
       if (!L.node) continue;
-      const tgt = want * D.gain * (D.grp !== 'me' && duckT > clock ? 0.5 : 1);
+      const tgt = want * D.gain * T('loop:' + name) * T('grp:' + D.grp) * (D.grp !== 'me' && duckT > clock ? 0.5 : 1);
+      L.want = want; L.gain = tgt;
       L.node.g.gain.setTargetAtTime(tgt, ctx.currentTime, tgt > L.node.cur ? D.attack : D.release); L.node.cur = tgt;
       if (D.size) L.node.s.playbackRate.setTargetAtTime(1.12 - 0.3 * L.size, ctx.currentTime, 0.3);
       L.idle = want < 0.01 ? L.idle + dt : 0;
@@ -443,6 +451,14 @@ export function makeMixer({ camera }) {
   }
   function musicRetry() { const w = want; want = null; music(w); }   // after the context wakes up (first tap)
 
-  const api = { on: true, init, load, play, tick, module, volume, get vol() { return { ...vol }; }, feed, level, loopSize, LAYERS, LOOPS, loadMusic, music, musicOn, musicRetry, CUES, GROUPS, stats: () => st, get clock() { return clock; }, get voices() { return voices.length; }, get track() { return cur ? cur.slot : null; }, get clips() { return Object.values(buffers).reduce((n, b) => n + b.length, 0); }, get ctx() { return ctx; } };
+  const meterBuf = new Float32Array(1024);
+  // what the console shows: the output level, every sound playing now, each loop's level, and each cue's last start
+  function meter() {
+    let rms = 0, peak = 0;
+    if (analyser) { analyser.getFloatTimeDomainData(meterBuf); for (const x of meterBuf) { rms += x * x; peak = Math.max(peak, Math.abs(x)); } rms = Math.sqrt(rms / meterBuf.length); }
+    reap();
+    return { rms, peak, clock, voices: voices.map((v) => ({ cue: v.cue, grp: v.grp, g: v.g, left: v.end - clock })), loops: Object.fromEntries(Object.entries(loopState).map(([k, L]) => [k, { want: L.want || 0, gain: L.gain || 0, on: !!L.node }])), recent };
+  }
+  const api = { on: true, init, load, play, tick, module, volume, meter, trim, setTrim: (k, v) => { if (v === 1) delete trim[k]; else trim[k] = v; }, LABEL_GROUPS: GROUPS, get vol() { return { ...vol }; }, feed, level, loopSize, LAYERS, LOOPS, loadMusic, music, musicOn, musicRetry, CUES, GROUPS, stats: () => st, get clock() { return clock; }, get voices() { return voices.length; }, get track() { return cur ? cur.slot : null; }, get clips() { return Object.values(buffers).reduce((n, b) => n + b.length, 0); }, get ctx() { return ctx; } };
   return api;
 }
