@@ -24,23 +24,26 @@ export const TOWER = { x: 133, z: 578 };                                    // t
 // One letter a lot. Capitals are districts, filled from a weighted list:
 //   H Haussmann blocks   C the Champs-Elysees   V Montmartre village   L the Left Bank's old streets   R the Marais
 //   P Montparnasse       S the village where he hatches
+//   N more city where there were gardens and squares (2026-11-20, Will chose "Add more city to Paris": Paris fell too fast,
+//     about 87% down at the bell against two thirds elsewhere). They draw from their own random numbers and names, so the
+//     rest of the city Will approved is laid out exactly as before.
 // Small letters are single pieces: g garden, p paved square, f square with a drinking fountain, l lawn, k car park,
 // o column or statue, c church, m street market. A dot is ground a big piece takes, or bare paving.
 // Ground set aside for a landmark that is not built yet holds a garden, a lawn or a square for now.
 const MAP = [
   'HHHVVVV..VVVVHHHH',
-  'HHHVpVV..VVVHHHHH',
+  'HHHVNVV..VVVHHHHH',
   'HHHHHHHHHHHHHHRRo',
   '...CCCCCCHoHHHRRR',
-  '...CCCCCogg..HRRR',
-  'HHffHHCCfgg..HRRR',
-  'HH..HHHHHLLLLpLLL',
+  '...CCCCCoNN..HRRR',
+  'HHNNHHCCNNN..HRRR',
+  'HH..HHHHHLLLLNLLL',
   'HH..HHHHHLLLLLLLL',
   'HH..HHllHLcLLLLLL',
-  'HHllHHHHHggLLLLLL',
-  'HHllHHHHHggLLLLLL',
+  'HHllHHHHHNNLLLLLL',
+  'HHllHHHHHNNLLLLLL',
   '..PPPPP.PPoPPSmSS',
-  '..PPPPPkPPPPgSSSS',
+  '..PPPPPkPPPPNSSSS',
 ];
 // the pieces that are not one plain lot: 'c,r' of the lot at their north-west corner
 const FIXED = {
@@ -58,6 +61,7 @@ const WEST_OF = new Set([2, 5, 8, 12]), EAST_OF = new Set([3, 6, 9, 13, 14]);   
 // ---- choosing what goes on a lot ------------------------------------------------------------------
 let seed = 17890714;
 const rnd = () => { seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+let seedN = 20261120;
 const pick = (a) => a[(rnd() * a.length) | 0], ri = (a, b) => a + ((rnd() * (b - a + 1)) | 0);
 function deck(list) { let d = []; return () => { if (!d.length) { d = list.slice(); for (let i = d.length - 1; i > 0; i--) { const j = (rnd() * (i + 1)) | 0; [d[i], d[j]] = [d[j], d[i]]; } } return d.pop(); }; }
 
@@ -72,6 +76,8 @@ const SMART = deck([['MODE', 'Fashion house'], ['BIJOUX', 'Jeweller'], ['PARFUM'
 const SMALL = deck([['PAIN', 'Bakery'], ['CAFE', 'Corner cafe'], ['VINS', 'Wine shop'], ['FLEURS', 'Florist'], ['CREPES', 'Creperie'], ['LIVRES', 'Bookshop'], ['ARTS', 'Art shop'], ['FROMAGE', 'Cheese shop'], ['TABAC', 'Tobacconist'], ['JOUETS', 'Toy shop']]);
 const FILMS = deck(['REX', 'LUX', 'ROXY', 'CINE']), TOWERS = deck(['SUD', 'GARE', 'NORD', 'AXE', 'PLAN']);
 const cap = (s) => s[0] + s.slice(1).toLowerCase();
+// the new blocks' shop names: a deck of their own, so the names on the old blocks do not move
+const STREET_N = deck([['CAFE', 'Cafe', 1], ['BISTRO', 'Bistro', 1], ['TABAC', 'Tobacconist'], ['PAIN', 'Bakery'], ['FLEURS', 'Florist'], ['LIVRES', 'Bookshop'], ['VINS', 'Wine shop'], ['CREPES', 'Creperie', 1], ['FROMAGE', 'Cheese shop'], ['HOTEL', 'Hotel'], ['PRESSE', 'Newsagent'], ['JOUETS', 'Toy shop'], ['GATEAUX', 'Cake shop'], ['ARTS', 'Art shop']]);
 
 const MAKE = {
   // one in three is furnished inside; the rest are floors and walls, which keeps a map of close-knit blocks light
@@ -95,9 +101,11 @@ const DIST = {
   S: [['cottage', 38], ['rowhouse', 24], ['shop', 20], ['park', 8], ['place', 4], ['market', 6]],
 };
 const ONE = { g: 'park', p: 'place', f: 'place', l: 'lawn', k: 'carpark', o: 'plaza', c: 'church', m: 'market' };
-const NAMES = { H: 'right', C: 'champs', V: 'montmartre', L: 'left', R: 'marais', P: 'south', S: 'village' };
+const NAMES = { N: 'right', H: 'right', C: 'champs', V: 'montmartre', L: 'left', R: 'marais', P: 'south', S: 'village' };
 const COLUMNS = { '10,3': 'Vendome column', '16,2': 'July column', '8,4': 'Obelisk', '10,11': 'Lion statue' };
 
+// UP: one more floor on every Haussmann block, for more city to wreck (being tried, 2026-11-20; 0 is the approved height)
+const UP = 0;
 export function parisLots() {
   const out = [];
   for (let r = 0; r < PZ.length; r++) for (let c = 0; c < PX.length; c++) {
@@ -113,6 +121,10 @@ export function parisLots() {
       else if (ch === 'o') opt = { title: COLUMNS[key] || 'Column' };
       else if (ch === 'k') opt = MAKE.carpark();
       else if (ch === 'l') opt = { cannons: r === 8 && (c === 6 || c === 7), beds: r === 9 || r === 10 };
+    } else if (ch === 'N') {   // a new block, on its own random numbers (see MAP)
+      const keep = seed; seed = seedN;
+      kind = 'haussmann'; opt = MAKE.haussmann(4, 6, STREET_N);
+      seedN = seed; seed = keep;
     } else {
       const table = DIST[ch];
       let t = rnd() * table.reduce((s, e) => s + e[1], 0), e = table[0];
@@ -124,6 +136,7 @@ export function parisLots() {
       else if (k === 'tower') opt = MAKE.tower(a[0], a[1]);
       else if (MAKE[k]) opt = MAKE[k]();
     }
+    if (UP && kind === 'haussmann' && opt && ch !== 'N') opt.floors += UP;   // see UP
     const L = { x: PX[c], z: PZ[r], f, k: kind, d, c, r };
     if (opt && ROW_F[r] < 0 && !WEST_OF.has(c) && !EAST_OF.has(c)) { opt.car = 0; opt.terrace = 0; }   // a lot inside a block has no street to park on
     if (opt) L.o = opt;
