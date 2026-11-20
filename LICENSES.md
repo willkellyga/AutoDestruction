@@ -185,6 +185,9 @@ Written by tools/sfx/bank.mjs: change the picks and run it again rather than edi
 | m_a.launch | assets/sfx/m_a_launch_launch_r2_3.mp3 | Rocket launch (made from 840511.ogg) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
 | m_a.launch | assets/sfx/m_a_launch_launch_r2_6.mp3 | Fireworks launch swoosh (made from 675780.ogg) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
 | m_a.launch | assets/sfx/m_a_launch_launch_r2_5.mp3 | Firework rocket (game-y) (made from 347163.ogg) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
+| m_charge | assets/sfx/m_charge_charge_r5_2.mp3 | Deep growl and fire rush (made from FIREWhsh_Whoosh Fire Deep Growl Monster Saturated Crisp 03_ESM_EMWI.wav) | Sonniss GDC 2026 | https://gdc.sonniss.com/ | Sonniss GDC bundle licence (royalty-free, no attribution) |
+| m_pouncelaunch | assets/sfx/m_pouncelaunch_plaunch_r5_2.mp3 | Ground crack, grunt and whoosh (made from crash_3.mp3 + CREAHmn_Designed Orc Male Attack Long Heavy Hit Charged Up 03_ESM_HC4.wav + 475131.ogg + sub_4.mp3) | Sonniss GDC 2026 | https://gdc.sonniss.com/ | Sonniss GDC bundle licence (royalty-free, no attribution) |
+| m_pounceland | assets/sfx/m_pounceland_pland_r5_2.mp3 | Meteor: boom, crash, rubble, rumble (made from EffectiveTrailer_Booms_Vol2_011.wav + crash_7.mp3 + debris_3.mp3 + rumble_2.mp3) | Sonniss GDC 2026 | https://gdc.sonniss.com/ | Sonniss GDC bundle licence (royalty-free, no attribution) |
 | menu | assets/music/menu_787460.mp3 | night in the sci-fi city | solarpsychedelic | https://freesound.org/people/solarpsychedelic/sounds/787460/ | CC0 1.0 |
 | round | assets/music/round_683261.mp3 | Battle Music (Village) | Migfus20 | https://freesound.org/people/Migfus20/sounds/683261/ | CC0 1.0 |
 | final | assets/music/final_361424.mp3 | Synth Metal Rock Loop.wav | furbyguy | https://freesound.org/people/furbyguy/sounds/361424/ | CC0 1.0 |

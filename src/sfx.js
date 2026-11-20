@@ -28,7 +28,7 @@ const GROUPS = { me: { voices: 6, gain: 1 }, rival: { voices: 5, gain: 0.63 }, a
 //   4 detail -15 dB: footsteps, glass, small clangs and thuds, fire crackle, alarms, splashes
 const TIER_DB = { 1: 0, 2: -4, 3: -9, 4: -15 };
 const TIER = {
-  bite: 1, swipe: 1, crumble: 1, stomp: 1, quake: 1, roar: 1, hit: 1, leap: 1, charge: 1, fire: 1, dive: 1, level: 1, unlock: 1, wingslice: 1,
+  bite: 1, swipe: 1, crumble: 1, stomp: 1, quake: 1, roar: 1, hit: 1, leap: 1, charge: 1, pouncelaunch: 1, pounceland: 1, fire: 1, dive: 1, level: 1, unlock: 1, wingslice: 1,
   collapse: 2, boom: 2, 'c.boom': 2, 'a.big': 2, thunder: 2, meteor: 2,
   'a.rifle': 3, 'a.mg': 3, 'a.cannon': 3, 'a.launch': 3, 'a.small': 3, 'c.crunch': 3, 'c.jet': 3, 'c.cat': 3, 'c.gun': 3, shot: 3, skid: 3, creak: 3,
   windup: 3, breathin: 3, pounceup: 3, chargeup: 3, rad: 3, radup: 3, snuff: 3, whoosh: 3, laser: 3, sizzle: 4, deny: 3,
@@ -58,6 +58,8 @@ const CUES = {
   dive:     { gap: 0.3, n: 1, pri: 2, len: 0.6, clip: 'whoosh' },
   skid:     { gap: 0.4, n: 1, pri: 1, len: 0.6, clip: 'skid' },
   charge:   { gap: 0.6, n: 2, pri: 2, len: 1.1, clip: 'charge' },
+  pouncelaunch: { gap: 0.5, n: 1, pri: 3, len: 0.9, clip: 'leap' },             // Meteor Pounce push-off
+  pounceland:   { gap: 0.5, n: 1, pri: 3, len: 2.0, clip: 'boom', duck: true }, // Meteor Pounce landing
   fire:     { gap: 0.5, n: 2, pri: 2, len: 1.3, clip: 'breath' },
   windup:   { gap: 0.4, n: 2, pri: 2, len: 0.75, clip: 'inhale' },
   breathin: { gap: 0.4, n: 2, pri: 2, len: 0.65, clip: 'inhale' },

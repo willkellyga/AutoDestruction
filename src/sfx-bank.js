@@ -138,6 +138,9 @@ import s134 from '../assets/sfx/m_a_big_abig_r2_2.mp3';
 import s135 from '../assets/sfx/m_a_launch_launch_r2_3.mp3';
 import s136 from '../assets/sfx/m_a_launch_launch_r2_6.mp3';
 import s137 from '../assets/sfx/m_a_launch_launch_r2_5.mp3';
+import s138 from '../assets/sfx/m_charge_charge_r5_2.mp3';
+import s139 from '../assets/sfx/m_pouncelaunch_plaunch_r5_2.mp3';
+import s140 from '../assets/sfx/m_pounceland_pland_r5_2.mp3';
 export const SFX_BANK = {
   "roar": [s4, s5, s6, s7],
   "stomp": [s8, s9],
@@ -206,6 +209,9 @@ export const SFX_BANK = {
   "m_boom": [s129, s130, s131],
   "m_a.big": [s132, s133, s134],
   "m_a.launch": [s135, s136, s137],
+  "m_charge": [s138],
+  "m_pouncelaunch": [s139],
+  "m_pounceland": [s140],
 };
 export const MUSIC_BANK = {
   menu: [m0],
@@ -215,4 +221,4 @@ export const MUSIC_BANK = {
 };
 // Gain for each clip that brings it to the same loudness (-18 dBFS over its loudest 300 ms; tools/sfx/loudness.py),
 // so where a sound sits in the mix comes only from the mixer's tier table (src/sfx.js TIERS), not from how it was recorded.
-export const SFX_NORM = {"roar":[0.818,1.04,1.282,0.913],"stomp":[1.561,1.245],"quake":[1.486],"bite":[0.945,1.589,2.955],"swipe":[1.357,1.136],"hit":[1.512,1.897],"leap":[1.25],"skid":[1.284],"charge":[0.787],"breath":[0.839],"inhale":[0.972],"crumble":[1.495,2.642],"collapse":[1.471,0.572],"creak":[0.902],"glass":[1.117,0.899],"boom":[1.308,0.795,1.202,0.879,1.005,0.714],"crackle":[4],"rifle":[1.398,1.281],"mg":[1.169],"cannon":[0.932],"launch":[1.108],"shell":[2.783],"ping":[1.369],"thud":[1.644],"carboom":[1.026],"crunch":[0.675,1.622],"clang":[1.372],"alarm":[1.246],"splash":[0.804],"hiss":[0.944],"jet":[0.63],"catapult":[0.812],"gun":[1.467],"zap":[1.7],"thunder":[0.658],"meteor":[1.442],"sizzle":[0.973],"whoosh":[4],"sub":[1.102,1.481,1.352,0.905,1.139],"thump":[1.053,1.984,2.113,1.063,1.607],"crash":[0.721,0.757,0.964,1.098,0.888,1.048,0.918,1.822],"debris":[0.876,0.759,0.903,0.738,1.708,1.746],"metal":[1.782,0.813,0.699,0.842,0.762],"groan":[0.799,0.693,0.797,1.633],"glassbig":[0.816,1.014,1.081,0.865,1.306],"rumble":[1.626,2.231,1.419,2.039],"punch":[1.816,1.665,1.45,1.916],"m_a.cannon":[0.727],"m_a.mg":[0.881],"m_a.rifle":[1.081,0.893,0.745],"m_bite":[0.786],"m_c.boom":[0.797,1.16],"m_c.crunch":[0.631],"m_collapse":[1],"m_crumble":[0.887,1.142],"m_glass":[0.702,0.738],"m_hit":[1.439],"m_level":[0.847],"m_roar":[0.648],"m_swipe":[0.783,1.257],"m_wingslice":[0.665],"m_quake":[0.881],"m_step":[1.574],"m_stomp":[1.442],"m_boom":[1.003,0.72,0.703],"m_a.big":[1.003,0.72,0.703],"m_a.launch":[0.84,0.663,1.047]};
+export const SFX_NORM = {"roar":[0.818,1.04,1.282,0.913],"stomp":[1.561,1.245],"quake":[1.486],"bite":[0.945,1.589,2.955],"swipe":[1.357,1.136],"hit":[1.512,1.897],"leap":[1.25],"skid":[1.284],"charge":[0.787],"breath":[0.839],"inhale":[0.972],"crumble":[1.495,2.642],"collapse":[1.471,0.572],"creak":[0.902],"glass":[1.117,0.899],"boom":[1.308,0.795,1.202,0.879,1.005,0.714],"crackle":[4],"rifle":[1.398,1.281],"mg":[1.169],"cannon":[0.932],"launch":[1.108],"shell":[2.783],"ping":[1.369],"thud":[1.644],"carboom":[1.026],"crunch":[0.675,1.622],"clang":[1.372],"alarm":[1.246],"splash":[0.804],"hiss":[0.944],"jet":[0.63],"catapult":[0.812],"gun":[1.467],"zap":[1.7],"thunder":[0.658],"meteor":[1.442],"sizzle":[0.973],"whoosh":[4],"sub":[1.102,1.481,1.352,0.905,1.139],"thump":[1.053,1.984,2.113,1.063,1.607],"crash":[0.721,0.757,0.964,1.098,0.888,1.048,0.918,1.822],"debris":[0.876,0.759,0.903,0.738,1.708,1.746],"metal":[1.782,0.813,0.699,0.842,0.762],"groan":[0.799,0.693,0.797,1.633],"glassbig":[0.816,1.014,1.081,0.865,1.306],"rumble":[1.626,2.231,1.419,2.039],"punch":[1.816,1.665,1.45,1.916],"m_a.cannon":[0.727],"m_a.mg":[0.881],"m_a.rifle":[1.081,0.893,0.745],"m_bite":[0.786],"m_c.boom":[0.797,1.16],"m_c.crunch":[0.631],"m_collapse":[1],"m_crumble":[0.887,1.142],"m_glass":[0.702,0.738],"m_hit":[1.439],"m_level":[0.847],"m_roar":[0.648],"m_swipe":[0.783,1.257],"m_wingslice":[0.665],"m_quake":[0.881],"m_step":[1.574],"m_stomp":[1.442],"m_boom":[1.003,0.72,0.703],"m_a.big":[1.003,0.72,0.703],"m_a.launch":[0.84,0.663,1.047],"m_charge":[1.006],"m_pouncelaunch":[0.761],"m_pounceland":[0.786]};
