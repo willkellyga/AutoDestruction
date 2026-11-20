@@ -9,6 +9,8 @@ import { face, faces4, win, door, disc, text, textW, tree, lampPost, bench, bin,
 // Paris blocks are close-knit: o.jl, o.jr and o.jb say the left side, the right side or the back stands against the
 // next building (paris.js works that out). A joined wall is pushed out to meet its neighbour (4 voxels at a side, 7 at
 // the back), is left blank, and the roof runs up to it as a party wall instead of sloping away.
+// PIERS: the spacing of the load-bearing piers inside a Haussmann block, 0 for none (see below)
+export const PIERS = 9, PIER_M = M.STEEL;
 export function haussmann(lx, lz, L, o = {}) {
   const jl = !!o.jl, jr = !!o.jr, jb = !!o.jb;
   const x0 = lx + (jl ? -3 : 1), x1 = lx + (jr ? 42 : 38), z0 = lz + 6, z1 = lz + (jb ? 42 : 35), n = o.floors || 6, G = 16, top = G + (n - 1) * 12 - 1;
@@ -17,6 +19,10 @@ export function haussmann(lx, lz, L, o = {}) {
   walls(x0, 0, z0, x1, top, z1, wall);
   for (let s = 0; s < n - 1; s++) box(x0 + 1, G - 1 + s * 12, z0 + 1, x1 - 1, G - 1 + s * 12, z1 - 1, M.CONC);
   box(x0, top, z0, x1, top, z1, M.SLAB);
+  // load-bearing piers inside, floor to roof (2026-11-20, Will chose "Toughen Paris's buildings"): Paris blocks fell
+  // whole as soon as a monster bit along the street front, so most of the city came down after the bite rather than in
+  // it. The piers carry each storey when the front is gone, so a bitten block stands longer and falls in smaller parts.
+  if (PIERS) for (let px = x0 + 7; px <= x1 - 8; px += PIERS) for (const pz of [z0 + Math.round((z1 - z0) / 3), z0 + Math.round((z1 - z0) * 2 / 3)]) box(px, 0, pz, px + 1, top - 1, pz + 1, PIER_M);
   const [Ff, Fr, Fb, Fl] = faces4(x0, z0, x1, z1), W = Ff.W, nb = Math.floor((W - 2) / 6), bays = Array.from({ length: nb }, (_, i) => ((W - nb * 6 + 2) >> 1) + i * 6);
   const open = [Ff, ...(jr ? [] : [Fr]), ...(jb ? [] : [Fb]), ...(jl ? [] : [Fl])];   // the faces that are not against a neighbour
   if (L >= 1) for (const F of open) { F.box(0, 0, F.W - 1, 1, 0, 0, M.STONE); F.band(G - 1, G - 1, 1, M.TRIM); F.band(top, top, 1, M.TRIM); F.band(top - 1, top - 1, 1, wall); }
