@@ -195,7 +195,8 @@ const CLIP_GAIN = { roar: 0.9, stomp: 0.9, quake: 1, bite: 0.6, swipe: 0.5, hit:
   splash: 0.6, hiss: 0.3, jet: 0.55, catapult: 0.5, gun: 0.35 };
 
 export function makeMixer({ camera }) {
-  let ctx = null, master = null, noiseBuf = null, clock = 0, duckT = 0, bank = null;
+  let ctx = null, master = null, noiseBuf = null, clock = 0, duckT = 0, bank = null, sfxBus = null;
+  const vol = { music: 0.8, sfx: 0.8 };
   const buffers = {}, lastAt = {}, oldLast = {}, voices = [], busOf = {};
   const st = newStats();
   function newStats() { return { req: {}, played: {}, drop: {}, old: {}, sec: [], peak: 0, peakOld: 0, oldVoices: [], t0: 0 }; }
@@ -207,7 +208,8 @@ export function makeMixer({ camera }) {
       master = ctx.createGain(); master.gain.value = 0.6;
       const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -16; comp.knee.value = 8; comp.ratio.value = 5; comp.attack.value = 0.004; comp.release.value = 0.2;
       master.connect(comp); comp.connect(ctx.destination);
-      for (const g in GROUPS) { const b = ctx.createGain(); b.gain.value = GROUPS[g].gain; b.connect(master); busOf[g] = b; }
+      sfxBus = ctx.createGain(); sfxBus.gain.value = vol.sfx * vol.sfx; sfxBus.connect(master);   // the player's sound effects volume
+      for (const g in GROUPS) { const b = ctx.createGain(); b.gain.value = GROUPS[g].gain; b.connect(sfxBus); busOf[g] = b; }
       noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
       const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
       if (bank) decode();
@@ -389,14 +391,14 @@ export function makeMixer({ camera }) {
   // Music: one track at a time on its own bus, outside the sound limits. music(slot) crossfades to that slot's track
   // (a slot with several tracks picks one at random); the same slot again does nothing. 'end' plays once, the rest loop.
   // Tracks are decoded the first time they are wanted, not at load, so a round starts as fast as it did.
-  let musicBank = {}, musicBus = null, cur = null, want = null;
+  let musicBank = {}, musicBus = null, cur = null, want = null, musicIsOn = true;
   const MUSIC_GAIN = 0.32, FADE = 1.2, ONCE = { end: true };
   function loadMusic(b) { musicBank = b || {}; }
   function music(slot) {
     if (slot === want) return;
     if (!ctx || ctx.state !== 'running') return;   // asked again every frame, so it starts once the sound is woken
     want = slot;
-    if (!musicBus) { musicBus = ctx.createGain(); musicBus.gain.value = MUSIC_GAIN; musicBus.connect(master); }
+    if (!musicBus) { musicBus = ctx.createGain(); musicBus.gain.value = musicIsOn ? MUSIC_GAIN * vol.music * vol.music : 0; musicBus.connect(master); }
     const t = ctx.currentTime;
     if (cur) { const old = cur; old.g.gain.cancelScheduledValues(t); old.g.gain.setValueAtTime(old.g.gain.value, t); old.g.gain.linearRampToValueAtTime(0, t + FADE); setTimeout(() => { try { old.s.stop(); } catch (e) {} }, FADE * 1000 + 100); cur = null; }
     const list = slot && musicBank[slot]; if (!list || !list.length) return;
@@ -411,9 +413,17 @@ export function makeMixer({ camera }) {
     const ab = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
     try { const p = ctx.decodeAudioData(ab, (buf) => { u8.__buf = buf; go(buf); }, () => {}); if (p && p.catch) p.catch(() => {}); } catch (e) {}
   }
-  function musicOn(on) { if (musicBus && ctx) musicBus.gain.setTargetAtTime(on ? MUSIC_GAIN : 0, ctx.currentTime, 0.1); }
+  function musicOn(on) { if (on === musicIsOn) return; musicIsOn = on; if (musicBus && ctx) musicBus.gain.setTargetAtTime(on ? MUSIC_GAIN * vol.music * vol.music : 0, ctx.currentTime, 0.1); }
+  // the player's volume sliders (0..1): 'music' or 'sfx'; heard as a curve, so half way sounds about half as loud
+  function volume(kind, v) {
+    vol[kind] = Math.max(0, Math.min(1, v));
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    if (kind === 'sfx' && sfxBus) sfxBus.gain.setTargetAtTime(vol.sfx * vol.sfx, t, 0.05);
+    if (kind === 'music' && musicBus) musicBus.gain.setTargetAtTime(musicIsOn ? MUSIC_GAIN * vol.music * vol.music : 0, t, 0.05);
+  }
   function musicRetry() { const w = want; want = null; music(w); }   // after the context wakes up (first tap)
 
-  const api = { on: true, init, load, play, tick, module, feed, level, loopSize, LAYERS, LOOPS, loadMusic, music, musicOn, musicRetry, CUES, GROUPS, stats: () => st, get clock() { return clock; }, get voices() { return voices.length; }, get track() { return cur ? cur.slot : null; }, get clips() { return Object.values(buffers).reduce((n, b) => n + b.length, 0); }, get ctx() { return ctx; } };
+  const api = { on: true, init, load, play, tick, module, volume, get vol() { return { ...vol }; }, feed, level, loopSize, LAYERS, LOOPS, loadMusic, music, musicOn, musicRetry, CUES, GROUPS, stats: () => st, get clock() { return clock; }, get voices() { return voices.length; }, get track() { return cur ? cur.slot : null; }, get clips() { return Object.values(buffers).reduce((n, b) => n + b.length, 0); }, get ctx() { return ctx; } };
   return api;
 }
