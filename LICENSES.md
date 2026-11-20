@@ -23,6 +23,10 @@ Recordings from Freesound.org (https://freesound.org), pulled through its API by
 (sound effects) and levelled for the game by tools/sfx/process.mjs. CC0 1.0 is public domain and needs no credit. CC BY 4.0 /
 3.0 needs the author credited: the credits screen or store page should carry the CC BY rows below. Nothing is
 non-commercial or Sampling+, and no Freesound ID used in Will's other games is picked (tools/sfx/blocked-ids.json).
+The layer clips (crash, debris, sub, scrape loop and the like) are cut by tools/sfx/layers.py from longer Freesound
+recordings and from the Sonniss #GameAudioGDC 2026 bundle (https://gdc.sonniss.com/, licence https://sonniss.com/gdc-bundle-license/):
+royalty-free in games, no credit needed, no AI training, and the raw bundle files are not to be passed on outside the team
+(they are not in this repository; only the cut, levelled clips the game plays are).
 Written by tools/sfx/bank.mjs: change the picks and run it again rather than editing this table.
 
 | Clip set | File | Sound | Author | Link | Licence |
@@ -75,6 +79,81 @@ Written by tools/sfx/bank.mjs: change the picks and run it again rather than edi
 | meteor | assets/sfx/meteor_323086.mp3 | meteor fly-by & Impact | LiamG_SFX | https://freesound.org/people/LiamG_SFX/sounds/323086/ | CC BY |
 | sizzle | assets/sfx/sizzle_436791.mp3 | Sizzle | roboroo | https://freesound.org/people/roboroo/sounds/436791/ | CC0 1.0 |
 | whoosh | assets/sfx/whoosh_523230.mp3 | Hard Swing 1 | magnuswaker | https://freesound.org/people/magnuswaker/sounds/523230/ | CC0 1.0 |
+| sub | assets/sfx/sub_1.mp3 | DSGNBass_Bass Drop & Downer Slow 10_344 Audio_Bass Drops & Downers.wav (cut by tools/sfx/layers.py) | Sonniss #GameAudioGDC 2026 bundle | https://gdc.sonniss.com/ | Sonniss GDC bundle licence: royalty-free, no attribution; the raw files may not be passed on |
+| sub | assets/sfx/sub_2.mp3 | EffectiveTrailer_Booms_Vol2_214.wav (cut by tools/sfx/layers.py) | Sonniss #GameAudioGDC 2026 bundle | https://gdc.sonniss.com/ | Sonniss GDC bundle licence: royalty-free, no attribution; the raw files may not be passed on |
+| sub | assets/sfx/sub_3.mp3 | EffectiveTrailer_Booms_Vol2_011.wav (cut by tools/sfx/layers.py) | Sonniss #GameAudioGDC 2026 bundle | https://gdc.sonniss.com/ | Sonniss GDC bundle licence: royalty-free, no attribution; the raw files may not be passed on |
+| sub | assets/sfx/sub_4.mp3 | EffectiveTrailer_Booms_Vol2_075.wav (cut by tools/sfx/layers.py) | Sonniss #GameAudioGDC 2026 bundle | https://gdc.sonniss.com/ | Sonniss GDC bundle licence: royalty-free, no attribution; the raw files may not be passed on |
+| sub | assets/sfx/sub_5.mp3 | DSGNBass_Bass Drop & Downer Medium 04_344 Audio_Bass Drops & Downers.wav (cut by tools/sfx/layers.py) | Sonniss #GameAudioGDC 2026 bundle | https://gdc.sonniss.com/ | Sonniss GDC bundle licence: royalty-free, no attribution; the raw files may not be passed on |
+| thump | assets/sfx/thump_1.mp3 | Big robot footstep 003 (cut by tools/sfx/layers.py) | AudioPapkin | https://freesound.org/people/AudioPapkin/sounds/813054/ | CC0 1.0 |
+| thump | assets/sfx/thump_2.mp3 | DinoSteps1.wav (cut by tools/sfx/layers.py) | andysm | https://freesound.org/people/andysm/sounds/77027/ | CC0 1.0 |
+| thump | assets/sfx/thump_3.mp3 | DSGNImpt_Metal Hit Thud Thump Low Ring Geofon 1_The Noisery_Moaning Metal.wav (cut by tools/sfx/layers.py) | Sonniss #GameAudioGDC 2026 bundle | https://gdc.sonniss.com/ | Sonniss GDC bundle licence: royalty-free, no attribution; the raw files may not be passed on |
+| thump | assets/sfx/thump_4.mp3 | Bodyfall (cut by tools/sfx/layers.py) | magnuswaker | https://freesound.org/people/magnuswaker/sounds/614064/ | CC0 1.0 |
+| thump | assets/sfx/thump_5.mp3 | impact-stone-heavy.wav (cut by tools/sfx/layers.py) | kasparsj | https://freesound.org/people/kasparsj/sounds/513694/ | CC0 1.0 |
+| crash | assets/sfx/crash_1.mp3 | Brick Falling.mp3 (cut by tools/sfx/layers.py) | LittleRainySeasons | https://freesound.org/people/LittleRainySeasons/sounds/418861/ | CC0 1.0 |
+| crash | assets/sfx/crash_2.mp3 | Wooden Door breaks (cut by tools/sfx/layers.py) | Saladsounds | https://freesound.org/people/Saladsounds/sounds/723974/ | CC0 1.0 |
+| crash | assets/sfx/crash_3.mp3 | Brick Falling.mp3 (cut by tools/sfx/layers.py) | LittleRainySeasons | https://freesound.org/people/LittleRainySeasons/sounds/418861/ | CC0 1.0 |
+| crash | assets/sfx/crash_4.mp3 | shed_falling_over.wav (cut by tools/sfx/layers.py) | Bibbly10 | https://freesound.org/people/Bibbly10/sounds/652709/ | CC0 1.0 |
+| crash | assets/sfx/crash_5.mp3 | house_demo1.wav (cut by tools/sfx/layers.py) | relwin | https://freesound.org/people/relwin/sounds/647371/ | CC0 1.0 |
+| crash | assets/sfx/crash_6.mp3 | house_demo1.wav (cut by tools/sfx/layers.py) | relwin | https://freesound.org/people/relwin/sounds/647371/ | CC0 1.0 |
+| crash | assets/sfx/crash_7.mp3 | building collapse / demolition (cut by tools/sfx/layers.py) | greyfeather | https://freesound.org/people/greyfeather/sounds/712918/ | CC0 1.0 |
+| crash | assets/sfx/crash_8.mp3 | shed_falling_over.wav (cut by tools/sfx/layers.py) | Bibbly10 | https://freesound.org/people/Bibbly10/sounds/652709/ | CC0 1.0 |
+| debris | assets/sfx/debris_1.mp3 | Stones Falling (cut by tools/sfx/layers.py) | iwanPlays | https://freesound.org/people/iwanPlays/sounds/567251/ | CC0 1.0 |
+| debris | assets/sfx/debris_2.mp3 | Stones Falling (cut by tools/sfx/layers.py) | iwanPlays | https://freesound.org/people/iwanPlays/sounds/567251/ | CC0 1.0 |
+| debris | assets/sfx/debris_3.mp3 | Bricks/Stones/Rocks/Gravel Falling (cut by tools/sfx/layers.py) | iwanPlays | https://freesound.org/people/iwanPlays/sounds/567249/ | CC0 1.0 |
+| debris | assets/sfx/debris_4.mp3 | Bricks/Stones/Rocks/Gravel Falling (cut by tools/sfx/layers.py) | iwanPlays | https://freesound.org/people/iwanPlays/sounds/567249/ | CC0 1.0 |
+| debris | assets/sfx/debris_5.mp3 | rockfall2a.wav (cut by tools/sfx/layers.py) | AlanCat | https://freesound.org/people/AlanCat/sounds/389303/ | CC0 1.0 |
+| debris | assets/sfx/debris_6.mp3 | rockfall2a.wav (cut by tools/sfx/layers.py) | AlanCat | https://freesound.org/people/AlanCat/sounds/389303/ | CC0 1.0 |
+| metal | assets/sfx/metal_1.mp3 | DSGNImpt_Metal Hit Thud Thump Low Ring Geofon 1_The Noisery_Moaning Metal.wav (cut by tools/sfx/layers.py) | Sonniss #GameAudioGDC 2026 bundle | https://gdc.sonniss.com/ | Sonniss GDC bundle licence: royalty-free, no attribution; the raw files may not be passed on |
+| metal | assets/sfx/metal_2.mp3 | Scrap metal dropping / crashing (cut by tools/sfx/layers.py) | SamsterBirdies | https://freesound.org/people/SamsterBirdies/sounds/587443/ | CC0 1.0 |
+| metal | assets/sfx/metal_3.mp3 | Dropping sheet metal (cut by tools/sfx/layers.py) | SamsterBirdies | https://freesound.org/people/SamsterBirdies/sounds/587442/ | CC0 1.0 |
+| metal | assets/sfx/metal_4.mp3 | METLImpt_METAL SWING HIT Weapon Swing To Metallic Body Impact And Resonant Tail 01_DDUMAIS_MWP2.wav (cut by tools/sfx/layers.py) | Sonniss #GameAudioGDC 2026 bundle | https://gdc.sonniss.com/ | Sonniss GDC bundle licence: royalty-free, no attribution; the raw files may not be passed on |
+| metal | assets/sfx/metal_5.mp3 | Dropping sheet metal (cut by tools/sfx/layers.py) | SamsterBirdies | https://freesound.org/people/SamsterBirdies/sounds/587442/ | CC0 1.0 |
+| groan | assets/sfx/groan_1.mp3 | DSGNTonl_Designed Metal Bowed Screech Tonal Reverb 7_The Noisery_Moaning Metal.wav (cut by tools/sfx/layers.py) | Sonniss #GameAudioGDC 2026 bundle | https://gdc.sonniss.com/ | Sonniss GDC bundle licence: royalty-free, no attribution; the raw files may not be passed on |
+| groan | assets/sfx/groan_2.mp3 | Locked door being forced open.wav (cut by tools/sfx/layers.py) | Talitha5 | https://freesound.org/people/Talitha5/sounds/262538/ | CC0 1.0 |
+| groan | assets/sfx/groan_3.mp3 | Metallic Groan (cut by tools/sfx/layers.py) | hinchinbrook | https://freesound.org/people/hinchinbrook/sounds/496836/ | CC0 1.0 |
+| groan | assets/sfx/groan_4.mp3 | Metallic groan long.wav (cut by tools/sfx/layers.py) | Crinkem | https://freesound.org/people/Crinkem/sounds/481787/ | CC0 1.0 |
+| glassbig | assets/sfx/glassbig_1.mp3 | break-window.mp3 (cut by tools/sfx/layers.py) | Kneeling | https://freesound.org/people/Kneeling/sounds/448004/ | CC0 1.0 |
+| glassbig | assets/sfx/glassbig_2.mp3 | Breaking Glass #3.wav (cut by tools/sfx/layers.py) | abstraktgeneriert | https://freesound.org/people/abstraktgeneriert/sounds/233605/ | CC0 1.0 |
+| glassbig | assets/sfx/glassbig_3.mp3 | Glass.ogg (cut by tools/sfx/layers.py) | egomassive | https://freesound.org/people/egomassive/sounds/536763/ | CC0 1.0 |
+| glassbig | assets/sfx/glassbig_4.mp3 | Glass Break 9 (cut by tools/sfx/layers.py) | ElevatorFan2020 | https://freesound.org/people/ElevatorFan2020/sounds/848290/ | CC0 1.0 |
+| glassbig | assets/sfx/glassbig_5.mp3 | Glass Break (cut by tools/sfx/layers.py) | unfa | https://freesound.org/people/unfa/sounds/221528/ | CC0 1.0 |
+| rumble | assets/sfx/rumble_1.mp3 | Cracking Earthquake (cracking soil, cracking stone) (cut by tools/sfx/layers.py) | uagadugu | https://freesound.org/people/uagadugu/sounds/222521/ | CC0 1.0 |
+| rumble | assets/sfx/rumble_2.mp3 | EARTHQUAKE OR DISTANT SPACE SHUTTLE RUMBLE.WAV (cut by tools/sfx/layers.py) | metrostock99 | https://freesound.org/people/metrostock99/sounds/203281/ | CC0 1.0 |
+| rumble | assets/sfx/rumble_3.mp3 | Cinematic Deep Rumble (cut by tools/sfx/layers.py) | swiftoid | https://freesound.org/people/swiftoid/sounds/184313/ | CC0 1.0 |
+| rumble | assets/sfx/rumble_4.mp3 | Rumble · loop 10s (cut by tools/sfx/layers.py) | unfa | https://freesound.org/people/unfa/sounds/258339/ | CC0 1.0 |
+| boom | assets/sfx/boom_1.mp3 | explosion11.wav (cut by tools/sfx/layers.py) | V-ktor | https://freesound.org/people/V-ktor/sounds/435414/ | CC0 1.0 |
+| boom | assets/sfx/boom_2.mp3 | EffectiveTrailer_Booms_Vol2_075.wav (cut by tools/sfx/layers.py) | Sonniss #GameAudioGDC 2026 bundle | https://gdc.sonniss.com/ | Sonniss GDC bundle licence: royalty-free, no attribution; the raw files may not be passed on |
+| boom | assets/sfx/boom_3.mp3 | Muffled Distant Explosion (cut by tools/sfx/layers.py) | NenadSimic | https://freesound.org/people/NenadSimic/sounds/149966/ | CC0 1.0 |
+| boom | assets/sfx/boom_4.mp3 | Explosion 1 (Burning Car rec by Ñado) (cut by tools/sfx/layers.py) | qubodup | https://freesound.org/people/qubodup/sounds/843247/ | CC0 1.0 |
+| boom | assets/sfx/boom_5.mp3 | EffectiveTrailer_Booms_Vol2_075.wav (cut by tools/sfx/layers.py) | Sonniss #GameAudioGDC 2026 bundle | https://gdc.sonniss.com/ | Sonniss GDC bundle licence: royalty-free, no attribution; the raw files may not be passed on |
+| boom | assets/sfx/boom_6.mp3 | 13 Fireworks_powerful explosions_multiples in a row_near.wav (cut by tools/sfx/layers.py) | Sonniss #GameAudioGDC 2026 bundle | https://gdc.sonniss.com/ | Sonniss GDC bundle licence: royalty-free, no attribution; the raw files may not be passed on |
+| punch | assets/sfx/punch_1.mp3 | FGHTImpt_4 x Punch, Body 02_344 Audio_Cinematic Fight Vol 1.wav (cut by tools/sfx/layers.py) | Sonniss #GameAudioGDC 2026 bundle | https://gdc.sonniss.com/ | Sonniss GDC bundle licence: royalty-free, no attribution; the raw files may not be passed on |
+| punch | assets/sfx/punch_2.mp3 | FGHTImpt_4 x Punch, Body 02_344 Audio_Cinematic Fight Vol 1.wav (cut by tools/sfx/layers.py) | Sonniss #GameAudioGDC 2026 bundle | https://gdc.sonniss.com/ | Sonniss GDC bundle licence: royalty-free, no attribution; the raw files may not be passed on |
+| punch | assets/sfx/punch_3.mp3 | Hit_Impact (cut by tools/sfx/layers.py) | gulfstreamav | https://freesound.org/people/gulfstreamav/sounds/842508/ | CC0 1.0 |
+| punch | assets/sfx/punch_4.mp3 | Meat Slime Hit Layer 3 (cut by tools/sfx/layers.py) | qubodup | https://freesound.org/people/qubodup/sounds/877027/ | CC0 1.0 |
+| roar | assets/sfx/roar_1.mp3 | Roar3.wav (cut by tools/sfx/layers.py) | aarontheonly | https://freesound.org/people/aarontheonly/sounds/614006/ | CC0 1.0 |
+| roar | assets/sfx/roar_2.mp3 | ANMLRept_Large Herbivore Roar 01_344 Audio_Dinosaurs Vol 2.wav (cut by tools/sfx/layers.py) | Sonniss #GameAudioGDC 2026 bundle | https://gdc.sonniss.com/ | Sonniss GDC bundle licence: royalty-free, no attribution; the raw files may not be passed on |
+| roar | assets/sfx/roar_3.mp3 | ANMLRept_T Rex_344 Audio_Dinosaurs.wav (cut by tools/sfx/layers.py) | Sonniss #GameAudioGDC 2026 bundle | https://gdc.sonniss.com/ | Sonniss GDC bundle licence: royalty-free, no attribution; the raw files may not be passed on |
+| roar | assets/sfx/roar_4.mp3 | Yeti Roar - Skiing Game - Roar SFX Remix (2 of 2) (cut by tools/sfx/layers.py) | el_boss | https://freesound.org/people/el_boss/sounds/751713/ | CC0 1.0 |
+| bite | assets/sfx/bite_1.mp3 | ANMLRept_Dinosaur Eating Meat 01_344 Audio_Dinosaurs Vol 2.wav (cut by tools/sfx/layers.py) | Sonniss #GameAudioGDC 2026 bundle | https://gdc.sonniss.com/ | Sonniss GDC bundle licence: royalty-free, no attribution; the raw files may not be passed on |
+| bite | assets/sfx/bite_2.mp3 | Monsterbite (cut by tools/sfx/layers.py) | Robhog | https://freesound.org/people/Robhog/sounds/871149/ | CC0 1.0 |
+| bite | assets/sfx/bite_3.mp3 | Horror / Zombie - Biting on bones (cut by tools/sfx/layers.py) | Breviceps | https://freesound.org/people/Breviceps/sounds/445987/ | CC0 1.0 |
+| swipe | assets/sfx/swipe_1.mp3 | Swosh Sword Swing (cut by tools/sfx/layers.py) | qubodup | https://freesound.org/people/qubodup/sounds/59992/ | CC0 1.0 |
+| swipe | assets/sfx/swipe_2.mp3 | FX - Swoosh - Super Heavy (for swords, sticks, punches, etc) (cut by tools/sfx/layers.py) | bolkmar | https://freesound.org/people/bolkmar/sounds/475131/ | CC0 1.0 |
+| scrape_loop | assets/sfx/scrape_loop_1.mp3 | DSGNTonl_Metal Scrape Low Tonal LFE 4_The Noisery_Moaning Metal.wav (cut by tools/sfx/layers.py) | Sonniss #GameAudioGDC 2026 bundle | https://gdc.sonniss.com/ | Sonniss GDC bundle licence: royalty-free, no attribution; the raw files may not be passed on |
+| scrape_loop | assets/sfx/scrape_loop_2.mp3 | METLFric_Large Metal Box, Drag, Geofon_344 Audio_Extreme Winds Vol 1.wav (cut by tools/sfx/layers.py) | Sonniss #GameAudioGDC 2026 bundle | https://gdc.sonniss.com/ | Sonniss GDC bundle licence: royalty-free, no attribution; the raw files may not be passed on |
+| scrape_loop | assets/sfx/scrape_loop_3.mp3 | Heavy stone door opens 2 (cut by tools/sfx/layers.py) | PostProdDog | https://freesound.org/people/PostProdDog/sounds/578491/ | CC0 1.0 |
+| scrape_loop | assets/sfx/scrape_loop_4.mp3 | Dragging a body across a concrete floor 2 (cut by tools/sfx/layers.py) | PostProdDog | https://freesound.org/people/PostProdDog/sounds/578493/ | CC0 1.0 |
+| rubble_loop | assets/sfx/rubble_loop_2.mp3 | rockfall2a.wav (cut by tools/sfx/layers.py) | AlanCat | https://freesound.org/people/AlanCat/sounds/389303/ | CC0 1.0 |
+| rubble_loop | assets/sfx/rubble_loop_3.mp3 | Foley_Stones_Falls_Debris_Stereo_DR05.wav (cut by tools/sfx/layers.py) | Nox_Sound | https://freesound.org/people/Nox_Sound/sounds/550342/ | CC0 1.0 |
+| rumble_loop | assets/sfx/rumble_loop_1.mp3 | EARTHQUAKE OR DISTANT SPACE SHUTTLE RUMBLE.WAV (cut by tools/sfx/layers.py) | metrostock99 | https://freesound.org/people/metrostock99/sounds/203281/ | CC0 1.0 |
+| rumble_loop | assets/sfx/rumble_loop_2.mp3 | Cinematic Deep Rumble (cut by tools/sfx/layers.py) | swiftoid | https://freesound.org/people/swiftoid/sounds/184313/ | CC0 1.0 |
+| city_loop | assets/sfx/city_loop_1.mp3 | AMBTown_City Courtyard Calm Street Distant Traffic Children Playing 03_ESM_CPS.wav (cut by tools/sfx/layers.py) | Sonniss #GameAudioGDC 2026 bundle | https://gdc.sonniss.com/ | Sonniss GDC bundle licence: royalty-free, no attribution; the raw files may not be passed on |
+| city_loop | assets/sfx/city_loop_2.mp3 | AMBTown_Ambience, Big Town, Streets, Valdemoro, Spain, Daytime, Brush Cutter, Far Traffica, Airplanes, People Activity, Spanish Voices-Stereo_KSL_KS016.wav (cut by tools/sfx/layers.py) | Sonniss #GameAudioGDC 2026 bundle | https://gdc.sonniss.com/ | Sonniss GDC bundle licence: royalty-free, no attribution; the raw files may not be passed on |
+| siren_loop | assets/sfx/siren_loop_1.mp3 | Air Raid Request.wav (cut by tools/sfx/layers.py) | hello_flowers | https://freesound.org/people/hello_flowers/sounds/31887/ | CC0 1.0 |
+| siren_loop | assets/sfx/siren_loop_2.mp3 | Sirens.wav (cut by tools/sfx/layers.py) | tlabrant1 | https://freesound.org/people/tlabrant1/sounds/658724/ | CC0 1.0 |
+| crowd_loop | assets/sfx/crowd_loop_1.mp3 | Crowd Screaming (cut by tools/sfx/layers.py) | DigestContent | https://freesound.org/people/DigestContent/sounds/459101/ | CC0 1.0 |
+| crowd_loop | assets/sfx/crowd_loop_2.mp3 | Crowd in panic (cut by tools/sfx/layers.py) | IENBA | https://freesound.org/people/IENBA/sounds/491405/ | CC0 1.0 |
 | menu | assets/music/menu_787460.mp3 | night in the sci-fi city | solarpsychedelic | https://freesound.org/people/solarpsychedelic/sounds/787460/ | CC0 1.0 |
 | round | assets/music/round_683261.mp3 | Battle Music (Village) | Migfus20 | https://freesound.org/people/Migfus20/sounds/683261/ | CC0 1.0 |
 | final | assets/music/final_361424.mp3 | Synth Metal Rock Loop.wav | furbyguy | https://freesound.org/people/furbyguy/sounds/361424/ | CC0 1.0 |

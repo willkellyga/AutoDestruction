@@ -87,6 +87,42 @@ const CUES = {
   'c.crackle': { gap: 0.5, n: 1, pri: 0, len: 0.1, clip: 'crackle' },
 };
 
+// Layered cues (Will, 2026-11-20: a wall hit should be scraping, crushing, destruction, not a quick thud).
+// A big impact in film and game sound is a stack: a sub-bass thump for weight, a crash for the body, debris and glass
+// for detail, and a rumble or debris tail. Each layer is a clip set (assets/sfx, cut by tools/sfx/layers.py);
+// g: its share of the cue's gain; d: seconds after the hit it starts (stretched for a bigger monster); k: the least
+// monster size (0 hatchling .. 1 fully grown) at which it plays; sub: scaled up with size; rate: playback speed.
+// A cue with layers plays all of them as one voice; a layer with no clips loaded is skipped; with none at all the cue
+// falls back to its single clip or synth recipe.
+const LAYERS = {
+  crumble:  [{ clip: 'crash', g: 0.8 }, { clip: 'debris', g: 0.55, d: 0.06 }, { clip: 'sub', g: 0.45, k: 0.35, sub: true }],
+  stomp:    [{ clip: 'sub', g: 0.9, sub: true }, { clip: 'thump', g: 0.7 }, { clip: 'debris', g: 0.35, d: 0.08, k: 0.3 }],
+  quake:    [{ clip: 'sub', g: 1, sub: true }, { clip: 'thump', g: 0.8 }, { clip: 'rumble', g: 0.9, d: 0.05 }, { clip: 'debris', g: 0.6, d: 0.25 }, { clip: 'crash', g: 0.5, d: 0.1 }],
+  collapse: [{ clip: 'crash', g: 1 }, { clip: 'sub', g: 0.8, sub: true }, { clip: 'metal', g: 0.45, d: 0.15 }, { clip: 'rumble', g: 0.9, d: 0.1 }, { clip: 'debris', g: 0.8, d: 0.35 }, { clip: 'glassbig', g: 0.35, d: 0.2 }],
+  creak:    [{ clip: 'groan', g: 0.8 }],
+  glass:    [{ clip: 'glassbig', g: 0.7 }, { clip: 'debris', g: 0.25, d: 0.1 }],
+  boom:     [{ clip: 'boom', g: 0.9 }, { clip: 'sub', g: 0.7, sub: true }, { clip: 'debris', g: 0.5, d: 0.2 }],
+  hit:      [{ clip: 'punch', g: 0.8 }, { clip: 'sub', g: 0.5, sub: true }, { clip: 'thump', g: 0.5 }],
+  bite:     [{ clip: 'crash', g: 0.5 }, { clip: 'bite', g: 0.7 }],
+  swipe:    [{ clip: 'swipe', g: 0.6 }, { clip: 'crash', g: 0.45, d: 0.08 }, { clip: 'debris', g: 0.35, d: 0.12 }],
+  roar:     [{ clip: 'roar', g: 1 }, { clip: 'sub', g: 0.35, sub: true, k: 0.4 }],
+  'c.crunch': [{ clip: 'metal', g: 0.8 }, { clip: 'glassbig', g: 0.35, d: 0.03 }],
+  'c.boom':   [{ clip: 'boom', g: 0.9 }, { clip: 'metal', g: 0.45, d: 0.05 }, { clip: 'debris', g: 0.4, d: 0.2 }],
+  'a.big':    [{ clip: 'boom', g: 0.9 }, { clip: 'debris', g: 0.4, d: 0.2 }],
+};
+// Loops: steady beds whose loudness follows what is going on, in place of hundreds of one-shots a second.
+// scrape: Chompers grinding into a building, fed by what he breaks; rubble: the debris trickle after it;
+// distant: destruction elsewhere in the city, muffled; city: the city itself (traffic, people), fading as it empties;
+// sirens: rising as the city falls. scale: how much feed makes the loop full; tau: seconds the feed takes to fall away.
+const LOOPS = {
+  scrape:  { clip: 'scrape_loop', grp: 'me', gain: 0.85, scale: 40, tau: 0.25, attack: 0.05, release: 0.35, size: true },
+  rubble:  { clip: 'rubble_loop', grp: 'me', gain: 0.55, scale: 60, tau: 1.2, attack: 0.2, release: 1.2 },
+  distant: { clip: 'rumble_loop', grp: 'city', gain: 0.5, scale: 120, tau: 1.5, attack: 0.4, release: 2, lp: 700 },
+  city:    { clip: 'city_loop', grp: 'city', gain: 0.3, attack: 2, release: 2 },
+  sirens:  { clip: 'siren_loop', grp: 'city', gain: 0.22, attack: 3, release: 3, lp: 2500 },
+  crowd:   { clip: 'crowd_loop', grp: 'city', gain: 0.2, scale: 400, tau: 4, attack: 1, release: 3, lp: 3000 },
+};
+
 // The old per-module gaps (seconds), kept so a counting run can say what the game did before the mixer.
 const OLD_GAP = {
   main: { crumble: 0.07, bite: 0.06, boom: 0.09, collapse: 0.22, hit: 0.08, creak: 0.16, glass: 0.05, crackle: 0.09 },
@@ -204,7 +240,7 @@ export function makeMixer({ camera }) {
   function secBucket() { const s = Math.floor(clock); while (st.sec.length <= s) st.sec.push({ req: 0, old: 0, played: 0 }); return st.sec[s]; }
 
   // play(cue, vol, x, y, z, grp): x undefined = not positioned (the player's own body sounds, the screen)
-  function play(cue, vol = 1, x, y, z, grp = 'me') {
+  function play(cue, vol = 1, x, y, z, grp = 'me', size = 0.5) {
     const C = CUES[cue]; if (!C) return false;
     if (C.grp) grp = C.grp;
     const at = x !== undefined ? place(x, y, z) : null;
@@ -238,7 +274,7 @@ export function makeMixer({ camera }) {
     lastAt[ok(cue)] = clock;
     if (C.duck && grp === 'me') duckT = clock + 0.7;
     const v = { cue, grp, pri, g, end: clock + C.len, node: null };
-    if (ctx && ctx.state === 'running') v.node = sound(cue, C, g, at ? at.pan : 0, grp, v);
+    if (ctx && ctx.state === 'running') v.node = sound(cue, C, g, at, grp, v, size);
     voices.push(v); if (counting) { count(st.played, cue, grp); sb.played++; }
     st.peak = Math.max(st.peak, voices.length);
     return true;
@@ -248,13 +284,34 @@ export function makeMixer({ camera }) {
   function stop(v) { const i = voices.indexOf(v); if (i >= 0) voices.splice(i, 1); if (v.node && ctx) { try { const t = ctx.currentTime; v.node.gain.cancelScheduledValues(t); v.node.gain.setTargetAtTime(0, t, 0.03); } catch (e) {} } }
   function reap() { for (let i = voices.length - 1; i >= 0; i--) if (voices[i].end <= clock) voices.splice(i, 1); }
 
-  function sound(cue, C, g, pan, grp, v) {
+  function sound(cue, C, g, at, grp, v, size) {
     const out = ctx.createGain(); out.gain.value = 1;
-    let to = out; if (ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = pan; out.connect(p); p.connect(busOf[grp]); } else out.connect(busOf[grp]);
+    let to = out, chain = out;
+    // far away is muffled as well as quieter: the highs go first, as they do across a real city
+    if (at) { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; const k = Math.max(0, 1 - at.d / RANGE); f.frequency.value = 600 + 17000 * k * k * k; chain.connect(f); chain = f; }
+    if (ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = at ? at.pan : 0; chain.connect(p); p.connect(busOf[grp]); } else chain.connect(busOf[grp]);
+    // a bigger monster sounds deeper and heavier
+    const deep = 1.12 - 0.3 * size;
+    const lay = LAYERS[cue];
+    if (lay) {
+      let any = false, end = 0; const t0 = ctx.currentTime;
+      for (const L of lay) {
+        if (L.k && size < L.k) continue;
+        const set = buffers[L.clip]; if (!set || !set.length) continue;
+        const buf = set[Math.floor(Math.random() * set.length)];
+        const s = ctx.createBufferSource(); s.buffer = buf;
+        s.playbackRate.value = (L.rate || 1) * deep * (0.94 + Math.random() * 0.12);
+        const lg = ctx.createGain(); lg.gain.value = g * L.g * (L.sub ? 0.3 + 0.9 * size : 1);
+        const d = (L.d || 0) * (1 + size * 0.6);
+        s.connect(lg); lg.connect(to); s.start(t0 + d); any = true;
+        end = Math.max(end, d + buf.duration / s.playbackRate.value);
+      }
+      if (any) { v.end = clock + end; return out; }
+    }
     const set = C.clip && buffers[C.clip];
     if (set && set.length) {
       const buf = set[Math.floor(Math.random() * set.length)];
-      const s = ctx.createBufferSource(); s.buffer = buf; s.playbackRate.value = 0.92 + Math.random() * 0.16;
+      const s = ctx.createBufferSource(); s.buffer = buf; s.playbackRate.value = deep * (0.92 + Math.random() * 0.16);
       const vg = ctx.createGain(); vg.gain.value = g; s.connect(vg); vg.connect(to); s.start();
       v.end = clock + buf.duration / s.playbackRate.value;
       return out;
@@ -284,9 +341,38 @@ export function makeMixer({ camera }) {
     };
   }
 
+  // loops: feed(name, amount) adds to a loop's drive; level(name, 0..1) sets it outright; tick() moves the gains
+  const loopState = {};
+  function feed(name, amount) { const L = loopState[name] || (loopState[name] = { acc: 0, drive: 0, set: null, node: null, idle: 0, size: 0.5 }); L.acc += amount; }
+  function level(name, v) { feed(name, 0); loopState[name].set = v; }
+  function loopSize(name, size) { feed(name, 0); loopState[name].size = size; }
+  function stepLoops(dt) {
+    for (const [name, L] of Object.entries(loopState)) {
+      const D = LOOPS[name]; if (!D) continue;
+      L.drive = L.drive * Math.exp(-dt / (D.tau || 1)) + L.acc; L.acc = 0;
+      let want = L.set !== null ? L.set : 1 - Math.exp(-L.drive / (D.scale || 1));
+      if (!api.on) want = 0;
+      if (!ctx || ctx.state !== 'running') continue;
+      if (!L.node && want > 0.02) {
+        const set = buffers[D.clip]; if (!set || !set.length) continue;
+        const s = ctx.createBufferSource(); s.buffer = set[Math.floor(Math.random() * set.length)]; s.loop = true;
+        const g = ctx.createGain(); g.gain.value = 0;
+        let to = g; if (D.lp) { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = D.lp; g.connect(f); to = f; }
+        to.connect(busOf[D.grp]); s.connect(g); s.start(ctx.currentTime, Math.random() * s.buffer.duration);
+        L.node = { s, g, cur: 0 };
+      }
+      if (!L.node) continue;
+      const tgt = want * D.gain * (D.grp !== 'me' && duckT > clock ? 0.5 : 1);
+      L.node.g.gain.setTargetAtTime(tgt, ctx.currentTime, tgt > L.node.cur ? D.attack : D.release); L.node.cur = tgt;
+      if (D.size) L.node.s.playbackRate.setTargetAtTime(1.12 - 0.3 * L.size, ctx.currentTime, 0.3);
+      L.idle = want < 0.01 ? L.idle + dt : 0;
+      if (L.idle > 5) { try { L.node.s.stop(); } catch (e) {} L.node = null; L.idle = 0; }
+    }
+  }
+
   function tick(dt) {
     if (!(dt > 0)) return;
-    clock += dt; reap();
+    clock += dt; reap(); stepLoops(dt);
     if (!window.__sfxCount) return;
     // the old code had no voice count: estimate what it had playing from the same requests
     const ov = st.oldVoices; for (let i = ov.length - 1; i >= 0; i--) if (ov[i].end <= clock) ov.splice(i, 1);
@@ -328,6 +414,6 @@ export function makeMixer({ camera }) {
   function musicOn(on) { if (musicBus && ctx) musicBus.gain.setTargetAtTime(on ? MUSIC_GAIN : 0, ctx.currentTime, 0.1); }
   function musicRetry() { const w = want; want = null; music(w); }   // after the context wakes up (first tap)
 
-  const api = { on: true, init, load, play, tick, module, loadMusic, music, musicOn, musicRetry, CUES, GROUPS, stats: () => st, get clock() { return clock; }, get voices() { return voices.length; }, get track() { return cur ? cur.slot : null; }, get clips() { return Object.values(buffers).reduce((n, b) => n + b.length, 0); }, get ctx() { return ctx; } };
+  const api = { on: true, init, load, play, tick, module, feed, level, loopSize, LAYERS, LOOPS, loadMusic, music, musicOn, musicRetry, CUES, GROUPS, stats: () => st, get clock() { return clock; }, get voices() { return voices.length; }, get track() { return cur ? cur.slot : null; }, get clips() { return Object.values(buffers).reduce((n, b) => n + b.length, 0); }, get ctx() { return ctx; } };
   return api;
 }
