@@ -212,7 +212,7 @@ export function makeCivilians(o) {
   // ---- which model stands where ----
   const hx = (v, s) => hash(Math.round(v.x), s, Math.round(v.z), 17);
   const SEDAN = ['blue', 'silver', 'black', 'maroon'], HATCH = ['red', 'white', 'green', 'teal'];
-  const LIVERY = world.NYC ? ['blue', 'blue', 'green'] : world.PARIS ? ['green', 'green', 'blue'] : world.TOKYO ? ['green', 'blue', 'orange'] : world.CAIRO ? ['red', 'orange', 'blue'] : ['blue', 'red', 'green', 'orange'];
+  const LIVERY = world.NYC ? ['blue', 'blue', 'green'] : world.PARIS ? ['green', 'green', 'blue'] : world.TOKYO ? ['green', 'blue', 'orange'] : world.CAIRO ? ['red', 'orange', 'blue'] : world.DC ? ['red', 'blue', 'red'] : ['blue', 'red', 'green', 'orange'];
   function resolve(v, all) {
     if (v.kind !== 'car') return { kind: v.kind, opts: v.opts || {} };
     if (v.taxi) return { kind: 'car', opts: { type: 'taxi', paint: 'taxi', ny: world.NYC } };

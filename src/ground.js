@@ -1,5 +1,5 @@
 // The painted ground: grass, the four streets with pavements and crossings, lot pads and garden paths.
-import { WX, WZ, PARIS, NYC, TOKYO, CAIRO, STREET_X, STREET_Z, WALK, ROADW } from './world.js';
+import { WX, WZ, PARIS, NYC, TOKYO, CAIRO, DC, STREET_X, STREET_Z, WALK, ROADW } from './world.js';
 import { LOTS, lotRect, BLOCKS, ALLEYS } from './town.js';
 import { STADIUM } from './landmarks.js';
 import { PARIS_PAD } from './paris.js';
@@ -10,6 +10,8 @@ import { TOKYO_PAD } from './tokyo.js';
 import { tokyoBase, tokyoGround, tokyoOver } from './tokyo_water.js';
 import { CAIRO_PAD } from './cairo.js';
 import { cairoBase, cairoGround, cairoOver } from './cairo_water.js';
+import { DC_PAD } from './dc.js';
+import { dcBase, dcGround, dcOver } from './dc_water.js';
 
 export const GK = Math.min(8, Math.floor(4096 / Math.max(WX, WZ)));   // texels a voxel, kept inside a 4096 texture
 export function groundCanvas() {
@@ -26,8 +28,9 @@ export function groundCanvas() {
   if (NYC) nycBase(g, GK, rect, speckle);
   if (TOKYO) tokyoBase(g, GK, rect, speckle);
   if (CAIRO) cairoBase(g, GK, rect, speckle);
+  if (DC) dcBase(g, GK, rect, speckle);
   // lot pads and paths
-  const PAD = { shop: '#c9c2b2', apartment: '#c9c2b2', tower: '#c4c6c8', fuel: '#8e9096', watertower: '#b9a98c', carpark: '#55595f', depot: '#a39d90', plaza: '#d6cdb8', needle: '#d6cdb8', factory: '#9a9690', cinema: '#c9c2b2', ...(PARIS ? PARIS_PAD : {}), ...(NYC ? NYC_PAD : {}), ...(TOKYO ? TOKYO_PAD : {}), ...(CAIRO ? CAIRO_PAD : {}) };
+  const PAD = { shop: '#c9c2b2', apartment: '#c9c2b2', tower: '#c4c6c8', fuel: '#8e9096', watertower: '#b9a98c', carpark: '#55595f', depot: '#a39d90', plaza: '#d6cdb8', needle: '#d6cdb8', factory: '#9a9690', cinema: '#c9c2b2', ...(PARIS ? PARIS_PAD : {}), ...(NYC ? NYC_PAD : {}), ...(TOKYO ? TOKYO_PAD : {}), ...(CAIRO ? CAIRO_PAD : {}), ...(DC ? DC_PAD : {}) };
   const PATH = '#cfc6b0';
   for (const L of LOTS) {
     if (L.s) continue;   // the big lots are painted after the alleys
@@ -75,6 +78,7 @@ export function groundCanvas() {
   if (NYC) nycGround(g, GK, rect, speckle);
   if (TOKYO) tokyoGround(g, GK, rect, speckle);
   if (CAIRO) cairoGround(g, GK, rect, speckle, LOTS);
+  if (DC) dcGround(g, GK, rect, speckle, LOTS);
   if (PARIS) parisGround(g, GK, rect, speckle);   // the river and the squares go under the streets, so a bridge is just a street
   // pavements
   g.fillStyle = '#c8c1b1';
@@ -109,6 +113,7 @@ export function groundCanvas() {
   }
   if (TOKYO) tokyoOver(g, GK, rect);
   if (CAIRO) cairoOver(g, GK, rect, speckle);   // sand drifted over the desert roads   // the scramble crossing's diagonal stripes
+  if (DC) dcOver(g, GK, rect, speckle);
   if (NYC) nycOver(g, GK, rect);   // the piers are painted over the streets that run out onto them
   return cv;
 }

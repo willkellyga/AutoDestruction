@@ -1,6 +1,6 @@
 // Crumbletown's layout: twenty lots round a ring of four streets, each turned to face its street, plus the park,
 // street dressing and the trees round the edge.
-import { M, WX, WZ, CITY, PARIS, NYC, TOKYO, CAIRO, TILES, TILE_X, TILE_Z, tiled, LOC, LOT, STREET_X, STREET_Z, shut, place, begin, set, box, ctx, lots, rubbleBody, setSeed, rnd, ri, finalize } from './world.js';
+import { M, WX, WZ, CITY, PARIS, NYC, TOKYO, CAIRO, DC, TILES, TILE_X, TILE_Z, tiled, LOC, LOT, STREET_X, STREET_Z, shut, place, begin, set, box, ctx, lots, rubbleBody, setSeed, rnd, ri, finalize } from './world.js';
 import { disc, tree, lampPost, bench, bin, hydrant, planter, hedge, fence, car } from './kit.js';
 import { cottage, shop, fuel } from './buildings_a.js';
 import { apartment, watertower, church, tower } from './buildings_b.js';
@@ -16,6 +16,8 @@ import { tokyoExtras } from './tokyo_water.js';
 import { cairoLots, cairoKeepOut, CAIRO_KIT, wet as cairoWet } from './cairo.js';
 import { cairoExtras } from './cairo_water.js';
 import { palm } from './cairo_kit.js';
+import { dcLots, dcKeepOut, DC_KIT, wet as dcWet } from './dc.js';
+import { dcExtras } from './dc_water.js';
 
 // The districts (Hole.io style: small food where you start, the big prize in sight, clusters to run between):
 //   south-west  suburbs, where he hatches: cottages, a park, a diner, cars to snack on
@@ -81,10 +83,10 @@ const TOWN = [
   { x: 446, z: 342, f: 0, k: 'factory', d: 'yard', o: { wall: M.BRICK2, name: 'MILL', title: 'Mill', car: M.CAR_A } },
 ];
 // the blocks between the streets, and the alleys behind their back-to-back rows (ground.js paints them, generateTown fences them)
-export const LOTS = CAIRO ? cairoLots() : TOKYO ? tokyoLots() : NYC ? nycLots() : PARIS ? parisLots() : CITY ? cityLots() : [];
+export const LOTS = DC ? dcLots() : CAIRO ? cairoLots() : TOKYO ? tokyoLots() : NYC ? nycLots() : PARIS ? parisLots() : CITY ? cityLots() : [];
 if (!CITY) for (let tz = 0; tz < TILES; tz++) for (let tx = 0; tx < TILES; tx++) for (const L of TOWN) LOTS.push({ ...L, x: L.x + tx * TILE_X, z: L.z + tz * TILE_Z });
-export const BLOCKS = PARIS || NYC || TOKYO || CAIRO ? [] : CITY ? cityBlocks() : Array.from({ length: TILES }, (_, t) => [[98, 236], [272, 410]].map(([a, b]) => [a + t * TILE_X, b + t * TILE_X])).flat();
-export const ALLEYS = PARIS || NYC || TOKYO || CAIRO ? [] : CITY ? cityAlleys() : tiled([138, 260], TILE_Z);
+export const BLOCKS = PARIS || NYC || TOKYO || CAIRO || DC ? [] : CITY ? cityBlocks() : Array.from({ length: TILES }, (_, t) => [[98, 236], [272, 410]].map(([a, b]) => [a + t * TILE_X, b + t * TILE_X])).flat();
+export const ALLEYS = PARIS || NYC || TOKYO || CAIRO || DC ? [] : CITY ? cityAlleys() : tiled([138, 260], TILE_Z);
 
 // A lot-local rectangle (a across, b back from the front) as a world rectangle [xa, za, xb, zb].
 export function lotRect(L, a0, b0, a1, b1) {
@@ -114,11 +116,11 @@ function park(lx, lz) {
   planter(lx + 4, lz + 19, 9); planter(lx + 27, lz + 19, 9);
 }
 
-const KIT = { cottage, shop, fuel, apartment, watertower, church, tower, park, carpark, depot, plaza, needle, stadium, factory, cinema, rowhouse, ...PARIS_KIT, ...NYC_KIT, ...TOKYO_KIT, ...CAIRO_KIT };
-const off = CAIRO ? cairoKeepOut : TOKYO ? tokyoKeepOut : NYC ? nycKeepOut : PARIS ? parisKeepOut : () => false;   // Paris and New York keep the street dressing out of the water and off their set pieces
+const KIT = { cottage, shop, fuel, apartment, watertower, church, tower, park, carpark, depot, plaza, needle, stadium, factory, cinema, rowhouse, ...PARIS_KIT, ...NYC_KIT, ...TOKYO_KIT, ...CAIRO_KIT, ...DC_KIT };
+const off = DC ? dcKeepOut : CAIRO ? cairoKeepOut : TOKYO ? tokyoKeepOut : NYC ? nycKeepOut : PARIS ? parisKeepOut : () => false;   // Paris and New York keep the street dressing out of the water and off their set pieces
 
 // is this spot water? (the maps are flat: water is painted, and boats stand in it)
-const mapWet = CAIRO ? cairoWet : TOKYO ? tokyoWet : NYC ? nycWet : PARIS ? parisWet : null;
+const mapWet = DC ? dcWet : CAIRO ? cairoWet : TOKYO ? tokyoWet : NYC ? nycWet : PARIS ? parisWet : null;
 export const wet = mapWet ? (x, z) => mapWet(x, z) && (shut(x, z) || (!STREET_X.some((s) => Math.abs(x - s) < 13) && !STREET_Z.some((s) => Math.abs(z - s) < 13))) : () => false;   // a street over water is a bridge
 export function generateTown() {
   ctx.L = 3;
@@ -133,6 +135,7 @@ export function generateTown() {
   if (NYC) { place(0, 0, -1); nycExtras(); }
   if (TOKYO) { place(0, 0, -1); tokyoExtras(); }
   if (CAIRO) { place(0, 0, -1); cairoExtras(); }
+  if (DC) { place(0, 0, -1); dcExtras(); }
   // street dressing that no lot brings with it, laid along every street: lamps on both pavements, a hydrant or bin here
   // and there, a tree at some corners and cars parked in the kerb lane. A prop is turned by placing it as a one-voxel lot.
   const prop = (x, z, f, fn) => { place(x, z, f, 1); fn(LOC, LOC); };
