@@ -137,7 +137,7 @@ import s133 from '../assets/sfx/m_swipe_swipe_2.mp3';
 import s134 from '../assets/sfx/m_swipe_swipe_1.mp3';
 import s135 from '../assets/sfx/m_wingslice_swipe_3.mp3';
 import s136 from '../assets/sfx/m_quake_stomp_1.mp3';
-import s137 from '../assets/sfx/m_step_step_r2_1.mp3';
+import s137 from '../assets/sfx/m_step_step_r3_1.mp3';
 import s138 from '../assets/sfx/m_stomp_stomp_r2_2.mp3';
 import s139 from '../assets/sfx/m_boom_boom_r2_5.mp3';
 import s140 from '../assets/sfx/m_boom_boom_r2_3.mp3';

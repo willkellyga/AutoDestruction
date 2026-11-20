@@ -266,6 +266,8 @@ export function makeMixer({ camera }) {
     if (lastAt[ok(cue)] !== undefined && clock - lastAt[ok(cue)] < gap) return drop(cue, 'gap');
     let g = vol * (at ? at.gain : 1) * (CLIP_GAIN[C.clip] || 0.7);
     if (grp !== 'me' && grp !== 'ui' && duckT > clock) g *= 0.5;
+    // footsteps sit under the action, as games mix them: quieter while he is grinding through a building
+    if (cue === 'step') { const L = loopState.scrape, D = LOOPS.scrape; if (L) g *= 1 - 0.6 * (1 - Math.exp(-L.drive / D.scale)); }
     if (g * GROUPS[grp].gain < QUIET) return drop(cue, 'quiet');
     reap();
     const pri = C.pri + (grp === 'me' || grp === 'ui' ? 1 : 0) + g;   // own sounds and loud ones win
@@ -294,6 +296,8 @@ export function makeMixer({ camera }) {
   function sound(cue, C, g, at, grp, v, size) {
     const out = ctx.createGain(); out.gain.value = 1;
     let to = out, chain = out;
+    // footsteps lose their top end: a soft low thud, felt more than heard (Will, 2026-11-20: the steps were distracting)
+    if (cue === 'step') { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 700; chain.connect(f); chain = f; }
     // far away is muffled as well as quieter: the highs go first, as they do across a real city
     if (at) { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; const k = Math.max(0, 1 - at.d / at.range); f.frequency.value = 600 + 17000 * k * k * k; chain.connect(f); chain = f; }
     if (ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = at ? at.pan : 0; chain.connect(p); p.connect(busOf[grp]); } else chain.connect(busOf[grp]);
@@ -303,7 +307,7 @@ export function makeMixer({ camera }) {
     const picked = buffers['m_' + cue];
     if (picked && picked.length) {
       const buf = picked[Math.floor(Math.random() * picked.length)];
-      const s = ctx.createBufferSource(); s.buffer = buf; s.playbackRate.value = (1.06 - 0.12 * size) * (0.96 + Math.random() * 0.08);
+      const s = ctx.createBufferSource(); s.buffer = buf; s.playbackRate.value = (1.06 - 0.12 * size) * (cue === 'step' ? 0.9 + Math.random() * 0.14 : 0.96 + Math.random() * 0.08);
       const vg = ctx.createGain(); vg.gain.value = g * (PICK_GAIN[cue] || 1); s.connect(vg); vg.connect(to); s.start();
       v.end = clock + buf.duration / s.playbackRate.value;
       return out;
