@@ -10,7 +10,7 @@ import { face, faces4, win, door, disc, text, textW, tree, lampPost, bench, bin,
 // next building (paris.js works that out). A joined wall is pushed out to meet its neighbour (4 voxels at a side, 7 at
 // the back), is left blank, and the roof runs up to it as a party wall instead of sloping away.
 // PIERS: the spacing of the load-bearing piers inside a Haussmann block, 0 for none (see below)
-export const PIERS = 9, PIER_M = M.STEEL;
+export const PIERS = 6, PIER_M = M.STEEL;
 export function haussmann(lx, lz, L, o = {}) {
   const jl = !!o.jl, jr = !!o.jr, jb = !!o.jb;
   const x0 = lx + (jl ? -3 : 1), x1 = lx + (jr ? 42 : 38), z0 = lz + 6, z1 = lz + (jb ? 42 : 35), n = o.floors || 6, G = 16, top = G + (n - 1) * 12 - 1;
