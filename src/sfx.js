@@ -123,7 +123,7 @@ const PICK_GAIN = { level: 0.8, glass: 0.6, roar: 1.2, crumble: 0.9, collapse: 1
 const LOOPS = {
   scrape:  { clip: 'scrape_loop', grp: 'me', gain: 0.85, scale: 40, tau: 0.25, attack: 0.05, release: 0.35, size: true },
   rubble:  { clip: 'rubble_loop', grp: 'me', gain: 0.55, scale: 60, tau: 1.2, attack: 0.2, release: 1.2 },
-  distant: { clip: 'rumble_loop', grp: 'city', gain: 0.15, scale: 200, tau: 1.5, attack: 0.4, release: 2, lp: 700 },
+  distant: { clip: 'rumble_loop', grp: 'city', gain: 0.08, scale: 200, tau: 1.5, attack: 0.4, release: 2, lp: 700 },
   city:    { clip: 'city_loop', grp: 'city', gain: 0.18, hp: 150, attack: 2, release: 2 },
   sirens:  { clip: 'siren_loop', grp: 'city', gain: 0.22, attack: 3, release: 3, lp: 2500 },
 };
@@ -303,8 +303,8 @@ export function makeMixer({ camera }) {
   function sound(cue, C, g, at, grp, v, size) {
     const out = ctx.createGain(); out.gain.value = 1;
     let to = out, chain = out;
-    // footsteps lose their top end: a soft low thud, felt more than heard (Will, 2026-11-20: the steps were distracting)
-    if (cue === 'step') { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 700; chain.connect(f); chain = f; }
+    // footsteps lose only their harshest top end: short and dry, solid ground (Will, 2026-11-20: a round boom sounded hollow)
+    if (cue === 'step') { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 3500; chain.connect(f); chain = f; }
     // far away is muffled as well as quieter: the highs go first, as they do across a real city
     if (at) { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; const k = Math.max(0, 1 - at.d / at.range); f.frequency.value = 600 + 17000 * k * k * k; chain.connect(f); chain = f; }
     if (ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = at ? at.pan : 0; chain.connect(p); p.connect(busOf[grp]); } else chain.connect(busOf[grp]);
