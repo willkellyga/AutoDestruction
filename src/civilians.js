@@ -50,6 +50,7 @@ const FAR_SOLO = 600;                // past this a ship or a crane's far copy i
 const CELL = 128;                    // parked cars are grouped by squares of the map this size, so whole groups can be left out
 const BIG_PART = 9000;               // a part with more cubes than this is not rebuilt more than a few times a second
 const JET_HP = 2;
+const BATTER = 0.022;                // the battering a boat, ship, train or crane takes before it goes, for each voxel it is worth (a blow counts its radius: a young monster's bite 3, a grown one's 12)
 
 // ---- the far copy: the whole model redrawn as one shell of cubes the size of the town's own, a flat colour each ----
 // Returns two: [0] in cubes of one voxel, [1] in cubes of two (a quarter of the faces), for far off and for the lighter
@@ -185,7 +186,10 @@ function sizeOf(u) {
   let i0 = 1e9, i1 = -1e9, k0 = 1e9, k1 = -1e9;
   for (let n = 0, k = 0; k < body.nz; k++) for (let j = 0; j < body.ny; j++) for (let i = 0; i < body.nx; i++, n++) if (body.col[n] >= 0) { if (i < i0) i0 = i; if (i > i1) i1 = i; if (k < k0) k0 = k; if (k > k1) k1 = k; }
   const r = u.rest[body.name].pos;
-  return { fx0: r[0] + (body.i0 + i0) * h, fx1: r[0] + (body.i0 + i1 + 1) * h, fz0: r[2] + (body.k0 + k0) * h, fz1: r[2] + (body.k0 + k1 + 1) * h, box };
+  // its outline from above, a slice of cubes at a time along its length, so a pointed bow is not a square corner to walk into
+  const n = Math.max(0, k1 - k0 + 1), x0 = new Float32Array(n).fill(1e9), x1 = new Float32Array(n).fill(-1e9);
+  for (let m = 0, k = 0; k < body.nz; k++) for (let j = 0; j < body.ny; j++) for (let i = 0; i < body.nx; i++, m++) if (body.col[m] >= 0) { const a = r[0] + (body.i0 + i) * h; if (a < x0[k - k0]) x0[k - k0] = a; if (a + h > x1[k - k0]) x1[k - k0] = a + h; }
+  return { fx0: r[0] + (body.i0 + i0) * h, fx1: r[0] + (body.i0 + i1 + 1) * h, fz0: r[2] + (body.k0 + k0) * h, fz1: r[2] + (body.k0 + k1 + 1) * h, box, prof: { n, h, x0, x1 } };
 }
 
 export function makeCivilians(o) {
@@ -407,6 +411,10 @@ export function makeCivilians(o) {
     if (r <= 0.3 || rec.gone) return 0;
     const u = wake(rec); if (!u || u.gone) return 0;
     const n = u.hit(p, r, cube, push);
+    // A boat, ship, train or crane also gives way to battering: a monster held up against one (block, below) strikes the
+    // same hole again and again, and the hole cannot grow past its reach. Each blow counts by its size, and the bigger the
+    // vehicle the more it takes.
+    if (rec.spec.solo && !u.dead && !rec.doomed) { rec.batter = (rec.batter || 0) + r; if (rec.batter > rec.spec.n * BATTER) { rec.doomed = true; fuses.push([0.2, rec, who]); } }
     if (!n && rec.far) for (const q of u.parts) if (q.dirty) { touch(rec); break; }   // only scorched: its far copy is out of date all the same
     if (n) { touch(rec); if (u.blown && !u.boomed) { u.boomed = true; boom(rec, who, later); } else if (!u.blown && Math.random() < 0.3) sfx.play('clang', p, 0.6); }
     return n;
@@ -473,6 +481,62 @@ export function makeCivilians(o) {
       } else tread(rec, _l.x, _l.z, who);
       if (laps.on) { const d = performance.now() - t0; if (d > laps.footMs) { laps.footMs = d; laps.foot = rec.kind; } }
     });
+  }
+
+  // ---- in the way: a boat, ship, train or crane that stands taller than a monster's knee stops it until it is wrecked ----
+  // What is lower than that is walked over and flattened, as above, so a monster steps on more of them as it grows: a
+  // river boat or a train stops a young one, a tug or a ferry a half-grown one, and a ship or a dock crane stops them all.
+  // Cars, buses and cargo never stop one (the streets are full of them), and a wreck stops nothing. The outline is the
+  // body's own, slice by slice (sizeOf), and the monster a circle a little inside its radius.
+  const BLOCK = { knee: 2.2, grip: 0.8, out: 40 };   // knee: in body radii; out: how fast one that is inside a hull is put out (voxels a second)
+  const topOf = (rec) => rec.y + rec.size.box.max.y;
+  const blocks = (rec, rad, y) => { const u = rec.unit; return !!rec.spec.solo && !(u && u.dead) && topOf(rec) > BLOCK.knee * rad && y < topOf(rec) - 1; };
+  const _h = { x: 0, z: 0, k: 0 }, at = { x: 0, y: 0, z: 0 };
+  // how far a point in a record's own space is from its hull (0 inside it), looking no further than r; the nearest point goes in _h
+  function hullGap(rec, lx, lz, r) {
+    const s = rec.size, P = s.prof, h = P.h; let best = 1e9;
+    const k0 = Math.max(0, Math.floor((lz - r - s.fz0) / h)), k1 = Math.min(P.n - 1, Math.floor((lz + r - s.fz0) / h));
+    for (let k = k0; k <= k1; k++) {
+      if (P.x1[k] < P.x0[k]) continue;
+      const z0 = s.fz0 + k * h, qx = clamp(lx, P.x0[k], P.x1[k]), qz = clamp(lz, z0, z0 + h), d = Math.hypot(lx - qx, lz - qz);
+      if (d < best) { best = d; _h.x = qx; _h.z = qz; _h.k = k; }
+    }
+    return best;
+  }
+  // Keeps a body { x, z, vx, vz } of radius rad, with its feet at height y, out of what stands in its way. Returns the
+  // record it is up against (or null) and leaves where they touch in `at`. One that is already inside a hull (it landed
+  // on it, or came back there) is walked out by the nearest side, not thrown out.
+  function block(b, rad, y, dt) {
+    let hitRec = null; const r = rad * BLOCK.grip;
+    near(b.x, b.z, r, (rec) => {
+      if (!blocks(rec, rad, y)) return;
+      local(rec, b.x, b.z, _l); const d = hullGap(rec, _l.x, _l.z, r); if (d >= r) return;
+      let nx, nz, mv;
+      if (d > 1e-3) { nx = (_l.x - _h.x) / d; nz = (_l.z - _h.z) / d; mv = r - d; }
+      else {
+        const s = rec.size, P = s.prof, a = _l.x - P.x0[_h.k], c = P.x1[_h.k] - _l.x, e = _l.z - s.fz0, f = s.fz1 - _l.z, m = Math.min(a, c, e, f);
+        nx = m === a ? -1 : m === c ? 1 : 0; nz = nx ? 0 : m === e ? -1 : 1; mv = Math.min(m + r, BLOCK.out * dt);
+      }
+      const wx = nx * rec.cos + nz * rec.sin, wz = -nx * rec.sin + nz * rec.cos;
+      at.x = rec.x + _h.x * rec.cos + _h.z * rec.sin; at.z = rec.z - _h.x * rec.sin + _h.z * rec.cos; at.y = clamp(y + rad, rec.y + 1, topOf(rec) - 1);
+      b.x += wx * mv; b.z += wz * mv;
+      const vn = b.vx * wx + b.vz * wz; if (vn < 0) { b.vx -= vn * wx; b.vz -= vn * wz; }
+      hitRec = rec;
+    });
+    return hitRec;
+  }
+  // The nearest thing standing in a monster's way within reach of it: where on its hull to strike goes in `out` { x, y, z }.
+  // arc: how far round from the way it faces it can strike (radians).
+  function inWay(x, z, yaw, rad, reach, y, arc, out) {
+    let best = reach, hitRec = null;
+    near(x, z, reach, (rec) => {
+      if (!blocks(rec, rad, y)) return;
+      local(rec, x, z, _l); const d = hullGap(rec, _l.x, _l.z, reach); if (d >= best) return;
+      const wx = rec.x + _h.x * rec.cos + _h.z * rec.sin, wz = rec.z - _h.x * rec.sin + _h.z * rec.cos;
+      if (d > 1e-3 && arc < 3.1) { let a = Math.atan2(wx - x, wz - z) - yaw; a = Math.atan2(Math.sin(a), Math.cos(a)); if (Math.abs(a) > arc) return; }
+      best = d; hitRec = rec; out.x = wx; out.z = wz; out.y = clamp(y + rad * 1.6, rec.y + 1.5, topOf(rec) - 1);
+    });
+    return hitRec;
   }
 
   // ---- boats: what one does to the water as it goes down or is stepped on ----
@@ -772,7 +836,7 @@ export function makeCivilians(o) {
   }
 
   build();
-  const api = { recs, live, variants, cells, air, sorties, rockets, fx, sfx, debris, update, damageJet, launch, kill, hit, tread, wake, near, packed, packFar,
+  const api = { recs, live, variants, cells, air, sorties, rockets, fx, sfx, debris, update, damageJet, launch, kill, hit, tread, wake, near, packed, packFar, block, inWay, at, blocks, BLOCK,
     get remakes() { return remakes; }, get farJob() { return farJob; }, get laps() { return laps; },
     detail(k) {
       nearD = NEAR * k; nearSoloD = NEAR_SOLO * k; lodT = 0;
