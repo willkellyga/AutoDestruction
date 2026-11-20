@@ -106,18 +106,16 @@ import s102 from '../assets/sfx/punch_1.mp3';
 import s103 from '../assets/sfx/punch_2.mp3';
 import s104 from '../assets/sfx/punch_3.mp3';
 import s105 from '../assets/sfx/punch_4.mp3';
-import s106 from '../assets/sfx/scrape_loop_1.mp3';
-import s107 from '../assets/sfx/scrape_loop_2.mp3';
-import s108 from '../assets/sfx/scrape_loop_3.mp3';
-import s109 from '../assets/sfx/scrape_loop_4.mp3';
-import s110 from '../assets/sfx/rubble_loop_2.mp3';
-import s111 from '../assets/sfx/rubble_loop_3.mp3';
-import s112 from '../assets/sfx/rumble_loop_1.mp3';
-import s113 from '../assets/sfx/rumble_loop_2.mp3';
-import s114 from '../assets/sfx/city_loop_1.mp3';
-import s115 from '../assets/sfx/city_loop_2.mp3';
-import s116 from '../assets/sfx/siren_loop_1.mp3';
-import s117 from '../assets/sfx/siren_loop_2.mp3';
+import s106 from '../assets/sfx/scrape_loop_3.mp3';
+import s107 from '../assets/sfx/scrape_loop_4.mp3';
+import s108 from '../assets/sfx/rubble_loop_2.mp3';
+import s109 from '../assets/sfx/rubble_loop_3.mp3';
+import s110 from '../assets/sfx/rumble_loop_1.mp3';
+import s111 from '../assets/sfx/rumble_loop_2.mp3';
+import s112 from '../assets/sfx/city_loop_1.mp3';
+import s113 from '../assets/sfx/city_loop_2.mp3';
+import s114 from '../assets/sfx/siren_loop_1.mp3';
+import s115 from '../assets/sfx/siren_loop_2.mp3';
 export const SFX_BANK = {
   roar: [s4, s5, s6, s7],
   stomp: [s8, s9],
@@ -166,11 +164,11 @@ export const SFX_BANK = {
   glassbig: [s93, s94, s95, s96, s97],
   rumble: [s98, s99, s100, s101],
   punch: [s102, s103, s104, s105],
-  scrape_loop: [s106, s107, s108, s109],
-  rubble_loop: [s110, s111],
-  rumble_loop: [s112, s113],
-  city_loop: [s114, s115],
-  siren_loop: [s116, s117],
+  scrape_loop: [s106, s107],
+  rubble_loop: [s108, s109],
+  rumble_loop: [s110, s111],
+  city_loop: [s112, s113],
+  siren_loop: [s114, s115],
 };
 export const MUSIC_BANK = {
   menu: [m0],

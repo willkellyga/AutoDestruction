@@ -120,8 +120,8 @@ const LAYERS = {
 const LOOPS = {
   scrape:  { clip: 'scrape_loop', grp: 'me', gain: 0.85, scale: 40, tau: 0.25, attack: 0.05, release: 0.35, size: true },
   rubble:  { clip: 'rubble_loop', grp: 'me', gain: 0.55, scale: 60, tau: 1.2, attack: 0.2, release: 1.2 },
-  distant: { clip: 'rumble_loop', grp: 'city', gain: 0.5, scale: 120, tau: 1.5, attack: 0.4, release: 2, lp: 700 },
-  city:    { clip: 'city_loop', grp: 'city', gain: 0.3, attack: 2, release: 2 },
+  distant: { clip: 'rumble_loop', grp: 'city', gain: 0.15, scale: 200, tau: 1.5, attack: 0.4, release: 2, lp: 700 },
+  city:    { clip: 'city_loop', grp: 'city', gain: 0.18, hp: 150, attack: 2, release: 2 },
   sirens:  { clip: 'siren_loop', grp: 'city', gain: 0.22, attack: 3, release: 3, lp: 2500 },
 };
 
@@ -361,7 +361,8 @@ export function makeMixer({ camera }) {
         const set = buffers[D.clip]; if (!set || !set.length) continue;
         const s = ctx.createBufferSource(); s.buffer = set[Math.floor(Math.random() * set.length)]; s.loop = true;
         const g = ctx.createGain(); g.gain.value = 0;
-        let to = g; if (D.lp) { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = D.lp; g.connect(f); to = f; }
+        let to = g; if (D.lp) { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = D.lp; to.connect(f); to = f; }
+        if (D.hp) { const f = ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = D.hp; to.connect(f); to = f; }   // no low-end drone
         to.connect(busOf[D.grp]); s.connect(g); s.start(ctx.currentTime, Math.random() * s.buffer.duration);
         L.node = { s, g, cur: 0 };
       }
