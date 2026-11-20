@@ -31,7 +31,7 @@ const TIER = {
   bite: 1, swipe: 1, crumble: 1, stomp: 1, quake: 1, roar: 1, hit: 1, leap: 1, charge: 1, pouncelaunch: 1, pounceland: 1, fire: 1, dive: 1, level: 1, unlock: 1, wingslice: 1,
   collapse: 2, boom: 2, 'c.boom': 2, 'a.big': 2, 'c.fall': 3, 'a.fall': 3, 'c.aircrash': 2, 'a.aircrash': 2, thunder: 2, meteor: 2,
   'a.rifle': 3, 'a.mg': 3, 'a.cannon': 3, 'a.launch': 3, 'a.small': 3, 'c.crunch': 3, 'c.jet': 3, 'c.cat': 3, 'c.gun': 3, shot: 3, skid: 3, creak: 3,
-  windup: 3, breathin: 3, pounceup: 3, chargeup: 3, rad: 3, radup: 3, snuff: 3, whoosh: 3, laser: 3, sizzle: 4, deny: 3,
+  windup: 3, breathin: 3, pounceup: 3, chargeup: 2, rad: 3, radup: 3, snuff: 3, whoosh: 3, laser: 3, sizzle: 4, deny: 3,
   step: 4, glass: 4, 'c.glass': 4, 'c.clang': 4, 'c.thud': 4, 'a.thud': 4, 'a.ping': 4, crackle: 4, 'c.crackle': 4, 'c.alarm': 4, 'c.splash': 4, 'c.hiss': 4,
 };
 const TIER_GAIN = 0.9;   // tier 1 at full loudness, with headroom for a few at once into the compressor
