@@ -129,7 +129,7 @@ import s125 from '../assets/sfx/m_collapse_collapse_1.mp3';
 import s126 from '../assets/sfx/m_crumble_crumble_1.mp3';
 import s127 from '../assets/sfx/m_crumble_crumble_2.mp3';
 import s128 from '../assets/sfx/m_glass_glass_5.mp3';
-import s129 from '../assets/sfx/m_glass_glass_r2_1.mp3';
+import s129 from '../assets/sfx/m_glass_glass_r2_2.mp3';
 import s130 from '../assets/sfx/m_hit_hit_5.mp3';
 import s131 from '../assets/sfx/m_level_level_1.mp3';
 import s132 from '../assets/sfx/m_roar_roar_6.mp3';
@@ -137,6 +137,17 @@ import s133 from '../assets/sfx/m_swipe_swipe_2.mp3';
 import s134 from '../assets/sfx/m_swipe_swipe_1.mp3';
 import s135 from '../assets/sfx/m_wingslice_swipe_3.mp3';
 import s136 from '../assets/sfx/m_quake_stomp_1.mp3';
+import s137 from '../assets/sfx/m_step_step_r2_1.mp3';
+import s138 from '../assets/sfx/m_stomp_stomp_r2_2.mp3';
+import s139 from '../assets/sfx/m_boom_boom_r2_5.mp3';
+import s140 from '../assets/sfx/m_boom_boom_r2_3.mp3';
+import s141 from '../assets/sfx/m_boom_boom_r2_2.mp3';
+import s142 from '../assets/sfx/m_a_big_abig_r2_5.mp3';
+import s143 from '../assets/sfx/m_a_big_abig_r2_3.mp3';
+import s144 from '../assets/sfx/m_a_big_abig_r2_2.mp3';
+import s145 from '../assets/sfx/m_a_launch_launch_r2_3.mp3';
+import s146 from '../assets/sfx/m_a_launch_launch_r2_6.mp3';
+import s147 from '../assets/sfx/m_a_launch_launch_r2_5.mp3';
 export const SFX_BANK = {
   "roar": [s4, s5, s6, s7],
   "stomp": [s8, s9],
@@ -205,6 +216,11 @@ export const SFX_BANK = {
   "m_swipe": [s133, s134],
   "m_wingslice": [s135],
   "m_quake": [s136],
+  "m_step": [s137],
+  "m_stomp": [s138],
+  "m_boom": [s139, s140, s141],
+  "m_a.big": [s142, s143, s144],
+  "m_a.launch": [s145, s146, s147],
 };
 export const MUSIC_BANK = {
   menu: [m0],

@@ -163,7 +163,7 @@ Written by tools/sfx/bank.mjs: change the picks and run it again rather than edi
 | m_crumble | assets/sfx/m_crumble_crumble_1.mp3 | Crash and debris (now) (made from crash_3.mp3 + debris_2.mp3) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
 | m_crumble | assets/sfx/m_crumble_crumble_2.mp3 | Concrete smash (made from 522099.ogg) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
 | m_glass | assets/sfx/m_glass_glass_5.mp3 | Glass crystal fragments (made from GLASMvmt_Whoosh Glass Crystal Fragments Sharp Shards Dry 05_ESM_EMWI.wav) | Sonniss GDC 2026 | https://gdc.sonniss.com/ | Sonniss GDC bundle licence (royalty-free, no attribution) |
-| m_glass | assets/sfx/m_glass_glass_r2_1.mp3 | Big window smash, opening hit cut (short cut) (made from glassbig_1.mp3) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
+| m_glass | assets/sfx/m_glass_glass_r2_2.mp3 | Big window smash, opening hit cut (longer cut) (made from glassbig_1.mp3) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
 | m_hit | assets/sfx/m_hit_hit_5.mp3 | Cinematic body punches (made from FGHTImpt_4 x Punch, Body 02_344 Audio_Cinematic Fight Vol 1.wav) | Sonniss GDC 2026 | https://gdc.sonniss.com/ | Sonniss GDC bundle licence (royalty-free, no attribution) |
 | m_level | assets/sfx/m_level_level_1.mp3 | Power up, bright (made from DSGNStngr_Power Up Bright Positive Successful Light Saturation Crash Shimmer 05_ESM_AG.wav) | Sonniss GDC 2026 | https://gdc.sonniss.com/ | Sonniss GDC bundle licence (royalty-free, no attribution) |
 | m_roar | assets/sfx/m_roar_roar_6.mp3 | Monster roar 3 (Freesound) (made from 614006.ogg) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
@@ -171,6 +171,17 @@ Written by tools/sfx/bank.mjs: change the picks and run it again rather than edi
 | m_swipe | assets/sfx/m_swipe_swipe_1.mp3 | Swoosh into crash (now) (made from swipe_1.mp3 + crash_1.mp3) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
 | m_wingslice | assets/sfx/m_wingslice_swipe_3.mp3 | Special-move slice (made from DSGNStngr_Action Deploy Units Sword Slice Special Move Layered Swish 04_ESM_TDG.wav) | Sonniss GDC 2026 | https://gdc.sonniss.com/ | Sonniss GDC bundle licence (royalty-free, no attribution) |
 | m_quake | assets/sfx/m_quake_stomp_1.mp3 | Layered boom and rubble (now) (made from sub_2.mp3 + thump_1.mp3 + debris_2.mp3) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
+| m_step | assets/sfx/m_step_step_r2_1.mp3 | Heavy thud, higher, stone attack (made from thump_2.mp3 + 513694.ogg) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
+| m_stomp | assets/sfx/m_stomp_stomp_r2_2.mp3 | Stone slam with punch (made from 513694.ogg + FGHTImpt_Combat Punch Impact Light Hit Delay Crunchy Vintage Quick Smack 05_ESM_AG.wav) | Sonniss GDC 2026 | https://gdc.sonniss.com/ | Sonniss GDC bundle licence (royalty-free, no attribution) |
+| m_boom | assets/sfx/m_boom_boom_r2_5.mp3 | Boom C 04 with debris crack (made from 350973.ogg + crash_1.mp3) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
+| m_boom | assets/sfx/m_boom_boom_r2_3.mp3 | Firework blast, close (made from 13 Fireworks_powerful explosions_multiples in a row_near.wav) | Sonniss GDC 2026 | https://gdc.sonniss.com/ | Sonniss GDC bundle licence (royalty-free, no attribution) |
+| m_boom | assets/sfx/m_boom_boom_r2_2.mp3 | Explosion 11 with a crack on the front (made from 435414.ogg + FGHTImpt_Combat Punch Impact Light Hit Delay Crunchy Vintage Quick Smack 05_ESM_AG.wav) | Sonniss GDC 2026 | https://gdc.sonniss.com/ | Sonniss GDC bundle licence (royalty-free, no attribution) |
+| m_a.big | assets/sfx/m_a_big_abig_r2_5.mp3 | Boom C 04 with debris crack (made from 350973.ogg + crash_1.mp3) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
+| m_a.big | assets/sfx/m_a_big_abig_r2_3.mp3 | Firework blast, close (made from 13 Fireworks_powerful explosions_multiples in a row_near.wav) | Sonniss GDC 2026 | https://gdc.sonniss.com/ | Sonniss GDC bundle licence (royalty-free, no attribution) |
+| m_a.big | assets/sfx/m_a_big_abig_r2_2.mp3 | Explosion 11 with a crack on the front (made from 435414.ogg + FGHTImpt_Combat Punch Impact Light Hit Delay Crunchy Vintage Quick Smack 05_ESM_AG.wav) | Sonniss GDC 2026 | https://gdc.sonniss.com/ | Sonniss GDC bundle licence (royalty-free, no attribution) |
+| m_a.launch | assets/sfx/m_a_launch_launch_r2_3.mp3 | Rocket launch (made from 840511.ogg) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
+| m_a.launch | assets/sfx/m_a_launch_launch_r2_6.mp3 | Fireworks launch swoosh (made from 675780.ogg) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
+| m_a.launch | assets/sfx/m_a_launch_launch_r2_5.mp3 | Firework rocket (game-y) (made from 347163.ogg) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
 | menu | assets/music/menu_787460.mp3 | night in the sci-fi city | solarpsychedelic | https://freesound.org/people/solarpsychedelic/sounds/787460/ | CC0 1.0 |
 | round | assets/music/round_683261.mp3 | Battle Music (Village) | Migfus20 | https://freesound.org/people/Migfus20/sounds/683261/ | CC0 1.0 |
 | final | assets/music/final_361424.mp3 | Synth Metal Rock Loop.wav | furbyguy | https://freesound.org/people/furbyguy/sounds/361424/ | CC0 1.0 |
