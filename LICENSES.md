@@ -152,8 +152,6 @@ Written by tools/sfx/bank.mjs: change the picks and run it again rather than edi
 | city_loop | assets/sfx/city_loop_2.mp3 | AMBTown_Ambience, Big Town, Streets, Valdemoro, Spain, Daytime, Brush Cutter, Far Traffica, Airplanes, People Activity, Spanish Voices-Stereo_KSL_KS016.wav (cut by tools/sfx/layers.py) | Sonniss #GameAudioGDC 2026 bundle | https://gdc.sonniss.com/ | Sonniss GDC bundle licence: royalty-free, no attribution; the raw files may not be passed on |
 | siren_loop | assets/sfx/siren_loop_1.mp3 | Air Raid Request.wav (cut by tools/sfx/layers.py) | hello_flowers | https://freesound.org/people/hello_flowers/sounds/31887/ | CC0 1.0 |
 | siren_loop | assets/sfx/siren_loop_2.mp3 | Sirens.wav (cut by tools/sfx/layers.py) | tlabrant1 | https://freesound.org/people/tlabrant1/sounds/658724/ | CC0 1.0 |
-| crowd_loop | assets/sfx/crowd_loop_1.mp3 | Crowd Screaming (cut by tools/sfx/layers.py) | DigestContent | https://freesound.org/people/DigestContent/sounds/459101/ | CC0 1.0 |
-| crowd_loop | assets/sfx/crowd_loop_2.mp3 | Crowd in panic (cut by tools/sfx/layers.py) | IENBA | https://freesound.org/people/IENBA/sounds/491405/ | CC0 1.0 |
 | menu | assets/music/menu_787460.mp3 | night in the sci-fi city | solarpsychedelic | https://freesound.org/people/solarpsychedelic/sounds/787460/ | CC0 1.0 |
 | round | assets/music/round_683261.mp3 | Battle Music (Village) | Migfus20 | https://freesound.org/people/Migfus20/sounds/683261/ | CC0 1.0 |
 | final | assets/music/final_361424.mp3 | Synth Metal Rock Loop.wav | furbyguy | https://freesound.org/people/furbyguy/sounds/361424/ | CC0 1.0 |

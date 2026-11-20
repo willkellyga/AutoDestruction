@@ -16,10 +16,11 @@
 // The clock is game time (tick(dt) from the game step), so the scripted bot rounds count the same as real play.
 // Counting (stats()) is on only when window.__sfxCount is set, as tools/sfx/count-round.mjs does.
 
-const GROUPS = { me: { voices: 7, gain: 1 }, rival: { voices: 5, gain: 0.7 }, army: { voices: 6, gain: 0.8 }, city: { voices: 6, gain: 0.85 }, ui: { voices: 2, gain: 1 } };
+const GROUPS = { me: { voices: 7, gain: 1 }, rival: { voices: 5, gain: 0.7 }, army: { voices: 6, gain: 1.4 }, city: { voices: 6, gain: 0.85 }, ui: { voices: 2, gain: 1 } };
 const MAX_VOICES = 18;          // everything at once
 const BUDGET = 3.2;             // the summed gain of what is playing; past it only more important sounds start
 const QUIET = 0.05;             // a sound that would start below this gain is not started
+const ARMY_RANGE = 450;         // gunfire carries further than the rest
 const RANGE = 280;              // world units at which a positioned sound has faded to nothing (U = 2.5: 112 m)
 
 // Cue table. gap: least seconds between two starts of the cue; n: most of this cue at once; pri: 0 filler .. 3 must play;
@@ -29,6 +30,7 @@ const CUES = {
   // the monsters (src/main.js, src/rivals.js, src/rival-moves.js, src/rival-full.js)
   roar:     { gap: 0.6, n: 2, pri: 3, len: 1.4, clip: 'roar', duck: true },
   stomp:    { gap: 0.12, n: 3, pri: 2, len: 0.7, clip: 'stomp' },
+  step:     { gap: 0.12, n: 2, pri: 3, len: 0.6, clip: 'stomp' },   // each footfall while he walks or runs
   quake:    { gap: 0.5, n: 2, pri: 3, len: 1.6, clip: 'quake', duck: true },
   bite:     { gap: 0.09, n: 2, pri: 2, len: 0.3, clip: 'bite' },
   swipe:    { gap: 0.09, n: 2, pri: 1, len: 0.3, clip: 'swipe' },
@@ -64,8 +66,8 @@ const CUES = {
   unlock:   { gap: 0.3, n: 1, pri: 3, len: 0.7, grp: 'ui' },
   deny:     { gap: 0.15, n: 1, pri: 3, len: 0.15, grp: 'ui' },
   // the army (units/src/fx.js through src/army.js)
-  'a.rifle':  { gap: 0.07, n: 2, pri: 0, len: 0.15, clip: 'rifle' },
-  'a.mg':     { gap: 0.09, n: 1, pri: 0, len: 0.15, clip: 'mg' },
+  'a.rifle':  { gap: 0.07, n: 2, pri: 1, len: 0.15, clip: 'rifle' },
+  'a.mg':     { gap: 0.09, n: 2, pri: 1, len: 0.15, clip: 'mg' },
   'a.cannon': { gap: 0.2, n: 2, pri: 1, len: 0.9, clip: 'cannon' },
   'a.launch': { gap: 0.2, n: 2, pri: 1, len: 0.8, clip: 'launch' },
   'a.small':  { gap: 0.15, n: 2, pri: 1, len: 0.6, clip: 'shell' },
@@ -73,7 +75,7 @@ const CUES = {
   'a.thud':   { gap: 0.12, n: 1, pri: 0, len: 0.1, clip: 'thud' },
   'a.ping':   { gap: 0.25, n: 1, pri: 0, len: 0.22, clip: 'ping' },
   // the city's vehicles (src/civilians.js)
-  'c.boom':    { gap: 0.15, n: 2, pri: 2, len: 1.2, clip: 'carboom' },
+  'c.boom':    { gap: 0.15, n: 2, pri: 3, len: 1.2, clip: 'carboom' },
   'c.crunch':  { gap: 0.1, n: 2, pri: 1, len: 0.35, clip: 'crunch' },
   'c.glass':   { gap: 0.12, n: 1, pri: 0, len: 0.3, clip: 'glass' },
   'c.clang':   { gap: 0.12, n: 1, pri: 0, len: 0.35, clip: 'clang' },
@@ -83,7 +85,7 @@ const CUES = {
   'c.hiss':    { gap: 0.6, n: 1, pri: 0, len: 1.1, clip: 'hiss' },
   'c.jet':     { gap: 1.2, n: 1, pri: 1, len: 2.4, clip: 'jet' },
   'c.cat':     { gap: 0.4, n: 1, pri: 1, len: 1.1, clip: 'catapult' },
-  'c.gun':     { gap: 0.08, n: 1, pri: 0, len: 0.1, clip: 'gun' },
+  'c.gun':     { gap: 0.08, n: 1, pri: 1, len: 0.1, clip: 'gun' },
   'c.crackle': { gap: 0.5, n: 1, pri: 0, len: 0.1, clip: 'crackle' },
 };
 
@@ -96,31 +98,31 @@ const CUES = {
 // falls back to its single clip or synth recipe.
 const LAYERS = {
   crumble:  [{ clip: 'crash', g: 0.8 }, { clip: 'debris', g: 0.55, d: 0.06 }, { clip: 'sub', g: 0.45, k: 0.35, sub: true }],
-  stomp:    [{ clip: 'sub', g: 0.9, sub: true }, { clip: 'thump', g: 0.7 }, { clip: 'debris', g: 0.35, d: 0.08, k: 0.3 }],
+  stomp:    [{ clip: 'sub', g: 1.3, sub: true }, { clip: 'thump', g: 1.1 }, { clip: 'debris', g: 0.45, d: 0.08, k: 0.3 }],
+  step:     [{ clip: 'thump', g: 1.1 }, { clip: 'sub', g: 0.9, sub: true, k: 0.15 }, { clip: 'debris', g: 0.3, d: 0.06, k: 0.4 }],
   quake:    [{ clip: 'sub', g: 1, sub: true }, { clip: 'thump', g: 0.8 }, { clip: 'rumble', g: 0.9, d: 0.05 }, { clip: 'debris', g: 0.6, d: 0.25 }, { clip: 'crash', g: 0.5, d: 0.1 }],
   collapse: [{ clip: 'crash', g: 1 }, { clip: 'sub', g: 0.8, sub: true }, { clip: 'metal', g: 0.45, d: 0.15 }, { clip: 'rumble', g: 0.9, d: 0.1 }, { clip: 'debris', g: 0.8, d: 0.35 }, { clip: 'glassbig', g: 0.35, d: 0.2 }],
   creak:    [{ clip: 'groan', g: 0.8 }],
-  glass:    [{ clip: 'glassbig', g: 0.7 }, { clip: 'debris', g: 0.25, d: 0.1 }],
+  glass:    [{ clip: 'glassbig', g: 0.35 }, { clip: 'debris', g: 0.15, d: 0.1 }],
   boom:     [{ clip: 'boom', g: 0.9 }, { clip: 'sub', g: 0.7, sub: true }, { clip: 'debris', g: 0.5, d: 0.2 }],
   hit:      [{ clip: 'punch', g: 0.8 }, { clip: 'sub', g: 0.5, sub: true }, { clip: 'thump', g: 0.5 }],
-  bite:     [{ clip: 'crash', g: 0.5 }, { clip: 'bite', g: 0.7 }],
-  swipe:    [{ clip: 'swipe', g: 0.6 }, { clip: 'crash', g: 0.45, d: 0.08 }, { clip: 'debris', g: 0.35, d: 0.12 }],
+  bite:     [{ clip: 'bite', g: 1.4 }, { clip: 'crash', g: 0.8 }, { clip: 'punch', g: 0.6 }],
+  swipe:    [{ clip: 'swipe', g: 1.3 }, { clip: 'crash', g: 0.8, d: 0.08 }, { clip: 'debris', g: 0.5, d: 0.12 }],
   roar:     [{ clip: 'roar', g: 1 }, { clip: 'sub', g: 0.35, sub: true, k: 0.4 }],
   'c.crunch': [{ clip: 'metal', g: 0.8 }, { clip: 'glassbig', g: 0.35, d: 0.03 }],
-  'c.boom':   [{ clip: 'boom', g: 0.9 }, { clip: 'metal', g: 0.45, d: 0.05 }, { clip: 'debris', g: 0.4, d: 0.2 }],
-  'a.big':    [{ clip: 'boom', g: 0.9 }, { clip: 'debris', g: 0.4, d: 0.2 }],
+  'c.boom':   [{ clip: 'boom', g: 1.5 }, { clip: 'sub', g: 0.9 }, { clip: 'metal', g: 0.7, d: 0.05 }, { clip: 'debris', g: 0.6, d: 0.2 }],
+  'a.big':    [{ clip: 'boom', g: 1.3 }, { clip: 'sub', g: 0.6 }, { clip: 'debris', g: 0.5, d: 0.2 }],
 };
 // Loops: steady beds whose loudness follows what is going on, in place of hundreds of one-shots a second.
 // scrape: Chompers grinding into a building, fed by what he breaks; rubble: the debris trickle after it;
 // distant: destruction elsewhere in the city, muffled; city: the city itself (traffic, people), fading as it empties;
-// sirens: rising as the city falls. scale: how much feed makes the loop full; tau: seconds the feed takes to fall away.
+// sirens: rising as the city falls. (A screaming-crowd bed was tried and taken out: Will, 2026-11-20.) scale: how much feed makes the loop full; tau: seconds the feed takes to fall away.
 const LOOPS = {
   scrape:  { clip: 'scrape_loop', grp: 'me', gain: 0.85, scale: 40, tau: 0.25, attack: 0.05, release: 0.35, size: true },
   rubble:  { clip: 'rubble_loop', grp: 'me', gain: 0.55, scale: 60, tau: 1.2, attack: 0.2, release: 1.2 },
   distant: { clip: 'rumble_loop', grp: 'city', gain: 0.5, scale: 120, tau: 1.5, attack: 0.4, release: 2, lp: 700 },
   city:    { clip: 'city_loop', grp: 'city', gain: 0.3, attack: 2, release: 2 },
   sirens:  { clip: 'siren_loop', grp: 'city', gain: 0.22, attack: 3, release: 3, lp: 2500 },
-  crowd:   { clip: 'crowd_loop', grp: 'city', gain: 0.2, scale: 400, tau: 4, attack: 1, release: 3, lp: 3000 },
 };
 
 // The old per-module gaps (seconds), kept so a counting run can say what the game did before the mixer.
@@ -189,10 +191,10 @@ const SYNTH = {
 };
 
 // How loud each clip set plays next to the others (the clips are all levelled to the same loudness by tools/sfx).
-const CLIP_GAIN = { roar: 0.9, stomp: 0.9, quake: 1, bite: 0.6, swipe: 0.5, hit: 0.7, leap: 0.5, whoosh: 0.5, skid: 0.5, charge: 0.6, breath: 0.8, inhale: 0.55,
-  crumble: 0.55, collapse: 0.9, creak: 0.5, glass: 0.45, boom: 0.9, crackle: 0.3, zap: 0.4, thunder: 0.8, meteor: 0.5, sizzle: 0.3,
-  rifle: 0.35, mg: 0.4, cannon: 0.75, launch: 0.55, shell: 0.6, ping: 0.3, thud: 0.3, carboom: 0.85, crunch: 0.6, clang: 0.4, alarm: 0.25,
-  splash: 0.6, hiss: 0.3, jet: 0.55, catapult: 0.5, gun: 0.35 };
+const CLIP_GAIN = { roar: 0.9, stomp: 1.2, quake: 1, bite: 1, swipe: 0.9, hit: 0.7, leap: 0.5, whoosh: 0.5, skid: 0.5, charge: 0.6, breath: 0.8, inhale: 0.55,
+  crumble: 0.55, collapse: 0.9, creak: 0.5, glass: 0.3, boom: 0.9, crackle: 0.3, zap: 0.4, thunder: 0.8, meteor: 0.5, sizzle: 0.3,
+  rifle: 0.8, mg: 0.85, cannon: 1, launch: 0.8, shell: 0.9, ping: 0.45, thud: 0.5, carboom: 1, crunch: 0.6, clang: 0.4, alarm: 0.25,
+  splash: 0.6, hiss: 0.3, jet: 0.55, catapult: 0.5, gun: 0.75 };
 
 export function makeMixer({ camera }) {
   let ctx = null, master = null, noiseBuf = null, clock = 0, duckT = 0, bank = null, sfxBus = null;
@@ -228,12 +230,12 @@ export function makeMixer({ camera }) {
   }
 
   // where a sound is from: gain by distance (fades to 0 at RANGE, no floor) and pan across the screen
-  function place(x, y, z) {
+  function place(x, y, z, range = RANGE) {
     const dx = x - camera.position.x, dy = (y || 0) - camera.position.y, dz = z - camera.position.z, d = Math.hypot(dx, dy, dz) || 1;
     const e = camera.matrixWorld.elements;
     const pan = Math.max(-0.8, Math.min(0.8, (dx * e[0] + dy * e[1] + dz * e[2]) / d));
-    const k = Math.max(0, Math.min(1, 1.2 - d / RANGE)), gain = k * k;   // squared: quiet falls away faster than it used to
-    return { d, pan, gain };
+    const k = Math.max(0, Math.min(1, 1.2 - d / range)), gain = k * k;   // squared: quiet falls away faster than it used to
+    return { d, pan, gain, range };
   }
   // what the old code did with the same request (its floor and fade), for the counting runs
   function oldGain(mod, d) { return mod === 'main' ? Math.max(0.08, Math.min(1, 1.25 - d / 275)) : mod === 'army' ? Math.max(0.12, Math.min(1, 1.3 - d / 260)) : Math.max(0.15, Math.min(1, 1.3 - d / 240)); }
@@ -245,7 +247,7 @@ export function makeMixer({ camera }) {
   function play(cue, vol = 1, x, y, z, grp = 'me', size = 0.5) {
     const C = CUES[cue]; if (!C) return false;
     if (C.grp) grp = C.grp;
-    const at = x !== undefined ? place(x, y, z) : null;
+    const at = x !== undefined ? place(x, y, z, grp === 'army' ? ARMY_RANGE : RANGE) : null;   // gunfire carries further
     // counting: every request, and whether the old code would have played it
     const counting = !!window.__sfxCount, sb = counting ? secBucket() : null;
     if (counting) { count(st.req, cue, grp); sb.req++; }
@@ -290,7 +292,7 @@ export function makeMixer({ camera }) {
     const out = ctx.createGain(); out.gain.value = 1;
     let to = out, chain = out;
     // far away is muffled as well as quieter: the highs go first, as they do across a real city
-    if (at) { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; const k = Math.max(0, 1 - at.d / RANGE); f.frequency.value = 600 + 17000 * k * k * k; chain.connect(f); chain = f; }
+    if (at) { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; const k = Math.max(0, 1 - at.d / at.range); f.frequency.value = 600 + 17000 * k * k * k; chain.connect(f); chain = f; }
     if (ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = at ? at.pan : 0; chain.connect(p); p.connect(busOf[grp]); } else chain.connect(busOf[grp]);
     // a bigger monster sounds deeper and heavier
     const deep = 1.12 - 0.3 * size;

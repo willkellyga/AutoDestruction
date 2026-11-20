@@ -118,8 +118,6 @@ import s114 from '../assets/sfx/city_loop_1.mp3';
 import s115 from '../assets/sfx/city_loop_2.mp3';
 import s116 from '../assets/sfx/siren_loop_1.mp3';
 import s117 from '../assets/sfx/siren_loop_2.mp3';
-import s118 from '../assets/sfx/crowd_loop_1.mp3';
-import s119 from '../assets/sfx/crowd_loop_2.mp3';
 export const SFX_BANK = {
   roar: [s4, s5, s6, s7],
   stomp: [s8, s9],
@@ -173,7 +171,6 @@ export const SFX_BANK = {
   rumble_loop: [s112, s113],
   city_loop: [s114, s115],
   siren_loop: [s116, s117],
-  crowd_loop: [s118, s119],
 };
 export const MUSIC_BANK = {
   menu: [m0],
