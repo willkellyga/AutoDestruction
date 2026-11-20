@@ -642,9 +642,20 @@ const explQueue = [];
 // Work put off a frame or two (a big blast done in shells, so one frame does not carry it all): [frames, fn]
 const soonQ = [];
 export function soon(frames, fn) { soonQ.push([frames, fn]); }
-// A big blast in three growing shells over three frames: the same hole, a third of the work a frame. `run(r)` does one shell
-// (the caller's blast or wreck, so the credit goes where it should).
-export function shells(r, run) { if (r < 24) { run(r); return; } run(r * 0.55); soon(1, () => run(r * 0.8)); soon(2, () => run(r)); }
+// A big blast spread over frames: rings of equal volume going out from the middle, each ring in two halves, one part a frame.
+// `run(r, part)` does one part (the caller's blast or wreck at radius r, with `part` among its options, so the credit goes
+// where it should); part.share is its share of the whole, for the debris. Breaking voxels is what costs, so each frame breaks
+// about the same amount. This was three growing shells, the first two in the same frame (soon(1) from a move runs in that
+// frame's stepSim), so a grown Meteor Pounce's landing took 120 to 250 ms in one step: the short freezes in the playtest
+// (2026-11-20). 12 parts: about 0.2 s at 60 frames a second, read as the quake rolling out.
+export function shells(r, run) {
+  if (r < 24) { run(r, null); return; }
+  const rings = r < 40 ? 3 : 6, n = rings * 2;
+  for (let k = 0; k < n; k++) {
+    const rr = r * Math.cbrt((Math.floor(k / 2) + 1) / rings), part = { qx: k % 2 ? 1 : -1, part: k, share: 1 / n };
+    if (k === 0) run(rr, part); else soon(k + 1, () => run(rr, part));
+  }
+}
 const glassQ = [];
 const burnT = new Map();
 // A storey's strength is counted in voxels that hold something up: carrying material with more of the same body's
@@ -714,9 +725,12 @@ export function blast(cx, cy, cz, r, o = {}) {
   const dx = o.dx || 0, dy = o.dy || 0, dz = o.dz || 0, hard = o.hard ?? 1, tough = o.tough ?? 1;
   const only = o.only;   // { kind: true }: hit only bodies of these kinds (street props, say) and leave the rest standing
   const R = r * 1.7;
-  const x0 = Math.max(0, Math.floor(cx - R)), x1 = Math.min(WX - 1, Math.floor(cx + R));
+  let x0 = Math.max(0, Math.floor(cx - R)), x1 = Math.min(WX - 1, Math.floor(cx + R));
   const y0 = Math.max(0, Math.floor(cy - R / ys)), y1 = Math.min(WY - 1, Math.floor(cy + R / ys));
-  const z0 = Math.max(0, Math.floor(cz - R)), z1 = Math.min(WZ - 1, Math.floor(cz + R));
+  let z0 = Math.max(0, Math.floor(cz - R)), z1 = Math.min(WZ - 1, Math.floor(cz + R));
+  // one quarter of the blast (shells): x and z on one side of the middle each
+  if (o.qx) { if (o.qx < 0) x1 = Math.min(x1, Math.floor(cx)); else x0 = Math.max(x0, Math.floor(cx) + 1); }
+  if (o.qz) { if (o.qz < 0) z1 = Math.min(z1, Math.floor(cz)); else z0 = Math.max(z0, Math.floor(cz) + 1); }
   let n = 0;
   // brick by brick, skipping the empty ones (most of a big blast's box is sky)
   for (let by = y0 >> 3; by <= y1 >> 3; by++) for (let bz = z0 >> 3; bz <= z1 >> 3; bz++) for (let bx = x0 >> 3; bx <= x1 >> 3; bx++) {
