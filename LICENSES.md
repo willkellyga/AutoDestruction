@@ -188,6 +188,10 @@ Written by tools/sfx/bank.mjs: change the picks and run it again rather than edi
 | m_charge | assets/sfx/m_charge_charge_r5_2.mp3 | Deep growl and fire rush (made from FIREWhsh_Whoosh Fire Deep Growl Monster Saturated Crisp 03_ESM_EMWI.wav) | Sonniss GDC 2026 | https://gdc.sonniss.com/ | Sonniss GDC bundle licence (royalty-free, no attribution) |
 | m_pouncelaunch | assets/sfx/m_pouncelaunch_plaunch_r5_2.mp3 | Ground crack, grunt and whoosh (made from crash_3.mp3 + CREAHmn_Designed Orc Male Attack Long Heavy Hit Charged Up 03_ESM_HC4.wav + 475131.ogg + sub_4.mp3) | Sonniss GDC 2026 | https://gdc.sonniss.com/ | Sonniss GDC bundle licence (royalty-free, no attribution) |
 | m_pounceland | assets/sfx/m_pounceland_pland_r5_2.mp3 | Meteor: boom, crash, rubble, rumble (made from EffectiveTrailer_Booms_Vol2_011.wav + crash_7.mp3 + debris_3.mp3 + rumble_2.mp3) | Sonniss GDC 2026 | https://gdc.sonniss.com/ | Sonniss GDC bundle licence (royalty-free, no attribution) |
+| m_c.fall | assets/sfx/m_c_fall_planefall_r6_3.mp3 | Jet roar diving down (made from 639839.ogg + 506313.ogg) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
+| m_a.fall | assets/sfx/m_a_fall_helifall_r6_2.mp3 | Rotor with falling whistle (made from 187681.ogg + 506313.ogg) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
+| m_c.aircrash | assets/sfx/m_c_aircrash_aircrash_r6_1.mp3 | Metal crash explosion (made from 435414.ogg + metal_1.mp3 + debris_3.mp3) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
+| m_a.aircrash | assets/sfx/m_a_aircrash_aircrash_r6_1.mp3 | Metal crash explosion (made from 435414.ogg + metal_1.mp3 + debris_3.mp3) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
 | menu | assets/music/menu_787460.mp3 | night in the sci-fi city | solarpsychedelic | https://freesound.org/people/solarpsychedelic/sounds/787460/ | CC0 1.0 |
 | round | assets/music/round_683261.mp3 | Battle Music (Village) | Migfus20 | https://freesound.org/people/Migfus20/sounds/683261/ | CC0 1.0 |
 | final | assets/music/final_361424.mp3 | Synth Metal Rock Loop.wav | furbyguy | https://freesound.org/people/furbyguy/sounds/361424/ | CC0 1.0 |

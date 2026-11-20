@@ -651,7 +651,7 @@ export function makeCivilians(o) {
     if (d >= 1 && mon.y + tall() + 10 < s.y) return;   // out of reach of anything but his breath
     s.hp -= d; s.u.hit(s.u.root.position, 1.2 + d, cube, 14);
     if (s.hp > 0) return;
-    s.phase = 'down'; s.dead = true; s.vy = 6; s.u.play('Crash', 0.05); fx.explode(s.u.root.position, 2.6); sfx.play('boom', s.u.root.position, 0.7);
+    s.phase = 'down'; s.dead = true; s.vy = 6; s.u.play('Crash', 0.05); fx.explode(s.u.root.position, 2.6); sfx.play('boom', s.u.root.position, 0.7); sfx.play('fall', s.u.root.position, 1);
     if (game.state === 'play') { addXp(160); toast('Jet shot down', '+160 XP'); }
   }
   // the height of the roofs in 32-voxel squares (as the town was built), so a jet keeps above the towers on its way round
@@ -739,7 +739,7 @@ export function makeCivilians(o) {
           if (u.clipName === 'Fire') u.play('Fly', 0.1); sfx.play('jet', pos, 1);
         }
       } else if (hd < 45 && s.wp < s.wps.length - 1) s.wp++;
-      if (solid(Math.floor(pos.x), Math.floor(pos.y), Math.floor(pos.z)) && pos.y > 3) { s.phase = 'down'; s.dead = true; s.vy = 0; pos.y = Math.max(pos.y, 4); }   // it has flown into a tower
+      if (solid(Math.floor(pos.x), Math.floor(pos.y), Math.floor(pos.z)) && pos.y > 3) { s.phase = 'down'; s.dead = true; s.vy = 0; pos.y = Math.max(pos.y, 4); sfx.play('fall', pos, 0.8); }   // it has flown into a tower
       if (s.out && (pos.x < -300 || pos.z < -300 || pos.x > WX + 300 || pos.z > WZ + 300 || s.t > 70)) { endSortie(s, false); return; }
     } else {                             // shot down: it rolls, trails fire and smoke, and goes in
       s.vy -= 34 * dt; s.roll += 5.5 * dt; s.pitch += (-0.9 - s.pitch) * Math.min(1, dt * 0.9);
@@ -748,7 +748,7 @@ export function makeCivilians(o) {
       for (let m = Rn() < dt * 60 ? 2 : 0; m > 0; m--) fx.block(pos.x + (Rn() - 0.5) * 2, pos.y + 4, pos.z + (Rn() - 0.5) * 2, (Rn() - 0.5) * 3, 2 + Rn() * 3, (Rn() - 0.5) * 3, 0.6 + Rn() * 0.7, 1.2 + Rn() * 1.2, m > 1 ? K.SMOKE : K.FIRE, 1, 1.5);
       const inside = pos.x > 1 && pos.z > 1 && pos.x < WX - 1 && pos.z < WZ - 1, wall = inside && solid(Math.floor(pos.x), Math.floor(Math.max(0, pos.y)), Math.floor(pos.z));
       if (pos.y <= 1.5 || wall) {
-        pos.y = Math.max(1.5, pos.y); u.burst(cube, null, 22); fx.explode(pos, 5.5); shake(0.6, pos); sfx.play('boom', pos, 1);
+        pos.y = Math.max(1.5, pos.y); u.burst(cube, null, 22); fx.explode(pos, 5.5); shake(0.6, pos); sfx.play('aircrash', pos, 1);
         if (inside) { if (waterAt(pos.x, pos.z) != null && !wall) { fx.splash(pos, 300, 1.8, 9); sfx.play('splash', pos, 1.2); } else hooks.scorch(pos.x, pos.z, 9); blast(pos.x, Math.max(2, pos.y), pos.z, 7, { push: 30, core: 0.5, maxDebris: 160, tough: 0.4 }); }
         endSortie(s, true); return;
       }

@@ -29,7 +29,7 @@ const GROUPS = { me: { voices: 6, gain: 1 }, rival: { voices: 5, gain: 0.63 }, a
 const TIER_DB = { 1: 0, 2: -4, 3: -9, 4: -15 };
 const TIER = {
   bite: 1, swipe: 1, crumble: 1, stomp: 1, quake: 1, roar: 1, hit: 1, leap: 1, charge: 1, pouncelaunch: 1, pounceland: 1, fire: 1, dive: 1, level: 1, unlock: 1, wingslice: 1,
-  collapse: 2, boom: 2, 'c.boom': 2, 'a.big': 2, thunder: 2, meteor: 2,
+  collapse: 2, boom: 2, 'c.boom': 2, 'a.big': 2, 'c.fall': 2, 'a.fall': 2, 'c.aircrash': 2, 'a.aircrash': 2, thunder: 2, meteor: 2,
   'a.rifle': 3, 'a.mg': 3, 'a.cannon': 3, 'a.launch': 3, 'a.small': 3, 'c.crunch': 3, 'c.jet': 3, 'c.cat': 3, 'c.gun': 3, shot: 3, skid: 3, creak: 3,
   windup: 3, breathin: 3, pounceup: 3, chargeup: 3, rad: 3, radup: 3, snuff: 3, whoosh: 3, laser: 3, sizzle: 4, deny: 3,
   step: 4, glass: 4, 'c.glass': 4, 'c.clang': 4, 'c.thud': 4, 'a.thud': 4, 'a.ping': 4, crackle: 4, 'c.crackle': 4, 'c.alarm': 4, 'c.splash': 4, 'c.hiss': 4,
@@ -96,6 +96,10 @@ const CUES = {
   'a.thud':   { gap: 0.12, n: 1, pri: 0, len: 0.1, clip: 'thud' },
   'a.ping':   { gap: 0.25, n: 1, pri: 0, len: 0.22, clip: 'ping' },
   // the city's vehicles (src/civilians.js)
+  'c.fall':    { gap: 0.4, n: 2, pri: 2, len: 2.5, clip: 'meteor' },   // a jet shot down, falling
+  'c.aircrash': { gap: 0.2, n: 2, pri: 3, len: 1.6, clip: 'boom' },   // a plane or helicopter hitting the ground
+  'a.fall':    { gap: 0.4, n: 2, pri: 2, len: 2.5, clip: 'meteor' },   // a helicopter shot down, spinning down
+  'a.aircrash': { gap: 0.2, n: 2, pri: 3, len: 1.6, clip: 'boom' },
   'c.boom':    { gap: 0.15, n: 2, pri: 3, len: 1.2, clip: 'carboom' },
   'c.crunch':  { gap: 0.1, n: 2, pri: 1, len: 0.35, clip: 'crunch' },
   'c.glass':   { gap: 0.12, n: 1, pri: 0, len: 0.3, clip: 'glass' },
