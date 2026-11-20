@@ -140,14 +140,6 @@ Written by tools/sfx/bank.mjs: change the picks and run it again rather than edi
 | bite | assets/sfx/bite_3.mp3 | Horror / Zombie - Biting on bones (cut by tools/sfx/layers.py) | Breviceps | https://freesound.org/people/Breviceps/sounds/445987/ | CC0 1.0 |
 | swipe | assets/sfx/swipe_1.mp3 | Swosh Sword Swing (cut by tools/sfx/layers.py) | qubodup | https://freesound.org/people/qubodup/sounds/59992/ | CC0 1.0 |
 | swipe | assets/sfx/swipe_2.mp3 | FX - Swoosh - Super Heavy (for swords, sticks, punches, etc) (cut by tools/sfx/layers.py) | bolkmar | https://freesound.org/people/bolkmar/sounds/475131/ | CC0 1.0 |
-| scrape_loop | assets/sfx/scrape_loop_3.mp3 | Heavy stone door opens 2 (cut by tools/sfx/layers.py) | PostProdDog | https://freesound.org/people/PostProdDog/sounds/578491/ | CC0 1.0 |
-| scrape_loop | assets/sfx/scrape_loop_4.mp3 | Dragging a body across a concrete floor 2 (cut by tools/sfx/layers.py) | PostProdDog | https://freesound.org/people/PostProdDog/sounds/578493/ | CC0 1.0 |
-| rubble_loop | assets/sfx/rubble_loop_2.mp3 | rockfall2a.wav (cut by tools/sfx/layers.py) | AlanCat | https://freesound.org/people/AlanCat/sounds/389303/ | CC0 1.0 |
-| rubble_loop | assets/sfx/rubble_loop_3.mp3 | Foley_Stones_Falls_Debris_Stereo_DR05.wav (cut by tools/sfx/layers.py) | Nox_Sound | https://freesound.org/people/Nox_Sound/sounds/550342/ | CC0 1.0 |
-| rumble_loop | assets/sfx/rumble_loop_1.mp3 | EARTHQUAKE OR DISTANT SPACE SHUTTLE RUMBLE.WAV (cut by tools/sfx/layers.py) | metrostock99 | https://freesound.org/people/metrostock99/sounds/203281/ | CC0 1.0 |
-| rumble_loop | assets/sfx/rumble_loop_2.mp3 | Cinematic Deep Rumble (cut by tools/sfx/layers.py) | swiftoid | https://freesound.org/people/swiftoid/sounds/184313/ | CC0 1.0 |
-| siren_loop | assets/sfx/siren_loop_1.mp3 | Air Raid Request.wav (cut by tools/sfx/layers.py) | hello_flowers | https://freesound.org/people/hello_flowers/sounds/31887/ | CC0 1.0 |
-| siren_loop | assets/sfx/siren_loop_2.mp3 | Sirens.wav (cut by tools/sfx/layers.py) | tlabrant1 | https://freesound.org/people/tlabrant1/sounds/658724/ | CC0 1.0 |
 | m_a.cannon | assets/sfx/m_a_cannon_a_cannon_3.mp3 | Excalibur howitzer (made from 175430.ogg) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
 | m_a.mg | assets/sfx/m_a_mg_a_mg_1.mp3 | Heavy burst (now) (made from 39071.ogg) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
 | m_a.rifle | assets/sfx/m_a_rifle_a_rifle_1.mp3 | Gun shot (now) (made from 804825.ogg) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |

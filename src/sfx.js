@@ -115,8 +115,8 @@ const LAYERS = {
   'a.big':    [{ clip: 'boom', g: 1.3 }, { clip: 'sub', g: 0.6 }, { clip: 'debris', g: 0.5, d: 0.2 }],
 };
 // Loudness of a picked take (they are all levelled alike by tools/sfx/options.py) next to the rest of the mix.
-const STEP_PITCH = 0.7;   // footsteps played lower than recorded (Will, 2026-11-20: lower pitch, lower in the mix)
-const PICK_GAIN = { step: 0.5, level: 0.8, glass: 0.6, roar: 1.2, crumble: 0.9, collapse: 1.2, quake: 1.3, 'a.rifle': 1.1, 'a.mg': 1.1, 'a.cannon': 1.2, 'c.boom': 1.4, 'c.crunch': 1, wingslice: 1.1 };
+const STEP_PITCH = 0.55;   // footsteps played lower than recorded (Will, 2026-11-20: lower pitch, lower in the mix)
+const PICK_GAIN = { step: 0.125, level: 0.8, glass: 0.6, roar: 1.2, crumble: 0.9, collapse: 1.2, quake: 1.3, 'a.rifle': 1.1, 'a.mg': 1.1, 'a.cannon': 1.2, 'c.boom': 1.4, 'c.crunch': 1, wingslice: 1.1 };
 // Loops: steady beds whose loudness follows what is going on, in place of hundreds of one-shots a second.
 // scrape: Chompers grinding into a building, fed by what he breaks; rubble: the debris trickle after it;
 // distant: destruction elsewhere in the city, muffled; city: the city itself (traffic, people), fading as it empties;
