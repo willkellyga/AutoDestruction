@@ -12,7 +12,20 @@ Everything that came from outside the project, with where it came from, who made
 
 Credit line if one is wanted on screen: "Some effects are based on pixelfx by Patch (MIT)." MIT asks for the copyright notice to stay with copies of the code. We copied no code, so this entry is a courtesy and a record.
 
+## Fonts
+
+Both are bundled into every build and the lobby page as woff2 files in `src/ui/` (Latin set only). Nothing loads from Google Fonts.
+
+| What | Where it is used | Source | Author | Licence |
+|---|---|---|---|---|
+| Lilita One (400) | Titles, numbers and buttons: `src/ui/lilita-one-400.woff2` | https://fonts.google.com/specimen/Lilita+One, files from the `@fontsource/lilita-one` package | Juan Montoreano, copyright 2011 | SIL Open Font License 1.1 |
+| Fredoka (500, 600, 700) | Small text: `src/ui/fredoka-500.woff2`, `fredoka-600.woff2`, `fredoka-700.woff2` | https://fonts.google.com/specimen/Fredoka, files from the `@fontsource/fredoka` package | The Fredoka Project Authors (Milena Brandao, Hafontia) | SIL Open Font License 1.1 |
+
+The OFL lets the fonts be bundled and sold with a game. It asks that the copyright and licence notice stay with copies of the font files, which this table is, and that the fonts are not sold on their own.
+
 ## Art and models
+
+The monster faces, bodies and the loading fight in `src/ui/` are rendered from our own models. The logo is our own (see the launch covers).
 
 See the Credits section of `README.md` for the monster and town. The optional T-rex model is CC0.
 
