@@ -1,9 +1,5 @@
 // Recorded sound clips for the mixer (src/sfx.js), written by tools/sfx/bank.mjs. Clip set name -> list of MP3 files
 // (bundled as bytes by esbuild's binary loader, see build.py). Sources and licences: assets/sfx/CREDITS.md.
-import m0 from '../assets/music/menu_787460.mp3';
-import m1 from '../assets/music/round_683261.mp3';
-import m2 from '../assets/music/final_361424.mp3';
-import m3 from '../assets/music/end_269198.mp3';
 import s4 from '../assets/sfx/roar_1.mp3';
 import s5 from '../assets/sfx/roar_2.mp3';
 import s6 from '../assets/sfx/roar_3.mp3';
@@ -226,10 +222,6 @@ export const SFX_BANK = {
   "m_breathin": [s146],
 };
 export const MUSIC_BANK = {
-  menu: [m0],
-  round: [m1],
-  final: [m2],
-  end: [m3],
 };
 // Gain for each clip that brings it to the same loudness (-18 dBFS over its loudest 300 ms; tools/sfx/loudness.py),
 // so where a sound sits in the mix comes only from the mixer's tier table (src/sfx.js TIERS), not from how it was recorded.
