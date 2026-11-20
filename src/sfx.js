@@ -34,6 +34,7 @@ const CUES = {
   quake:    { gap: 0.5, n: 2, pri: 3, len: 1.6, clip: 'quake', duck: true },
   bite:     { gap: 0.09, n: 2, pri: 2, len: 0.3, clip: 'bite' },
   swipe:    { gap: 0.09, n: 2, pri: 1, len: 0.3, clip: 'swipe' },
+  wingslice: { gap: 0.15, n: 2, pri: 2, len: 0.6, clip: 'swipe' },   // Scythe's Wing Slice blades
   hit:      { gap: 0.1, n: 2, pri: 2, len: 0.35, clip: 'hit' },
   leap:     { gap: 0.3, n: 2, pri: 2, len: 0.5, clip: 'leap' },
   dive:     { gap: 0.3, n: 1, pri: 2, len: 0.6, clip: 'whoosh' },
@@ -113,6 +114,8 @@ const LAYERS = {
   'c.boom':   [{ clip: 'boom', g: 1.5 }, { clip: 'sub', g: 0.9 }, { clip: 'metal', g: 0.7, d: 0.05 }, { clip: 'debris', g: 0.6, d: 0.2 }],
   'a.big':    [{ clip: 'boom', g: 1.3 }, { clip: 'sub', g: 0.6 }, { clip: 'debris', g: 0.5, d: 0.2 }],
 };
+// Loudness of a picked take (they are all levelled alike by tools/sfx/options.py) next to the rest of the mix.
+const PICK_GAIN = { level: 0.8, glass: 0.6, roar: 1.2, crumble: 0.9, collapse: 1.2, quake: 1.3, 'a.rifle': 1.1, 'a.mg': 1.1, 'a.cannon': 1.2, 'c.boom': 1.4, 'c.crunch': 1, wingslice: 1.1 };
 // Loops: steady beds whose loudness follows what is going on, in place of hundreds of one-shots a second.
 // scrape: Chompers grinding into a building, fed by what he breaks; rubble: the debris trickle after it;
 // distant: destruction elsewhere in the city, muffled; city: the city itself (traffic, people), fading as it empties;
@@ -296,6 +299,15 @@ export function makeMixer({ camera }) {
     if (ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = at ? at.pan : 0; chain.connect(p); p.connect(busOf[grp]); } else chain.connect(busOf[grp]);
     // a bigger monster sounds deeper and heavier
     const deep = 1.12 - 0.3 * size;
+    // a take Will picked on the sound board (clip set m_<cue>) plays in place of the layer stack, a little deeper for a bigger monster
+    const picked = buffers['m_' + cue];
+    if (picked && picked.length) {
+      const buf = picked[Math.floor(Math.random() * picked.length)];
+      const s = ctx.createBufferSource(); s.buffer = buf; s.playbackRate.value = (1.06 - 0.12 * size) * (0.96 + Math.random() * 0.08);
+      const vg = ctx.createGain(); vg.gain.value = g * (PICK_GAIN[cue] || 1); s.connect(vg); vg.connect(to); s.start();
+      v.end = clock + buf.duration / s.playbackRate.value;
+      return out;
+    }
     const lay = LAYERS[cue];
     if (lay) {
       let any = false, end = 0; const t0 = ctx.currentTime;

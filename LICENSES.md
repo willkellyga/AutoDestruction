@@ -150,6 +150,27 @@ Written by tools/sfx/bank.mjs: change the picks and run it again rather than edi
 | city_loop | assets/sfx/city_loop_2.mp3 | AMBTown_Ambience, Big Town, Streets, Valdemoro, Spain, Daytime, Brush Cutter, Far Traffica, Airplanes, People Activity, Spanish Voices-Stereo_KSL_KS016.wav (cut by tools/sfx/layers.py) | Sonniss #GameAudioGDC 2026 bundle | https://gdc.sonniss.com/ | Sonniss GDC bundle licence: royalty-free, no attribution; the raw files may not be passed on |
 | siren_loop | assets/sfx/siren_loop_1.mp3 | Air Raid Request.wav (cut by tools/sfx/layers.py) | hello_flowers | https://freesound.org/people/hello_flowers/sounds/31887/ | CC0 1.0 |
 | siren_loop | assets/sfx/siren_loop_2.mp3 | Sirens.wav (cut by tools/sfx/layers.py) | tlabrant1 | https://freesound.org/people/tlabrant1/sounds/658724/ | CC0 1.0 |
+| m_a.cannon | assets/sfx/m_a_cannon_a_cannon_3.mp3 | Excalibur howitzer (made from 175430.ogg) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
+| m_a.mg | assets/sfx/m_a_mg_a_mg_1.mp3 | Heavy burst (now) (made from 39071.ogg) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
+| m_a.rifle | assets/sfx/m_a_rifle_a_rifle_1.mp3 | Gun shot (now) (made from 804825.ogg) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
+| m_a.rifle | assets/sfx/m_a_rifle_a_rifle_2.mp3 | Sniper shot (made from 163460.ogg) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
+| m_a.rifle | assets/sfx/m_a_rifle_a_rifle_5.mp3 | Gunshot 001 (made from 136766.ogg) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
+| m_bite | assets/sfx/m_bite_bite_1.mp3 | Monster bite with crunch (now) (made from bite_1.mp3 + crash_2.mp3) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
+| m_c.boom | assets/sfx/m_c_boom_c_boom_5.mp3 | Fireworks blast + metal (made from 13 Fireworks_powerful explosions_multiples in a row_near.wav + 587442.ogg) | Sonniss GDC 2026 | https://gdc.sonniss.com/ | Sonniss GDC bundle licence (royalty-free, no attribution) |
+| m_c.boom | assets/sfx/m_c_boom_c_boom_1.mp3 | Car explosion with metal (now) (made from boom_3.mp3 + metal_2.mp3) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
+| m_c.crunch | assets/sfx/m_c_crunch_c_crunch_2.mp3 | Car crash (made from 807437.ogg) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
+| m_collapse | assets/sfx/m_collapse_collapse_1.mp3 | Layered collapse (now) (made from crash_7.mp3 + sub_2.mp3 + rumble_1.mp3 + debris_3.mp3) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
+| m_crumble | assets/sfx/m_crumble_crumble_1.mp3 | Crash and debris (now) (made from crash_3.mp3 + debris_2.mp3) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
+| m_crumble | assets/sfx/m_crumble_crumble_2.mp3 | Concrete smash (made from 522099.ogg) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
+| m_glass | assets/sfx/m_glass_glass_5.mp3 | Glass crystal fragments (made from GLASMvmt_Whoosh Glass Crystal Fragments Sharp Shards Dry 05_ESM_EMWI.wav) | Sonniss GDC 2026 | https://gdc.sonniss.com/ | Sonniss GDC bundle licence (royalty-free, no attribution) |
+| m_glass | assets/sfx/m_glass_glass_r2_1.mp3 | Big window smash, opening hit cut (short cut) (made from glassbig_1.mp3) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
+| m_hit | assets/sfx/m_hit_hit_5.mp3 | Cinematic body punches (made from FGHTImpt_4 x Punch, Body 02_344 Audio_Cinematic Fight Vol 1.wav) | Sonniss GDC 2026 | https://gdc.sonniss.com/ | Sonniss GDC bundle licence (royalty-free, no attribution) |
+| m_level | assets/sfx/m_level_level_1.mp3 | Power up, bright (made from DSGNStngr_Power Up Bright Positive Successful Light Saturation Crash Shimmer 05_ESM_AG.wav) | Sonniss GDC 2026 | https://gdc.sonniss.com/ | Sonniss GDC bundle licence (royalty-free, no attribution) |
+| m_roar | assets/sfx/m_roar_roar_6.mp3 | Monster roar 3 (Freesound) (made from 614006.ogg) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
+| m_swipe | assets/sfx/m_swipe_swipe_2.mp3 | Heavy swing to thud (made from SWSH_SWING IMPACTS Quick Heavy Weapon Swing To Thud Impact Var 01_DDUMAIS_MWP2.wav) | Sonniss GDC 2026 | https://gdc.sonniss.com/ | Sonniss GDC bundle licence (royalty-free, no attribution) |
+| m_swipe | assets/sfx/m_swipe_swipe_1.mp3 | Swoosh into crash (now) (made from swipe_1.mp3 + crash_1.mp3) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
+| m_wingslice | assets/sfx/m_wingslice_swipe_3.mp3 | Special-move slice (made from DSGNStngr_Action Deploy Units Sword Slice Special Move Layered Swish 04_ESM_TDG.wav) | Sonniss GDC 2026 | https://gdc.sonniss.com/ | Sonniss GDC bundle licence (royalty-free, no attribution) |
+| m_quake | assets/sfx/m_quake_stomp_1.mp3 | Layered boom and rubble (now) (made from sub_2.mp3 + thump_1.mp3 + debris_2.mp3) | Freesound | https://gdc.sonniss.com/ | CC0 1.0 (Freesound) |
 | menu | assets/music/menu_787460.mp3 | night in the sci-fi city | solarpsychedelic | https://freesound.org/people/solarpsychedelic/sounds/787460/ | CC0 1.0 |
 | round | assets/music/round_683261.mp3 | Battle Music (Village) | Migfus20 | https://freesound.org/people/Migfus20/sounds/683261/ | CC0 1.0 |
 | final | assets/music/final_361424.mp3 | Synth Metal Rock Loop.wav | furbyguy | https://freesound.org/people/furbyguy/sounds/361424/ | CC0 1.0 |
