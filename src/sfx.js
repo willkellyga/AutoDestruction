@@ -307,8 +307,9 @@ export function makeMixer({ camera }) {
   const MUSIC_GAIN = 0.32, FADE = 1.2, ONCE = { end: true };
   function loadMusic(b) { musicBank = b || {}; }
   function music(slot) {
-    if (slot === want) return; want = slot;
-    if (!ctx || ctx.state !== 'running') return;
+    if (slot === want) return;
+    if (!ctx || ctx.state !== 'running') return;   // asked again every frame, so it starts once the sound is woken
+    want = slot;
     if (!musicBus) { musicBus = ctx.createGain(); musicBus.gain.value = MUSIC_GAIN; musicBus.connect(master); }
     const t = ctx.currentTime;
     if (cur) { const old = cur; old.g.gain.cancelScheduledValues(t); old.g.gain.setValueAtTime(old.g.gain.value, t); old.g.gain.linearRampToValueAtTime(0, t + FADE); setTimeout(() => { try { old.s.stop(); } catch (e) {} }, FADE * 1000 + 100); cur = null; }
