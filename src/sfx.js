@@ -16,10 +16,28 @@
 // The clock is game time (tick(dt) from the game step), so the scripted bot rounds count the same as real play.
 // Counting (stats()) is on only when window.__sfxCount is set, as tools/sfx/count-round.mjs does.
 
-const GROUPS = { me: { voices: 7, gain: 1 }, rival: { voices: 5, gain: 0.7 }, army: { voices: 6, gain: 1.4 }, city: { voices: 6, gain: 0.85 }, ui: { voices: 2, gain: 1 } };
-const MAX_VOICES = 18;          // everything at once
+const GROUPS = { me: { voices: 6, gain: 1 }, rival: { voices: 5, gain: 0.63 }, army: { voices: 6, gain: 1 }, city: { voices: 6, gain: 1 }, ui: { voices: 2, gain: 1 } };
+
+// The mix, in four tiers (Will, 2026-11-20: balance the whole mix). Every clip is first levelled to the same loudness
+// (SFX_NORM from tools/sfx/loudness.py); a sound's place in the mix then comes only from its tier, then any fader trim.
+// As game mixes are built: the player's own actions are the anchor and always heard; big events near him next; the
+// fighting around him under that; detail (steps, glass, crackle) well under everything. Rivals sit 4 dB under their tier.
+//   1 anchor   0 dB: Chompers' bites, swipes, wall hits, stomps, Stomp Quake, roar, specials, level up
+//   2 events  -4 dB: collapses, explosions, car explosions, shells landing
+//   3 combat  -9 dB: army fire, rockets, cars crushed, jets, rival specials, card effects
+//   4 detail -15 dB: footsteps, glass, small clangs and thuds, fire crackle, alarms, splashes
+const TIER_DB = { 1: 0, 2: -4, 3: -9, 4: -15 };
+const TIER = {
+  bite: 1, swipe: 1, crumble: 1, stomp: 1, quake: 1, roar: 1, hit: 1, leap: 1, charge: 1, fire: 1, dive: 1, level: 1, unlock: 1, wingslice: 1,
+  collapse: 2, boom: 2, 'c.boom': 2, 'a.big': 2, thunder: 2, meteor: 2,
+  'a.rifle': 3, 'a.mg': 3, 'a.cannon': 3, 'a.launch': 3, 'a.small': 3, 'c.crunch': 3, 'c.jet': 3, 'c.cat': 3, 'c.gun': 3, shot: 3, skid: 3, creak: 3,
+  windup: 3, breathin: 3, pounceup: 3, chargeup: 3, rad: 3, radup: 3, snuff: 3, whoosh: 3, laser: 3, sizzle: 4, deny: 3,
+  step: 4, glass: 4, 'c.glass': 4, 'c.clang': 4, 'c.thud': 4, 'a.thud': 4, 'a.ping': 4, crackle: 4, 'c.crackle': 4, 'c.alarm': 4, 'c.splash': 4, 'c.hiss': 4,
+};
+const TIER_GAIN = 0.9;   // tier 1 at full loudness, with headroom for a few at once into the compressor
+const MAX_VOICES = 12;          // everything at once
 const BUDGET = 3.2;             // the summed gain of what is playing; past it only more important sounds start
-const QUIET = 0.05;             // a sound that would start below this gain is not started
+const QUIET = 0.006;            // a sound that would start below this gain (about -44 dB) is not started
 const ARMY_RANGE = 450;         // gunfire carries further than the rest
 const RANGE = 280;              // world units at which a positioned sound has faded to nothing (U = 2.5: 112 m)
 
@@ -50,7 +68,7 @@ const CUES = {
   rad:      { gap: 0.25, n: 1, pri: 2, len: 0.5 },
   radup:    { gap: 0.4, n: 1, pri: 1, len: 0.6 },
   // what breaks (src/sim.js, src/main.js)
-  crumble:  { gap: 0.2, n: 2, pri: 1, len: 0.5, clip: 'crumble' },
+  crumble:  { gap: 0.3, n: 2, pri: 1, len: 0.5, clip: 'crumble' },
   collapse: { gap: 0.35, n: 2, pri: 3, len: 1.6, clip: 'collapse', duck: true },
   creak:    { gap: 0.6, n: 1, pri: 1, len: 0.6, clip: 'creak' },
   glass:    { gap: 0.18, n: 2, pri: 1, len: 0.3, clip: 'glass' },
@@ -116,7 +134,7 @@ const LAYERS = {
 };
 // Loudness of a picked take (they are all levelled alike by tools/sfx/options.py) next to the rest of the mix.
 const STEP_PITCH = 0.55;   // footsteps played lower than recorded (Will, 2026-11-20: lower pitch, lower in the mix)
-const PICK_GAIN = { step: 0.2, level: 0.8, glass: 0.6, roar: 1.2, crumble: 0.9, collapse: 1.2, quake: 1.3, 'a.rifle': 1.1, 'a.mg': 1.1, 'a.cannon': 1.2, 'c.boom': 1.4, 'c.crunch': 1, wingslice: 1.1 };
+const PICK_GAIN = {};   // (levels now come from TIERS; kept for one-off corrections)
 // Loops: steady beds whose loudness follows what is going on, in place of hundreds of one-shots a second.
 // scrape: Chompers grinding into a building, fed by what he breaks; rubble: the debris trickle after it;
 // distant: destruction elsewhere in the city, muffled; city: the city itself (traffic, people), fading as it empties;
@@ -226,15 +244,16 @@ export function makeMixer({ camera }) {
       if (bank) decode();
     } catch (e) { ctx = null; }
   }
-  function load(b) { bank = b; if (ctx) decode(); }
+  let normOf = {};
+  function load(b, norm) { bank = b; normOf = norm || {}; if (ctx) decode(); }
   function decode() {
     for (const [set, list] of Object.entries(bank)) {
       buffers[set] = buffers[set] || [];
-      for (const u8 of list) {
+      list.forEach((u8, i) => {
         const ab = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
-        const done = (buf) => buffers[set].push(buf);
+        const done = (buf) => { buf.__n = (normOf[set] || [])[i] || 1; buffers[set].push(buf); };
         try { const p = ctx.decodeAudioData(ab, done, () => {}); if (p && p.catch) p.catch(() => {}); } catch (e) {}
-      }
+      });
     }
   }
 
@@ -270,8 +289,10 @@ export function makeMixer({ camera }) {
     // the new limits
     const gap = C.gap * (grp === 'rival' ? 1.5 : 1);
     if (lastAt[ok(cue)] !== undefined && clock - lastAt[ok(cue)] < gap) return drop(cue, 'gap');
-    let g = vol * (at ? at.gain : 1) * (CLIP_GAIN[C.clip] || 0.7);
-    if (grp !== 'me' && grp !== 'ui' && duckT > clock) g *= 0.5;
+    const tier = TIER[cue] || 3;
+    let g = vol * (at ? at.gain : 1) * TIER_GAIN * Math.pow(10, TIER_DB[tier] / 20) * T('tier:' + tier);
+    // ducking: for a moment after Chompers lands something big, everything below the anchor steps back 5 dB
+    if (duckT > clock && (tier > 1 || grp !== 'me')) g *= 0.56;
     // footsteps sit under the action, as games mix them: quieter while he is grinding through a building
     if (cue === 'step') { const L = loopState.scrape, D = LOOPS.scrape; if (L) g *= 1 - 0.6 * (1 - Math.exp(-L.drive / D.scale)); }
     g *= T(cue) * T('grp:' + grp);
@@ -288,7 +309,7 @@ export function makeMixer({ camera }) {
     if (!victim && load + g > BUDGET && pri < 3) { const w = weakest(voices, pri); if (!w) return drop(cue, 'loud mix'); victim = w; }
     if (victim) stop(victim);
     lastAt[ok(cue)] = clock;
-    if (C.duck && grp === 'me') duckT = clock + 0.7;
+    if (grp === 'me' && tier === 1 && g > 0.3) duckT = Math.max(duckT, clock + (C.duck ? 0.7 : 0.35));
     const v = { cue, grp, pri, g, end: clock + C.len, node: null };
     if (ctx && ctx.state === 'running') v.node = sound(cue, C, g, at, grp, v, size);
     recent[cue] = { t: clock, g };
@@ -312,11 +333,11 @@ export function makeMixer({ camera }) {
     // a bigger monster sounds deeper and heavier
     const deep = 1.12 - 0.3 * size;
     // a take Will picked on the sound board (clip set m_<cue>) plays in place of the layer stack, a little deeper for a bigger monster
-    const picked = buffers['m_' + cue];
+    const picked = buffers['m_' + cue];   // (each clip carries its levelling gain as buf.__n)
     if (picked && picked.length) {
       const buf = picked[Math.floor(Math.random() * picked.length)];
       const s = ctx.createBufferSource(); s.buffer = buf; s.playbackRate.value = (1.06 - 0.12 * size) * (cue === 'step' ? STEP_PITCH * (0.94 + Math.random() * 0.1) : 0.96 + Math.random() * 0.08);
-      const vg = ctx.createGain(); vg.gain.value = g * (PICK_GAIN[cue] || 1); s.connect(vg); vg.connect(to); s.start();
+      const vg = ctx.createGain(); vg.gain.value = g * (buf.__n || 1) * (PICK_GAIN[cue] || 1); s.connect(vg); vg.connect(to); s.start();
       v.end = clock + buf.duration / s.playbackRate.value;
       return out;
     }
@@ -329,7 +350,7 @@ export function makeMixer({ camera }) {
         const buf = set[Math.floor(Math.random() * set.length)];
         const s = ctx.createBufferSource(); s.buffer = buf;
         s.playbackRate.value = (L.rate || 1) * deep * (0.94 + Math.random() * 0.12);
-        const lg = ctx.createGain(); lg.gain.value = g * L.g * (L.sub ? 0.3 + 0.9 * size : 1);
+        const lg = ctx.createGain(); lg.gain.value = g * L.g * (buf.__n || 1) * (L.sub ? 0.3 + 0.9 * size : 1);
         const d = (L.d || 0) * (1 + size * 0.6);
         s.connect(lg); lg.connect(to); s.start(t0 + d); any = true;
         end = Math.max(end, d + buf.duration / s.playbackRate.value);
@@ -340,12 +361,12 @@ export function makeMixer({ camera }) {
     if (set && set.length) {
       const buf = set[Math.floor(Math.random() * set.length)];
       const s = ctx.createBufferSource(); s.buffer = buf; s.playbackRate.value = deep * (0.92 + Math.random() * 0.16);
-      const vg = ctx.createGain(); vg.gain.value = g; s.connect(vg); vg.connect(to); s.start();
+      const vg = ctx.createGain(); vg.gain.value = g * (buf.__n || 1); s.connect(vg); vg.connect(to); s.start();
       v.end = clock + buf.duration / s.playbackRate.value;
       return out;
     }
     const recipe = SYNTH[cue]; if (!recipe) return out;
-    const k = g / (CLIP_GAIN[C.clip] || 0.7);   // the recipes carry their own loudness
+    const k = g * 1.4;   // the synth recipes carry their own loudness
     recipe(synthTo(to), k, 0.85 + Math.random() * 0.3);
     return out;
   }
