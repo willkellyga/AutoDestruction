@@ -52,7 +52,7 @@ const PICKUP_SPOTS = [
   { kind: 'scrap', x: CX + 30, z: CZ, rivals: false }, { kind: 'scrap', x: CX - 30, z: CZ, rivals: false },   // (bait for you alone)
 ];
 // the sweeper: three blades from 14 out to 46 round the middle, a turn every twelve seconds (twice as fast in a spin cycle)
-const SWEEP = { kind: 'sweeper', x: CX, z: CZ, n: 3, r0: 14, r1: 46, spin: TAU / 12, top: 27, wild: 'spin' };
+const SWEEP = { kind: 'sweeper', x: CX, z: CZ, n: 3, r0: 14, r1: 46, spin: TAU / 12, top: 40, wild: 'spin' };
 // a hammer under each gantry, swinging across its straight (along z), the two out of step
 const HAMMERS = [
   { kind: 'hammer', x: 256, z: 76, y: 32, len: 26.5, axis: 'z', lane: 30, wild: 'hammer', offset: 4 },
@@ -66,7 +66,7 @@ const JETS = { kind: 'jets', len: 26, wild: 'fire', jets: CORNERS.flatMap(([x, z
   return { x: x + Math.cos(a) * (WALL.r - 1), z: z + Math.sin(a) * (WALL.r - 1), a: a + Math.PI, group, step: i - 1 };
 })) };
 // the magnet over the fuel depot, hung from the crane behind the east wall
-const MAGNET = { kind: 'magnet', x: 440, z: 208, r: 48, y: 24, top: 54, wild: 'spin' };
+const MAGNET = { kind: 'magnet', x: 440, z: 208, r: 48, y: 36, top: 54, wild: 'spin' };
 // the press's pad runs right up to its column, so a car held out of it is never squeezed into the column
 const PRESS = { kind: 'press', x0: 70, z0: 190, x1: 109, z1: 226, top: 46, rods: [[88, 198], [88, 218]], shut: ['x1'], wild: 'hammer' };   // rods up into the arm's tie
 // and a belt either side of it on the inside line, both running into it
@@ -287,7 +287,7 @@ function centre() {
   box(CX - 50, 60, CZ - 50, CX + 50, 62, CZ - 48, M.STEEL); box(CX - 50, 60, CZ + 48, CX + 50, 62, CZ + 50, M.STEEL);
   box(CX - 50, 60, CZ - 50, CX - 48, 62, CZ + 50, M.STEEL); box(CX + 48, 60, CZ - 50, CX + 50, 62, CZ + 50, M.STEEL);
   box(CX - 50, 61, CZ - 1, CX + 50, 63, CZ, M.STEEL); box(CX - 1, 61, CZ - 50, CX, 63, CZ + 50, M.STEEL);   // the cross the screen sits on
-  for (let y = 28; y <= 63; y++) disc(CX, CZ, y, y < 31 ? 4 : 2.6, y < 31 ? M.DARK : M.STEEL);   // the sweeper's column
+  for (let y = 41; y <= 63; y++) disc(CX, CZ, y, y < 44 ? 4 : 2.6, y < 44 ? M.DARK : M.STEEL);   // the sweeper's column
   begin('Big screen', 'sign', true);
   const x0 = CX - 22, x1 = CX + 21, z0 = CZ - 22, z1 = CZ + 21;
   walls(x0, 64, z0, x1, 81, z1, M.DARK); box(x0, 64, z0, x1, 64, z1, M.DARK); box(x0, 81, z0, x1, 81, z1, M.STEEL);

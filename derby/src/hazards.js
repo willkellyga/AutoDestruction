@@ -30,6 +30,8 @@
 //   show     the announcer: every so often it calls an event (a banner and a siren), and for a while the hazards whose
 //            `wild` names that event's tag go wild (faster, more often, all at once). { first, every, time,
 //            events: [{ tag, name, sub }], onEvent(event) }
+// Keep what hangs over the floor (a sweeper's drum and beams, a magnet) above about 30: the chase camera rides from 23
+// to 28 up behind the car, and would pass through it.
 // None of them are voxels: they are meshes that move and glow, so nothing has to be rebuilt. The map's own list objects
 // carry their live state, for its radar and its route grid: a grate ring's `hot` and `warn` (which pair, or -1), a
 // press's `low` and `danger`, each barrel spot's `up`, a sweeper's `angle`, a hammer's `head` and `low`, each jet's
@@ -465,7 +467,7 @@ function keepout(api, h) {
 
 // ---- the sweeper -------------------------------------------------------------------------------------------------
 function sweeper(api, h, S) {
-  const N = h.n ?? 3, R0 = h.r0 ?? 12, R1 = h.r1 ?? 46, SPIN = h.spin ?? 0.52, DMG = h.dmg ?? 20, TOP = h.top ?? 27, LEAD = 0.55;
+  const N = h.n ?? 3, R0 = h.r0 ?? 12, R1 = h.r1 ?? 46, SPIN = h.spin ?? 0.52, DMG = h.dmg ?? 20, TOP = h.top ?? 40, LEAD = 0.55;
   const steel = steelMat(), side = new THREE.MeshStandardMaterial({ map: stripesTex([(R1 - R0) / 8, 1]), roughness: 0.6, metalness: 0.2 });
   const drumSide = new THREE.MeshStandardMaterial({ map: stripesTex([4, 1]), roughness: 0.6, metalness: 0.2 });
   const [lampOff, lampOn] = lampMats(3.2, 0.3, 0.15);
@@ -780,7 +782,7 @@ function jets(api, h, S) {
 // rest, then warn (it hums up and glows, rings run in across the floor), pull (everything in reach is dragged in toward
 // the point under it; at the middle it holds them, and sparks), drop (it lets go, with a clang), rest again.
 function magnet(api, h, S) {
-  const R = h.r ?? 48, Y = h.y ?? 24, TOP = h.top ?? 54, REST = h.rest ?? 6, WARN = h.warn ?? 1.6, PULL = h.pull ?? 3.6, DPS = h.dps ?? 7;
+  const R = h.r ?? 48, Y = h.y ?? 36, TOP = h.top ?? 54, REST = h.rest ?? 6, WARN = h.warn ?? 1.6, PULL = h.pull ?? 3.6, DPS = h.dps ?? 7;
   const steel = steelMat(), dark = new THREE.MeshStandardMaterial({ color: 0x24272c, roughness: 0.6, metalness: 0.6 });
   const rim = new THREE.MeshStandardMaterial({ map: canvasTex(128, 16, (g, W, H) => { for (let x = 0; x < W; x += 16) { g.fillStyle = (x / 16) & 1 ? '#e8e4da' : '#c8302a'; g.fillRect(x, 0, 16, H); } }, [3, 1]), roughness: 0.5, metalness: 0.3 });
   const copper = new THREE.MeshStandardMaterial({ color: 0xb86a32, roughness: 0.35, metalness: 0.85 });

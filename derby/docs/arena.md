@@ -312,10 +312,13 @@ player hopped round the arena every six seconds so that the rivals chased it eve
   past the cover a cell at a time. It now takes the furthest point it can see that is clear of walls and hazards.
 - **Rivals in the blades.** Rivals drove into the sweeper for the scrap among its blades. That scrap is now bait for
   the player alone.
-- **Results.** In a three-minute round with eight rivals:
-  - rivals reached 84% of the floor, as much as on the first arena;
-  - the longest any rival stood still was 3.5 seconds (held by the magnet during a spin cycle);
-  - all three events came round;
-  - the set pieces caused damage of their own (sweeper 17 hits, hammers 4, press 4, jets 212 health in all, magnet
-    34);
-  - there were no page errors.
+- **The camera.** The chase camera rides 23 to 28 voxels up behind the car. The sweeper's drum and beams and the
+  magnet first hung at 21 to 27, so the camera passed through them. They now hang above 30. A pickup's beam fades
+  out as the camera comes up to it, so the camera never sits inside a wall of light.
+- **Results.** We ran three three-minute rounds with eight rivals:
+  - Rivals reached 71% to 84% of the floor (the first arena: 84%). The parts they reached least were the west end, round
+    the press and belts, and the south-west corner. Rivals keep out of those while they are live.
+  - In two rounds the longest any rival stood still was 2.5 and 3.5 seconds; the 3.5 was a rival held by the magnet. In
+    the third, one rival was pressed into the south concrete wall for about eight seconds before it worked free.
+  - All three events came round in every round, and every set piece hurt rivals.
+  - There were no page errors.

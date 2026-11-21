@@ -193,7 +193,9 @@ export function makePickups(api, spots = []) {
         p.model.visible = p.beam.visible = true;
         p.spin += dt * 2.2; p.model.rotation.y = p.spin; p.model.position.y = 6 + Math.sin(T * 2.6 + p.x) * 0.8;
         p.ring.material.opacity = 0.55 + 0.3 * Math.sin(T * 4 + p.z);
-        p.beam.material.opacity = 0.32 + 0.1 * Math.sin(T * 3 + p.x);
+        // (the beam fades out as the camera comes up to it, so the camera never sits in a wall of light)
+        const near = Math.min(1, Math.max(0, (Math.hypot(api.camera.position.x - p.x, api.camera.position.z - p.z) - 3) / 10));
+        p.beam.material.opacity = (0.32 + 0.1 * Math.sin(T * 3 + p.x)) * near;
         if (!on) continue;
         // taken by the first car whose box it is in
         for (const c of cars) {
