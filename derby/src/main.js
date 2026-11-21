@@ -845,13 +845,13 @@ function stepCamera(dt) {
   cam.cx += (c.x - cam.cx) * Math.min(1, dt * 12); cam.cz += (c.z - cam.cz) * Math.min(1, dt * 12);
   const dist = cam.dist * (tall ? 1.2 : 1) * (1 + clamp(Math.abs(c.fwd) / 300, 0, 0.25));
   _tgt.set(cam.cx, 7.5, cam.cz);
-  // how far back the camera can sit before a wall; lamps, props, rubble and low barriers don't count (it looks past them)
+  // how far back the camera can sit before a wall; lamps, props and rubble don't count (it looks past them)
   const room = (pitch) => {
     const bx = -Math.sin(cam.yaw) * Math.cos(pitch), by = Math.sin(pitch) + 0.15, bz = -Math.cos(cam.yaw) * Math.cos(pitch);
     for (let t = 4; t < dist; t += 1.5) {
       const i = idx(Math.floor(_tgt.x + bx * t), Math.floor(_tgt.y + by * t), Math.floor(_tgt.z + bz * t));
       if (!solid(Math.floor(_tgt.x + bx * t), Math.floor(_tgt.y + by * t), Math.floor(_tgt.z + bz * t))) continue;
-      const b = bodies[ownerAt(i)]; if (b && (b.kind === 'prop' || b.kind === 'rubble' || b.kind === 'barrier')) continue;
+      const b = bodies[ownerAt(i)]; if (b && (b.kind === 'prop' || b.kind === 'rubble')) continue;
       return Math.max(7, t - 2);
     }
     return dist;
