@@ -156,11 +156,19 @@ function build() {
 
 // ---- the painted ground: New York's, with the course laid over it ----------------------------------------------
 let grassy = null;   // the grass, a voxel at a time (for surface())
+// New York's ground is painted at four pixels a voxel (4096 square). Phones get it at half that, which keeps about
+// 110 MB off them (the picture on the page and its copy on the graphics chip); two pixels a voxel is still finer than
+// the speckle and the course's lines. The same test for a phone as main.js's.
+const PHONE = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0 && !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
 function paint() {
   const { T, grid } = full(), cv = groundCanvas(), g = cv.getContext('2d');
   paintCourse(g, T, grid, 62);
   grassy = grassOf(cv);
-  return cv;
+  if (!PHONE) return cv;
+  const half = document.createElement('canvas'); half.width = cv.width >> 1; half.height = cv.height >> 1;
+  const h = half.getContext('2d'); h.imageSmoothingQuality = 'high'; h.drawImage(cv, 0, 0, half.width, half.height);
+  cv.width = cv.height = 1;   // let the full-size picture go now rather than when it is collected
+  return half;
 }
 
 // The radar shows the part of the city the course is in (RADAR_BOX), not the whole map, so the course is big enough
