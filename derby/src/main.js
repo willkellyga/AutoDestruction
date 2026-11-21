@@ -650,7 +650,7 @@ function lockMouse() { if (canvas.requestPointerLock && !MOBILE) { try { const r
 
 // ---- controls ------------------------------------------------------------------------------------------------------
 const keys = {};
-const cam = { yaw: Math.PI, pitch: 0.18, dist: 30, locked: false, mx: 0, my: 0, cx: 0, cz: 0 };
+const cam = { yaw: Math.PI, pitch: 0.3, dist: 36, locked: false, mx: 0, my: 0, cx: 0, cz: 0 };
 const mouse = { b0: false, b2: false };
 addEventListener('keydown', (e) => {
   keys[e.code] = true; initAudio();
@@ -678,9 +678,9 @@ addEventListener('mousemove', (e) => {
   if (cam.drag && game.state === 'garage') { cam.orbit -= (e.clientX - cam.mx) * 0.01; }
   cam.mx = e.clientX; cam.my = e.clientY;
   // the aim slows a little over a rival, so it is easier to stay on one
-  if (cam.locked) { const f = 1 - 0.35 * (cam.sticky || 0); cam.yaw -= e.movementX * 0.0026 * f; cam.pitch = clamp(cam.pitch + e.movementY * 0.0022 * f, -0.25, 0.75); }
+  if (cam.locked) { const f = 1 - 0.35 * (cam.sticky || 0); cam.yaw -= e.movementX * 0.0026 * f; cam.pitch = clamp(cam.pitch + e.movementY * 0.0022 * f, 0.02, 0.75); }   // never down behind the car's back
 });
-addEventListener('wheel', (e) => { cam.dist = clamp(cam.dist + Math.sign(e.deltaY) * 3, 20, 52); }, { passive: true });
+addEventListener('wheel', (e) => { cam.dist = clamp(cam.dist + Math.sign(e.deltaY) * 3, 20, 60); }, { passive: true });
 $('go').addEventListener('click', () => { if (game.ended) chooseMap(MAP.id); else startGame(); });
 // the map picker on the start card: another map loads the page again on it
 {
@@ -761,7 +761,7 @@ function drivePlayer(dt) {
 const ray = new THREE.Raycaster(), _ndc = new THREE.Vector2(), _o = new THREE.Vector3(), _dir = new THREE.Vector3(), _tgt = new THREE.Vector3();
 function aimRay() {
   // through the middle of the screen when the mouse is captured, else through the pointer
-  if (cam.locked || !cam.mx) _ndc.set(0, 0.12); else _ndc.set(cam.mx / canvas.clientWidth * 2 - 1, -(cam.my / canvas.clientHeight * 2 - 1));
+  if (cam.locked || !cam.mx) _ndc.set(0, 0.2);   // the crosshair sits a little above the middle, clear of the car else _ndc.set(cam.mx / canvas.clientWidth * 2 - 1, -(cam.my / canvas.clientHeight * 2 - 1));
   ray.setFromCamera(_ndc, camera); _o.copy(ray.ray.origin); _dir.copy(ray.ray.direction);
   const p = new THREE.Vector3();
   for (let t = 4; t < 520; t += 1) {
@@ -840,31 +840,36 @@ function stepCamera(dt) {
   if (!cam.locked) {   // follow the car round its turns
     const want = Math.abs(c.fwd) > 8 && c.fwd < 0 ? c.yaw : c.yaw;
     cam.yaw += wrap(want - cam.yaw) * Math.min(1, dt * 2.6);
-    cam.pitch += ((tall ? 0.34 : 0.2) - cam.pitch) * Math.min(1, dt * 2);
+    cam.pitch += ((tall ? 0.4 : 0.3) - cam.pitch) * Math.min(1, dt * 2);   // up behind the car, so the road ahead shows over its roof
   }
   cam.cx += (c.x - cam.cx) * Math.min(1, dt * 12); cam.cz += (c.z - cam.cz) * Math.min(1, dt * 12);
-  const dist = cam.dist * (tall ? 1.3 : 1) * (1 + clamp(Math.abs(c.fwd) / 300, 0, 0.25));
+  const dist = cam.dist * (tall ? 1.2 : 1) * (1 + clamp(Math.abs(c.fwd) / 300, 0, 0.25));
   _tgt.set(cam.cx, 7.5, cam.cz);
-  // pull in when a wall is behind
+  // how far back the camera can sit before a wall; lamps, props, rubble and low barriers don't count (it looks past them)
   const room = (pitch) => {
     const bx = -Math.sin(cam.yaw) * Math.cos(pitch), by = Math.sin(pitch) + 0.15, bz = -Math.cos(cam.yaw) * Math.cos(pitch);
-    for (let t = 4; t < dist; t += 1.5) if (solid(Math.floor(_tgt.x + bx * t), Math.floor(_tgt.y + by * t), Math.floor(_tgt.z + bz * t))) return Math.max(5, t - 2);
+    for (let t = 4; t < dist; t += 1.5) {
+      const i = idx(Math.floor(_tgt.x + bx * t), Math.floor(_tgt.y + by * t), Math.floor(_tgt.z + bz * t));
+      if (!solid(Math.floor(_tgt.x + bx * t), Math.floor(_tgt.y + by * t), Math.floor(_tgt.z + bz * t))) continue;
+      const b = bodies[ownerAt(i)]; if (b && (b.kind === 'prop' || b.kind === 'rubble' || b.kind === 'barrier')) continue;
+      return Math.max(7, t - 2);
+    }
     return dist;
   };
-  // a wall behind: look over it from higher up if that sees more, else come in closer
+  // a wall behind: rise and look down over it rather than close in on the car, which would hide the road ahead
   let pitch = cam.pitch, dd = room(pitch);
-  if (dd < dist) for (const up of [0.35, 0.7, 1.05]) { const p2 = Math.min(1.25, cam.pitch + up), d2 = room(p2); if (d2 > dd + 4) { pitch = p2; dd = d2; } if (d2 >= dist) break; }
+  if (dd < dist) for (const up of [0.2, 0.45, 0.7, 0.95]) { const p2 = Math.min(1.25, cam.pitch + up), d2 = room(p2); if (d2 > dd + 2) { pitch = p2; dd = d2; } if (d2 >= dist * 0.85) break; }
   cam.p = cam.p === undefined ? pitch : cam.p + (pitch - cam.p) * Math.min(1, dt * 5);
   const bx = -Math.sin(cam.yaw) * Math.cos(cam.p), by_ = Math.sin(cam.p) + 0.15, bz = -Math.cos(cam.yaw) * Math.cos(cam.p);
   cam.d = cam.d === undefined ? dd : cam.d + (dd - cam.d) * Math.min(1, dt * (dd < cam.d ? 14 : 3));
   camera.position.set(_tgt.x + bx * cam.d, Math.max(2.5, _tgt.y + by_ * cam.d), _tgt.z + bz * cam.d);
   const sh = game.shake; if (sh > 0) camera.position.add(_o.set((Math.random() - 0.5) * sh * 1.6, (Math.random() - 0.5) * sh * 1.2, (Math.random() - 0.5) * sh * 1.6));
-  camera.lookAt(_tgt.x + Math.sin(cam.yaw) * 12, _tgt.y - 0.5, _tgt.z + Math.cos(cam.yaw) * 12);
+  camera.lookAt(_tgt.x + Math.sin(cam.yaw) * 16, _tgt.y - 0.5, _tgt.z + Math.cos(cam.yaw) * 16);
   camera.updateMatrixWorld();
   if (!c.dead) aimFor(c, dt);
   const ch = $('cross');
   if (TOUCH && aimLock) { _ts.copy(c.aim).project(camera); ch.style.left = `${(_ts.x * 0.5 + 0.5) * canvas.clientWidth}px`; ch.style.top = `${(-_ts.y * 0.5 + 0.5) * canvas.clientHeight}px`; }
-  else if (cam.locked || !cam.mx || TOUCH) { ch.style.left = '50%'; ch.style.top = `${(0.5 - 0.06) * 100}%`; } else { ch.style.left = cam.mx + 'px'; ch.style.top = cam.my + 'px'; }
+  else if (cam.locked || !cam.mx || TOUCH) { ch.style.left = '50%'; ch.style.top = `${(0.5 - 0.1) * 100}%`; } else { ch.style.left = cam.mx + 'px'; ch.style.top = cam.my + 'px'; }
   ch.classList.toggle('on', c.onTarget(0.08)); ch.classList.toggle('lock', !!aimLock);
 }
 
