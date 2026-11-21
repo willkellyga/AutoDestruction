@@ -11,7 +11,7 @@ import * as THREE from 'three';
 import { makeRacer } from './racer.js';
 
 const LAPS = 3, RESPAWN = 2.5, COUNT = 3;
-const PRIZE = [300, 200, 120, 80, 50, 30], PER_WRECK = 60;
+const PRIZE = [300, 200, 120, 80, 50, 30];   // by place (each rival you wreck already pays 100 as it happens)
 const TIERS = [1, 1, 2, 1, 2];        // the rivals' builds (rivalBuild in parts.js), front of the grid first
 const CLOSE = 40;                     // seconds the race stays open after the winner finishes
 const AFTER = 9;                      // seconds the rivals race on after the player finishes, before the results
@@ -110,7 +110,7 @@ export function makeRace(G) {
     const lines = order.map((r) => `${ord(r.place)}  ${r.name}  ${r.finished ? clock(r.finishT) : `lap ${Math.min(LAPS, Math.floor(r.passed / NG) + 1)}`}${r.wrecks ? ` (wrecked ${r.wrecks})` : ''}`);
     lines.push(`Best lap ${me.best ? clock(me.best) : '-'}  ·  You wrecked ${me.kills}`);
     const title = me.place === 1 ? 'You win!' : me.finished ? `${ord(me.place)} place` : 'Out of time';
-    G.over(title, lines, PRIZE[me.place - 1] + PER_WRECK * me.kills);
+    G.over(title, lines, PRIZE[me.place - 1]);
     phase = 'over';
   }
 
