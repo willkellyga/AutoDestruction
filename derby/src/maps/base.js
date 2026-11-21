@@ -549,7 +549,7 @@ function breach(G) {
 
 export default {
   id: 'base', name: 'Camp Deadfall', mode: 'survival',
-  blurb: 'An army base overrun by the dead. Every car for itself, and the horde is coming over the walls: be the last one running.',
+  blurb: 'An army base overrun by the dead, and more of them every minute. No fighting the other cars: outlast them all.',
   loading: ['Building the base', 'Raising the fences and the hangars'],
   outer: 0x8d8566,
   build, ground,
