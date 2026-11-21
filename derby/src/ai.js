@@ -80,7 +80,12 @@ export function makeDriver(car) {
     const lead = d / 340;
     car.aim.set(T.x + T.vx * lead + b.wob[0], 3 + b.wob[1] * 0.4, T.z + T.vz * lead + b.wob[2]);
     b.seenT = sees ? b.seenT + dt : 0;
-    car.fire = [sees && b.seenT > AI.reaction && d < AI.shoot && car.onTarget(0.18), sees && b.seenT > AI.reaction + 0.6 && d < AI.shoot && d > 24 && car.onTarget(0.1) && Math.random() < dt * 1.2];
+    const g0 = car.guns[0].g, g1 = car.guns[1] && car.guns[1].g, reach = Math.min(AI.shoot, (g0.range || AI.shoot) * 0.85);
+    let heavy = sees && b.seenT > AI.reaction + 0.6 && d < AI.shoot && d > 24 && car.onTarget(0.1) && Math.random() < dt * 1.2;
+    if (g1 && g1.mine) {   // mines: dropped when someone is on its tail
+      heavy = all.some((o) => o !== car && !o.dead && Math.hypot(o.x - car.x, o.z - car.z) < 50 && Math.abs(wrap(Math.atan2(o.x - car.x, o.z - car.z) - car.yaw)) > 2.2) && Math.random() < dt * 1.5;
+    }
+    car.fire = [sees && b.seenT > AI.reaction && d < reach && car.onTarget(0.18), heavy];
   }
   return { think, brain: b };
 }

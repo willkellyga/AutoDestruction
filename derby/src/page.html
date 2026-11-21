@@ -55,6 +55,71 @@ button.go:active { transform: skewX(-8deg) translateY(3px); box-shadow: 0 2px 0 
 #dead b { display: block; font-size: 70px; color: var(--red); font-weight: 900; font-style: italic; text-transform: uppercase; -webkit-text-stroke: 2px #2a0a0a; }
 #loading { position: fixed; inset: 0; display: grid; place-items: center; background: #1a1c20; z-index: 9; font: 900 italic 28px 'Trebuchet MS', system-ui, sans-serif; text-transform: uppercase; color: var(--hot); }
 #loading small { display: block; font: 14px system-ui, sans-serif; color: #fff7ea; opacity: 0.7; text-transform: none; margin-top: 8px; text-align: center; }
+#gad { margin-top: 5px; height: 8px; width: 40%; background: rgba(0,0,0,0.45); border: 2px solid var(--edge); border-radius: 3px; overflow: hidden; transform: skewX(-12deg); }
+#gad-fill { height: 100%; width: 100%; background: #6fb6ff; }
+#gad.ready #gad-fill { background: #8ef0ff; }
+#hint { left: 50%; bottom: 22px; transform: translateX(-50%); font-size: 15px; opacity: 0; transition: opacity 0.3s; padding: 8px 14px; border-radius: 8px; background: rgba(18,20,24,0.6); }
+#hint.on { pointer-events: auto; cursor: pointer; }
+body.in-garage .hud, body.in-garage #radar, body.in-garage #cross, body.in-garage #tags { display: none; }
+#hint.on { opacity: 1; }
+#hint kbd, .card kbd { display: inline-block; min-width: 18px; padding: 1px 6px; border: 1px solid rgba(255,255,255,0.4); border-bottom-width: 3px; border-radius: 4px; font: 600 13px system-ui, sans-serif; text-align: center; background: rgba(255,255,255,0.08); }
+.row { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; align-items: center; }
+button.alt { pointer-events: auto; font: 900 italic 20px 'Trebuchet MS', system-ui, sans-serif; text-transform: uppercase; color: var(--ink); background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.35); border-radius: 8px; padding: 12px 26px; cursor: pointer; transform: skewX(-8deg); }
+button.alt:hover { background: rgba(255,255,255,0.16); }
+#dead .row { margin-top: 18px; }
+/* ---- the garage ---- */
+#garage { position: fixed; inset: 0; z-index: 6; pointer-events: none; }
+#garage .g-name { position: absolute; left: 22px; top: 16px; pointer-events: none; }
+#garage .g-name b { display: block; font-size: clamp(34px, 6vw, 54px); color: var(--hot); font-weight: 900; font-style: italic; text-transform: uppercase; -webkit-text-stroke: 2px #2a1a0a; text-shadow: 0 4px 0 #2a1a0a; line-height: 1; }
+#garage .g-name span { font-size: 14px; opacity: 0.85; text-shadow: 0 1px 2px #000; }
+#garage .g-panel { position: absolute; right: 0; top: 0; bottom: 0; width: min(400px, 100vw); display: flex; flex-direction: column; background: rgba(16, 18, 22, 0.9); border-left: 2px solid var(--edge); pointer-events: auto; box-sizing: border-box; }
+.g-head { display: flex; justify-content: space-between; align-items: baseline; padding: 14px 16px 6px; }
+.g-head .g-t { font: 900 italic 22px 'Trebuchet MS', system-ui, sans-serif; text-transform: uppercase; }
+.g-scrap { font-size: 14px; } .g-scrap b { font-size: 24px; color: var(--hot); margin-left: 4px; }
+.g-stats { padding: 4px 16px 8px; display: grid; gap: 5px; }
+.g-stat { display: grid; grid-template-columns: 76px 1fr; align-items: center; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; opacity: 0.95; }
+.g-stat i { position: relative; height: 9px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden; transform: skewX(-12deg); }
+.g-stat s { position: absolute; left: 0; top: 0; bottom: 0; background: #d9dde3; text-decoration: none; transition: width 0.2s; }
+.g-stat.up s { background: #7fe07a; } .g-stat.down s { background: #ff7a5a; }
+.g-stat u { position: absolute; top: -1px; bottom: -1px; width: 2px; margin-left: -1px; background: #fff; text-decoration: none; opacity: 0.9; }
+.g-power { margin-top: 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+.g-power span { display: flex; justify-content: space-between; margin-bottom: 3px; } .g-power em { font-style: normal; color: #8ef0ff; font-weight: 700; }
+.g-power.over em { color: #ff6a4a; }
+.g-power div { display: flex; gap: 3px; } .g-power div b { flex: 1; height: 10px; border-radius: 2px; background: rgba(255,255,255,0.12); transform: skewX(-12deg); }
+.g-power div b.on { background: #49c6ff; box-shadow: 0 0 6px rgba(73,198,255,0.7); } .g-power div b.over { background: #ff5a3a; }
+.g-power.flash { animation: gflash 0.5s 2; } @keyframes gflash { 50% { filter: brightness(2.2); transform: translateX(4px); } }
+.g-nums { display: flex; justify-content: space-between; font-size: 12px; opacity: 0.75; margin-top: 2px; }
+.g-tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 12px; border-top: 1px solid var(--edge); border-bottom: 1px solid var(--edge); }
+.g-tabs button { font: 700 12px system-ui, sans-serif; color: var(--ink); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 5px; padding: 6px 8px; cursor: pointer; text-transform: uppercase; letter-spacing: 0.03em; }
+.g-tabs button.on { background: var(--hot); color: #2a1a0a; border-color: var(--hot); }
+.g-list { flex: 1; overflow-y: auto; padding: 8px 12px 12px; display: grid; gap: 8px; align-content: start; }
+.g-tip { font-size: 12px; opacity: 0.7; padding: 0 2px; }
+.g-card { text-align: left; font: 14px system-ui, sans-serif; color: var(--ink); background: rgba(255,255,255,0.05); border: 2px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 9px 11px; cursor: pointer; }
+.g-card:hover { background: rgba(255,255,255,0.1); }
+.g-card.eq { border-color: #7fe07a; background: rgba(127,224,122,0.08); }
+.g-card.try { border-color: var(--hot); background: rgba(255,179,58,0.1); }
+.g-card.dear .g-price { color: #ff8a6a; }
+.g-card .g-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.g-card strong { font: 900 italic 16px 'Trebuchet MS', system-ui, sans-serif; text-transform: uppercase; }
+.g-card p { margin: 3px 0 6px; font-size: 12.5px; opacity: 0.8; }
+.g-card .g-top b { font-size: 12px; white-space: nowrap; }
+.g-eq { color: #7fe07a; } .g-own { color: #cfe4ff; } .g-price { color: var(--hot); }
+.g-buy { color: #2a1a0a; background: var(--hot); padding: 2px 8px; border-radius: 4px; }
+.g-chips { display: flex; flex-wrap: wrap; gap: 4px; } .g-chips i { font-style: normal; font-size: 11px; padding: 1px 6px; border-radius: 3px; background: rgba(255,255,255,0.09); }
+.g-list h4 { margin: 6px 2px 0; font: 700 12px system-ui, sans-serif; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.8; }
+.g-sws { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.g-sw { aspect-ratio: 1; border-radius: 6px; border: 2px solid rgba(255,255,255,0.15); cursor: pointer; }
+.g-sw.eq { border-color: #fff; box-shadow: 0 0 0 2px var(--hot); }
+.g-pats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.g-pat { font: 700 12px system-ui, sans-serif; color: var(--ink); background: rgba(255,255,255,0.06); border: 2px solid rgba(255,255,255,0.12); border-radius: 6px; padding: 8px 4px; cursor: pointer; }
+.g-pat.eq { border-color: var(--hot); }
+.g-foot { padding: 10px 14px 14px; border-top: 1px solid var(--edge); display: flex; justify-content: center; }
+.g-foot .go { font-size: 22px; padding: 12px 46px; }
+@media (max-width: 760px) {
+  #garage .g-panel { top: auto; left: 0; width: 100%; height: 56vh; border-left: 0; border-top: 2px solid var(--edge); }
+  .g-stats { grid-template-columns: 1fr 1fr; column-gap: 12px; } .g-power, .g-nums { grid-column: 1 / -1; }
+  #garage .g-name { top: 10px; left: 14px; }
+}
 </style>
 <canvas id="view"></canvas>
 <canvas id="radar" width="150" height="150"></canvas>
@@ -62,20 +127,32 @@ button.go:active { transform: skewX(-8deg) translateY(3px); box-shadow: 0 2px 0 
 <div id="cross"></div>
 <div class="hud" id="wavebox"><div id="wave" class="big">Wave 1</div><div id="left"></div></div>
 <div class="hud" id="score"><div>Wrecked <b id="kills">0</b></div><div>Scrap <b id="scrap">0</b></div></div>
-<div class="hud" id="bars"><div id="labels"><span class="big">Armour</span><span>Rockets</span></div><div id="hp"><div id="hp-fill"></div><span id="hp-text">160</span></div><div id="sec"><div id="sec-fill"></div></div></div>
+<div class="hud" id="bars"><div id="labels"><span class="big">Armour</span><span id="sec-name">Rockets</span></div><div id="hp"><div id="hp-fill"></div><span id="hp-text">160</span></div><div id="sec"><div id="sec-fill"></div></div><div id="gad" hidden><div id="gad-fill"></div></div></div>
 <div class="hud" id="speedo"><span id="speed" class="big">0</span><small>km/h</small></div>
 <div class="hud" id="toast"></div>
 <div class="hud" id="banner"><b></b><span></span></div>
-<div class="card" id="dead" hidden><div><b>Wrecked!</b>New car in <span id="dead-t">3</span></div></div>
+<div class="hud" id="hint">Press <kbd>G</kbd> for the garage</div>
+<div class="card" id="dead" hidden><div><b>Wrecked!</b>New car in <span id="dead-t">3</span><div class="row"><button class="alt" id="dead-garage">Garage</button><button class="go" id="dead-go">Drive now</button></div></div></div>
 <div class="card" id="menu" hidden><div>
   <div class="title">Auto<em>Destruction</em></div>
   <div class="keys">
     <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive</span><span><kbd>Space</kbd> handbrake / drift</span>
     <span><b>Mouse</b> aim the turret</span><span><b>Wheel</b> camera distance</span>
-    <span><b>Left click</b> machine gun</span><span><b>Right click</b> or <kbd>F</kbd> rockets</span>
+    <span><b>Left click</b> roof gun</span><span><b>Right click</b> or <kbd>F</kbd> heavy weapon</span>
+    <span><kbd>Shift</kbd> gadget (nitro, repair)</span><span><kbd>G</kbd> garage between waves</span>
     <span>Ram walls to smash through</span><span><kbd>M</kbd> sound &nbsp; <kbd>Esc</kbd> free the mouse</span>
   </div>
-  <button class="go" id="go">Start the brawl</button>
-  <div class="note">Demo: wreck each wave of rival cars. Upgrades and timed battles come next.</div>
+  <div class="row"><button class="alt" id="menu-garage">Garage</button><button class="go" id="go">Start the brawl</button></div>
+  <div class="note">Wreck each wave of rival cars. Spend the scrap in the garage on guns, armour, rams, wheels and engines.</div>
 </div></div>
+<div id="garage" hidden>
+  <div class="g-name"><b>Garage</b><span>Drag to turn the car</span></div>
+  <div class="g-panel">
+    <div class="g-head"><span class="g-t">Your car</span><span class="g-scrap">Scrap<b>0</b></span></div>
+    <div class="g-stats"></div>
+    <div class="g-tabs"></div>
+    <div class="g-list"></div>
+    <div class="g-foot"><button class="go g-drive">Drive</button></div>
+  </div>
+</div>
 <div id="loading"><div>Building the city<small>Laying the streets and raising the buildings</small></div></div>

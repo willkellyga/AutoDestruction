@@ -1,99 +1,46 @@
-// A combat car: one of Monster Mayhem's street cars (civilian/src/cars.js) with a gun mount, a rocket pod and a ram
-// plow bolted on, arcade driving, and crashes that knock holes in the town through the game's own blast() (src/sim.js).
+// A combat car: a body, wheels, guns and a ram built from a build in the garage (carmodel.js, parts.js), arcade
+// driving, and crashes that knock holes in the town through the game's own blast() (src/sim.js).
 // The car's model space has +z forward and +x to the car's left; yaw 0 faces +z.
 import * as THREE from 'three';
 import { Unit } from '../../units/src/unit.js';
-import { CAR } from '../../civilian/src/cars.js';
 import { solid, idx, ownerAt, bodies, WX, WZ } from '../../src/world.js';
 import { blast, dust } from '../../src/sim.js';
-import { BODIES, GUNS, CRASH } from './tuning.js';
+import { CRASH } from './tuning.js';
+import { carDef, LOOSE } from './carmodel.js';
+import { PARTS, statsOf } from './parts.js';
 
-const OFF = [0, 0, 0, 0, 0, 0, 0], LIT = [0, 0, 0, 0, 0, 0, 1.012];
-const R_WHEEL = 1.25;   // wheel radius in town voxels (cars.js)
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 
-// The street car with one more clip, Race, that reads the wheels' spin and steer and the body's lean from u.state.
-// It never dies of lost cubes (dieAt above 1): health decides that, and kill() is called by hand.
-const RACE_CAR = {
-  ...CAR, dieAt: 5, start: 'Race',
-  clips: {
-    ...CAR.clips,
-    Race: { loop: true, speed: 0, pose: (t, u) => {
-      const s = u.state, a = s.spin || 0, st = s.steer || 0;
-      return { wFL: [a, st, 0], wFR: [a, st, 0], wRL: [a, 0, 0], wRR: [a, 0, 0], body: [s.pitch || 0, 0, s.roll || 0, 0, s.bob || 0, 0], lights: LIT, hazard: s.hazard ? LIT : OFF, barR: s.bars ? LIT : OFF, barB: s.bars ? LIT : OFF };
-    } },
-  },
-};
-
-// The bolt-on kit, on the same cube kit as the cars (eighth-metre cubes): a gun on a turning mount on the roof, a rocket
-// pod beside it and a plow on the nose. Our own design: welded plates, hazard stripes, a stubby barrel.
-const GUNMETAL = 0x3b3f45, STEEL = 0x8a9098, BRIGHT = 0xb9bfc7, DARKS = 0x202327, PLATE = 0x5a5e63, RUST = 0x7a4a2a, HAZ = 0xe2b21e, HAZK = 0x1a1a1a, OLIVE = 0x4f5a36, TIP = 0xc0402c;
-function kitDef(roofY, roofZ, noseZ, width, o) {
-  const c = (v) => Math.round(v * 2);   // voxels to cubes
-  const parts = [
-    { name: 'yaw', pivot: [0, c(roofY), c(roofZ)], box: [-4, 0, -4, 4, 2, 4], paint(v) { v.box(-4, 0, -4, 4, 1, 4, DARKS); v.box(-3, 1, -3, 3, 2, 3, STEEL); } },
-    { name: 'gun', parent: 'yaw', pivot: [0, 3, 0], box: [-4, -1, -5, 4, 5, 18], paint(v) {
-      v.box(-2, -1, -4, 2, 2, 3, GUNMETAL); v.box(-2, 2, -3, 2, 3, 2, STEEL);                                       // breech, and the feed on top
-      v.box(-3, 0, -5, -2, 2, 0, HAZK); v.box(2, 0, -5, 3, 2, 0, HAZK);                                              // the grips
-      v.box(-4, -1, 3, 4, 5, 4, PLATE); v.box(-4, 4, 3, 4, 5, 4, HAZ); v.box(-1, 1, 3, 1, 2, 4, DARKS);              // the shield, its striped top and the slot
-      v.box(-1, 0, 4, 1, 2, 16, BRIGHT); v.box(-2, -1, 9, 2, 3, 11, GUNMETAL); v.box(-1, 0, 16, 1, 2, 18, DARKS);    // barrel, its collar, the muzzle
-      if (o.chain) { v.box(-2, 0, 4, -1, 1, 15, STEEL); v.box(1, 0, 4, 2, 1, 15, STEEL); v.box(-1, 2, 4, 1, 3, 15, STEEL); }   // a chain gun has more barrels
-    } },
-  ];
-  if (o.pod) parts.push({ name: 'pod', parent: 'yaw', pivot: [5, 1, -3], box: [0, 0, -2, 4, 5, 8], paint(v) {
-    const col = o.pod === 'cannon' ? GUNMETAL : OLIVE;
-    v.box(0, 0, -2, 4, 4, 7, col); v.box(0, 0, -2, 4, 1, 7, DARKS); v.box(0, 4, 0, 4, 5, 5, HAZ);
-    if (o.pod === 'cannon') { v.box(1, 1, 7, 3, 3, 8, DARKS); }
-    else for (const i of [0, 2]) for (const j of [1, 3]) { v.set(i, j, 7, TIP); v.set(i + 1, j, 7, TIP); }
-  } });
-  // the plow: a wedge of plate across the nose, striped
-  const w = Math.ceil(c(width) / 2) + 1, k0 = c(noseZ) - 1;
-  parts.push({ name: 'plow', pivot: [0, 1, k0], box: [-w, 0, 0, w, 6, 4], paint(v) {
-    for (let j = 0; j < 6; j++) for (let i = -w; i < w; i++) {
-      const lean = j < 2 ? 3 : j < 4 ? 2 : 1;
-      for (let k = 0; k < lean; k++) v.set(i, j, k, k === lean - 1 && j >= 1 && j <= 4 ? ((((i + j) >> 1) & 1) ? HAZ : HAZK) : j === 0 ? DARKS : PLATE);
-    }
-    for (const i of [-w + 1, w - 2]) v.box(i, 0, -1, i + 1, 5, 0, RUST);   // the brackets that bolt it on
-  } });
-  return { kind: 'kit', h: 0.5, dieAt: 9, start: 'Idle', clips: { Idle: { loop: true, pose: () => ({}) } }, parts: () => parts };
-}
-
-// where the roof is on a car body: the height of its top layer of cubes and the middle of that layer front to back
-function roofOf(u) {
-  const p = u.parts.find((q) => q.name === 'body');
-  const { nx, ny, nz, col } = p; let top = -1, ks = 0, n = 0;
-  for (let j = ny - 1; j >= 0 && top < 0; j--) for (let k = 0; k < nz; k++) for (let i = 0; i < nx; i++) if (col[(k * ny + j) * nx + i] >= 0) { top = j; break; }
-  for (let k = 0; k < nz; k++) for (let i = 0; i < nx; i++) if (col[(k * ny + top) * nx + i] >= 0) { ks += k; n++; }
-  const h = p.h, r = u.rest.body.pos;
-  return { y: (p.j0 + top + 1) * h + r[1], z: (p.k0 + ks / n + 0.5) * h + r[2], nose: (p.k0 + nz) * h + r[2], tail: p.k0 * h + r[2], width: nx * h };
-}
-
 let SEED = 1;
-const _v = new THREE.Vector3(), _w = new THREE.Vector3();
+// A car's body is rebuilt after it is hit, which costs a millisecond or two. Hits pile up between rebuilds: each car is
+// rebuilt at most about twelve times a second, and no more than three cars in one frame (newFrame resets the count).
+let rebuilds = 3;
+export function newFrame() { rebuilds = 3; }
+const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _lp = new THREE.Vector3(), _ld = new THREE.Vector3(), _inv = new THREE.Matrix4();
 
 export class Vehicle {
   constructor(scene, mats, load, at) {
     this.load = load; this.name = load.name || 'You';
-    this.spec = BODIES[load.body];
-    const paint = load.paint === 'police' ? 'white' : load.paint;
-    this.unit = new Unit(RACE_CAR, mats, { type: this.spec.type, paint, seed: SEED++ });
-    Object.assign(this.unit.state, { spin: 0, steer: 0, roll: 0, pitch: 0, bob: 0, bars: this.spec.type === 'police' });
-    const roof = roofOf(this.unit);
-    this.half = (roof.nose - roof.tail) / 2; this.mid = (roof.nose + roof.tail) / 2; this.wide = roof.width / 2;
-    this.top = roof.y;
-    const sec = load.secondary ? GUNS[load.secondary] : null;
-    this.kit = new Unit(kitDef(roof.y - this.unit.rest.body.pos[1], roof.z - this.unit.rest.body.pos[2], roof.nose - this.unit.rest.body.pos[2], roof.width, { pod: sec ? (sec.fx === 'cannon' ? 'cannon' : 'rocket') : null, chain: load.primary === 'chain' }), mats, { seed: SEED++ });
-    this.unit.bones.body.add(this.kit.root);
+    this.spec = statsOf(load);
+    const seed = SEED++;
+    this.def = carDef(load, seed);
+    this.unit = new Unit(this.def, mats, { seed });
+    Object.assign(this.unit.state, { spin: 0, steer: 0, roll: 0, pitch: 0, bob: 0, yaw: 0, aim: 0, gunSpin: 0, saw: 0 });
+    const D = this.def.dims;
+    this.half = D.half; this.mid = D.mid; this.wide = D.wide; this.top = D.top; this.wheelR = D.wheelR;
     scene.add(this.unit.root);
-    this.maxHp = this.spec.hp * (load.armour || 1); this.hp = this.maxHp;
+    this.maxHp = this.spec.hp; this.hp = this.maxHp;
     this.x = at.x; this.z = at.z; this.yaw = at.yaw || 0; this.vx = 0; this.vz = 0; this.yawRate = 0;
-    this.steer = 0; this.throttle = 0; this.brake = 0;
+    this.steer = 0; this.throttle = 0; this.brake = 0; this.boost = 1; this.accelK = 1;
     this.aimYaw = this.yaw; this.aimPitch = 0; this.gunYaw = this.yaw; this.gunPitch = 0; this.turretTurn = 9;
     this.aim = new THREE.Vector3(at.x, 3, at.z + 40);
-    this.guns = [load.primary, load.secondary].filter(Boolean).map((k) => ({ key: k, g: GUNS[k], t: 0, left: 0, gapT: 0 }));
+    this.guns = [];
+    this.guns.push({ key: load.primary, g: PARTS.primary[load.primary] || PARTS.primary.mg, t: 0, left: 0, gapT: 0 });
+    if (load.secondary && load.secondary !== 'none' && PARTS.secondary[load.secondary]) this.guns.push({ key: load.secondary, g: PARTS.secondary[load.secondary], t: 0, left: 0, gapT: 0 });
+    this.gadget = this.spec.gadget; this.gadgetT = 0; this.boostT = 0;
     this.dead = false; this.deadT = 0; this.gone = false; this.hurtT = 0; this.lastBy = null;
-    this.smashT = 0; this.scrape = 0; this.spinA = 0;
+    this.smashT = 0; this.scrape = 0; this.spinA = 0; this.firing = 0;
   }
   get speed() { return Math.hypot(this.vx, this.vz); }
   get fwd() { return this.vx * Math.sin(this.yaw) + this.vz * Math.cos(this.yaw); }
@@ -105,11 +52,12 @@ export class Vehicle {
     if (this.dead) { this.throttle = 0; this.steer = 0; this.brake = 1; }
     // engine, brakes and drag
     const t = this.throttle;
-    if (t > 0) vf += (vf < 0 ? S.accel * 2.2 : S.accel * (1 - Math.max(0, vf) / S.top * 0.7)) * t * dt;
+    const top = S.top * this.boost, acc = S.accel * this.accelK;
+    if (t > 0) vf += (vf < 0 ? acc * 2.2 : acc * (1 - Math.max(0, vf) / top * 0.7)) * t * dt;
     else if (t < 0) vf += (vf > 0 ? -S.accel * 2.2 : -S.accel * 0.8 * (1 + vf / S.back)) * -t * dt;
     else vf *= Math.exp(-0.55 * dt);
     if (this.brake) vf *= Math.exp(-(this.dead ? 2.2 : 3.5) * this.brake * dt);
-    vf = clamp(vf, -S.back, S.top * (this.boost || 1));
+    vf = clamp(vf, -S.back, top);
     // turning: none standing still, full at about a third of top speed, a little less flat out
     const k = clamp(Math.abs(vf) / 26, 0, 1) * (1 - 0.25 * clamp(Math.abs(vf) / S.top, 0, 1));
     const want = this.steer * S.turn * k * Math.sign(vf || 1) * (this.drift ? 1.35 : 1);
@@ -190,11 +138,12 @@ export class Vehicle {
     this.gunPitch += clamp(clamp(pitch, -0.35, 0.7) - this.gunPitch, -step, step);
   }
   muzzle(which, out, dir) {
-    const b = this.kit.bones[which === 1 ? 'pod' : 'gun'];
-    this.unit.root.updateWorldMatrix(true, true);
+    const M = this.def.muzzles, b = this.unit.bones[which === 1 ? M.podBone : 'gun'];
     if (!b) return null;
-    b.localToWorld(out.set(which === 1 ? 1 : 0, which === 1 ? 1 : 0.5, which === 1 ? 4.2 : 9.2));
-    if (dir) { b.localToWorld(_w.set(which === 1 ? 1 : 0, which === 1 ? 1 : 0.5, 20)); dir.subVectors(_w, out).normalize(); }
+    this.unit.root.updateWorldMatrix(true, true);
+    const p = which === 1 ? M.pod : M.gun;
+    b.localToWorld(out.set(p[0], p[1], p[2]));
+    if (dir) { b.localToWorld(_w.set(p[0], p[1], p[2] + (which === 1 && M.podBone === 'mines' ? -4 : 4))); dir.subVectors(_w, out).normalize(); }
     return out;
   }
   // the gun lines up with the aim point closely enough to fire
@@ -208,21 +157,59 @@ export class Vehicle {
     const u = this.unit, s = u.state;
     if (!this.dead) {
       const vf = this.fwd;
-      this.spinA += vf / R_WHEEL * dt; s.spin = this.spinA;
+      this.spinA += vf / this.wheelR * dt; s.spin = this.spinA;
       s.steer += (this.steer * 0.5 - s.steer) * Math.min(1, dt * 12);
       // lean out of turns, dip under braking and lift under power, bob over the bumps
       const acc = (vf - (this._vf || 0)) / Math.max(dt, 1e-3); this._vf = vf;
       s.roll += (clamp(-this.yawRate * Math.abs(vf) * 0.0016, -0.09, 0.09) - s.roll) * Math.min(1, dt * 6);
       s.pitch += (clamp(-acc * 0.0009, -0.06, 0.06) - (s.pitch || 0)) * Math.min(1, dt * 5);
       s.bob = 0.06 * Math.sin(this.spinA * 0.7) * clamp(Math.abs(vf) / 40, 0, 1);
+      s.yaw = wrap(this.gunYaw - this.yaw); s.aim = this.gunPitch;
+      // the minigun's barrels wind up while it fires; the saws never stop
+      this.firing = Math.max(0, this.firing - dt);
+      this.barrelV = (this.barrelV || 0) + ((this.firing > 0 ? 30 : 0) - (this.barrelV || 0)) * Math.min(1, dt * 3);
+      s.gunSpin += this.barrelV * dt; s.saw += 24 * dt;
     }
     u.root.position.set(this.x, 0, this.z); u.root.rotation.y = this.yaw;
-    u.update(dt); this.kit.update(dt);
-    if (!this.dead) {
-      this.kit.bones.yaw.rotation.y = wrap(this.gunYaw - this.yaw);
-      this.kit.bones.gun.rotation.x = -this.gunPitch;
-      if (this.kit.bones.pod) this.kit.bones.pod.rotation.x = -this.gunPitch * 0.8 - 0.06;
+    const body = this.body || (this.body = u.parts.find((p) => p.name === 'body'));
+    let held = false;
+    this.rebuildT = (this.rebuildT || 0) - dt;
+    if (body.dirty && !body.more) {
+      if (this.rebuildT > 0 || rebuilds <= 0) { held = body.dirty; body.dirty = false; }
+      else { this.rebuildT = 0.08; rebuilds--; }
     }
+    u.update(dt);
+    if (held) body.dirty = held;
+  }
+  // wrecked: the guns, the pod and the ram are blown clear
+  blowParts(debris, point, push = 16) {
+    const u = this.unit; u.root.updateWorldMatrix(true, true);
+    const out = [];
+    for (const p of u.parts) {
+      if (!LOOSE.includes(p.name) || !p.count) continue;
+      out.length = 0; p.all(out, 0.6);
+      for (const [x, y, z, c] of out) {
+        _w.set(x, y, z); p.bone.localToWorld(_w);
+        const dx = _w.x - point.x, dz = _w.z - point.z, d = Math.hypot(dx, dz) + 0.01, s = push * (0.4 + Math.random());
+        debris(_w.x, _w.y, _w.z, dx / d * s, 6 + Math.random() * 14, dz / d * s, c, u.def.h * 2);
+      }
+      p.col.fill(-1); p.count = 0; p.dirty = true;
+    }
+  }
+  // where a round going along dir from p first meets one of the car's cubes (within reach voxels), or null. The car's
+  // box is bigger than the car (it takes in the turret, the mirrors and the ram), so hits are carved where the cubes are.
+  surface(p, dir, reach = 6, out = new THREE.Vector3()) {
+    this.unit.root.updateWorldMatrix(true, true);
+    let hit = false, bt = reach;
+    for (const part of this.unit.parts) {
+      if (!part.count) continue;
+      _inv.copy(part.bone.matrixWorld).invert(); _lp.copy(p).applyMatrix4(_inv); _ld.copy(dir).transformDirection(_inv);
+      const h = part.h;
+      for (let t = 0; t < bt; t += 0.1) {
+        if (part.at(Math.floor((_lp.x + _ld.x * t) / h - part.i0), Math.floor((_lp.y + _ld.y * t) / h - part.j0), Math.floor((_lp.z + _ld.z * t) / h - part.k0)) >= 0) { bt = t; hit = true; break; }
+      }
+    }
+    return hit ? out.copy(p).addScaledVector(dir, bt) : null;
   }
   // does a world point lie inside the car's box?
   inside(x, y, z, pad = 0) {
@@ -234,5 +221,5 @@ export class Vehicle {
   // the middle of the car, as a world point
   centre(out) { const s = Math.sin(this.yaw), c = Math.cos(this.yaw); return out.set(this.x + this.mid * s, 3, this.z + this.mid * c); }
   dust(n) { dust(this.x, 0.8, this.z, n, 5); }
-  dispose() { this.kit.dispose(); this.unit.dispose(); }
+  dispose() { this.unit.dispose(); }
 }
