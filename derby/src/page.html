@@ -87,7 +87,18 @@ body.in-garage .hud, body.in-garage #radar, body.in-garage #cross, body.in-garag
 .row { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; align-items: center; }
 button.alt { pointer-events: auto; font: 900 italic 20px 'Trebuchet MS', system-ui, sans-serif; text-transform: uppercase; color: var(--ink); background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.35); border-radius: 8px; padding: 12px 26px; cursor: pointer; transform: skewX(-8deg); }
 button.alt:hover { background: rgba(255,255,255,0.16); }
-#dead .row { margin-top: 18px; }
+#dead .row, #over .row { margin-top: 18px; }
+/* ---- picking a map on the start card, and the end of a round ---- */
+.maps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 18px auto 6px; max-width: 620px; }
+.maps button { pointer-events: auto; text-align: left; padding: 9px 10px 8px; border-radius: 8px; border: 2px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.06); color: var(--ink); cursor: pointer; font: 13px system-ui, sans-serif; }
+.maps button b { display: block; font: 900 italic 16px 'Trebuchet MS', system-ui, sans-serif; text-transform: uppercase; }
+.maps button i { font-style: normal; opacity: 0.7; font-size: 12px; }
+.maps button.on { border-color: var(--hot); background: rgba(255,179,58,0.16); }
+.maps button:hover { background: rgba(255,255,255,0.12); }
+.map-blurb { font-size: 14px; opacity: 0.85; min-height: 2.6em; max-width: 520px; margin: 4px auto 0; }
+@media (max-width: 560px) { .maps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+#over b.t { display: block; font-size: clamp(44px, 9vw, 70px); color: var(--hot); font-weight: 900; font-style: italic; text-transform: uppercase; -webkit-text-stroke: 2px #2a1a0a; }
+#over-l { font-size: 17px; margin-top: 10px; line-height: 1.6; }
 /* ---- the garage ---- */
 #garage { position: fixed; inset: 0; z-index: 6; pointer-events: none; }
 #garage .g-name { position: absolute; left: 22px; top: 16px; pointer-events: none; }
@@ -163,8 +174,10 @@ button.alt:hover { background: rgba(255,255,255,0.16); }
 <div class="hud" id="banner"><b></b><span></span></div>
 <div class="hud" id="hint">Press <kbd>G</kbd> for the garage</div>
 <div class="card" id="dead" hidden><div><b>Wrecked!</b>New car in <span id="dead-t">3</span><div class="row"><button class="alt" id="dead-garage">Garage</button><button class="go" id="dead-go">Drive now</button></div></div></div>
+<div class="card" id="over" hidden><div><b class="t" id="over-t">Round over</b><div id="over-l"></div><div class="row"><button class="alt" id="over-maps">Maps</button><button class="alt" id="over-garage">Garage</button><button class="go" id="over-go">Again</button></div></div></div>
 <div class="card" id="menu" hidden><div>
   <div class="title">Auto<em>Destruction</em></div>
+  <div class="maps" id="maps"></div><div class="map-blurb" id="map-blurb"></div>
   <div class="keys">
     <span class="desk-only"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive</span><span class="desk-only"><kbd>Space</kbd> handbrake / drift</span>
     <span class="desk-only"><b>Mouse</b> aim (it pulls onto rivals)</span><span class="desk-only"><b>Wheel</b> camera distance</span>
@@ -176,7 +189,7 @@ button.alt:hover { background: rgba(255,255,255,0.16); }
     <span class="touch-only">Ram walls to smash through</span><span class="touch-only">Tap the hint between waves for the garage</span>
   </div>
   <div class="row"><button class="alt" id="menu-garage">Garage</button><button class="go" id="go">Start the brawl</button></div>
-  <div class="note">Wreck each wave of rival cars. Spend the scrap in the garage on guns, armour, rams, wheels and engines.</div>
+  <div class="note" id="menu-note"></div>
 </div></div>
 <div id="garage" hidden>
   <div class="g-name"><b>Garage</b><span>Drag to turn the car</span></div>
@@ -189,4 +202,4 @@ button.alt:hover { background: rgba(255,255,255,0.16); }
   </div>
 </div>
 <div id="touch" hidden><div id="pad"></div><div id="stick"><div id="knob"></div></div><button class="tbtn" id="t-fire">Fire</button><button class="tbtn" id="t-heavy">Rockets</button><button class="tbtn" id="t-drift">Drift</button><button class="tbtn" id="t-boost" hidden>Nitro</button></div>
-<div id="loading"><div>Building the city<small>Laying the streets and raising the buildings</small></div></div>
+<div id="loading"><div>Building the map<small>Laying it out and raising the walls</small></div></div>

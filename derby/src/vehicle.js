@@ -93,7 +93,7 @@ export class Vehicle {
   }
   hits(x, z, yaw, out) {
     const s = Math.sin(yaw), c = Math.cos(yaw); let n = 0;
-    out.front = 0; out.back = 0; out.side = 0; out.soft = 0; out.hard = 0; out.x = 0; out.y = 0; out.z = 0;
+    out.front = 0; out.back = 0; out.side = 0; out.soft = 0; out.hard = 0; out.wall = 0; out.x = 0; out.y = 0; out.z = 0;
     for (const [lx, lz, kind] of this.probes()) {
       const wx = x + lx * c + lz * s, wz = z - lx * s + lz * c;
       for (const y of [2, 4]) {
@@ -101,6 +101,7 @@ export class Vehicle {
         if (!solid(ix, y, iz)) continue;
         const b = bodies[ownerAt(idx(ix, y, iz))], soft = !b || b.kind === 'rubble' || b.kind === 'prop';
         if (soft) out.soft++; else out.hard++;
+        if (b && b.kind === 'barrier') out.wall++;   // a map's barriers: a car bounces off, however fast
         if (kind === 0) out.front++; else if (kind === 1) out.back++; else out.side++;
         out.x += wx; out.y += y; out.z += wz; n++;
         break;
@@ -121,7 +122,7 @@ export class Vehicle {
     const into = H.front > H.back ? Math.max(0, vf) : H.back > H.front ? Math.max(0, -vf) : Math.abs(vs);
     const sp = this.speed;
     // what is only rubble, a lamp or a bin goes down at any speed; walls need some pace
-    if ((H.hard === 0 && sp > 3) || into > CRASH.smash) {
+    if (!H.wall && ((H.hard === 0 && sp > 3) || into > CRASH.smash)) {
       const r = H.hard === 0 ? 2.8 : (CRASH.hole + (into - CRASH.smash) * CRASH.holeK) * this.spec.ram;
       const dx = this.vx / (sp || 1), dz = this.vz / (sp || 1);
       const n = blast(H.x + dx * 1.5, 3.2, H.z + dz * 1.5, r, { ys: 0.9, dx: dx * 0.9, dz: dz * 0.9, dy: 0.25, push: 12 + into * 0.18, maxDebris: 160, core: 0.3, hard: 0.85 });

@@ -1,36 +1,19 @@
-// The rival drivers. Each picks a target (mostly the player, sometimes another rival), drives the street grid towards
-// it, cuts straight across once it has a clear run (through a wall if it is going fast enough), shoots once its gun
-// is on and it can see, and rams when close. When it is stuck it backs out and tries the other way.
-import { solid, STREET_X, STREET_Z, WX, WZ } from '../../src/world.js';
+// The rival drivers. Each picks a target (mostly the player, sometimes another rival), drives the map's routes towards
+// it (the town's street grid, or the route-finder on open maps), cuts straight across once it has a clear run (through
+// a wall if it is going fast enough), shoots once its gun is on and it can see, and rams when close. When it is stuck
+// it backs out and tries the other way.
+import { solid } from '../../src/world.js';
+import { MAP } from './maps/index.js';
 import { AI } from './tuning.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
-const near = (list, v) => { let b = 0; for (let i = 1; i < list.length; i++) if (Math.abs(list[i] - v) < Math.abs(list[b] - v)) b = i; return b; };
-const ON = 13;   // within this of a street's middle line a car is on that street
 
 // a clear line at car height between two points (every 3 voxels)
 export function clearLine(x0, z0, x1, z1, y = 3) {
   const d = Math.hypot(x1 - x0, z1 - z0), n = Math.ceil(d / 3);
   for (let i = 1; i < n; i++) { const t = i / n; if (solid(Math.floor(x0 + (x1 - x0) * t), y, Math.floor(z0 + (z1 - z0) * t))) return false; }
   return true;
-}
-
-// the next place to drive to on the way to (tx, tz) along the streets
-function waypoint(c, tx, tz, out) {
-  const ix = near(STREET_X, c.x), iz = near(STREET_Z, c.z), tix = near(STREET_X, tx), tiz = near(STREET_Z, tz);
-  const onX = Math.abs(c.x - STREET_X[ix]) < ON, onZ = Math.abs(c.z - STREET_Z[iz]) < ON;
-  if (!onX && !onZ) { out.x = STREET_X[ix]; out.z = STREET_Z[iz]; return out; }   // off the streets (smashed into a lot): the nearest crossing
-  // the target's own street, if it is on one we share
-  if (onX && ix === tix && Math.abs(tx - STREET_X[tix]) < ON) { out.x = STREET_X[ix]; out.z = tz; return out; }
-  if (onZ && iz === tiz && Math.abs(tz - STREET_Z[tiz]) < ON) { out.x = tx; out.z = STREET_Z[iz]; return out; }
-  // otherwise along this street to the crossing that turns towards the target
-  if (onX && (!onZ || Math.abs(tix - ix) <= Math.abs(tiz - iz))) {
-    let j = tiz; if (Math.abs(c.z - STREET_Z[j]) < 10 && ix !== tix) { out.x = STREET_X[ix + Math.sign(tix - ix)]; out.z = STREET_Z[j]; return out; }
-    out.x = STREET_X[ix]; out.z = STREET_Z[j]; return out;
-  }
-  let i = tix; if (Math.abs(c.x - STREET_X[i]) < 10 && iz !== tiz) { out.x = STREET_X[i]; out.z = STREET_Z[iz + Math.sign(tiz - iz)]; return out; }
-  out.x = STREET_X[i]; out.z = STREET_Z[iz]; return out;
 }
 
 export function makeDriver(car) {
@@ -53,7 +36,7 @@ export function makeDriver(car) {
     const sees = d < AI.see && clearLine(car.x, car.z, T.x, T.z, 4);
     // where to drive: straight at it with a clear run, else along the streets
     let gx, gz;
-    if (sees || d < 30) { gx = T.x; gz = T.z; } else { waypoint(car, T.x, T.z, b.wp); gx = b.wp.x; gz = b.wp.z; }
+    if (sees || d < 30) { gx = T.x; gz = T.z; } else { MAP.waypoint(car, T.x, T.z, b.wp); gx = b.wp.x; gz = b.wp.z; }
     const want = Math.atan2(gx - car.x, gz - car.z), off = wrap(want - car.yaw), sp = car.fwd;
     if (b.backT > 0) {   // backing out of a corner
       b.backT -= dt; car.throttle = -1; car.steer = b.backSteer; car.brake = 0; car.drift = false;
@@ -91,16 +74,4 @@ export function makeDriver(car) {
     car.fire = [(sees && b.seenT > AI.reaction && d < reach && car.onTarget(0.18)) || (arc && d < arc.g.range + 4), heavy];
   }
   return { think, brain: b };
-}
-
-// a place to come in from: a street end or a crossing far from the player
-export function spawnPoint(player, taken) {
-  const spots = [];
-  for (const x of STREET_X) for (const z of STREET_Z) spots.push({ x, z });
-  for (const x of STREET_X) { spots.push({ x, z: 14 }); spots.push({ x, z: WZ - 14 }); }
-  for (const z of STREET_Z) { spots.push({ x: 14, z }); spots.push({ x: WX - 14, z }); }
-  const free = spots.filter((p) => !solid(Math.floor(p.x), 3, Math.floor(p.z)) && taken.every((t) => Math.hypot(t.x - p.x, t.z - p.z) > 30));
-  free.sort((a, b) => (player ? Math.hypot(b.x - player.x, b.z - player.z) - Math.hypot(a.x - player.x, a.z - player.z) : 0));
-  const p = free[Math.floor(Math.random() * Math.min(5, free.length))] || spots[0];
-  return { x: p.x, z: p.z, yaw: player ? Math.atan2(player.x - p.x, player.z - p.z) : 0 };
 }

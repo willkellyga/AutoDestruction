@@ -6,10 +6,8 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import { WX, WZ, WY, CITY, solid, STREET_X, STREET_Z, SPAWN, bodies, ownerAt, idx } from '../../src/world.js';
+import { WX, WZ, WY, CITY, solid, bodies, ownerAt, idx } from '../../src/world.js';
 import * as world from '../../src/world.js';
-import { generateTown } from '../../src/town.js';
-import { groundCanvas } from '../../src/ground.js';
 import { look } from '../../src/mesh.js';
 import { hooks, stats, cfg, initSim, stepSim, blast, explode, setFocus, setParticleScale, sparks, dust } from '../../src/sim.js';
 import { makeCivilians } from '../../src/civilians.js';
@@ -18,7 +16,9 @@ import { DEFAULT_TRIMS } from '../../src/sfx-trims.js';
 import { SFX_BANK, SFX_NORM } from '../../src/sfx-bank.js';
 import { makeFx, WEAPONS } from '../../units/src/fx.js';
 import { Vehicle, newFrame } from './vehicle.js';
-import { makeDriver, spawnPoint, clearLine } from './ai.js';
+import { makeDriver, clearLine } from './ai.js';
+import { MAP, MAPS, chooseMap } from './maps/index.js';
+import { MODES } from './modes/index.js';
 import { CRASH, ROUND, AI } from './tuning.js';
 import { PAINTS, loadSave, keepSave, rivalBuild, RIVAL_NAMES } from './parts.js';
 import { makeGarage } from './garage.js';
@@ -65,19 +65,17 @@ function followSun(x, z) {   // the shadow box follows the player, in whole texe
   sun.target.position.copy(_sunC); sun.position.copy(_sunC).addScaledVector(SUN_DIR, 480);
 }
 
-// ---- the town ----------------------------------------------------------------------------------------------------
-generateTown();
-// no parked cars or buses: the streets are the arena (the town's other vehicles, if any, stay)
-{ const keep = world.vehicles.filter((v) => v.kind !== 'car' && v.kind !== 'bus' && v.kind !== 'school'); world.vehicles.length = 0; world.vehicles.push(...keep); }
+// ---- the map: built once as the page loads (maps/index.js picks which) ------------------------------------------
+MAP.build();
 {
-  const gTex = new THREE.CanvasTexture(groundCanvas()); gTex.colorSpace = THREE.SRGBColorSpace; gTex.anisotropy = 8;
+  const gTex = new THREE.CanvasTexture(MAP.ground()); gTex.colorSpace = THREE.SRGBColorSpace; gTex.anisotropy = 8;
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, 0, 0, WX, 0, 0, WX, 0, WZ, 0, 0, WZ]), 3));
   g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([0, 1, 1, 1, 1, 0, 0, 0]), 2));
   g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array([0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0]), 3));
   g.setIndex([0, 2, 1, 0, 3, 2]);
   const ground = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ map: gTex })); ground.receiveShadow = true; scene.add(ground);
-  const outer = new THREE.Mesh(new THREE.PlaneGeometry(6400, 6400), new THREE.MeshLambertMaterial({ color: 0x7fb069, depthWrite: false }));
+  const outer = new THREE.Mesh(new THREE.PlaneGeometry(6400, 6400), new THREE.MeshLambertMaterial({ color: MAP.outer ?? 0x7fb069, depthWrite: false }));
   outer.renderOrder = -1; outer.rotation.x = -Math.PI / 2; outer.position.set(WX / 2, -0.06, WZ / 2); scene.add(outer);
 }
 initSim(scene);
@@ -131,11 +129,14 @@ const chip = (x, y, z, vx, vy, vz, c, s) => { if (Math.random() < 0.07) debris.s
 // the scattergun's pellets: the rifle's round, with one bang for the whole blast
 WEAPONS.pellet = { ...WEAPONS.rifle, vol: 0, len: 3.5, w: 0.13, tracerEvery: 1 };
 const cars = [];   // every combat car, the player's first
+// other things on the map the guns can hit and blasts can hurt (a mode's zombies, say): each has
+// solid(x, y, z), hit(p, dmg, owner, gun, dir) and explosion(x, y, z, reach, base, by)
+const extras = [];
 let player = null;
 let by = null;      // whose shot or crash is breaking things right now (for scrap and kills)
 // what the guns' shots can strike: the combat cars
 const target = {
-  solid: (x, y, z) => { for (const c of cars) if (!c.gone && c.inside(x, y, z)) return true; return false; },
+  solid: (x, y, z) => { for (const c of cars) if (!c.gone && c.inside(x, y, z)) return true; for (const e of extras) if (e.solid(x, y, z)) return true; return false; },
   colorAt: (p) => { for (const c of cars) if (c.inside(p.x, p.y, p.z, 1)) return PAINTS[c.load.paint] ?? 0x777b82; return 0x777b82; },
   scorch() {}, update() {}, scorched: 0,
 };
@@ -172,6 +173,7 @@ hooks.explosion = (x, y, z, r) => {
     damage(c, base * k, by);
     const p = Math.max(1, Math.hypot(c.x - x, c.z - z)); c.vx += (c.x - x) / p * 30 * k; c.vz += (c.z - z) / p * 30 * k;
   }
+  for (const e of extras) e.explosion(x, y, z, reach, base, by);
 };
 // the town's parked cars blow up through a blast of their own (src/civilians.js); that should hurt as well
 const civBlast = hooks.blast;
@@ -204,13 +206,19 @@ function wreck(c, who) {
   sfx.play(c.maxHp > 200 ? 'bigboom' : 'carboom', 1, p.x, p.z);
   const was = by; by = who; splashK = { splash: 18, reach: 18 };
   try { explode(p.x, 2.5, p.z, 5.5, 0.6, { maxDebris: 260, fire: true }); } finally { by = was; splashK = null; }
-  if (c === player) { game.deaths++; game.state = 'dead'; game.deadT = ROUND.respawnPlayer; $('dead').hidden = false; keepSave(save); if (document.exitPointerLock) document.exitPointerLock(); }
+  if (c === player) {
+    game.deaths++; keepSave(save);
+    const r = mode.playerDown();
+    if (r && r.respawn !== undefined) { game.state = 'dead'; game.deadT = r.respawn; $('dead').hidden = r.respawn <= 0.01; $('dead-garage').hidden = !!r.noGarage; }
+    if (document.exitPointerLock && game.state === 'dead') document.exitPointerLock();
+  }
   else if (who === player) {
     game.kills++; game.scrap += 100; toast(`${c.name} wrecked`, '+100 scrap');
     game.killTimes = game.killTimes.filter((t) => game.time - t < 6); game.killTimes.push(game.time);
     if (game.killTimes.length === 3) { sfx.play('vo_rampage', 1); game.scrap += 75; setTimeout(() => toast('Rampage!', 'Three in a row: +75 scrap'), 900); }
   }
   else if (who && who !== c) toast(`${who.name} wrecked ${c.name}`, '');
+  mode.wrecked(c, who);
 }
 
 // ---- the weapons ------------------------------------------------------------------------------------------------
@@ -325,6 +333,10 @@ function onLand(s, hit, p) {
         c.unit.hit(q, g.carve, chip, 8);
         if (c.dead && g.splash) c.unit.hit(q, g.carve * 1.4, chip, 14);
         if (!g.splash) sfx.play('tink', 0.9, p.x, p.z, { gap: 0.045, jitter: 0.2 });
+      } else if (!c) {
+        let d = g.dmg * (s.owner && s.owner.rival ? AI.dmg : 1);
+        if (g.pellets) d *= clamp(1.3 - s.from.distanceTo(p) / g.range, 0.15, 1);
+        for (const e of extras) if (e.solid(p.x, p.y, p.z) && e.hit(p, d, s.owner, g, s.dir)) break;
       }
     } else if (hit === 3 && g.wall && !g.splash) {
       if (Math.random() < 0.7) blast(p.x, p.y, p.z, g.wall, { push: 6, maxDebris: 5, core: 0.2, pushDebris: false });
@@ -518,8 +530,8 @@ function drawRadar() {
   const R = radar, s = 150 / Math.max(WX, WZ), w = WX * s, h = WZ * s, ox = (150 - w) / 2, oy = (150 - h) / 2;
   R.clearRect(0, 0, 150, 150);
   R.fillStyle = 'rgba(20,24,28,0.55)'; R.fillRect(ox, oy, w, h);
-  R.strokeStyle = 'rgba(255,255,255,0.22)'; R.lineWidth = 24 * s;
-  R.beginPath(); for (const x of STREET_X) { R.moveTo(ox + x * s, oy); R.lineTo(ox + x * s, oy + h); } for (const z of STREET_Z) { R.moveTo(ox, oy + z * s); R.lineTo(ox + w, oy + z * s); } R.stroke();
+  MAP.radar(R, s, ox, oy, w, h);
+  if (mode.radar) mode.radar(R, s, ox, oy, w, h);
   for (const c of cars) {
     if (c.gone) continue;
     const x = ox + c.x * s, y = oy + c.z * s;
@@ -547,26 +559,37 @@ function drawHud() {
   $('gad').hidden = !every;
   if (every) { $('gad-fill').style.width = `${(1 - player.gadgetT / every) * 100}%`; $('gad').classList.toggle('ready', player.gadgetT <= 0); }
   $('kills').textContent = game.kills; $('scrap').textContent = Math.floor(game.scrap);
-  const left = cars.filter((c) => c.rival && !c.dead).length;
-  $('wave').textContent = `Wave ${game.wave}`; $('left').textContent = left === 1 ? '1 rival left' : `${left} rivals left`;
+  const [top, sub] = mode.hud(); $('wave').textContent = top; $('left').textContent = sub;
 }
 
-// ---- the round: waves of rivals ------------------------------------------------------------------------------------
+// ---- the round: the map's mode runs it (modes/) --------------------------------------------------------------------
 let rivalN = 0;
-function startWave(n) {
-  game.wave = n + 1; game.nextWave = 0; $('hint').classList.remove('on');
-  const W = ROUND.waves[Math.min(n, ROUND.waves.length - 1)], count = W.count + Math.max(0, n - ROUND.waves.length + 1);
-  // clear away the old wrecks' records (their models stay in the street a while)
-  for (let i = 0; i < count; i++) {
-    const load = { ...rivalBuild(n), name: RIVAL_NAMES[(rivalN++) % RIVAL_NAMES.length] };
-    addCar(load, spawnPoint(player, cars.filter((c) => !c.gone)), true);
-  }
-  banner(`Wave ${game.wave}`, `${count} rivals incoming`);
+// a rival with the build for wave n, coming in where the mode (or else the map) says
+function addRival(n, at) {
+  const load = { ...rivalBuild(n), name: RIVAL_NAMES[(rivalN++) % RIVAL_NAMES.length] };
+  return addCar(load, at || (mode.rivalSpawn && mode.rivalSpawn()) || MAP.spawnPoint(player, cars.filter((c) => !c.gone)), true);
 }
+function hint(html) { if (html) { $('hint').innerHTML = html; $('hint').classList.add('on'); } else $('hint').classList.remove('on'); }
+// the round is over: a card with how it went, and the way to the next one
+function over(title, lines = [], scrap = 0) {
+  if (game.state === 'over') return;
+  game.state = 'over'; game.scrap += scrap; keepSave(save); hint(null);
+  $('dead').hidden = true;
+  $('over-t').textContent = title;
+  $('over-l').innerHTML = ''; for (const l of [...lines, ...(scrap ? [`+${Math.round(scrap)} scrap`] : [])]) { const d = document.createElement('div'); d.textContent = l; $('over-l').appendChild(d); }
+  setTimeout(() => { if (game.state === 'over') { $('over').hidden = false; if (document.exitPointerLock) document.exitPointerLock(); } }, 1600);
+}
+const api = {
+  game, cars, extras, MAP, scene, mats, camera, sfx, save, cube, chip, blast, explode, sparks, dust, CRASH, ROUND, AI,
+  get player() { return player; }, TOUCH: () => TOUCH,
+  addCar, addRival, rivalBuild, RIVAL_NAMES, damage, wreck, banner, toast, hint, over, keepSave: () => keepSave(save), sound,
+  makeDriver, clearLine, spawnPlayer: (at) => spawnPlayer(at),
+};
+const mode = MODES[MAP.mode](api);
 function spawnPlayer(at) {
   if (!at) {
-    at = { x: SPAWN.x, z: SPAWN.z, yaw: Math.PI };
-    if (player) { const o = spawnPoint(null, cars.filter((c) => !c.gone && c !== player)); at.x = o.x; at.z = o.z; at.yaw = Math.random() * 6.28; }
+    at = { ...MAP.spawn };
+    if (player) { const o = (mode.respawnAt && mode.respawnAt(player)) || MAP.spawnPoint(null, cars.filter((c) => !c.gone && c !== player)); at.x = o.x; at.z = o.z; at.yaw = o.yaw ?? Math.random() * 6.28; }
   }
   if (player && !player.dead) { player.dispose(); cars.splice(cars.indexOf(player), 1); }   // a fresh build in place of the old one
   player = addCar({ ...save.load, name: 'You' }, at, false);
@@ -592,25 +615,26 @@ function openGarage(from) {
   if (document.exitPointerLock && cam.locked) document.exitPointerLock();
   // in the garage the car is fixed up: a fresh one where it stands (or at a spawn point if it was wrecked)
   const at = player && !player.dead ? { x: player.x, z: player.z, yaw: player.yaw } : null;
-  if (player && player.dead) { const o = spawnPoint(null, cars.filter((c) => !c.gone && c !== player)); player = null; spawnPlayer({ x: o.x, z: o.z, yaw: Math.random() * 6.28 }); } else spawnPlayer(at);
+  if (player && player.dead) { const o = (mode.respawnAt && mode.respawnAt(player)) || MAP.spawnPoint(null, cars.filter((c) => !c.gone && c !== player)); player = null; spawnPlayer({ x: o.x, z: o.z, yaw: Math.random() * 6.28 }); } else spawnPlayer(at);
   player.vx = player.vz = 0; cam.orbit = player.yaw + 0.8;
   garage.open();
 }
 function leaveGarage() {
   garage.close(); keepSave(save);
   const from = game.garageFrom; game.garageFrom = null;
+  if (game.ended) { chooseMap(MAP.id); return; }   // the round is over: a fresh map for the next one
   spawnPlayer({ x: player.x, z: player.z, yaw: player.yaw });
   cam.yaw = player.yaw;
   if (from === 'menu') { game.state = 'menu'; startGame(); return; }
   game.state = 'play';
-  if (from === 'break') game.nextWave = Math.max(game.nextWave, 2.5);
+  if (from === 'break' && mode.afterGarage) mode.afterGarage();
   sfx.play('start', 0.9); lockMouse();
 }
 function startGame() {
   initAudio(); $('menu').hidden = true; game.state = 'play';
   sfx.play('start', 0.9); setTimeout(() => sfx.play('ui_go', 0.8), 350);
   lockMouse();
-  startWave(0);
+  mode.start();
 }
 function lockMouse() { if (canvas.requestPointerLock && !MOBILE) { try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => { cam.noLock = true; }); } catch (err) { cam.noLock = true; } } }
 
@@ -622,7 +646,7 @@ addEventListener('keydown', (e) => {
   keys[e.code] = true; initAudio();
   if (e.code === 'KeyM') { muted = !muted; sfx.on = !muted; }
   if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight') && game.state === 'play' && player) gadget(player);
-  if (e.code === 'KeyG' && (game.state === 'menu' || game.state === 'dead' || (game.state === 'play' && game.nextWave > 0))) openGarage(game.state === 'play' ? 'break' : game.state);
+  if (e.code === 'KeyG' && (game.state === 'menu' || game.state === 'dead' || (game.state === 'play' && mode.garageOK()))) openGarage(game.state === 'play' ? 'break' : game.state);
   else if ((e.code === 'KeyG' || e.code === 'Escape') && game.state === 'garage') leaveGarage();
   if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
 });
@@ -646,7 +670,21 @@ addEventListener('mousemove', (e) => {
   if (cam.locked) { const f = 1 - 0.35 * (cam.sticky || 0); cam.yaw -= e.movementX * 0.0026 * f; cam.pitch = clamp(cam.pitch + e.movementY * 0.0022 * f, -0.25, 0.75); }
 });
 addEventListener('wheel', (e) => { cam.dist = clamp(cam.dist + Math.sign(e.deltaY) * 3, 20, 52); }, { passive: true });
-$('go').addEventListener('click', startGame);
+$('go').addEventListener('click', () => { if (game.ended) chooseMap(MAP.id); else startGame(); });
+// the map picker on the start card: another map loads the page again on it
+{
+  const box = $('maps');
+  for (const m of MAPS) {
+    const b = document.createElement('button'); b.className = m.id === MAP.id ? 'on' : '';
+    b.innerHTML = '<b></b><i></i>'; b.querySelector('b').textContent = m.name; b.querySelector('i').textContent = { waves: 'Waves', race: 'Race', survival: 'Last one standing' }[m.mode] || m.mode;
+    b.addEventListener('click', () => { if (m.id !== MAP.id || game.ended) chooseMap(m.id); });
+    box.appendChild(b);
+  }
+  $('map-blurb').textContent = MAP.blurb; $('go').textContent = mode.go; $('menu-note').textContent = mode.note;
+}
+$('over-go').addEventListener('click', () => chooseMap(MAP.id));
+$('over-maps').addEventListener('click', () => { $('over').hidden = true; game.ended = true; $('go').textContent = 'Play again'; $('menu').hidden = false; });
+$('over-garage').addEventListener('click', () => { $('over').hidden = true; game.ended = true; $('go').textContent = 'Play again'; openGarage('over'); });
 $('menu-garage').addEventListener('click', () => openGarage('menu'));
 $('dead-garage').addEventListener('click', () => openGarage('dead'));
 $('dead-go').addEventListener('click', () => { if (game.state === 'dead') game.deadT = 0; });
@@ -837,7 +875,8 @@ function frame(now) {
 }
 function step(dt) {
   game.time += dt; newFrame();
-  const live = game.state === 'play' || game.state === 'dead';
+  const live = game.state === 'play' || game.state === 'dead' || game.state === 'over';
+  if (MAP.step) MAP.step(dt);
   if (live) {
     drivePlayer(dt);
     for (const c of cars) if (c.driver) { c.driver.think(dt, cars, player); guns(c, dt, c.dead ? [] : c.fire || []); }
@@ -854,21 +893,12 @@ function step(dt) {
       game.deadT -= dt; $('dead-t').textContent = Math.max(0, Math.ceil(game.deadT));
       if (game.deadT <= 0) { $('dead').hidden = true; game.state = 'play'; spawnPlayer(); }
     }
-    // the next wave once this one is wrecked
-    if (game.state === 'play' && !cars.some((c) => c.rival && !c.dead)) {
-      if (!game.nextWave) {
-        game.nextWave = ROUND.breakTime; banner('Wave cleared', `+${50 * game.wave} scrap`); game.scrap += 50 * game.wave; keepSave(save);
-        sfx.play('vo_clear', 1);
-      }
-      game.nextWave -= dt;
-      $('hint').innerHTML = `Next wave in ${Math.max(0, Math.ceil(game.nextWave))} &middot; ${TOUCH ? 'tap here' : '<kbd>G</kbd> or click here'} for the garage`; $('hint').classList.add('on');
-      if (game.nextWave <= 0) { game.nextWave = 0; $('hint').classList.remove('on'); startWave(game.wave); }
-    }
+    mode.step(dt);
     if ((savedT += dt) > 15) { savedT = 0; keepSave(save); }
   }
   for (const c of cars) if (!c.gone) { if (!c.dead) c.point(dt); c.pose(dt); }
   stepCamera(dt);
-  const fc = player || { x: SPAWN.x, z: SPAWN.z };
+  const fc = player || MAP.spawn;
   setFocus(fc.x, fc.z); followSun(fc.x, fc.z);
   stepSim(dt);
   civ.update(dt, false); civ.packFar && civ.packFar();
@@ -895,10 +925,10 @@ function step(dt) {
   if (TOUCH) $('touch').hidden = game.state !== 'play';
   drawHud(); drawTags(); drawRadar();
 }
-$('hint').addEventListener('click', () => { if (game.state === 'play' && game.nextWave > 0) openGarage('break'); });
+$('hint').addEventListener('click', () => { if (game.state === 'play' && mode.garageOK()) openGarage('break'); });
 spawnPlayer();
 followSun(player.x, player.z);
 const loadEl = $('loading'); if (loadEl) loadEl.hidden = true;
 $('menu').hidden = false;
 requestAnimationFrame((t) => { last = t; frame(t); });
-window.__derby = { touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH }), useTouch, step, render: () => composer.render(), cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, startWave, damage, save, garage, openGarage, leaveGarage, startGame, sfx, mines, gadget, spawnPlayer, addCar };
+window.__derby = { touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH }), useTouch, step, render: () => composer.render(), cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, sfx, mines, gadget, spawnPlayer, addCar };
