@@ -27,6 +27,12 @@ The OFL lets the fonts be bundled and sold with a game. It asks that the copyrig
 
 The monster faces, bodies and the loading fight in `src/ui/` are rendered from our own models. The logo is our own (see the launch covers).
 
+| What | Where it is used | Source | Author | Licence |
+|---|---|---|---|---|
+| Natural Earth land outlines, 1:110m | The World Tour map's land (`playtest/tour/land-vec.json`), simplified outlines made by `tools/tour/land-vec.mjs`. Only those outlines are in the repository. | https://www.naturalearthdata.com/, read from `land-110m.json` in the `world-atlas` package 2.0.2 (https://github.com/topojson/world-atlas) | Natural Earth (the data); Mike Bostock (the `world-atlas` package) | Natural Earth is public domain, no credit needed. `world-atlas` is ISC. |
+
+The landmark pictures on the World Tour map (`src/ui/lm-*.webp`) are drawn from our own maps by `tools/tour/landmarks.mjs`.
+
 See the Credits section of `README.md` for the monster and town. The optional T-rex model is CC0.
 
 <!-- sounds:start -->
