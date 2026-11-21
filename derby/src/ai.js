@@ -1,10 +1,12 @@
 // The rival drivers. Each picks a target (mostly the player, sometimes another rival), drives the map's routes towards
 // it (the town's street grid, or the route-finder on open maps), cuts straight across once it has a clear run (through
 // a wall if it is going fast enough), shoots once its gun is on and it can see, and rams when close. When it is stuck
-// it backs out and tries the other way.
+// it backs out and tries the other way. On a map with pickups, a hurt rival makes for a repair kit (still shooting at
+// its target on the way), and any rival takes a pickup it is about to drive past.
 import { solid } from '../../src/world.js';
 import { MAP } from './maps/index.js';
 import { AI } from './tuning.js';
+import { pickupFor } from './pickups.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
@@ -34,12 +36,19 @@ export function makeDriver(car) {
     const T = b.target; if (!T) { car.throttle = 0; return; }
     const dx = T.x - car.x, dz = T.z - car.z, d = Math.hypot(dx, dz);
     const sees = d < AI.see && clearLine(car.x, car.z, T.x, T.z, 4);
-    // where to drive: straight at it with a clear run, else along the streets
+    // where to drive: to a pickup it wants (looked at again every half second), else straight at the target with a
+    // clear run, else along the streets
+    b.pkT = (b.pkT || 0) - dt;
+    if (b.pkT <= 0) { b.pkT = 0.5; b.pk = pickupFor(car, car.hp < car.maxHp * AI.mend); }
+    if (b.pk && !b.pk.up) b.pk = null;
     let gx, gz;
-    if (sees || d < 30) { gx = T.x; gz = T.z; } else { MAP.waypoint(car, T.x, T.z, b.wp); gx = b.wp.x; gz = b.wp.z; }
+    if (b.pk) { if (clearLine(car.x, car.z, b.pk.x, b.pk.z, 4)) { gx = b.pk.x; gz = b.pk.z; } else { MAP.waypoint(car, b.pk.x, b.pk.z, b.wp); gx = b.wp.x; gz = b.wp.z; } }
+    else if (sees || d < 30) { gx = T.x; gz = T.z; } else { MAP.waypoint(car, T.x, T.z, b.wp); gx = b.wp.x; gz = b.wp.z; }
     const want = Math.atan2(gx - car.x, gz - car.z), off = wrap(want - car.yaw), sp = car.fwd;
     if (b.backT > 0) {   // backing out of a corner
       b.backT -= dt; car.throttle = -1; car.steer = b.backSteer; car.brake = 0; car.drift = false;
+    } else if (b.fwdT > 0) {   // pulling forward out of a corner it backed into
+      b.fwdT -= dt; car.throttle = 1; car.steer = b.backSteer; car.brake = 0; car.drift = false;
     } else {
       car.steer = clamp(off * 2.2, -1, 1);
       car.throttle = Math.abs(off) > 1.4 && sp > 30 ? 0.2 : Math.abs(off) > 2.4 ? -0.6 : 1;
@@ -56,7 +65,9 @@ export function makeDriver(car) {
       // stuck: pressing on but going nowhere
       // stuck: pressing on but getting nowhere for a second
       b.chkT = (b.chkT || 0) + dt;
-      if (b.chkT > 1.1) { const moved = Math.hypot(car.x - (b.lx ?? car.x + 99), car.z - (b.lz ?? 0)); b.lx = car.x; b.lz = car.z; b.chkT = 0; if (moved < 5 && car.throttle > 0.5) { b.backT = 0.9 + Math.random() * 0.5; b.backSteer = -Math.sign(off || 1); } }
+      if (b.chkT > 1.1) { const moved = Math.hypot(car.x - (b.lx ?? car.x + 99), car.z - (b.lz ?? 0)); b.lx = car.x; b.lz = car.z; b.chkT = 0; if (moved < 5 && car.throttle > 0.5) { b.backT = 0.9 + Math.random() * 0.5; b.backSteer = -Math.sign(off || 1); }
+        // or backing round to face a target behind it, with something behind it too: pull forward for a moment instead
+        else if (moved < 5 && car.throttle < 0) { b.fwdT = 0.8 + Math.random() * 0.4; b.backSteer = Math.sign(off || 1); } }
     }
     // the gun: lead the target a little, wobble, and fire once it has been in sight for a moment
     b.wobT -= dt; if (b.wobT <= 0) { b.wobT = 0.5; for (let i = 0; i < 3; i++) b.wob[i] = (Math.random() - 0.5) * 2 * AI.aimErr; }
