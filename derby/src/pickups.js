@@ -6,9 +6,14 @@
 //   nitro    a burst of speed, as the nitro gadget gives (and fills the gadget up, if the car has one)
 //   ammo     overcharge: every weapon on the car reloads and fires twice as fast for a few seconds
 //   scrap    a crate of scrap for the player (a rival that gets there first only denies it)
+//   super    the Hammerdown strike: a red ring locks on to the three nearest foes (the player first, for a rival), follows
+//            each for a second, holds still a moment and then a strike comes down on it; a car that gets out of its ring
+//            in time is spared. It comes up rarely, and a map can bring it up early (when its show calls an event, say)
+//            by setting the spot's `t` to 0.
 // A pickup is a little voxel-style model over a ring on the ground, with a beam of its colour going up so it can be seen
 // across the map. Rivals go for a repair kit when they are hurt, and take anything they pass close to (pickupFor, for
-// ai.js). Each spot object gets `up` (true while it can be taken) for the map's radar.
+// ai.js), but never make for a spot the map marks `rivals: false` (a lure for the player alone, say scrap among a
+// hazard's blades). Each spot object gets `up` (true while it can be taken) for the map's radar.
 import * as THREE from 'three';
 import { sparks, ring } from '../../src/sim.js';
 
@@ -18,6 +23,7 @@ export const PICKUPS = {
   nitro: { name: 'Nitro', every: 14, css: '#45b4ff', rgb: [0.27, 0.7, 1], nitro: { time: 2.6, topK: 1.45, accelK: 2.4 } },
   ammo: { name: 'Overcharge', every: 18, css: '#ff8a2a', rgb: [1, 0.55, 0.16], time: 7, rate: 2 },
   scrap: { name: 'Scrap crate', every: 30, css: '#ffd23a', rgb: [1, 0.82, 0.25], scrap: 60 },
+  super: { name: 'Hammerdown strike', every: 70, first: 30, css: '#ff4fd8', rgb: [1, 0.3, 0.85], hits: 3, range: 320, follow: 1.0, still: 0.4, dmg: 55, reach: 13 },
 };
 
 // ---- the models ------------------------------------------------------------------------------------------------
@@ -48,6 +54,8 @@ const MODELS = {
   ammo: () => blocks([-2.2, 0, 2.2].flatMap((x) => [[x - 0.8, -3, -0.8, x + 0.8, 1.2, 0.8, 0xd9a840], [x - 0.6, 1.2, -0.6, x + 0.6, 2.6, 0.6, 0xc8683a], [x - 0.35, 2.6, -0.35, x + 0.35, 3.1, 0.35, 0xc8683a], [x - 0.85, -3.2, -0.85, x + 0.85, -2.7, 0.85, 0xb88a2a]])),
   // a gold crate with dark edges
   scrap: () => blocks([[-2.5, -2.5, -2.5, 2.5, 2.5, 2.5, 0xe8b830], ...[-2.6, 2.1].flatMap((a) => [[a, -2.6, -2.6, a + 0.5, 2.6, 2.6, 0x6a4a1e], [-2.6, a, -2.6, 2.6, a + 0.5, 2.6, 0x6a4a1e]]), [-0.6, -0.6, -2.7, 0.6, 0.6, 2.7, 0xfff0b0]]),
+  // a sledgehammer: a dark handle, a pink head with gold bands
+  super: () => blocks([[-0.6, -4.2, -0.6, 0.6, 1.6, 0.6, 0x4a3420], [-3.6, 1.6, -1.8, 3.6, 5, 1.8, 0xff3da8], [-3.8, 1.4, -2, -2.8, 5.2, 2, 0xffd23a], [2.8, 1.4, -2, 3.8, 5.2, 2, 0xffd23a], [-0.8, -4.6, -0.8, 0.8, -3.8, 0.8, 0xffd23a]]),
 };
 // a beam of light: brightest at the foot, fading out up top
 let beamTex = null;
@@ -62,14 +70,16 @@ function beamTexture() {
 
 // ---- which pickup a rival should go for --------------------------------------------------------------------------
 let all = [];
-// hurt: the nearest repair kit that is up (within reach); otherwise anything up close and nearly straight ahead
+// hurt: the nearest repair kit that is up (within reach); otherwise the strike if it is up and not far; otherwise
+// anything up close and nearly straight ahead
 export function pickupFor(car, hurt) {
   let best = null, bd = 1e9;
   for (const p of all) {
-    if (!p.up) continue;
+    if (!p.up || p.rivals === false) continue;
     const d = Math.hypot(p.x - car.x, p.z - car.z);
     if (hurt && p.kind === 'repair' && d < 340) { if (d < bd) { bd = d; best = p; } continue; }
     if (best && best.kind === 'repair' && hurt) continue;
+    if (p.kind === 'super' && d < 170) { if (d + 200 < bd) { bd = d + 200; best = p; } continue; }
     if (d < 50 && (p.kind !== 'repair' || car.hp < car.maxHp * 0.85) && Math.abs(wrap(Math.atan2(p.x - car.x, p.z - car.z) - car.yaw)) < 0.6 && d + 400 < bd) { bd = d + 400; best = p; }
   }
   return best;
@@ -84,7 +94,7 @@ export function makePickups(api, spots = []) {
   for (const p of spots) {
     const K = PICKUPS[p.kind]; if (!K) continue;
     const glow = new THREE.Color(K.rgb[0] * 2.2, K.rgb[1] * 2.2, K.rgb[2] * 2.2);
-    p.K = K; p.up = true; p.t = 0; p.spin = Math.random() * 6;
+    p.K = K; p.up = !K.first; p.t = K.first || 0; p.spin = Math.random() * 6;
     p.model = new THREE.Mesh(geo[p.kind] || (geo[p.kind] = MODELS[p.kind]()), new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(1.25, 1.25, 1.25), toneMapped: false }));
     p.model.position.set(p.x, 6, p.z); p.model.castShadow = true;
     p.ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: glow, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
@@ -92,6 +102,7 @@ export function makePickups(api, spots = []) {
     p.beam = new THREE.Mesh(beamGeo, new THREE.MeshBasicMaterial({ color: new THREE.Color(...K.rgb), map: beamTexture(), transparent: true, opacity: 0.45, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }));
     p.beam.position.set(p.x, 0, p.z); p.beam.renderOrder = 3;
     scene.add(p.model, p.ring, p.beam);
+    if (!p.up) p.model.visible = p.beam.visible = false;
   }
   const live = spots.filter((p) => p.K);
   // what taking one does
@@ -114,15 +125,58 @@ export function makePickups(api, spots = []) {
     } else if (p.kind === 'scrap') {
       if (me) { api.game.scrap += K.scrap; api.keepSave(); api.toast(K.name, `+${K.scrap} scrap`); }
       api.sfx.play('ui_coin', me ? 1 : 0.5, c.x, c.z);
-    }
+    } else if (p.kind === 'super') strike(c, K);
     const [r, g, b] = K.rgb;
     sparks(p.x, 5, p.z, 22, r, g, b, 22); ring(p.x, 0.4, p.z, 9, new THREE.Color(r, g, b), 0.45);
     p.up = false; p.t = K.every * (0.9 + Math.random() * 0.2);
+  }
+  // ---- the Hammerdown strike: a ring on each foe, then a strike from above on wherever the ring stopped
+  const marks = [], markGeo = new THREE.RingGeometry(0.82, 1, 40), shaftGeo = new THREE.CylinderGeometry(1.4, 1.4, 90, 10, 1, true);
+  shaftGeo.translate(0, 45, 0);
+  function strike(c, K) {
+    const me = c === api.player, P = api.player;
+    const foes = cars.filter((o) => o !== c && !o.dead && !o.gone && Math.hypot(o.x - c.x, o.z - c.z) < K.range).sort((a, b) => Math.hypot(a.x - c.x, a.z - c.z) - Math.hypot(b.x - c.x, b.z - c.z));
+    if (!me && P && foes.includes(P)) { foes.splice(foes.indexOf(P), 1); foes.unshift(P); }   // a rival's strike always has the player in it
+    for (const o of foes.slice(0, K.hits)) {
+      const rm = new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 0.3, 0.9), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
+      const sm = new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.25, 0.75), map: beamTexture(), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
+      const r = new THREE.Mesh(markGeo, rm), s = new THREE.Mesh(shaftGeo, sm);
+      r.rotation.x = -Math.PI / 2; r.renderOrder = 3; s.renderOrder = 3; scene.add(r, s);
+      marks.push({ car: o, by: c, t: K.follow + K.still, x: o.x, z: o.z, r, s, K });
+    }
+    api.sfx.play('mine_beep', me ? 1.2 : 0.8, c.x, c.z); api.sound('c.alarm', 0.8);
+    if (me) api.toast(K.name, foes.length ? `Locked on to ${Math.min(K.hits, foes.length)}` : 'Nobody in range');
+    else if (foes.slice(0, K.hits).includes(P)) api.toast('Strike incoming!', 'Get out of the red ring');
+  }
+  function stepMarks(dt) {
+    for (let i = marks.length - 1; i >= 0; i--) {
+      const m = marks[i], K = m.K;
+      m.t -= dt;
+      if (m.t > K.still && m.car && !m.car.gone) { m.x = m.car.x; m.z = m.car.z; }   // following, then still for a moment
+      const k = Math.max(0, m.t) / (K.follow + K.still);
+      m.r.position.set(m.x, 0.2, m.z); m.r.scale.setScalar(K.reach * (0.75 + 0.6 * k)); m.r.material.opacity = m.t > K.still ? 0.55 + 0.35 * ((m.t * 8 | 0) & 1) : 1;
+      m.s.position.set(m.x, 0, m.z); m.s.material.opacity = 0.75 * (1 - k);
+      if (m.t > 0) continue;
+      // down it comes
+      scene.remove(m.r, m.s); m.r.material.dispose(); m.s.material.dispose(); marks.splice(i, 1);
+      api.explode(m.x, 2, m.z, 4.6, 0.8, { maxDebris: 160, fire: true });
+      api.sfx.play('bigboom', 1, m.x, m.z); api.sound('thunder', 0.8, m.x, 20, m.z);
+      sparks(m.x, 2, m.z, 40, 1, 0.4, 0.9, 40); ring(m.x, 0.4, m.z, K.reach * 1.4, new THREE.Color(1, 0.3, 0.85), 0.5);
+      for (const o of cars) {
+        if (o.dead || o.gone) continue;
+        const d = Math.hypot(o.x - m.x, o.z - m.z); if (d > K.reach + o.wide) continue;
+        const f = 1 - Math.max(0, d - 3) / K.reach;
+        api.damage(o, K.dmg * f, m.by && m.by !== o ? m.by : null);
+        const p = Math.max(1, d); o.vx += (o.x - m.x) / p * 30 * f; o.vz += (o.z - m.z) / p * 30 * f;
+      }
+      const P = api.player; if (P) api.game.shake = Math.min(1.4, api.game.shake + Math.max(0, 1 - Math.hypot(P.x - m.x, P.z - m.z) / 160) * 0.9);
+    }
   }
   const _o = { x: 0, z: 0 };
   return {
     spots: live,
     step(dt, on) {
+      stepMarks(dt);
       const T = performance.now() / 1000;
       for (const p of live) {
         if (!p.up) {

@@ -1,19 +1,26 @@
 // Hammerdown Arena: a ground built for car combat and dressed as a television show, laid out the way the vehicle combat
-// games lay out theirs (derby/docs/arena.md has the research and how each idea is used here).
+// games lay out theirs, with a set piece in every part of it (derby/docs/arena.md has the research and how each idea is
+// used here).
 //   - A wide loop runs round inside the wall, with big round corners and boost strips on the two long straights, so a car
 //     never has to stop and turn on the spot. Nothing on the map is a dead end.
-//   - The middle is the trophy on its plinth under the big screen: a landmark to circle, ringed by fire grates that flare
-//     a quarter at a time, with two repair kits in the ring.
+//   - The middle is the sweeper: three blades turning low over the floor under the big screen, with the Hammerdown
+//     strike (the super weapon) in the still eye at its heart, and scrap out among the blades.
+//   - Each straight has a hammer hung from its gantry, latched up at one side of the lane, that blinks, lets go and
+//     swings across; a repair kit sits right under it.
+//   - Flame jets in the walls of the four corners, firing in turns along the corner, two opposite corners at a time.
+//   - The west lane's press, fed by two conveyor belts on its inside line (and a repair kit under it); the east lane's
+//     magnet, hung from a crane over the fuel depot, that drags every car in reach into the barrels round the nitro.
+//   - Every so often the announcer calls an event ("Hammer time!", "Fire in the hole!", "Spin cycle!"): for fifteen
+//     seconds one set of hazards goes wild, and the strike drops in the eye.
 //   - Cover between the loop and the middle breaks the line of fire: concrete walls that only rockets wear down, and tyre
 //     walls and stacked containers that a fast car smashes through.
-//   - Each end has a character of its own: the press over the inside line of the west lane (with a repair kit under it),
-//     and the fuel depot's barrels and tanker on the east.
 //   - Stands, floodlights, gantries and sponsor boards (all made-up names) all round, and the floor is painted to match.
-// Waves of rivals; they find their way with the route grid, and go for the pickups when hurt (pickups.js, ai.js). The
-// hazards and the pickups are run by hazards.js and pickups.js from the lists at the bottom.
+// Waves of rivals; they find their way with the route grid (which shuts over each hazard while it is dangerous), keep
+// clear of the hazards as they drive (hazards.js), and go for the pickups when hurt (pickups.js, ai.js). The hazards and
+// the pickups are run by hazards.js and pickups.js from the lists below.
 import { WX, WZ, M, set, box, walls, begin, ctx } from '../../../src/world.js';
 import { face, text, textW, disc } from '../../../src/kit.js';
-import { makeGridNav, canvasFor, finish, pickSpot, gridRadar, GK } from './common.js';
+import { makeGridNav, canvasFor, finish, pickSpot, gridRadar, lineClear, GK } from './common.js';
 import { PICKUPS } from '../pickups.js';
 
 const TAU = Math.PI * 2;
@@ -34,18 +41,39 @@ const rand = () => { seed = (seed * 1664525 + 1013904223) | 0; return ((seed >>>
 const pick = (a) => a[Math.floor(rand() * a.length)];
 
 // ---- the live parts: where the pickups and hazards are (run by pickups.js and hazards.js) -----------------------
-// Pickups sit where it is risky to go: repair kits in the fire ring and under the press, nitro among the barrels and in
-// the containers' corners, overcharge in the tyre yards, scrap on the racing line under the gantries.
+// Pickups sit where it is risky to go: the strike in the sweeper's eye, scrap among its blades, repair kits under the
+// hammers and the press, nitro under the magnet (among the barrels), and overcharge and more nitro in the cover.
+const SUPER = { kind: 'super', x: CX, z: CZ };
 const PICKUP_SPOTS = [
-  { kind: 'repair', x: CX, z: CZ - 31 }, { kind: 'repair', x: CX, z: CZ + 31 },
-  { kind: 'repair', x: 88, z: 208 },
-  { kind: 'nitro', x: 442, z: 208 }, { kind: 'nitro', x: 334, z: 160 }, { kind: 'nitro', x: 178, z: 256 },
+  SUPER,
+  { kind: 'repair', x: 256, z: 76 }, { kind: 'repair', x: 256, z: 340 }, { kind: 'repair', x: 88, z: 208 },
+  { kind: 'nitro', x: 440, z: 208 }, { kind: 'nitro', x: 334, z: 160 }, { kind: 'nitro', x: 178, z: 256 },
   { kind: 'ammo', x: 172, z: 158 }, { kind: 'ammo', x: 340, z: 258 },
-  { kind: 'scrap', x: 256, z: 76 }, { kind: 'scrap', x: 256, z: 340 },
+  { kind: 'scrap', x: CX + 30, z: CZ, rivals: false }, { kind: 'scrap', x: CX - 30, z: CZ, rivals: false },   // (bait for you alone)
 ];
-const GRATES = { kind: 'grates', x: CX, z: CZ, r0: 22, r1: 40 };
+// the sweeper: three blades from 14 out to 46 round the middle, a turn every twelve seconds (twice as fast in a spin cycle)
+const SWEEP = { kind: 'sweeper', x: CX, z: CZ, n: 3, r0: 14, r1: 46, spin: TAU / 12, top: 27, wild: 'spin' };
+// a hammer under each gantry, swinging across its straight (along z), the two out of step
+const HAMMERS = [
+  { kind: 'hammer', x: 256, z: 76, y: 32, len: 26.5, axis: 'z', lane: 30, wild: 'hammer', offset: 4 },
+  { kind: 'hammer', x: 256, z: 340, y: 32, len: 26.5, axis: 'z', lane: 30, wild: 'hammer', offset: 6 },
+];
+// three flame jets round each corner of the wall, pointing in at the corner's middle: the north-east and south-west
+// corners fire together, then the other two, each corner's three in the order the traffic goes round it
+const CORNERS = [[410, 118, -Math.PI / 2, 0], [410, 298, 0, 1], [102, 298, Math.PI / 2, 0], [102, 118, Math.PI, 1]];
+const JETS = { kind: 'jets', len: 26, wild: 'fire', jets: CORNERS.flatMap(([x, z, a0, group]) => [1, 2, 3].map((i) => {
+  const a = a0 + i * Math.PI / 8;
+  return { x: x + Math.cos(a) * (WALL.r - 1), z: z + Math.sin(a) * (WALL.r - 1), a: a + Math.PI, group, step: i - 1 };
+})) };
+// the magnet over the fuel depot, hung from the crane behind the east wall
+const MAGNET = { kind: 'magnet', x: 440, z: 208, r: 48, y: 24, top: 54, wild: 'spin' };
 // the press's pad runs right up to its column, so a car held out of it is never squeezed into the column
-const PRESS = { kind: 'press', x0: 70, z0: 190, x1: 109, z1: 226, top: 46, rods: [[88, 198], [88, 218]], shut: ['x1'] };   // rods up into the arm's tie
+const PRESS = { kind: 'press', x0: 70, z0: 190, x1: 109, z1: 226, top: 46, rods: [[88, 198], [88, 218]], shut: ['x1'], wild: 'hammer' };   // rods up into the arm's tie
+// and a belt either side of it on the inside line, both running into it
+const BELTS = [
+  { kind: 'conveyor', x0: 70, z0: 138, x1: 109, z1: 188, yaw: 0, speed: 18 },
+  { kind: 'conveyor', x0: 70, z0: 228, x1: 109, z1: 278, yaw: Math.PI, speed: 18 },
+];
 const BARRELS = { kind: 'barrels', spots: [
   // the fuel depot: two clusters on the inside line of the east lane, and two pairs guarding the nitro
   { x: 405, z: 147 }, { x: 410, z: 149 }, { x: 406, z: 153 },
@@ -58,14 +86,22 @@ const BOOSTS = [
   { kind: 'boost', x0: 290, z0: 52, x1: 370, z1: 66, yaw: Math.PI / 2 },     // the north straight, heading east
   { kind: 'boost', x0: 142, z0: 350, x1: 222, z1: 364, yaw: -Math.PI / 2 },  // the south straight, heading west
 ];
+// the announcer's events, in turn; each drops the strike in the eye if it is not there already
+const SHOW = { kind: 'show', first: 35, every: 45, time: 15, events: [
+  { tag: 'hammer', name: 'HAMMER TIME!', sub: 'Nonstop hammers. A strike drops in the eye' },
+  { tag: 'fire', name: 'FIRE IN THE HOLE!', sub: 'Every flame jet lit. A strike drops in the eye' },
+  { tag: 'spin', name: 'SPIN CYCLE!', sub: 'Fast blades, live magnet. A strike drops in the eye' },
+], onEvent: () => { if (!SUPER.up) SUPER.t = Math.min(SUPER.t ?? 1, 1); } };
+// the four legs of the screen's frame (round the sweeper): steel, so nothing may bury a car in one
+const LEGS = [[-50, -50], [48, -50], [-50, 48], [48, 48]];
 // Where rivals (and the player, after a wreck) come in: spread evenly round the loop, each facing along it (clockwise),
-// so nobody starts nose to a wall or in someone's sights.
+// clear of the hammers and the corners' flames, so nobody starts nose to a wall or in someone's sights.
 const SPOTS = [
-  ...[140, 256, 372].map((x) => ({ x, z: 76, yaw: Math.PI / 2 })),
+  ...[140, 196, 312].map((x) => ({ x, z: 76, yaw: Math.PI / 2 })),
   ...[150, 266].map((z) => ({ x: 444, z, yaw: 0 })),
-  ...[372, 256, 140].map((x) => ({ x, z: 340, yaw: -Math.PI / 2 })),
+  ...[372, 316, 200].map((x) => ({ x, z: 340, yaw: -Math.PI / 2 })),
   ...[266, 150].map((z) => ({ x: 62, z, yaw: Math.PI })),
-  { x: 72, z: 88, yaw: Math.PI * 0.75 }, { x: 440, z: 88, yaw: Math.PI * 0.25 }, { x: 440, z: 328, yaw: -Math.PI * 0.25 }, { x: 72, z: 328, yaw: -Math.PI * 0.75 },
+  { x: 82, z: 98, yaw: Math.PI * 0.75 }, { x: 430, z: 98, yaw: Math.PI * 0.25 }, { x: 430, z: 318, yaw: -Math.PI * 0.25 }, { x: 82, z: 318, yaw: -Math.PI * 0.75 },
 ];
 
 // ---- building ----------------------------------------------------------------------------------------------------
@@ -146,7 +182,7 @@ function stand(s) {
 }
 
 // The west end: race control, a long block behind the wall with a strip of windows looking down the arena, its name
-// lit up, and dishes on the roof. The east end: the fuel depot's three tanks and its sign.
+// lit up, and dishes on the roof. The east end: the fuel depot's two tanks, and between them the magnet's crane.
 function ends() {
   for (const [z0, z1] of [[120, 178], [179, 237], [238, 296]]) {
     begin('Race control', 'building', true);
@@ -164,15 +200,40 @@ function ends() {
     box(12, 28, z, 13, 33, z + 1, M.STEEL);
     for (let a = -4; a <= 4; a++) for (let b = -4; b <= 4; b++) if (a * a + b * b <= 18) set(10 + Math.round(b * 0.3), 36 + a, z + b, M.TRIM);
   }
-  // the fuel tanks
-  for (const z of [150, 208, 266]) {
+  // the fuel tanks, with the depot's name on them
+  for (const z of [150, 266]) {
     begin('Fuel tank', 'tank', true);
     for (let y = 0; y <= 30; y++) disc(498, z, y, 10, y % 10 === 9 ? M.CAR_A : M.TRIM, y === 0 || y === 30 ? -1 : 9);
     for (let k = 1; k <= 3; k++) disc(498, z, 30 + k, 10 - k * 2.5, M.TRIM);
+    begin('Sign', 'sign', false);
+    box(490, 31, z - 12, 490, 38, z + 11, M.DARK);
+    const F = face('l', 490, z - 12, 490, z + 11), str = z < 208 ? 'KRANKO' : 'FUEL';
+    text(F, str, (24 - textW(str)) >> 1, 32, 1, z < 208 ? M.LIT_Y : M.LIT_W);
   }
+  crane();
+}
+
+// The magnet's crane: a yellow lattice tower behind the east wall with its cab on top, a jib reaching out over the
+// fuel depot (the magnet hangs from its trolley: hazards.js moves it), a concrete counterweight at the back, and the
+// magnet's board hung under the jib, read from up and down the lane.
+function crane() {
+  begin('Crane', 'tower', true);
+  const x0 = 491, x1 = 499, z0 = 204, z1 = 212;
+  for (const [x, z] of [[x0, z0], [x1, z0], [x0, z1], [x1, z1]]) box(x, 0, z, x, 60, z, M.TAXI);
+  for (let y = 6; y <= 60; y += 6) walls(x0, y, z0, x1, y, z1, M.TAXI);
+  for (let y = 0; y < 60; y++) { const u = y % 12 < 6 ? y % 6 : 6 - (y % 6); set(x0 + 1 + u, y, z0, M.TAXI); set(x0 + 1 + u, y, z1, M.TAXI); set(x0, y, z0 + 1 + u, M.TAXI); set(x1, y, z0 + 1 + u, M.TAXI); }   // zig-zag bracing
+  // the jib: two lattice sides along x, tied across top and bottom
+  for (const z of [205, 211]) { box(424, 56, z, 512, 56, z, M.TAXI); box(428, 61, z, 508, 61, z, M.TAXI); for (let x = 424; x <= 510; x += 6) { box(x, 56, z, x, 61, z, M.TAXI); set(x + 3, 58, z, M.TAXI); set(x + 3, 59, z, M.TAXI); } }
+  for (let x = 424; x <= 510; x += 6) { box(x, 56, 205, x, 56, 211, M.TAXI); box(x, 61, 205, x, 61, 211, M.TAXI); }
+  box(436, 54, 205, 444, 55, 211, M.DARK);   // the trolley the magnet hangs from
+  // the cab, looking down the jib
+  walls(x0, 62, z0, x1, 68, z1, M.CAR_A); box(x0, 69, z0, x1, 69, z1, M.ROOF_D);
+  box(x0, 64, z0 + 2, x0, 66, z1 - 2, M.GLASS);
+  begin('Counterweight', 'prop', true);
+  box(503, 46, 203, 511, 55, 213, M.CONC); for (let x = 503; x <= 511; x++) for (let y = 47; y <= 54; y += 3) { set(x, y, 203, M.CAR_A); set(x, y, 213, M.CAR_A); }
   begin('Sign', 'sign', false);
-  box(490, 31, 186, 490, 44, 229, M.DARK);   // standing on the middle tank's top
-  { const F = face('l', 490, 186, 490, 229); text(F, 'KRANKO', (44 - textW('KRANKO')) >> 1, 38, 1, M.LIT_Y); text(F, 'FUEL', (44 - textW('FUEL')) >> 1, 32, 1, M.LIT_W); }
+  box(452, 46, 208, 486, 54, 208, M.DARK);
+  for (const F of [face('f', 452, 208, 486, 208), face('b', 452, 208, 486, 208)]) text(F, 'MAGNET', (35 - textW('MAGNET')) >> 1, 47, 1, M.LIT_B);
 }
 
 // Floodlights in the four corners, outside the wall: steel towers with a bank of lamps turned in toward the middle.
@@ -191,7 +252,8 @@ function floodlights() {
 }
 
 // The gantries over the two long straights, on a pillar in the stand and one on the infield wall: the television gantry
-// on the north (cameras, and the show's name both ways) and the start gantry on the south (the start lights).
+// on the north (cameras, and the show's name both ways) and the start gantry on the south (the start lights). Each has
+// a hammer hung under the middle of its span.
 function gantry(s) {
   const P = (x, z) => (s ? turn(x, z) : [x, z]);
   const B = (x0, y0, z0, x1, y1, z1, m) => { const [a, b] = P(x0, z0), [c, d] = P(x1, z1); box(Math.min(a, c), y0, Math.min(b, d), Math.max(a, c), y1, Math.max(b, d), m); };
@@ -201,35 +263,31 @@ function gantry(s) {
   for (const x of [250, 261]) { B(x, 34, 36, x, 34, 123, M.STEEL); B(x, 41, 36, x, 41, 123, M.STEEL); for (let z = 36; z <= 123; z += 6) B(x, 34, z, x, 41, z, M.STEEL); }
   B(250, 41, 36, 261, 41, 123, M.METAL);
   for (let z = 40; z <= 120; z += 8) { B(250, 34, z, 261, 34, z + 1, M.STEEL); B(255, 33, z, 256, 33, z + 1, M.LIT_W); }   // lamps under it
+  for (const x of [250, 261]) B(x, 31, 74, x, 33, 77, M.STEEL);   // the hangers for the hammer's axle (hazards.js swings the hammer)
   begin('Sign', 'sign', true);
   for (const x of [249, 262]) B(x, 34, 46, x, 40, 106, M.DARK);
   // the boards' outer faces look west and east (x 249 and 262 either way round), over the lane
   const str = s ? 'START' : 'HAMMERDOWN LIVE', za = s ? 309 : 46, zb = s ? 369 : 106;
   for (const F of [face('l', 249, za, 249, zb), face('r', 262, za, 262, zb)]) text(F, str, (61 - textW(str)) >> 1, 35, 1, s ? M.LIT_W : M.LIT_Y);
-  if (s) {   // the start lights, hanging from the middle of the span, facing both ways
+  if (s) {   // the start lights, up on top of the span (the hammer hangs under it), facing both ways
     begin('Start lights', 'sign', true);
-    for (let i = 0; i < 5; i++) { const z = 66 + i * 5, col = i < 3 ? M.LIT_R : i === 3 ? M.LIT_Y : M.LIT_G; B(250, 28, z, 261, 33, z + 3, M.DARK); B(249, 29, z + 1, 249, 31, z + 2, col); B(262, 29, z + 1, 262, 31, z + 2, col); }
+    for (let i = 0; i < 5; i++) { const z = 66 + i * 5, col = i < 3 ? M.LIT_R : i === 3 ? M.LIT_Y : M.LIT_G; B(250, 42, z, 261, 47, z + 3, M.DARK); B(249, 43, z + 1, 249, 45, z + 2, col); B(262, 43, z + 1, 262, 45, z + 2, col); }
   } else {   // the cameras on top, with their red tally lights
     begin('Camera', 'prop', true);
     for (const z of [60, 92]) { B(254, 42, z, 257, 45, z + 5, M.DARK); B(253, 43, z + 1, 253, 44, z + 2, M.STEEL); B(256, 46, z + 2, 256, 46, z + 2, M.LIT_R); }
   }
 }
 
-// The middle: a round plinth with a gold trophy on it, four steel legs and the big screen on top, showing the show's
-// name on all four sides.
+// The middle: a steel frame on four legs round the sweeper, carrying the big screen (the show's name on all four
+// sides) and the trophy on top of it, with the sweeper's column coming down from the screen to the drum. The drum and
+// its blades are meshes (hazards.js turns them); the floor under them is open, so nothing there can trap a car.
 function centre() {
-  begin('Plinth', 'barrier', false);
-  // Solid steel, the toughest thing there is: rockets only take small bites out of its edge, and never open a pocket a
-  // car could drive into and stick in (a hollow ring, or concrete, would be chewed open in a minute of a busy wave).
-  for (let y = 0; y <= 7; y++) { disc(CX, CZ, y, 20, M.STEEL); if (y >= 2 && y <= 4) disc(CX, CZ, y, 20, M.SIGN, 19); }
-  for (let y = 2; y <= 4; y++) for (let k = 0; k < 24; k++) { const a = k / 24 * TAU; if (k & 1) set(CX + Math.round(Math.cos(a) * 19.5 - 0.5), y, CZ + Math.round(Math.sin(a) * 19.5 - 0.5), M.DARK); }
-  begin('Trophy', 'statue', false);
-  for (let y = 8; y <= 11; y++) disc(CX, CZ, y, 10 - (y - 8), M.CHROME, y === 11 ? -1 : 8 - (y - 8));
-  for (let y = 12; y <= 21; y++) disc(CX, CZ, y, y < 20 ? 3 : 5, M.BRASS);
-  for (let y = 22; y <= 38; y++) { const r = 6 + Math.min(5, (y - 22) * 0.55); disc(CX, CZ, y, r, M.BRASS, y === 22 ? -1 : r - 1.5); }
-  for (const s of [-1, 1]) for (let k = 0; k <= 10; k++) { const a = k / 10 * Math.PI, x = CX + s * (11 + Math.round(Math.sin(a) * 4)) - (s < 0 ? 1 : 0), y = 25 + Math.round(-Math.cos(a) * 5 + 5); set(x, y, CZ, M.BRASS); set(x, y, CZ - 1, M.BRASS); }
-  // the legs stand on the ground through the plinth, so if rockets eat the plinth away the route grid still sees them
-  for (const [a, b] of [[-13, -13], [11, -13], [-13, 11], [11, 11]]) { begin('Screen leg', 'barrier', true); box(CX + a, 0, CZ + b, CX + a + 2, 63, CZ + b + 2, M.STEEL); }
+  for (const [a, b] of LEGS) { begin('Frame leg', 'barrier', true); box(CX + a, 0, CZ + b, CX + a + 2, 62, CZ + b + 2, M.STEEL); for (let y = 4; y <= 10; y++) for (const [u, v] of [[0, 0], [2, 0], [0, 2], [2, 2]]) set(CX + a + u, y, CZ + b + v, (y >> 1) & 1 ? M.TAXI : M.DARK); }
+  begin('Frame', 'gantry', true);
+  box(CX - 50, 60, CZ - 50, CX + 50, 62, CZ - 48, M.STEEL); box(CX - 50, 60, CZ + 48, CX + 50, 62, CZ + 50, M.STEEL);
+  box(CX - 50, 60, CZ - 50, CX - 48, 62, CZ + 50, M.STEEL); box(CX + 48, 60, CZ - 50, CX + 50, 62, CZ + 50, M.STEEL);
+  box(CX - 50, 61, CZ - 1, CX + 50, 63, CZ, M.STEEL); box(CX - 1, 61, CZ - 50, CX, 63, CZ + 50, M.STEEL);   // the cross the screen sits on
+  for (let y = 28; y <= 63; y++) disc(CX, CZ, y, y < 31 ? 4 : 2.6, y < 31 ? M.DARK : M.STEEL);   // the sweeper's column
   begin('Big screen', 'sign', true);
   const x0 = CX - 22, x1 = CX + 21, z0 = CZ - 22, z1 = CZ + 21;
   walls(x0, 64, z0, x1, 81, z1, M.DARK); box(x0, 64, z0, x1, 64, z1, M.DARK); box(x0, 81, z0, x1, 81, z1, M.STEEL);
@@ -240,6 +298,13 @@ function centre() {
     F.box(3, 75, 40, 75, 0, 0, M.LIT_B);
     const sub = i & 1 ? 'CH 6' : 'LIVE'; text(F, sub, (44 - textW(sub, 2)) >> 1, 65, 0, i & 1 ? M.LIT_B : M.LIT_R, 2);
   });
+  // the trophy, on top of the screen
+  begin('Trophy', 'statue', false);
+  const Y = 74;
+  for (let y = 8; y <= 11; y++) disc(CX, CZ, y + Y, 10 - (y - 8), M.CHROME, y === 11 ? -1 : 8 - (y - 8));
+  for (let y = 12; y <= 21; y++) disc(CX, CZ, y + Y, y < 20 ? 3 : 5, M.BRASS);
+  for (let y = 22; y <= 38; y++) { const r = 6 + Math.min(5, (y - 22) * 0.55); disc(CX, CZ, y + Y, r, M.BRASS, y === 22 ? -1 : r - 1.5); }
+  for (const s of [-1, 1]) for (let k = 0; k <= 10; k++) { const a = k / 10 * Math.PI, x = CX + s * (11 + Math.round(Math.sin(a) * 4)) - (s < 0 ? 1 : 0), y = Y + 25 + Math.round(-Math.cos(a) * 5 + 5); set(x, y, CZ, M.BRASS); set(x, y, CZ - 1, M.BRASS); }
 }
 const faces4 = (x0, z0, x1, z1) => ['f', 'r', 'b', 'l'].map((s) => face(s, x0, z0, x1, z1));
 
@@ -345,18 +410,17 @@ function paint() {
   g.restore(); V();
   g.lineWidth = 3; g.strokeStyle = '#e8e4da'; roundRect(g, IN, -1.5); g.stroke();
   g.setLineDash([5, 5]); g.strokeStyle = '#c23b2e'; roundRect(g, IN, -1.5); g.stroke(); g.setLineDash([]);
-  // the middle: a white ring, a yellow and black band, and the fire grates (dark steel with slots) round the plinth
-  g.fillStyle = '#e8e4da'; g.beginPath(); g.arc(CX, CZ, 50, 0, TAU); g.fill();
-  g.fillStyle = '#7b6448'; g.beginPath(); g.arc(CX, CZ, 48, 0, TAU); g.fill();
-  for (let k = 0; k < 48; k++) { g.fillStyle = k & 1 ? '#1c1c1e' : '#e2b02a'; g.beginPath(); g.arc(CX, CZ, 44, k / 48 * TAU, (k + 1) / 48 * TAU); g.arc(CX, CZ, 40, (k + 1) / 48 * TAU, k / 48 * TAU, true); g.fill(); }
-  g.fillStyle = '#2b2d31'; g.beginPath(); g.arc(CX, CZ, 40, 0, TAU); g.fill();
-  g.save(); g.beginPath(); g.arc(CX, CZ, 39.5, 0, TAU); g.arc(CX, CZ, 22, 0, TAU, true); g.clip();
-  g.fillStyle = '#121315'; for (let x = CX - 40; x < CX + 40; x += 3) g.fillRect(x, CZ - 40, 1.2, 80);
-  g.fillStyle = 'rgba(255,120,40,0.18)'; for (let z = CZ - 40; z < CZ + 40; z += 6) g.fillRect(CX - 40, z, 80, 0.6);
-  g.restore();
-  g.strokeStyle = '#e2b02a'; g.lineWidth = 1.5;
-  for (let k = 0; k < 4; k++) { const a = Math.PI / 4 + k * Math.PI / 2; g.beginPath(); g.moveTo(CX + Math.cos(a) * 22, CZ + Math.sin(a) * 22); g.lineTo(CX + Math.cos(a) * 40, CZ + Math.sin(a) * 40); g.stroke(); }
-  g.fillStyle = '#9a978f'; g.beginPath(); g.arc(CX, CZ, 21, 0, TAU); g.fill();
+  // the middle: a white ring, a yellow and black band, and the sweeper's steel deck, with the blades' track worn into
+  // it and the eye a red and white target
+  g.fillStyle = '#e8e4da'; g.beginPath(); g.arc(CX, CZ, 57, 0, TAU); g.fill();
+  g.fillStyle = '#7b6448'; g.beginPath(); g.arc(CX, CZ, 55.5, 0, TAU); g.fill();
+  for (let k = 0; k < 60; k++) { g.fillStyle = k & 1 ? '#1c1c1e' : '#e2b02a'; g.beginPath(); g.arc(CX, CZ, 55, k / 60 * TAU, (k + 1) / 60 * TAU); g.arc(CX, CZ, 51, (k + 1) / 60 * TAU, k / 60 * TAU, true); g.fill(); }
+  g.fillStyle = '#3a3d42'; g.beginPath(); g.arc(CX, CZ, 51, 0, TAU); g.fill();
+  g.strokeStyle = 'rgba(20,20,22,0.55)'; g.lineWidth = 0.4;
+  for (let r = 16; r < 50; r += 6) { g.beginPath(); g.arc(CX, CZ, r, 0, TAU); g.stroke(); }
+  for (let k = 0; k < 24; k++) { const a = k / 24 * TAU; g.beginPath(); g.moveTo(CX + Math.cos(a) * 15, CZ + Math.sin(a) * 15); g.lineTo(CX + Math.cos(a) * 50, CZ + Math.sin(a) * 50); g.stroke(); }
+  g.strokeStyle = 'rgba(200,200,205,0.18)'; g.lineWidth = 2.5; g.beginPath(); g.arc(CX, CZ, 46, 0, TAU); g.stroke();   // where the saws run
+  [[13.5, '#e8e4da'], [11.5, '#c23b2e'], [8.5, '#e8e4da'], [5.5, '#c23b2e'], [2.5, '#e2b02a']].forEach(([r, col]) => { g.fillStyle = col; g.beginPath(); g.arc(CX, CZ, r, 0, TAU); g.fill(); });
   // the show's name, painted across the infield on both sides of the middle
   g.font = 'bold 16px "Arial Black", Impact, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
   for (const s of [0, 1]) {
@@ -370,6 +434,28 @@ function paint() {
   g.restore();
   g.fillStyle = '#3e4146'; g.fillRect(70, 190, 36, 36);
   g.save(); g.translate(88, 208); g.rotate(-Math.PI / 2); g.font = 'bold 7px "Arial Black", Impact, sans-serif'; g.fillStyle = '#e2b02a'; g.fillText('CRUSH', 0, -9); g.fillText('ZONE', 0, 10); g.restore();
+  // the belts' rails, yellow and black, either side of each belt
+  for (const b of BELTS) for (const x of [b.x0 - 2, b.x1]) for (let z = b.z0; z < b.z1; z += 4) { g.fillStyle = ((z - b.z0) / 4) & 1 ? '#1c1c1e' : '#e2b02a'; g.fillRect(x, z, 2, 4); }
+  // the hammer zones: a dark red band across each straight under its gantry, edged in stripes, with HAMMER on it
+  for (const H of HAMMERS) {
+    const z0 = H.z - H.lane, z1 = H.z + H.lane;
+    g.fillStyle = 'rgba(120,24,18,0.55)'; g.fillRect(H.x - 10, z0, 20, z1 - z0);
+    for (const x of [H.x - 12, H.x + 10]) for (let z = z0; z < z1; z += 3) { g.fillStyle = ((z - z0) / 3) & 1 ? '#1c1c1e' : '#e2b02a'; g.fillRect(x, z, 2, 3); }
+    g.save(); g.translate(H.x, H.z); g.rotate(Math.PI / 2); g.font = 'bold 8px "Arial Black", Impact, sans-serif'; g.fillStyle = 'rgba(232,228,218,0.7)'; g.fillText('HAMMER', 0, 0); g.restore();
+  }
+  // the flame jets: soot fanning out from each across the floor, and a hazard bar on the floor at the wall under it
+  for (const j of JETS.jets) {
+    const dx = Math.cos(j.a), dz = Math.sin(j.a), px = -dz, pz = dx, L = JETS.len * 1.15;
+    const gr = g.createLinearGradient(j.x, j.z, j.x + dx * L, j.z + dz * L); gr.addColorStop(0, 'rgba(18,14,12,0.6)'); gr.addColorStop(1, 'rgba(18,14,12,0)');
+    g.fillStyle = gr; g.beginPath(); g.moveTo(j.x + px * 2, j.z + pz * 2); g.lineTo(j.x + dx * L + px * 8, j.z + dz * L + pz * 8); g.lineTo(j.x + dx * L - px * 8, j.z + dz * L - pz * 8); g.lineTo(j.x - px * 2, j.z - pz * 2); g.fill();
+    g.strokeStyle = '#e2b02a'; g.lineWidth = 1.6; g.setLineDash([1.5, 1.5]); g.beginPath(); g.moveTo(j.x + dx * 1.5 + px * 5, j.z + dz * 1.5 + pz * 5); g.lineTo(j.x + dx * 1.5 - px * 5, j.z + dz * 1.5 - pz * 5); g.stroke(); g.setLineDash([]);
+  }
+  // the magnet's reach: a dashed blue ring with arrows pointing in, and its name
+  g.strokeStyle = 'rgba(80,160,255,0.75)'; g.lineWidth = 1.2; g.setLineDash([4, 3]); g.beginPath(); g.arc(MAGNET.x, MAGNET.z, MAGNET.r, 0, TAU); g.stroke(); g.setLineDash([]);
+  g.fillStyle = 'rgba(80,160,255,0.55)';
+  for (let k = 0; k < 12; k++) { const a = k / 12 * TAU, c = Math.cos(a), sn = Math.sin(a), r = MAGNET.r - 4; g.beginPath(); g.moveTo(MAGNET.x + c * (r - 5), MAGNET.z + sn * (r - 5)); g.lineTo(MAGNET.x + c * r - sn * 2.5, MAGNET.z + sn * r + c * 2.5); g.lineTo(MAGNET.x + c * r + sn * 2.5, MAGNET.z + sn * r - c * 2.5); g.fill(); }
+  g.strokeStyle = 'rgba(80,160,255,0.8)'; g.lineWidth = 1.5; g.beginPath(); g.arc(MAGNET.x, MAGNET.z, 9, 0, TAU); g.stroke();
+  g.save(); g.translate(MAGNET.x + 22, MAGNET.z); g.rotate(Math.PI / 2); g.font = 'bold 7px "Arial Black", Impact, sans-serif'; g.fillStyle = 'rgba(120,190,255,0.7)'; g.fillText('MAGNET', 0, 0); g.restore();
   // the fuel depot: oil stains, and a red and white ring round each barrel's spot
   for (let i = 0; i < 26; i++) { g.fillStyle = `rgba(14,12,10,${0.12 + rand() * 0.2})`; g.beginPath(); g.ellipse(400 + rand() * 70, 130 + rand() * 156, 4 + rand() * 10, 3 + rand() * 7, rand() * 3, 0, TAU); g.fill(); }
   for (const p of BARRELS.spots) { g.strokeStyle = '#c23b2e'; g.lineWidth = 0.8; g.setLineDash([1.5, 1.5]); g.beginPath(); g.arc(p.x, p.z, 3.4, 0, TAU); g.stroke(); g.setLineDash([]); }
@@ -380,8 +466,8 @@ function paint() {
     g.strokeStyle = '#5fc8ff'; g.lineWidth = 2;
     for (let x = b.x0 + 6; x < b.x1 - 4; x += 9) { g.beginPath(); g.moveTo(x - dir * 4, mz - hh); g.lineTo(x + dir * 2, mz); g.lineTo(x - dir * 4, mz + hh); g.stroke(); }
   }
-  // the start line under the start gantry: a chequered band across the south straight
-  for (let z = 312; z < 369; z += 3) for (let i = 0; i < 3; i++) { g.fillStyle = ((z / 3 | 0) + i) & 1 ? '#111' : '#eee'; g.fillRect(250 + i * 4, z, 4, 3); }
+  // the start line just past the start gantry: a chequered band across the south straight
+  for (let z = 312; z < 369; z += 3) for (let i = 0; i < 3; i++) { g.fillStyle = ((z / 3 | 0) + i) & 1 ? '#111' : '#eee'; g.fillRect(274 + i * 4, z, 4, 3); }
   // a ring under each pickup, in its colour, so you can see where one comes back
   for (const p of PICKUP_SPOTS) { const k = PICKUPS[p.kind]; g.strokeStyle = k.css; g.lineWidth = 1.1; g.beginPath(); g.arc(p.x, p.z, 6, 0, TAU); g.stroke(); g.globalAlpha = 0.25; g.fillStyle = k.css; g.fill(); g.globalAlpha = 1; }
   I();
@@ -390,46 +476,92 @@ function paint() {
 
 // ---- the map -------------------------------------------------------------------------------------------------------
 // Routes: a line to a waypoint must be clear by six voxels either side (a car is up to five and a bit from its middle
-// to its side), and the route grid keeps a margin round the plinth, so rivals going round the middle swing wide of it
-// and don't scrape its curve and stick there.
+// to its side). The route grid shuts its cells over each hazard while it is dangerous (the sweeper's reach always, a
+// jet while it is lit or lighting, the magnet while it hums or pulls, the press's pad while it comes down), so rivals
+// are routed round them; and the line from a car to its next waypoint must not cut across one either, as the route
+// grid's own line test only sees voxels. (A rival chasing you in plain sight drives straight at you, and keeps clear
+// of the hazards itself, by hazards.js's steerClear.)
 const nav = makeGridNav({ cell: 4, maxNodes: 9000, side: 6 });
-const KEEP = [];
-// and the fire grates' cells, a list for each quarter: while a pair of quarters warns or burns, routes go round them
-// (a rival chasing you across them in plain sight still follows you in, so you can lead one through the fire)
-const QUART = [[], [], [], []];
-for (let k = 0; k < nav.NZ; k++) for (let i = 0; i < nav.NX; i++) {
-  const x = (i + 0.5) * nav.cell - CX, z = (k + 0.5) * nav.cell - CZ, r = Math.hypot(x, z);
-  if (r < 25) KEEP.push(k * nav.NX + i);
-  else if (r < GRATES.r1 + 3) QUART[((Math.round(Math.atan2(z, x) / (Math.PI / 2)) % 4) + 4) % 4].push(k * nav.NX + i);
+const NC = nav.NX * nav.NZ, cellX = (i) => (i % nav.NX + 0.5) * nav.cell, cellZ = (i) => (Math.floor(i / nav.NX) + 0.5) * nav.cell;
+const dyn = new Uint8Array(NC), dynWas = new Uint8Array(NC);
+let zones = null;
+// the open cells under each hazard (worked out once the route grid has first looked at the voxels)
+function makeZones() {
+  const where = (f) => { const out = []; for (let i = 0; i < NC; i++) if (!nav.blocked[i] && f(cellX(i), cellZ(i))) out.push(i); return out; };
+  const L = JETS.len * 1.3;   // as far as a jet reaches when it is wild
+  zones = {
+    sweep: where((x, z) => Math.hypot(x - CX, z - CZ) < SWEEP.r1 + 11),   // (the saws at the blades' tips reach a car's end a little past r1)
+    magnet: where((x, z) => Math.hypot(x - MAGNET.x, z - MAGNET.z) < 30),
+    press: where((x, z) => x > PRESS.x0 - 3 && x < PRESS.x1 + 3 && z > PRESS.z0 - 3 && z < PRESS.z1 + 3),
+    jets: JETS.jets.map((j) => where((x, z) => {
+      const px = x - j.x, pz = z - j.z, al = px * Math.cos(j.a) + pz * Math.sin(j.a), off = Math.abs(px * Math.sin(j.a) - pz * Math.cos(j.a));
+      return al > -4 && al < L + 3 && off < 1.6 + 4.4 * Math.min(1, Math.max(0, al / JETS.len)) + 5;
+    })),
+  };
 }
-// the radar draws the route grid, but not the fire's stand-in walls (it draws the fire ring itself)
-const shown = new Uint8Array(nav.NX * nav.NZ), gridR = gridRadar({ NX: nav.NX, NZ: nav.NZ, blocked: shown });
-let fireWas = -1, shownT = 0;
+// the radar draws the route grid, but not the hazards' stand-in walls (it draws the hazards themselves)
+const shown = new Uint8Array(NC), gridR = gridRadar({ NX: nav.NX, NZ: nav.NZ, blocked: shown });
+let shownT = 0;
 function routeStep(dt) {
   nav.step(dt);
-  if ((shownT -= dt) <= 0) { shownT = 1; shown.set(nav.blocked); for (const q of QUART) for (const i of q) shown[i] = 0; for (const i of KEEP) shown[i] = 1; }
-  for (const i of KEEP) nav.blocked[i] = 1;
-  const on = GRATES.hot >= 0 ? GRATES.hot : GRATES.warn;
-  if (on !== fireWas && fireWas >= 0) for (const q of [fireWas, fireWas + 2]) for (const i of QUART[q]) nav.blocked[i] = 0;
-  if (on >= 0) for (const q of [on, on + 2]) for (const i of QUART[q]) nav.blocked[i] = 1;
-  fireWas = on;
+  if (!zones) makeZones();
+  dynWas.set(dyn); dyn.fill(0);
+  const mark = (list) => { for (const i of list) dyn[i] = 1; };
+  mark(zones.sweep);
+  if (MAGNET.on) mark(zones.magnet);
+  if (PRESS.danger) mark(zones.press);
+  JETS.jets.forEach((j, k) => { if (j.on) mark(zones.jets[k]); });
+  for (let i = 0; i < NC; i++) { if (dyn[i]) nav.blocked[i] = 1; else if (dynWas[i]) nav.blocked[i] = 0; }
+  if ((shownT -= dt) <= 0) { shownT = 1; shown.set(nav.blocked); for (let i = 0; i < NC; i++) if (dyn[i]) shown[i] = 0; }
 }
-// A car inside the plinth's margin, or on grates that are warning or burning, has no open cell next to it, and the
-// route-finder would send it straight at its target, through the plinth if that is the way. So it is sent out round
-// the ring instead, the way round that leads towards the target, and picks up its route once it is clear.
-function waypoint(c, tx, tz, out) {
-  const dx = c.x - CX, dz = c.z - CZ, r = Math.hypot(dx, dz);
-  if (r < 30 || (r < GRATES.r1 + 4 && nav.blocked[nav.cellOf(c.x, c.z)])) {
-    const a = Math.atan2(dz, dx), to = Math.atan2(tz - CZ, tx - CX) - a, side = Math.sign(Math.sin(to)) || 1, R = r < 30 ? 36 : GRATES.r1 + 10;
-    out.x = CX + Math.cos(a + side * 0.6) * R; out.z = CZ + Math.sin(a + side * 0.6) * R;
-    return out;
+// is the straight line between two points clear of the hazards' shut cells?
+function hazardFree(x0, z0, x1, z1) {
+  const n = Math.ceil(Math.hypot(x1 - x0, z1 - z0) / 2);
+  for (let k = 1; k <= n; k++) { const f = k / n; if (dyn[nav.cellOf(x0 + (x1 - x0) * f, z0 + (z1 - z0) * f)]) return false; }
+  return true;
+}
+// A car in a shut cell (among the blades, in a flame, under the magnet) has nowhere for a route to start from: it
+// makes for the nearest open cell first (leaning toward its target), and a little past it.
+function nearestOpen(c, tx, tz, out) {
+  const ci = nav.cellOf(c.x, c.z), cx = ci % nav.NX, cz = Math.floor(ci / nav.NX);
+  let best = -1, bd = 1e9;
+  for (let r = 1; r <= 18 && best < 0; r++) for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
+    if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+    const x = cx + dx, z = cz + dz; if (x < 0 || z < 0 || x >= nav.NX || z >= nav.NZ) continue;
+    const i = z * nav.NX + x; if (nav.blocked[i]) continue;
+    const d = Math.hypot(dx, dz) * nav.cell + 0.3 * Math.hypot(cellX(i) - tx, cellZ(i) - tz);
+    if (d < bd) { bd = d; best = i; }
   }
-  return nav.waypoint(c, tx, tz, out);
+  if (best < 0) { out.x = tx; out.z = tz; return out; }
+  const x = cellX(best), z = cellZ(best), dx = x - c.x, dz = z - c.z, l = Math.hypot(dx, dz) || 1;
+  out.x = x + dx / l * 6; out.z = z + dz / l * 6; return out;
+}
+function waypoint(c, tx, tz, out) {
+  if (!zones) return nav.waypoint(c, tx, tz, out);
+  if (dyn[nav.cellOf(c.x, c.z)]) return nearestOpen(c, tx, tz, out);
+  nav.waypoint(c, tx, tz, out);
+  if (hazardFree(c.x, c.z, out.x, out.z)) return out;
+  // the line cuts across a hazard: find the route again if it runs through one (it was found before that one lit up),
+  // then take the furthest point along it that the car can reach without crossing one
+  const st = c._nav;
+  if (st && st.path && st.path.some((n) => dyn[n])) { st.next = 0; nav.waypoint(c, tx, tz, out); }
+  const P = st && st.path; if (!P) return out;
+  // (the furthest with a car's width clear either side as well, as the route grid picks them; failing that, the
+  // furthest clear of the hazards, for the car to feel its way along; failing that, the next cell)
+  let pick = -1, near = -1;
+  for (let i = 0; i < P.length - 1; i++) {
+    const x = cellX(P[i]), z = cellZ(P[i]);
+    if (Math.hypot(x - c.x, z - c.z) > 80 || !hazardFree(c.x, c.z, x, z)) continue;
+    if (near < 0) near = i;
+    if (lineClear(c.x, c.z, x, z, 3, 6)) { pick = i; break; }
+  }
+  const n = P[pick >= 0 ? pick : near >= 0 ? near : Math.max(0, P.length - 2)]; out.x = cellX(n); out.z = cellZ(n);
+  return out;
 }
 export default {
   id: 'arena', name: 'Hammerdown Arena', mode: 'waves',
-  blurb: 'A televised car combat arena: a loop to keep moving, cover to break the line of fire, fire grates round the trophy, a press and a fuel depot.',
-  loading: ['Building the arena', 'Filling the stands and setting the press'],
+  blurb: 'A televised car combat arena: a sweeper under the big screen, hammers on the gantries, flame jets in the corners, a press, a magnet, and a strike in the eye.',
+  loading: ['Building the arena', 'Setting the sweeper, the hammers and the magnet'],
   outer: 0x6e6b64,
   build() {
     ctx.L = 2; seed = 1234567;
@@ -442,25 +574,57 @@ export default {
   spawnPoint: (player, taken) => pickSpot(SPOTS, player, taken),
   step: routeStep,
   pickups: PICKUP_SPOTS,
-  // (the bounds hold cars inside the wall's line even where rockets have blown it open)
-  // and nothing can shove a car into the steel of the plinth or the press's column, which it could not dig out of
-  hazards: [GRATES, PRESS, BARRELS, ...BOOSTS, { kind: 'bounds', x: CX, z: CZ, ...WALL },
-    { kind: 'keepout', x: CX, z: CZ, r: 20 }, { kind: 'keepout', x0: 110, z0: 184, x1: 122, z1: 232 }],
-  // the radar: what stands (from the route grid), the fire ring (lit where it burns), the press's pad (red while it is
-  // down), the barrels and the pickups that are up
+  // the set pieces first (they move cars about), then the bounds (which hold cars inside the wall's line even where
+  // rockets have blown it open) and the keepouts (nothing can shove a car into the steel of the frame's legs or the
+  // press's column, which it could not dig out of)
+  hazards: [SWEEP, ...HAMMERS, JETS, MAGNET, PRESS, ...BELTS, BARRELS, ...BOOSTS, SHOW,
+    { kind: 'bounds', x: CX, z: CZ, ...WALL },
+    ...LEGS.map(([a, b]) => ({ kind: 'keepout', x: CX + a + 1.5, z: CZ + b + 1.5, r: 1.9 })),
+    { kind: 'keepout', x0: 110, z0: 184, x1: 122, z1: 232 }],
+  // the radar: what stands (from the route grid), then each set piece as it is now, the barrels and the pickups that
+  // are up, and while the show has an event on, a frame round it all with the event's name and the seconds left
   radar(R, s, ox, oy, w, h) {
     gridR(R, s, ox, oy, w, h);
-    R.lineWidth = 18 * s;
-    for (let k = 0; k < 4; k++) {
-      const a = k * Math.PI / 2, hot = GRATES.hot === (k & 1), warn = GRATES.warn === (k & 1);
-      R.strokeStyle = hot ? 'rgba(255,120,40,0.9)' : warn ? 'rgba(255,150,60,0.45)' : 'rgba(255,150,60,0.18)';
-      R.beginPath(); R.arc(ox + CX * s, oy + CZ * s, 31 * s, a - Math.PI / 4, a + Math.PI / 4); R.stroke();
+    const X = (x) => ox + x * s, Y = (z) => oy + z * s, T = performance.now() / 1000, blink = (T * 8 | 0) & 1;
+    // the sweeper: its reach, and its blades
+    R.strokeStyle = 'rgba(255,90,60,0.4)'; R.lineWidth = 1; R.beginPath(); R.arc(X(CX), Y(CZ), SWEEP.r1 * s, 0, TAU); R.stroke();
+    R.strokeStyle = 'rgba(255,70,50,0.95)'; R.lineWidth = 2;
+    for (let k = 0; k < SWEEP.n; k++) { const a = (SWEEP.angle || 0) + k * TAU / SWEEP.n; R.beginPath(); R.moveTo(X(CX + Math.cos(a) * SWEEP.r0), Y(CZ + Math.sin(a) * SWEEP.r0)); R.lineTo(X(CX + Math.cos(a) * SWEEP.r1), Y(CZ + Math.sin(a) * SWEEP.r1)); R.stroke(); }
+    // the hammers: the lane each crosses, and its head (red swinging low, blinking as it is about to go)
+    for (const H of HAMMERS) {
+      R.strokeStyle = 'rgba(255,200,60,0.35)'; R.lineWidth = 1; R.beginPath(); R.moveTo(X(H.x), Y(H.z - H.lane)); R.lineTo(X(H.x), Y(H.z + H.lane)); R.stroke();
+      if (!H.head) continue;
+      R.fillStyle = H.low ? 'rgba(255,60,40,1)' : H.warn && blink ? 'rgba(255,240,90,1)' : 'rgba(255,190,60,0.8)';
+      R.beginPath(); R.arc(X(H.head.x), Y(H.head.z), H.low ? 3 : 2.2, 0, TAU); R.fill();
     }
-    R.fillStyle = PRESS.low ? 'rgba(255,60,40,0.8)' : 'rgba(255,200,40,0.45)';
-    R.fillRect(ox + PRESS.x0 * s, oy + PRESS.z0 * s, (PRESS.x1 - PRESS.x0) * s, (PRESS.z1 - PRESS.z0) * s);
+    // the flame jets: a line along each one that is lit (thin while it is lighting)
+    R.lineCap = 'round';
+    for (const j of JETS.jets) {
+      if (!j.on) continue;
+      R.strokeStyle = j.hot ? 'rgba(255,130,30,0.95)' : 'rgba(255,170,60,0.55)'; R.lineWidth = j.hot ? 3 : 1.5;
+      R.beginPath(); R.moveTo(X(j.x), Y(j.z)); R.lineTo(X(j.x + Math.cos(j.a) * (j.len || JETS.len)), Y(j.z + Math.sin(j.a) * (j.len || JETS.len))); R.stroke();
+    }
+    R.lineCap = 'butt';
+    // the magnet's reach: dashed at rest, solid as it hums up, filled while it pulls
+    R.setLineDash(MAGNET.on ? [] : [2, 2]); R.strokeStyle = MAGNET.on ? (MAGNET.pull || blink ? 'rgba(90,170,255,1)' : 'rgba(90,170,255,0.5)') : 'rgba(90,170,255,0.35)'; R.lineWidth = MAGNET.on ? 1.5 : 1;
+    R.beginPath(); R.arc(X(MAGNET.x), Y(MAGNET.z), MAGNET.r * s, 0, TAU); R.stroke(); R.setLineDash([]);
+    if (MAGNET.pull) { R.fillStyle = 'rgba(90,170,255,0.28)'; R.fill(); }
+    // the belts, and the press's pad (red while it is down, orange as it is about to come down)
+    R.fillStyle = 'rgba(190,196,204,0.3)'; for (const b of BELTS) R.fillRect(X(b.x0), Y(b.z0), (b.x1 - b.x0) * s, (b.z1 - b.z0) * s);
+    R.fillStyle = PRESS.low ? 'rgba(255,60,40,0.8)' : PRESS.danger ? 'rgba(255,140,40,0.7)' : 'rgba(255,200,40,0.45)';
+    R.fillRect(X(PRESS.x0), Y(PRESS.z0), (PRESS.x1 - PRESS.x0) * s, (PRESS.z1 - PRESS.z0) * s);
     R.fillStyle = 'rgba(255,80,60,0.85)';
-    for (const b of BARRELS.spots) if (b.up !== false) R.fillRect(ox + b.x * s - 0.8, oy + b.z * s - 0.8, 1.6, 1.6);
-    for (const p of PICKUP_SPOTS) { if (!p.up) continue; R.fillStyle = PICKUPS[p.kind].css; R.beginPath(); R.arc(ox + p.x * s, oy + p.z * s, 2.2, 0, TAU); R.fill(); }
+    for (const b of BARRELS.spots) if (b.up !== false) R.fillRect(X(b.x) - 0.8, Y(b.z) - 0.8, 1.6, 1.6);
+    for (const p of PICKUP_SPOTS) {
+      if (!p.up) continue;
+      const big = p.kind === 'super';
+      R.fillStyle = PICKUPS[p.kind].css; R.beginPath(); R.arc(X(p.x), Y(p.z), big ? (blink ? 4 : 3.2) : 2.2, 0, TAU); R.fill();
+    }
+    if (SHOW.event) {
+      R.strokeStyle = blink ? 'rgba(255,60,40,0.95)' : 'rgba(255,200,60,0.95)'; R.lineWidth = 3; R.strokeRect(ox + 1.5, oy + 1.5, w - 3, h - 3);
+      R.font = 'bold 10px sans-serif'; R.textAlign = 'center'; R.textBaseline = 'alphabetic'; R.fillStyle = '#fff';
+      R.fillText(`${SHOW.name} ${Math.ceil(SHOW.left)}`, ox + w / 2, oy + 14); R.textAlign = 'start';
+    }
   },
   nav,
 };
