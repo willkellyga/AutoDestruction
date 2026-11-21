@@ -7,6 +7,7 @@ import { solid } from '../../src/world.js';
 import { MAP } from './maps/index.js';
 import { AI } from './tuning.js';
 import { pickupFor } from './pickups.js';
+import { steerClear } from './hazards.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
@@ -44,6 +45,8 @@ export function makeDriver(car) {
     let gx, gz;
     if (b.pk) { if (clearLine(car.x, car.z, b.pk.x, b.pk.z, 4)) { gx = b.pk.x; gz = b.pk.z; } else { MAP.waypoint(car, b.pk.x, b.pk.z, b.wp); gx = b.wp.x; gz = b.wp.z; } }
     else if (sees || d < 30) { gx = T.x; gz = T.z; } else { MAP.waypoint(car, T.x, T.z, b.wp); gx = b.wp.x; gz = b.wp.z; }
+    // and round the map's hazards while they are dangerous (hazards.js knows when each one is)
+    if (steerClear(car, gx, gz, b.sc || (b.sc = { x: 0, z: 0 }), b.pk ? b.pk.x : T.x, b.pk ? b.pk.z : T.z)) { gx = b.sc.x; gz = b.sc.z; }
     const want = Math.atan2(gx - car.x, gz - car.z), off = wrap(want - car.yaw), sp = car.fwd;
     if (b.backT > 0) {   // backing out of a corner
       b.backT -= dt; car.throttle = -1; car.steer = b.backSteer; car.brake = 0; car.drift = false;
