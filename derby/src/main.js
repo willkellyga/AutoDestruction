@@ -44,6 +44,7 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure
 const scene = new THREE.Scene(); scene.matrixAutoUpdate = false;
 const HORIZON = new THREE.Color(0xf3d2ae);
 scene.fog = new THREE.Fog(HORIZON, CITY ? 420 : 300, CITY ? 1700 : 1150);
+renderer.setClearColor(HORIZON);
 const camera = new THREE.PerspectiveCamera(64, 1, 0.5, 2400);
 const sky = new THREE.Mesh(new THREE.SphereGeometry(2200, 24, 12), new THREE.ShaderMaterial({
   side: THREE.BackSide, depthWrite: false, fog: false,
@@ -52,6 +53,11 @@ const sky = new THREE.Mesh(new THREE.SphereGeometry(2200, 24, 12), new THREE.Sha
   fragmentShader: 'uniform vec3 top; uniform vec3 bot; varying float h; void main(){ float t=pow(clamp(h*1.6,0.0,1.0),0.6); gl_FragColor=vec4(mix(bot,top,t),1.0); }',
 }));
 sky.renderOrder = -2; scene.add(sky);
+// The dome goes with the camera, just inside the far edge, as Monster Mayhem's does (placeSky, before each draw). Left at the
+// map's corner, its far side lay past the far edge when looking away from that corner, and the black behind it showed as
+// a dark slab on the horizon. The clear colour is the haze too, so a gap anywhere shows sky, not black.
+sky.scale.setScalar(camera.far * 0.95 / 2200);
+const placeSky = () => sky.position.copy(camera.position);
 scene.add(new THREE.HemisphereLight(0xcfe4ff, 0x9a8460, 1.25));
 const sun = new THREE.DirectionalLight(0xfff0d2, 2.7);
 sun.castShadow = true; sun.shadow.mapSize.set(MOBILE ? 2048 : 4096, MOBILE ? 2048 : 4096);
@@ -890,7 +896,7 @@ function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   if (window.__hold) return;   // tests step the game by hand (window.__derby.step)
   step(dt);
-  quality.judge(now); quality.draw();
+  quality.judge(now); placeSky(); quality.draw();
 }
 function step(dt) {
   game.time += dt; newFrame();
@@ -951,4 +957,4 @@ followSun(player.x, player.z);
 const loadEl = $('loading'); if (loadEl) loadEl.hidden = true;
 $('menu').hidden = false;
 requestAnimationFrame((t) => { last = t; frame(t); });
-window.__derby = { touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH }), useTouch, step, render: () => quality.draw(), quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, sfx, mines, gadget, spawnPlayer, addCar, pickups, hazards };
+window.__derby = { touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, sfx, mines, gadget, spawnPlayer, addCar, pickups, hazards };
