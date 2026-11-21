@@ -138,7 +138,7 @@ let player = null;
 let by = null;      // whose shot or crash is breaking things right now (for scrap and kills)
 // what the guns' shots can strike: the combat cars
 const target = {
-  solid: (x, y, z) => { for (const c of cars) if (!c.gone && c.inside(x, y, z)) return true; for (const e of extras) if (e.solid(x, y, z)) return true; return false; },
+  solid: (x, y, z) => { if (!mode.friendly) for (const c of cars) if (!c.gone && c.inside(x, y, z)) return true; for (const e of extras) if (e.solid(x, y, z)) return true; return false; },   // (a friendly mode's shots go through cars)
   colorAt: (p) => { for (const c of cars) if (c.inside(p.x, p.y, p.z, 1)) return PAINTS[c.load.paint] ?? 0x777b82; return 0x777b82; },
   scorch() {}, update() {}, scorched: 0,
 };
@@ -172,7 +172,7 @@ hooks.explosion = (x, y, z, r) => {
     if (c.dead) continue;
     const d = Math.hypot(c.x - x, c.z - z) - c.wide; if (d > reach) continue;
     const k = 1 - Math.max(0, d) / reach;
-    damage(c, base * k, by);
+    damage(c, base * k, mode.friendly && !splashK ? null : by);   // in a friendly mode the map's own blasts (fuel tanks) hurt everyone
     const p = Math.max(1, Math.hypot(c.x - x, c.z - z)); c.vx += (c.x - x) / p * 30 * k; c.vz += (c.z - z) / p * 30 * k;
   }
   for (const e of extras) e.explosion(x, y, z, reach, base, by);
@@ -193,6 +193,7 @@ function addCar(load, at, rival) {
 }
 function damage(c, d, who) {
   if (!c || c.dead || d <= 0 || game.state === 'menu') return;
+  if (mode.friendly && who && who !== c) return;   // a mode with no fighting between cars (survival): only the dead and the map hurt
   if (c === player && who === player) d *= 0.35;   // your own splash hurts, but less
   if (window.__dlog) window.__dlog.push([c.name, who ? who.name : (splashK ? 'boom' : 'wall'), Math.round(d * 10) / 10]);
   c.hp -= d; c.hurtT = 0.25; if (who && who !== c) c.lastBy = who;
@@ -206,7 +207,7 @@ function wreck(c, who) {
   c.unit.kill(p, 6, chip);
   c.blowParts(cube, p, 16);
   sfx.play(c.maxHp > 200 ? 'bigboom' : 'carboom', 1, p.x, p.z);
-  const was = by; by = who; splashK = { splash: 18, reach: 18 };
+  const was = by; by = who || (mode.friendly ? c : null); splashK = { splash: 18, reach: 18 };   // (friendly: the wreck's own blast spares the other cars)
   try { explode(p.x, 2.5, p.z, 5.5, 0.6, { maxDebris: 260, fire: true }); } finally { by = was; splashK = null; }
   if (c === player) {
     game.deaths++; keepSave(save);
@@ -280,7 +281,7 @@ function nearMiss(from, to) {
 const bolts = [], boltMat = new THREE.LineBasicMaterial({ color: 0xa8e4ff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
 function zap(c, G) {
   let best = null, bd = G.g.range;
-  for (const o of cars) { if (o === c || o.dead || o.gone) continue; const d = Math.hypot(o.x - c.x, o.z - c.z) - o.wide; if (d < bd) { bd = d; best = o; } }
+  for (const o of mode.friendly ? [] : cars) { if (o === c || o.dead || o.gone) continue; const d = Math.hypot(o.x - c.x, o.z - c.z) - o.wide; if (d < bd) { bd = d; best = o; } }
   if (!best || !c.muzzle(G, _m, null, 0)) return false;
   const to = best.centre(_a); to.y = 2.2 + Math.random();
   let b = bolts.find((x) => x.t <= 0);
@@ -326,7 +327,7 @@ function onLand(s, hit, p) {
   const was = by; by = s.owner;
   try {
     if (hit === 1) {
-      const c = cars.find((o) => !o.gone && o.inside(p.x, p.y, p.z, 1.2));
+      const c = !mode.friendly && cars.find((o) => !o.gone && o.inside(p.x, p.y, p.z, 1.2));
       if (c && c !== s.owner) {
         let d = g.dmg * (s.owner && s.owner.rival ? AI.dmg : 1);
         if (g.pellets) d *= clamp(1.3 - s.from.distanceTo(p) / g.range, 0.15, 1);   // the scattergun is brutal close and weak far
@@ -780,7 +781,7 @@ function autoTarget(c, dt) {
   const ok = (o) => o && !o.dead && !o.gone && Math.hypot(o.x - c.x, o.z - c.z) < 240 && clearLine(c.x, c.z, o.x, o.z, 4);
   if (autoT && autoKeep > 0 && ok(autoT)) return autoT;
   let best = null, bs = 1e9;
-  for (const o of cars) {
+  for (const o of mode.targets ? mode.targets() : cars) {   // (a mode can give other things to aim at: survival's zombies)
     if (o === c || !ok(o)) continue;
     const d = Math.hypot(o.x - c.x, o.z - c.z), off = Math.abs(wrap(Math.atan2(o.x - c.x, o.z - c.z) - cam.yaw));
     const score = d * (1 + off * 0.9) * (o === autoT ? 0.7 : 1);
@@ -795,7 +796,7 @@ function aimFor(c, dt) {
   if (TOUCH) { best = autoTarget(c, dt); k = best ? 1 : 0; }
   else {
     const tan = Math.tan(camera.fov * Math.PI / 360);
-    for (const o of cars) {
+    for (const o of mode.targets ? mode.targets() : cars) {
       if (o === c || o.dead || o.gone) continue;
       leadOn(o, c, _tc); const dist = camera.position.distanceTo(_tc); if (dist > AIM.range) continue;
       _ts.copy(_tc).project(camera); if (_ts.z > 1) continue;
@@ -807,7 +808,6 @@ function aimFor(c, dt) {
     }
   }
   if (best) { leadOn(best, c, _tc); c.aim.copy(p).lerp(_tc, TOUCH ? 1 : AIM.pull * Math.min(1, k * 1.3)); }
-  else if (TOUCH && mode.autoAim && mode.autoAim(c, cam.yaw, _tc)) c.aim.copy(_tc);   // no rival in view: the mode may have something else to shoot (survival's zombies)
   else c.aim.copy(p);
   cam.sticky = TOUCH ? 0 : k; aimLock = k > 0.25 ? best : null;
 }
