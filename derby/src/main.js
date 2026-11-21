@@ -1,0 +1,535 @@
+// Auto Destruction: the first playable demo. Drive a gun car round Crumbletown (Monster Mayhem's town, its destruction
+// and its tuning, used as they are) and wreck the rival cars. Waves of rivals; upgrades and timed battles come later.
+import * as THREE from 'three';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { WX, WZ, WY, CITY, solid, STREET_X, STREET_Z, SPAWN } from '../../src/world.js';
+import * as world from '../../src/world.js';
+import { generateTown } from '../../src/town.js';
+import { groundCanvas } from '../../src/ground.js';
+import { look } from '../../src/mesh.js';
+import { hooks, stats, cfg, initSim, stepSim, blast, explode, setFocus, setParticleScale, sparks, dust } from '../../src/sim.js';
+import { makeCivilians } from '../../src/civilians.js';
+import { makeMixer } from '../../src/sfx.js';
+import { DEFAULT_TRIMS } from '../../src/sfx-trims.js';
+import { SFX_BANK, SFX_NORM } from '../../src/sfx-bank.js';
+import { makeFx } from '../../units/src/fx.js';
+import { Vehicle } from './vehicle.js';
+import { makeDriver, spawnPoint } from './ai.js';
+import { PLAYER, RIVALS, GUNS, CRASH, ROUND, AI } from './tuning.js';
+
+const $ = (id) => document.getElementById(id);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+const PROPS = { prop: true };
+
+// ---- renderer, scene, light (as Monster Mayhem's) --------------------------------------------------------------
+const canvas = $('view');
+const MOBILE = navigator.maxTouchPoints > 0 && !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: !MOBILE, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+const scene = new THREE.Scene(); scene.matrixAutoUpdate = false;
+const HORIZON = new THREE.Color(0xf3d2ae);
+scene.fog = new THREE.Fog(HORIZON, CITY ? 420 : 300, CITY ? 1700 : 1150);
+const camera = new THREE.PerspectiveCamera(64, 1, 0.5, 2400);
+const sky = new THREE.Mesh(new THREE.SphereGeometry(2200, 24, 12), new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite: false, fog: false,
+  uniforms: { top: { value: new THREE.Color(0x4a92d0) }, bot: { value: HORIZON } },
+  vertexShader: 'varying float h; void main(){ h=normalize(position).y; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+  fragmentShader: 'uniform vec3 top; uniform vec3 bot; varying float h; void main(){ float t=pow(clamp(h*1.6,0.0,1.0),0.6); gl_FragColor=vec4(mix(bot,top,t),1.0); }',
+}));
+sky.renderOrder = -2; scene.add(sky);
+scene.add(new THREE.HemisphereLight(0xcfe4ff, 0x9a8460, 1.25));
+const sun = new THREE.DirectionalLight(0xfff0d2, 2.7);
+sun.castShadow = true; sun.shadow.mapSize.set(MOBILE ? 2048 : 4096, MOBILE ? 2048 : 4096);
+const sc = sun.shadow.camera; sc.left = -220; sc.right = 220; sc.top = 200; sc.bottom = -200; sc.near = 20; sc.far = 1100;
+sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.8;
+scene.add(sun); scene.add(sun.target);
+const SUN_DIR = new THREE.Vector3(0.55, 0.95, 0.35).normalize();
+const SUN_R = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), SUN_DIR).normalize(), SUN_U = new THREE.Vector3().crossVectors(SUN_DIR, SUN_R);
+const _sunC = new THREE.Vector3();
+function followSun(x, z) {   // the shadow box follows the player, in whole texels so shadows do not crawl
+  const tex = (sc.right - sc.left) / sun.shadow.mapSize.x;
+  _sunC.set(x, 0, z); const u = _sunC.dot(SUN_R), v = _sunC.dot(SUN_U);
+  _sunC.addScaledVector(SUN_R, Math.round(u / tex) * tex - u).addScaledVector(SUN_U, Math.round(v / tex) * tex - v);
+  sun.target.position.copy(_sunC); sun.position.copy(_sunC).addScaledVector(SUN_DIR, 480);
+}
+
+// ---- the town ----------------------------------------------------------------------------------------------------
+generateTown();
+{
+  const gTex = new THREE.CanvasTexture(groundCanvas()); gTex.colorSpace = THREE.SRGBColorSpace; gTex.anisotropy = 8;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, 0, 0, WX, 0, 0, WX, 0, WZ, 0, 0, WZ]), 3));
+  g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([0, 1, 1, 1, 1, 0, 0, 0]), 2));
+  g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array([0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0]), 3));
+  g.setIndex([0, 2, 1, 0, 3, 2]);
+  const ground = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ map: gTex })); ground.receiveShadow = true; scene.add(ground);
+  const outer = new THREE.Mesh(new THREE.PlaneGeometry(6400, 6400), new THREE.MeshLambertMaterial({ color: 0x7fb069, depthWrite: false }));
+  outer.renderOrder = -1; outer.rotation.x = -Math.PI / 2; outer.position.set(WX / 2, -0.06, WZ / 2); scene.add(outer);
+}
+initSim(scene);
+look.detail.value = 1; look.dusk.value = 0;
+cfg.dust = 0.55; cfg.hang = 0.2;
+
+// ---- the light pass: bloom, grade, vignette ---------------------------------------------------------------------
+const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 }));
+composer.addPass(new RenderPass(scene, camera));
+composer.addPass(new UnrealBloomPass(new THREE.Vector2(4, 4), 0.24, 0.55, 1.3));
+composer.addPass(new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, sat: { value: 1.05 }, con: { value: 1.07 }, vig: { value: 0.32 }, hurt: { value: 0 } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+  fragmentShader: 'uniform sampler2D tDiffuse; uniform float sat; uniform float con; uniform float vig; uniform float hurt; varying vec2 vUv; void main(){ vec4 c=texture2D(tDiffuse,vUv); float l=dot(c.rgb,vec3(0.2126,0.7152,0.0722)); c.rgb=mix(vec3(l),c.rgb,sat); c.rgb=max(vec3(0.0),(c.rgb-0.18)*con+0.18)*vec3(1.03,1.0,0.96); vec2 d=vUv-0.5; float e=smoothstep(0.18,0.9,dot(d,d)*2.2); c.rgb*=1.0-vig*e; c.rgb=mix(c.rgb,vec3(0.9,0.08,0.04),hurt*e*0.8); gl_FragColor=c; }',
+}));
+const grade = composer.passes[2];
+composer.addPass(new OutputPass());
+
+// ---- sound: Monster Mayhem's mixer and recorded clips ------------------------------------------------------------
+const audioMix = makeMixer({ camera }); audioMix.load(SFX_BANK, SFX_NORM);
+for (const [k, v] of Object.entries(DEFAULT_TRIMS)) audioMix.setTrim(k, v);
+let muted = false, engine = null;
+function initAudio() {
+  audioMix.init();
+  const ctx = audioMix.ctx; if (!ctx || engine) return;
+  // the engine: two detuned saws through a low-pass, pitched by speed
+  const g = ctx.createGain(); g.gain.value = 0; const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 600; f.Q.value = 3;
+  const a = ctx.createOscillator(), b = ctx.createOscillator(); a.type = b.type = 'sawtooth'; a.frequency.value = 45; b.frequency.value = 45.7;
+  a.connect(f); b.connect(f); f.connect(g); g.connect(ctx.destination); a.start(); b.start();
+  engine = { g, f, a, b };
+}
+function sound(name, vol = 1, x, y, z) {
+  audioMix.on = !muted;
+  const grp = x !== undefined && player && Math.hypot(x - player.x, z - player.z) > 140 ? 'city' : 'me';
+  if (grp === 'city' && (name === 'crumble' || name === 'glass' || name === 'creak')) return;
+  audioMix.play(name, vol, x, y, z, grp, 0.4);
+}
+const armySfx = audioMix.module('a.', 'army');
+
+// ---- effects: the army's guns and the town's cars -------------------------------------------------------------
+const mats = [new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.1, color: new THREE.Color(1.2, 1.2, 1.2) }), new THREE.MeshBasicMaterial({ vertexColors: true })];
+const game = { state: 'menu', time: 0, wave: 0, kills: 0, deaths: 0, scrap: 0, shake: 0, slow: 1, banner: 0, nextWave: 0 };
+const fakeMon = { x: -9999, y: 0, z: -9999, S: 1, hp: 1e9, maxHp: 1e9, chargeT: 0, hurtT: 0, yaw: 0 };
+const civ = makeCivilians({ scene, camera, mon: fakeMon, game: { get state() { return 'idle'; }, time: 0 }, U: 2.5, R: () => 6, hurt() {}, toast() {}, addXp() {}, PROPS, muted: () => muted, mixer: audioMix, tanks: () => [], rivals: () => [], viewH: () => renderer.domElement.height, cubePx: () => 0 });
+const debris = civ.debris;
+const cube = (x, y, z, vx, vy, vz, c, s) => debris.spawn(x, y, z, vx, vy, vz, c, s);
+const cars = [];   // every combat car, the player's first
+let player = null;
+let by = null;      // whose shot or crash is breaking things right now (for scrap and kills)
+// what the guns' shots can strike: the combat cars
+const target = {
+  solid: (x, y, z) => { for (const c of cars) if (!c.gone && c.inside(x, y, z)) return true; return false; },
+  colorAt: (p) => { for (const c of cars) if (c.inside(p.x, p.y, p.z, 1)) return c.unit.opts.paint === 'orange' ? 0xdb7a2a : 0x777b82; return 0x777b82; },
+  scorch() {}, update() {}, scorched: 0,
+};
+const fx = makeFx(scene, { target, debris, audio: armySfx, shake: (a, p) => hooks.shake(a, p.x, p.y, p.z), world: { solid: (x, y, z) => solid(Math.floor(x), Math.floor(y), Math.floor(z)) !== 0 }, onLand, trail: 0.5 });
+
+// ---- hooks from the town's destruction -------------------------------------------------------------------------
+hooks.sound = sound;
+hooks.shake = (a, x, y, z) => { if (x !== undefined && player) a *= clamp(1.3 - Math.hypot(x - player.x, z - player.z) / 180, 0, 1); game.shake = Math.min(1.4, game.shake + a); };
+hooks.impact = () => {};
+hooks.destroyed = (n, x, y, z, indirect) => {
+  if (by === player && player) game.scrap += n * (indirect ? 0.02 : 0.04);
+  if (!indirect && n > 6) sound('crumble', clamp(n / 120, 0.25, 1), x, y, z);
+};
+hooks.bodyDown = (b) => { if (by === player && b.kind !== 'prop' && b.kind !== 'rubble' && b.count > 40) { game.scrap += 25; toast(`${b.name} flattened`, '+25 scrap'); } };
+const scorches = []; let scorchN = 0, scorchMat = null;
+hooks.scorch = (x, z, r) => {
+  if (!scorchMat) {
+    const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, 'rgba(20,16,14,0.8)'); gr.addColorStop(0.55, 'rgba(30,24,20,0.45)'); gr.addColorStop(1, 'rgba(30,24,20,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+    scorchMat = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  }
+  let m = scorches[scorchN % 48];
+  if (!m) { m = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), scorchMat); m.rotation.x = -Math.PI / 2; m.renderOrder = 1; scene.add(m); scorches[scorchN % 48] = m; }
+  m.position.set(x, 0.04 + (scorchN % 48) * 0.002, z); m.scale.set(r, r, 1); m.updateMatrixWorld(); scorchN++;
+};
+// any explosion in town (a rocket, a fuel tank going up, a car) hurts the cars round it
+let splashK = null;
+hooks.explosion = (x, y, z, r) => {
+  const base = (splashK ? splashK.splash : 16) * (by && by.rival ? AI.dmg : 1), reach = splashK ? splashK.reach : r * 2.4 + 4;
+  for (const c of cars) {
+    if (c.dead) continue;
+    const d = Math.hypot(c.x - x, c.z - z) - c.wide; if (d > reach) continue;
+    const k = 1 - Math.max(0, d) / reach;
+    damage(c, base * k, by);
+    const p = Math.max(1, Math.hypot(c.x - x, c.z - z)); c.vx += (c.x - x) / p * 30 * k; c.vz += (c.z - z) / p * 30 * k;
+  }
+};
+// the town's parked cars blow up through a blast of their own (src/civilians.js); that should hurt as well
+const civBlast = hooks.blast;
+hooks.blast = (cx, cy, cz, r, o) => {
+  civBlast(cx, cy, cz, r, o);
+  if (o && o.push === 32 && o.core === 0.5) { splashK = { splash: 22, reach: r * 2 + 6 }; try { hooks.explosion(cx, cy, cz, r); } finally { splashK = null; } }
+};
+
+// ---- the cars ----------------------------------------------------------------------------------------------------
+function addCar(load, at, rival) {
+  const c = new Vehicle(scene, mats, load, at);
+  if (rival) { c.driver = makeDriver(c); c.rival = true; }
+  cars.push(c); makeTag(c);
+  return c;
+}
+function damage(c, d, who) {
+  if (!c || c.dead || d <= 0 || game.state === 'menu') return;
+  if (c === player && who === player) d *= 0.35;   // your own splash hurts, but less
+  if (window.__dlog) window.__dlog.push([c.name, who ? who.name : (splashK ? 'boom' : 'wall'), Math.round(d * 10) / 10]);
+  c.hp -= d; c.hurtT = 0.25; if (who && who !== c) c.lastBy = who;
+  if (c === player) game.hurt = Math.min(1, (game.hurt || 0) + d / 40);
+  if (c.hp <= 0) wreck(c, who);
+}
+function wreck(c, who) {
+  if (c.dead) return;
+  c.dead = true; c.deadT = 0; c.hp = 0;
+  const p = c.centre(new THREE.Vector3());
+  c.unit.kill(p, 6, cube);
+  c.kit.burst(cube, p, 16, 0.7);
+  const was = by; by = who; splashK = { splash: 18, reach: 18 };
+  try { explode(p.x, 2.5, p.z, 5.5, 0.6, { maxDebris: 260, fire: true }); } finally { by = was; splashK = null; }
+  if (c === player) { game.deaths++; game.state = 'dead'; game.deadT = ROUND.respawnPlayer; $('dead').hidden = false; }
+  else if (who === player) { game.kills++; game.scrap += 100; toast(`${c.name} wrecked`, '+100 scrap'); }
+  else if (who && who !== c) toast(`${who.name} wrecked ${c.name}`, '');
+}
+
+// a shot from car c's gun slot k (0 the main gun, 1 the pod)
+const _m = new THREE.Vector3(), _d = new THREE.Vector3(), _a = new THREE.Vector3();
+function shoot(c, k) {
+  const G = c.guns[k]; if (!G) return;
+  if (!c.muzzle(k === 1 && c.kit.bones.pod ? 1 : 0, _m, _d)) return;
+  const dist = c.aim.distanceTo(_m), sp = (G.g.spread || 0) * dist / 100;
+  _a.copy(c.aim).add(new THREE.Vector3((Math.random() - 0.5) * sp, (Math.random() - 0.5) * sp, (Math.random() - 0.5) * sp));
+  if (G.g.fx === 'rocket') _d.y += 0.12;
+  const s = fx.fire(G.g.fx, _m, _d, _a, c.kit);
+  s.owner = c; s.gun = G.g;
+  if (G.g.fx === 'cannon' || G.g.fx === 'rocket') { c.vx -= Math.sin(c.gunYaw) * 3; c.vz -= Math.cos(c.gunYaw) * 3; }
+}
+function guns(c, dt, want) {
+  c.guns.forEach((G, k) => {
+    G.t = Math.max(0, G.t - dt);
+    if (G.g.rate) {   // automatic: keeps firing while held
+      if (want[k] && c.onTarget(0.5)) { while (G.t <= 0) { shoot(c, k); G.t += 1 / G.g.rate; } }
+    } else {          // one load at a time: a salvo, then the reload
+      if (G.left > 0) { G.gapT -= dt; if (G.gapT <= 0) { shoot(c, k); G.left--; G.gapT = G.g.gap || 0; } }
+      else if (want[k] && G.t <= 0) { G.left = G.g.salvo || 1; G.gapT = 0; G.t = G.g.reload; }
+    }
+  });
+}
+// where a shot landed: hit 1 a car, 2 the ground, 3 a building
+function onLand(s, hit, p) {
+  const g = s.gun; if (!g) return;
+  const was = by; by = s.owner;
+  try {
+    if (hit === 1) {
+      const c = cars.find((o) => !o.gone && o.inside(p.x, p.y, p.z, 1.2));
+      if (c && c !== s.owner) {
+        damage(c, g.dmg * (s.owner && s.owner.rival ? AI.dmg : 1), s.owner);
+        c.unit.hit(p, g.carve, cube, 8);
+        if (c.dead && g.splash) c.unit.hit(p, g.carve * 1.4, cube, 14);
+      }
+    } else if (hit === 3 && g.wall && !g.splash) {
+      if (Math.random() < 0.7) blast(p.x, p.y, p.z, g.wall, { push: 6, maxDebris: 5, core: 0.2, pushDebris: false });
+    }
+    if (g.splash) {   // rockets and shells go off: the town's own explosion, which also does the splash
+      splashK = g;
+      explode(p.x, Math.max(1, p.y), p.z, g.wall * (hit === 3 ? 1 : 0.6), 0.35, { maxDebris: 200, fire: Math.random() < 0.35 });
+    }
+  } finally { by = was; splashK = null; }
+}
+
+// two cars meeting: each is two circles, front and back
+const _n = { x: 0, z: 0 };
+function bump(a, b) {
+  let best = 0, ax = 0, az = 0, bx = 0, bz = 0;
+  const ra = a.wide + 0.6, rb = b.wide + 0.6;
+  for (const fa of [-0.55, 0.55]) for (const fb of [-0.55, 0.55]) {
+    const x1 = a.x + Math.sin(a.yaw) * (a.mid + a.half * fa), z1 = a.z + Math.cos(a.yaw) * (a.mid + a.half * fa);
+    const x2 = b.x + Math.sin(b.yaw) * (b.mid + b.half * fb), z2 = b.z + Math.cos(b.yaw) * (b.mid + b.half * fb);
+    const d = Math.hypot(x2 - x1, z2 - z1), over = ra + rb - d;
+    if (over > best) { best = over; ax = x1; az = z1; bx = x2; bz = z2; }
+  }
+  if (best <= 0) return;
+  const d = Math.hypot(bx - ax, bz - az) || 1; _n.x = (bx - ax) / d; _n.z = (bz - az) / d;
+  const ma = a.dead ? 2.2 : a.spec.mass, mb = b.dead ? 2.2 : b.spec.mass, ia = 1 / ma, ib = 1 / mb;
+  a.x -= _n.x * best * ia / (ia + ib); a.z -= _n.z * best * ia / (ia + ib); b.x += _n.x * best * ib / (ia + ib); b.z += _n.z * best * ib / (ia + ib);
+  const vrel = (b.vx - a.vx) * _n.x + (b.vz - a.vz) * _n.z;
+  if (vrel >= 0) return;
+  const j = -(1 + 0.35 * CRASH.kick) * vrel / (ia + ib);
+  a.vx -= j * ia * _n.x; a.vz -= j * ia * _n.z; b.vx += j * ib * _n.x; b.vz += j * ib * _n.z;
+  const hitSp = -vrel; if (hitSp < 10) return;
+  // the one driving into the other is the rammer; its plow takes less
+  const ta = a.vx * _n.x + a.vz * _n.z, tb = -(b.vx * _n.x + b.vz * _n.z), ram = ta >= tb ? a : b, hit = ram === a ? b : a;
+  const cp = new THREE.Vector3((ax + bx) / 2, 2.6, (az + bz) / 2), dmg = hitSp * CRASH.carHurt * ram.spec.ram;
+  const was = by; by = ram;
+  try { damage(hit, dmg, ram); damage(ram, dmg * CRASH.ramShare, hit); } finally { by = was; }
+  hit.unit.hit(cp, clamp(0.8 + hitSp * 0.03, 0.8, 3.2), cube, 6);
+  sparks(cp.x, cp.y, cp.z, Math.round(6 + hitSp * 0.3), 1, 0.8, 0.4, 24);
+  sound(hitSp > 40 ? 'crash' : 'metal', clamp(hitSp / 60, 0.35, 1.2), cp.x, cp.y, cp.z);
+  if (a === player || b === player) game.shake = Math.min(1.4, game.shake + hitSp / 80);
+}
+// what driving into the town feels like
+const crashHooks = {
+  smash(c, into, H, n) {
+    if (c === player) game.shake = Math.min(1.2, game.shake + clamp(n / 160, 0.1, 0.7));
+    if (n > 30) sound('crash', clamp(n / 140, 0.3, 1.1), H.x, H.y, H.z);
+  },
+  bump(c, into, H) {
+    damage(c, (into - CRASH.smash * 0.5) * CRASH.wallHurt * 4, null);
+    sound('thud', clamp(into / 50, 0.3, 1), H.x, H.y, H.z); sparks(H.x, 2.5, H.z, 6, 1, 0.8, 0.4, 14);
+    if (c === player) game.shake = Math.min(1.2, game.shake + into / 90);
+  },
+};
+// the parked cars stand in the way until they are smashed
+const _body = { x: 0, z: 0, vx: 0, vz: 0 };
+function parked(c, dt) {
+  for (const f of [0.5, -0.5]) {
+    _body.x = c.x + Math.sin(c.yaw) * (c.mid + c.half * f); _body.z = c.z + Math.cos(c.yaw) * (c.mid + c.half * f); _body.vx = c.vx; _body.vz = c.vz;
+    const ox = _body.x, oz = _body.z, rec = civ.block(_body, c.wide + 0.8, 0, dt);
+    if (!rec) continue;
+    const sp = c.speed;
+    c.pushT = (c.pushT || 0) + dt;
+    if ((sp > 12 || c.pushT > 0.5) && !c.dead) {
+      c.pushT = 0;
+      const was = by; by = c;
+      try { blast(civ.at.x, 3, civ.at.z, 2.5 + sp * 0.04, { push: 10 + sp * 0.3, dx: c.vx / sp, dz: c.vz / sp, maxDebris: 40 }); } finally { by = was; }
+      c.vx *= 0.8; c.vz *= 0.8;
+      if (c === player) game.shake = Math.min(1.2, game.shake + 0.25);
+    } else { c.x += _body.x - ox; c.z += _body.z - oz; c.vx = _body.vx; c.vz = _body.vz; }
+  }
+}
+
+// ---- name tags and the HUD ---------------------------------------------------------------------------------------
+const tags = $('tags');
+function makeTag(c) {
+  if (!c.rival) return;
+  const el = document.createElement('div'); el.className = 'tag';
+  el.innerHTML = `<b></b><i><s></s></i>`; el.querySelector('b').textContent = c.name; tags.appendChild(el); c.tag = el;
+}
+const _p = new THREE.Vector3();
+function drawTags() {
+  const W = canvas.clientWidth, H = canvas.clientHeight;
+  for (const c of cars) {
+    if (!c.tag) continue;
+    _p.set(c.x, c.top + 6, c.z);
+    const d = camera.position.distanceTo(_p); _p.project(camera);
+    const show = !c.dead && _p.z < 1 && d < 320 && game.state !== 'menu';
+    c.tag.style.display = show ? '' : 'none'; if (!show) continue;
+    c.tag.style.transform = `translate(${(_p.x * 0.5 + 0.5) * W}px, ${(-_p.y * 0.5 + 0.5) * H}px) translate(-50%, -100%) scale(${clamp(90 / d, 0.55, 1)})`;
+    c.tag.querySelector('s').style.width = `${(c.hp / c.maxHp) * 100}%`;
+    c.tag.classList.toggle('hit', c.hurtT > 0);
+  }
+}
+let toastT = 0;
+function toast(a, b) { $('toast').innerHTML = `<b></b><span></span>`; $('toast').querySelector('b').textContent = a; $('toast').querySelector('span').textContent = b; $('toast').classList.add('on'); toastT = 2.2; }
+function banner(text, sub) { $('banner').querySelector('b').textContent = text; $('banner').querySelector('span').textContent = sub || ''; $('banner').classList.add('on'); game.banner = 2.4; }
+const radar = $('radar').getContext('2d');
+function drawRadar() {
+  const R = radar, s = 150 / Math.max(WX, WZ), w = WX * s, h = WZ * s, ox = (150 - w) / 2, oy = (150 - h) / 2;
+  R.clearRect(0, 0, 150, 150);
+  R.fillStyle = 'rgba(20,24,28,0.55)'; R.fillRect(ox, oy, w, h);
+  R.strokeStyle = 'rgba(255,255,255,0.22)'; R.lineWidth = 24 * s;
+  R.beginPath(); for (const x of STREET_X) { R.moveTo(ox + x * s, oy); R.lineTo(ox + x * s, oy + h); } for (const z of STREET_Z) { R.moveTo(ox, oy + z * s); R.lineTo(ox + w, oy + z * s); } R.stroke();
+  for (const c of cars) {
+    if (c.gone) continue;
+    const x = ox + c.x * s, y = oy + c.z * s;
+    if (c === player) {
+      R.save(); R.translate(x, y); R.rotate(-c.yaw + Math.PI); R.fillStyle = c.dead ? '#888' : '#ffb33a';
+      R.beginPath(); R.moveTo(0, -6); R.lineTo(4.5, 5); R.lineTo(-4.5, 5); R.closePath(); R.fill(); R.restore();
+    } else { R.fillStyle = c.dead ? 'rgba(140,140,140,0.6)' : '#ff4a3a'; R.beginPath(); R.arc(x, y, c.dead ? 2.2 : 3.2, 0, 7); R.fill(); }
+  }
+}
+function drawHud() {
+  if (!player) return;
+  $('hp-fill').style.width = `${(Math.max(0, player.hp) / player.maxHp) * 100}%`;
+  $('hp-text').textContent = Math.ceil(Math.max(0, player.hp));
+  $('speed').textContent = Math.round(Math.abs(player.fwd) / 4 * 3.6);   // voxels a second to km/h
+  const sec = player.guns[1];
+  if (sec) { const k = sec.left > 0 ? 0 : sec.t / sec.g.reload; $('sec-fill').style.width = `${(1 - k) * 100}%`; $('sec').classList.toggle('ready', k <= 0); }
+  $('kills').textContent = game.kills; $('scrap').textContent = Math.floor(game.scrap);
+  const left = cars.filter((c) => c.rival && !c.dead).length;
+  $('wave').textContent = `Wave ${game.wave}`; $('left').textContent = left === 1 ? '1 rival left' : `${left} rivals left`;
+}
+
+// ---- the round: waves of rivals ------------------------------------------------------------------------------------
+let rivalN = 0;
+function startWave(n) {
+  game.wave = n + 1;
+  const W = ROUND.waves[Math.min(n, ROUND.waves.length - 1)], count = W.count + Math.max(0, n - ROUND.waves.length + 1);
+  // clear away the old wrecks' records (their models stay in the street a while)
+  for (let i = 0; i < count; i++) {
+    const load = RIVALS[(rivalN++) % RIVALS.length];
+    addCar(load, spawnPoint(player, cars.filter((c) => !c.gone)), true);
+  }
+  banner(`Wave ${game.wave}`, `${count} rivals incoming`);
+}
+function spawnPlayer() {
+  const at = { x: SPAWN.x, z: SPAWN.z, yaw: Math.PI };
+  if (player) { const o = spawnPoint(null, cars.filter((c) => !c.gone && c !== player)); at.x = o.x; at.z = o.z; at.yaw = Math.random() * 6.28; }
+  player = addCar({ ...PLAYER, name: 'You' }, at, false);
+  player.turretTurn = 10;
+  cam.yaw = at.yaw; cam.cx = player.x; cam.cz = player.z;
+  // the player's car always goes first in the list
+  cars.splice(cars.indexOf(player), 1); cars.unshift(player);
+}
+
+// ---- controls ------------------------------------------------------------------------------------------------------
+const keys = {};
+const cam = { yaw: Math.PI, pitch: 0.18, dist: 30, locked: false, mx: 0, my: 0, cx: 0, cz: 0 };
+const mouse = { b0: false, b2: false };
+addEventListener('keydown', (e) => {
+  keys[e.code] = true; initAudio();
+  if (e.code === 'KeyM') muted = !muted;
+  if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
+});
+addEventListener('keyup', (e) => { keys[e.code] = false; });
+addEventListener('blur', () => { for (const k in keys) keys[k] = false; mouse.b0 = mouse.b2 = false; });
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+canvas.addEventListener('mousedown', (e) => {
+  initAudio();
+  if (game.state === 'menu') return;
+  if (!cam.locked && canvas.requestPointerLock && !cam.noLock) { try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => { cam.noLock = true; }); } catch (err) { cam.noLock = true; } }
+  if (e.button === 0) mouse.b0 = true; if (e.button === 2) mouse.b2 = true;
+});
+addEventListener('mouseup', (e) => { if (e.button === 0) mouse.b0 = false; if (e.button === 2) mouse.b2 = false; });
+document.addEventListener('pointerlockchange', () => { cam.locked = document.pointerLockElement === canvas; document.body.classList.toggle('locked', cam.locked); });
+document.addEventListener('pointerlockerror', () => { cam.noLock = true; });
+addEventListener('mousemove', (e) => {
+  cam.mx = e.clientX; cam.my = e.clientY;
+  if (cam.locked) { cam.yaw -= e.movementX * 0.0026; cam.pitch = clamp(cam.pitch + e.movementY * 0.0022, -0.25, 0.75); }
+});
+addEventListener('wheel', (e) => { cam.dist = clamp(cam.dist + Math.sign(e.deltaY) * 3, 20, 52); }, { passive: true });
+$('go').addEventListener('click', () => {
+  initAudio(); $('menu').hidden = true; game.state = 'play';
+  if (canvas.requestPointerLock) { try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => { cam.noLock = true; }); } catch (err) { cam.noLock = true; } }
+  startWave(0);
+});
+
+function drivePlayer(dt) {
+  const c = player; if (!c || c.dead) return;
+  const k = (a, b) => keys[a] || keys[b];
+  c.throttle = (k('KeyW', 'ArrowUp') ? 1 : 0) - (k('KeyS', 'ArrowDown') ? 1 : 0);
+  c.steer = (k('KeyA', 'ArrowLeft') ? 1 : 0) - (k('KeyD', 'ArrowRight') ? 1 : 0);
+  c.drift = !!keys.Space; c.brake = keys.Space ? 0.35 : 0;
+  // a brake, not reverse, while still rolling forwards fast
+  if (c.throttle < 0 && c.fwd > 12) { c.brake = 1; c.throttle = -0.2; }
+  guns(c, dt, [mouse.b0 || keys.KeyJ, mouse.b2 || keys.KeyF || keys.KeyK]);
+}
+
+// ---- camera and aiming -----------------------------------------------------------------------------------------
+const ray = new THREE.Raycaster(), _ndc = new THREE.Vector2(), _o = new THREE.Vector3(), _dir = new THREE.Vector3(), _tgt = new THREE.Vector3();
+function aimRay() {
+  // through the middle of the screen when the mouse is captured, else through the pointer
+  if (cam.locked || !cam.mx) _ndc.set(0, 0.12); else _ndc.set(cam.mx / canvas.clientWidth * 2 - 1, -(cam.my / canvas.clientHeight * 2 - 1));
+  ray.setFromCamera(_ndc, camera); _o.copy(ray.ray.origin); _dir.copy(ray.ray.direction);
+  const p = new THREE.Vector3();
+  for (let t = 4; t < 520; t += 1) {
+    p.copy(_o).addScaledVector(_dir, t);
+    if (p.y <= 0.2) { p.y = 0.2; break; }
+    if (Math.hypot(p.x - player.x, p.z - player.z) < 10) continue;   // never your own car
+    if (solid(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z))) break;
+    let hitCar = false; for (const c of cars) if (c !== player && !c.gone && c.inside(p.x, p.y, p.z, 0.6)) { hitCar = true; break; }
+    if (hitCar) break;
+  }
+  return p;
+}
+function stepCamera(dt) {
+  const c = player; if (!c) return;
+  if (!cam.locked) {   // follow the car round its turns
+    const want = Math.abs(c.fwd) > 8 && c.fwd < 0 ? c.yaw : c.yaw;
+    cam.yaw += wrap(want - cam.yaw) * Math.min(1, dt * 2.6);
+    cam.pitch += (0.2 - cam.pitch) * Math.min(1, dt * 2);
+  }
+  cam.cx += (c.x - cam.cx) * Math.min(1, dt * 12); cam.cz += (c.z - cam.cz) * Math.min(1, dt * 12);
+  const dist = cam.dist * (1 + clamp(Math.abs(c.fwd) / 300, 0, 0.25));
+  _tgt.set(cam.cx, 7.5, cam.cz);
+  // pull in when a wall is behind
+  const room = (pitch) => {
+    const bx = -Math.sin(cam.yaw) * Math.cos(pitch), by = Math.sin(pitch) + 0.15, bz = -Math.cos(cam.yaw) * Math.cos(pitch);
+    for (let t = 4; t < dist; t += 1.5) if (solid(Math.floor(_tgt.x + bx * t), Math.floor(_tgt.y + by * t), Math.floor(_tgt.z + bz * t))) return Math.max(5, t - 2);
+    return dist;
+  };
+  // a wall behind: look over it from higher up if that sees more, else come in closer
+  let pitch = cam.pitch, dd = room(pitch);
+  if (dd < dist) for (const up of [0.35, 0.7, 1.05]) { const p2 = Math.min(1.25, cam.pitch + up), d2 = room(p2); if (d2 > dd + 4) { pitch = p2; dd = d2; } if (d2 >= dist) break; }
+  cam.p = cam.p === undefined ? pitch : cam.p + (pitch - cam.p) * Math.min(1, dt * 5);
+  const bx = -Math.sin(cam.yaw) * Math.cos(cam.p), by_ = Math.sin(cam.p) + 0.15, bz = -Math.cos(cam.yaw) * Math.cos(cam.p);
+  cam.d = cam.d === undefined ? dd : cam.d + (dd - cam.d) * Math.min(1, dt * (dd < cam.d ? 14 : 3));
+  camera.position.set(_tgt.x + bx * cam.d, Math.max(2.5, _tgt.y + by_ * cam.d), _tgt.z + bz * cam.d);
+  const sh = game.shake; if (sh > 0) camera.position.add(_o.set((Math.random() - 0.5) * sh * 1.6, (Math.random() - 0.5) * sh * 1.2, (Math.random() - 0.5) * sh * 1.6));
+  camera.lookAt(_tgt.x + Math.sin(cam.yaw) * 12, _tgt.y - 0.5, _tgt.z + Math.cos(cam.yaw) * 12);
+  camera.updateMatrixWorld();
+  if (!c.dead) c.aim.copy(aimRay());
+  const ch = $('cross');
+  if (cam.locked || !cam.mx) { ch.style.left = '50%'; ch.style.top = `${(0.5 - 0.06) * 100}%`; } else { ch.style.left = cam.mx + 'px'; ch.style.top = cam.my + 'px'; }
+  ch.classList.toggle('on', c.onTarget(0.08));
+}
+
+// ---- the frame -----------------------------------------------------------------------------------------------------
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h, false); composer.setSize(w, h);
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+  const ph = h * renderer.getPixelRatio(); setParticleScale(ph, camera.fov); fx.setScale(ph, camera.fov);
+}
+addEventListener('resize', resize); resize();
+let last = performance.now();
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (window.__hold) return;   // tests step the game by hand (window.__derby.step)
+  step(dt);
+  composer.render();
+}
+function step(dt) {
+  game.time += dt;
+  const live = game.state === 'play' || game.state === 'dead';
+  if (live) {
+    drivePlayer(dt);
+    for (const c of cars) if (c.driver) { c.driver.think(dt, cars, player); guns(c, dt, c.dead ? [] : c.fire || []); }
+    for (const c of cars) if (!c.gone) { c.hurtT -= dt; if (c.dead) c.deadT += dt; c.step(dt, crashHooks); parked(c, dt); }
+    for (let i = 0; i < cars.length; i++) for (let j = i + 1; j < cars.length; j++) if (!cars[i].gone && !cars[j].gone) bump(cars[i], cars[j]);
+    // wrecks lie a while, then crumble away
+    for (let i = cars.length - 1; i >= 0; i--) {
+      const c = cars[i];
+      if (c.dead && !c.gone && c.deadT > ROUND.wreckStays) { c.unit.burst(cube, null, 6, 0.2); c.gone = true; }
+      if (c.gone && c !== player) { c.dispose(); if (c.tag) c.tag.remove(); cars.splice(i, 1); }
+    }
+    if (game.state === 'dead') {
+      game.deadT -= dt; $('dead-t').textContent = Math.max(0, Math.ceil(game.deadT));
+      if (game.deadT <= 0) { $('dead').hidden = true; game.state = 'play'; spawnPlayer(); }
+    }
+    // the next wave once this one is wrecked
+    if (game.state === 'play' && !cars.some((c) => c.rival && !c.dead)) {
+      if (!game.nextWave) { game.nextWave = 3; banner('Wave cleared', `+${50 * game.wave} scrap`); game.scrap += 50 * game.wave; }
+      game.nextWave -= dt; if (game.nextWave <= 0) { game.nextWave = 0; startWave(game.wave); }
+    }
+  }
+  for (const c of cars) if (!c.gone) { if (!c.dead) c.point(dt); c.pose(dt); }
+  stepCamera(dt);
+  const fc = player || { x: SPAWN.x, z: SPAWN.z };
+  setFocus(fc.x, fc.z); followSun(fc.x, fc.z);
+  stepSim(dt);
+  civ.update(dt, false); civ.packFar && civ.packFar();
+  fx.update(dt); debris.update(dt);
+  game.shake = Math.max(0, game.shake - dt * 2.4);
+  game.hurt = Math.max(0, (game.hurt || 0) - dt * 1.4); grade.uniforms.hurt.value = game.hurt;
+  if (toastT > 0 && (toastT -= dt) <= 0) $('toast').classList.remove('on');
+  if (game.banner > 0 && (game.banner -= dt) <= 0) $('banner').classList.remove('on');
+  // the engine note
+  if (engine && player) {
+    const sp = Math.abs(player.fwd), t = audioMix.ctx.currentTime, on = !muted && live && !player.dead;
+    engine.g.gain.setTargetAtTime(on ? 0.035 + 0.03 * Math.abs(player.throttle) : 0, t, 0.08);
+    const f = 42 + sp * 1.25 + (player.throttle ? 8 : 0); engine.a.frequency.setTargetAtTime(f, t, 0.06); engine.b.frequency.setTargetAtTime(f * 1.012, t, 0.06);
+    engine.f.frequency.setTargetAtTime(380 + sp * 9, t, 0.08);
+  }
+  drawHud(); drawTags(); drawRadar();
+}
+spawnPlayer();
+followSun(player.x, player.z);
+const loadEl = $('loading'); if (loadEl) loadEl.hidden = true;
+$('menu').hidden = false;
+requestAnimationFrame((t) => { last = t; frame(t); });
+window.__derby = { step, render: () => composer.render(), cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, startWave, damage };
