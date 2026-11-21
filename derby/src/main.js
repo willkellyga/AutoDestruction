@@ -209,7 +209,7 @@ function wreck(c, who) {
   if (c === player) {
     game.deaths++; keepSave(save);
     const r = mode.playerDown();
-    if (r && r.respawn !== undefined) { game.state = 'dead'; game.deadT = r.respawn; $('dead').hidden = r.respawn <= 0.01; $('dead-garage').hidden = !!r.noGarage; }
+    if (r && r.respawn !== undefined) { game.state = 'dead'; game.deadT = r.respawn; $('dead').hidden = r.respawn <= 0.01; $('dead-garage').hidden = !!r.noGarage; game.noGarage = !!r.noGarage; $('dead-go').hidden = !!r.noSkip; }
     if (document.exitPointerLock && game.state === 'dead') document.exitPointerLock();
   }
   else if (who === player) {
@@ -646,8 +646,9 @@ addEventListener('keydown', (e) => {
   keys[e.code] = true; initAudio();
   if (e.code === 'KeyM') { muted = !muted; sfx.on = !muted; }
   if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight') && game.state === 'play' && player) gadget(player);
-  if (e.code === 'KeyG' && (game.state === 'menu' || game.state === 'dead' || (game.state === 'play' && mode.garageOK()))) openGarage(game.state === 'play' ? 'break' : game.state);
+  if (e.code === 'KeyG' && (game.state === 'menu' || (game.state === 'dead' && !game.noGarage) || (game.state === 'play' && mode.garageOK()))) openGarage(game.state === 'play' ? 'break' : game.state);
   else if ((e.code === 'KeyG' || e.code === 'Escape') && game.state === 'garage') leaveGarage();
+  if (e.code === 'KeyR' && game.state === 'play' && mode.resetPlayer) mode.resetPlayer();   // back on the track (the race)
   if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
 });
 addEventListener('keyup', (e) => { keys[e.code] = false; });
@@ -926,7 +927,7 @@ function step(dt) {
   if (TOUCH) $('touch').hidden = game.state !== 'play';
   drawHud(); drawTags(); drawRadar();
 }
-$('hint').addEventListener('click', () => { if (game.state === 'play' && mode.garageOK()) openGarage('break'); });
+$('hint').addEventListener('click', () => { if (game.state === 'play' && mode.garageOK()) openGarage('break'); else if (game.state === 'play' && mode.resetPlayer) mode.resetPlayer(); });
 spawnPlayer();
 followSun(player.x, player.z);
 const loadEl = $('loading'); if (loadEl) loadEl.hidden = true;

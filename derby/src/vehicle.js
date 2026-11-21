@@ -6,6 +6,7 @@ import { Unit } from '../../units/src/unit.js';
 import { solid, idx, ownerAt, bodies, WX, WZ } from '../../src/world.js';
 import { blast, dust } from '../../src/sim.js';
 import { CRASH } from './tuning.js';
+import { MAP } from './maps/index.js';
 import { carDef, LOOSE } from './carmodel.js';
 import { PARTS, statsOf } from './parts.js';
 
@@ -64,19 +65,22 @@ export class Vehicle {
     if (this.dead) { this.throttle = 0; this.steer = 0; this.brake = 1; }
     // engine, brakes and drag
     const t = this.throttle;
-    const top = S.top * this.boost, acc = S.accel * this.accelK;
+    // rough ground (a map's grass and gravel: MAP.surface gives 0 on the road up to 1) holds a car back and makes it
+    // slide; off-road and monster tyres hardly feel it (S.rough)
+    const rough = MAP.surface ? MAP.surface(this.x, this.z) * S.rough : 0;
+    const top = S.top * this.boost * (1 - 0.45 * rough), acc = S.accel * this.accelK;
     if (t > 0) vf += (vf < 0 ? acc * 2.2 : acc * (1 - Math.max(0, vf) / top * 0.7)) * t * dt;
     else if (t < 0) vf += (vf > 0 ? -S.accel * 2.2 : -S.accel * 0.8 * (1 + vf / S.back)) * -t * dt;
     else vf *= Math.exp(-0.55 * dt);
     if (this.brake) vf *= Math.exp(-(this.dead ? 2.2 : 3.5) * this.brake * dt);
-    vf = clamp(vf, -S.back, top);
+    vf = clamp(vf, -S.back, rough > 0 && vf > top ? top + (vf - top) * Math.exp(-2.4 * dt) : top);   // ploughing onto grass slows a car over a moment
     // turning: none standing still, full at about a third of top speed, a little less flat out
     const k = clamp(Math.abs(vf) / 26, 0, 1) * (1 - 0.25 * clamp(Math.abs(vf) / S.top, 0, 1));
     const want = this.steer * S.turn * k * Math.sign(vf || 1) * (this.drift ? 1.35 : 1);
     this.yawRate += (want - this.yawRate) * Math.min(1, dt * 10);
     this.yaw = wrap(this.yaw + this.yawRate * dt);
     // grip: sideways sliding dies away, slower in a handbrake turn
-    vs *= Math.exp(-(this.drift ? S.grip * 0.18 : S.grip) * dt);
+    vs *= Math.exp(-(this.drift ? S.grip * 0.18 : S.grip) * (1 - 0.35 * rough) * dt);
     const ny = Math.sin(this.yaw), nyc = Math.cos(this.yaw);
     // the old velocity's sideways part carries on through the turn: that is the slide
     this.vx = ny * vf + nyc * vs; this.vz = nyc * vf - ny * vs;

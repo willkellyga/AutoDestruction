@@ -67,9 +67,9 @@ export const PARTS = {
   },
   wheels: {
     street: { name: 'Street', desc: 'Good at everything, great at nothing.', cost: 0, power: 0, mass: 0, look: 'street' },
-    offroad: { name: 'Off-road', desc: 'Chunky tread. More grip, tighter turns.', cost: 200, power: 0, mass: 0.04, gripK: 1.25, turnK: 1.06, topK: 0.96, look: 'offroad' },
-    slicks: { name: 'Racing slicks', desc: 'Top speed up, but they slide.', cost: 300, power: 0, mass: -0.02, gripK: 0.82, topK: 1.1, look: 'slicks' },
-    monster: { name: 'Monster tyres', desc: 'Huge. Ram harder and roll over rubble.', cost: 600, power: 1, mass: 0.2, hp: 20, ramK: 1.4, topK: 0.94, look: 'monster' },
+    offroad: { name: 'Off-road', desc: 'Chunky tread. More grip, tighter turns, and grass hardly slows them.', cost: 200, power: 0, mass: 0.04, gripK: 1.25, turnK: 1.06, topK: 0.96, roughK: 0.2, look: 'offroad' },
+    slicks: { name: 'Racing slicks', desc: 'Top speed up, but they slide.', cost: 300, power: 0, mass: -0.02, gripK: 0.82, topK: 1.1, roughK: 1.15, look: 'slicks' },
+    monster: { name: 'Monster tyres', desc: 'Huge. Ram harder and roll over rubble and grass.', cost: 600, power: 1, mass: 0.2, hp: 20, ramK: 1.4, topK: 0.94, roughK: 0.1, look: 'monster' },
   },
   engine: {
     stock: { name: 'Stock', desc: 'It runs.', cost: 0, power: 0, mass: 0 },
@@ -113,6 +113,7 @@ export function statsOf(L) {
   const fire = guns.reduce((s, g) => s + dps(g), 0) + (P('door').blade || 0) * 0.4;
   return {
     hp, top, back: B.back, accel, turn, grip, mass, ram, guard: front.guard, saw: front.saw || 0,
+    rough: k('roughK'),   // how much rough ground (a map's grass and gravel) holds the car back: 1 on street tyres
     power, maxPower: B.power, over: power > B.power, shape: B.shape,
     gadget: P('gadget'), dps: fire, blade: P('door').blade || 0,
     // the bars in the garage, 0 to 1
