@@ -8,7 +8,9 @@
 
 export const SLOTS = [
   { key: 'body', name: 'Body', tip: 'The car itself. Sets armour, speed and Power.' },
-  { key: 'primary', name: 'Roof gun', tip: 'The gun on the turret. Left click.' },
+  { key: 'primary', name: 'Main gun', tip: 'The gun on the turret. Left click.' },
+  { key: 'roof', name: 'Roof', tip: 'Bolted to the roof, firing forward. Guns go with left click, rockets with right click.' },
+  { key: 'door', name: 'Doors', tip: 'On the doors, firing forward. Guns go with left click, rockets with right click.' },
   { key: 'secondary', name: 'Heavy weapon', tip: 'Right click or F.' },
   { key: 'front', name: 'Front', tip: 'What you hit things with.' },
   { key: 'armour', name: 'Armour', tip: 'More health, more weight.' },
@@ -20,15 +22,30 @@ export const SLOTS = [
 
 export const PARTS = {
   body: {
-    scrapper: { name: 'Scrapper', desc: 'A tough little hatchback. Quick and nimble.', cost: 0, shape: 'hatch', hp: 140, power: 10, mass: 1.0, top: 92, back: 34, accel: 70, turn: 2.5, grip: 7.5, ram: 1.0 },
-    bruiser: { name: 'Bruiser', desc: 'A heavy four-door. More armour and more Power.', cost: 400, shape: 'sedan', hp: 175, power: 11, mass: 1.2, top: 88, back: 32, accel: 62, turn: 2.3, grip: 7.0, ram: 1.15 },
-    viper: { name: 'Viper', desc: 'A muscle car. The fastest thing on the street.', cost: 700, shape: 'muscle', hp: 135, power: 12, mass: 1.1, top: 106, back: 36, accel: 78, turn: 2.4, grip: 6.6, ram: 1.05 },
-    hauler: { name: 'Hauler', desc: 'A pickup truck. Huge armour and Power, slow to turn.', cost: 1000, shape: 'pickup', hp: 230, power: 14, mass: 1.55, top: 82, back: 30, accel: 56, turn: 2.0, grip: 7.2, ram: 1.35 },
+    scrapper: { name: 'Scrapper', desc: 'A boxy little hot hatch. Quick and nimble.', cost: 0, shape: 'hatch', hp: 140, power: 12, mass: 1.0, top: 92, back: 34, accel: 70, turn: 2.5, grip: 7.5, ram: 1.0 },
+    bruiser: { name: 'Bruiser', desc: 'A long wood-sided station wagon. More armour, more Power.', cost: 400, shape: 'wagon', hp: 180, power: 14, mass: 1.25, top: 88, back: 32, accel: 62, turn: 2.25, grip: 7.0, ram: 1.2 },
+    viper: { name: 'Viper', desc: 'A fastback muscle car. The fastest thing on the street.', cost: 700, shape: 'muscle', hp: 135, power: 14, mass: 1.1, top: 106, back: 36, accel: 78, turn: 2.4, grip: 6.6, ram: 1.05 },
+    hauler: { name: 'Hauler', desc: 'A square-body pickup truck. Huge armour, slow to turn.', cost: 1000, shape: 'pickup', hp: 230, power: 17, mass: 1.55, top: 82, back: 30, accel: 56, turn: 2.0, grip: 7.2, ram: 1.35 },
+    mule: { name: 'Mule', desc: 'A panel van. The most Power and armour, and the slowest.', cost: 1400, shape: 'van', hp: 265, power: 19, mass: 1.75, top: 78, back: 28, accel: 50, turn: 1.85, grip: 7.0, ram: 1.45 },
   },
   primary: {
     mg: { name: 'Machine gun', desc: 'Steady fire at any range.', cost: 0, power: 3, mass: 0.04, fx: 'mg', rate: 11, dmg: 2.6, wall: 0.85, carve: 0.6, spread: 0.6, range: 260, look: 'mg' },
     minigun: { name: 'Minigun', desc: 'Six spinning barrels. Shreds cars up close.', cost: 500, power: 5, mass: 0.08, fx: 'chain', rate: 20, dmg: 2.0, wall: 0.9, carve: 0.6, spread: 1.0, range: 220, spin: 0.5, look: 'minigun' },
     scatter: { name: 'Scattergun', desc: 'A blast of pellets. Brutal close, weak far.', cost: 350, power: 4, mass: 0.06, fx: 'rifle', reload: 0.75, salvo: 1, pellets: 8, dmg: 3.2, wall: 1.1, carve: 0.7, spread: 7, range: 110, look: 'scatter' },
+  },
+  // the roof and the doors carry extra weapons that fire forward (within cone radians of straight ahead) with one of
+  // the two triggers: group 'guns' with the main gun, group 'heavy' with the heavy weapon
+  roof: {
+    none: { name: 'Nothing', desc: 'A clean roof.', cost: 0, power: 0, mass: 0 },
+    twin: { name: 'Twin guns', desc: 'Two light guns on a roof frame. They fire forward with your main gun.', cost: 350, power: 3, mass: 0.05, fx: 'mg', group: 'guns', rate: 10, dmg: 1.7, wall: 0.7, carve: 0.5, spread: 0.9, range: 230, cone: 0.45, look: 'twin' },
+    rack: { name: 'Rocket rack', desc: 'Six small rockets, fired forward three at a time with the heavy weapon.', cost: 500, power: 4, mass: 0.07, fx: 'rocket', group: 'heavy', reload: 2.4, salvo: 3, gap: 0.12, dmg: 13, splash: 12, reach: 12, wall: 4.2, carve: 2.0, range: 300, cone: 0.5, look: 'rack' },
+    arc: { name: 'Arc coil', desc: 'Zaps the nearest car close by. No aiming needed.', cost: 700, power: 4, mass: 0.06, arc: true, group: 'guns', reload: 0.45, dmg: 8, range: 36, look: 'arc' },
+  },
+  door: {
+    none: { name: 'Nothing', desc: 'Plain doors.', cost: 0, power: 0, mass: 0 },
+    guns: { name: 'Door guns', desc: 'A gun on each door, firing forward with your main gun.', cost: 300, power: 3, mass: 0.05, fx: 'mg', group: 'guns', rate: 8, dmg: 1.8, wall: 0.7, carve: 0.5, spread: 1.0, range: 210, cone: 0.3, look: 'guns' },
+    rockets: { name: 'Side rockets', desc: 'A rocket tube on each door, fired with the heavy weapon.', cost: 450, power: 3, mass: 0.06, fx: 'rocket', group: 'heavy', reload: 1.8, salvo: 2, gap: 0.1, dmg: 15, splash: 13, reach: 13, wall: 4.5, carve: 2.2, range: 300, cone: 0.3, look: 'rockets' },
+    blades: { name: 'Side blades', desc: 'Blades out of the sills. Side-swipe a car to cut it up.', cost: 400, power: 2, mass: 0.06, blade: 28, look: 'blades' },
   },
   secondary: {
     none: { name: 'Nothing', desc: 'Saves Power for something else.', cost: 0, power: 0, mass: 0 },
@@ -72,7 +89,7 @@ export const PAINTS = {
 };
 export const PATTERNS = { plain: 'Plain', stripes: 'Racing stripes', flames: 'Flames', camo: 'Camo', checker: 'Checkers', rust: 'Rusty' };
 
-export const STARTER = { body: 'scrapper', primary: 'mg', secondary: 'rockets', front: 'plow', armour: 'none', wheels: 'street', engine: 'stock', gadget: 'none', paint: 'orange', trim: 'black', pattern: 'stripes' };
+export const STARTER = { body: 'scrapper', primary: 'mg', roof: 'none', door: 'none', secondary: 'rockets', front: 'plow', armour: 'none', wheels: 'street', engine: 'stock', gadget: 'none', paint: 'orange', trim: 'black', pattern: 'stripes' };
 export const START_SCRAP = 400;
 // what every new garage owns
 const FREE = Object.fromEntries(Object.entries(PARTS).map(([slot, list]) => [slot, Object.keys(list).filter((k) => list[k].cost === 0)]));
@@ -82,7 +99,7 @@ FREE.front = [...FREE.front, 'plow'];
 // summary for the stat bars
 export function statsOf(L) {
   const P = (slot) => PARTS[slot][L[slot]] || PARTS[slot][Object.keys(PARTS[slot])[0]];
-  const B = P('body'), parts = ['primary', 'secondary', 'front', 'armour', 'wheels', 'engine', 'gadget'].map(P);
+  const B = P('body'), parts = ['primary', 'roof', 'door', 'secondary', 'front', 'armour', 'wheels', 'engine', 'gadget'].map(P);
   const power = parts.reduce((s, p) => s + (p.power || 0), 0);
   const mass = B.mass + parts.reduce((s, p) => s + (p.mass || 0), 0);
   const heavy = B.mass / mass, k = (f) => parts.reduce((s, p) => s * (p[f] || 1), 1);
@@ -90,14 +107,16 @@ export function statsOf(L) {
   const top = B.top * k('topK') * Math.pow(heavy, 0.35), accel = B.accel * k('accelK') * Math.pow(heavy, 0.6);
   const turn = B.turn * k('turnK') * Math.pow(heavy, 0.25), grip = B.grip * k('gripK');
   const front = P('front'), ram = B.ram * front.ram * k('ramK') * (0.85 + 0.15 * mass / B.mass);
-  const g1 = P('primary'), g2 = P('secondary');
-  const dps = (g) => (!g || !g.dmg ? 0 : g.rate ? g.rate * g.dmg : ((g.salvo || 1) * (g.pellets || 1) * g.dmg + (g.splash || 0) * 0.5) / g.reload);
+  const guns = ['primary', 'roof', 'door', 'secondary'].map(P);
+  // a door weapon is a pair, one on each door
+  const dps = (g) => (!g || !g.dmg ? 0 : (g.rate ? g.rate * g.dmg : ((g.salvo || 1) * (g.pellets || 1) * g.dmg + (g.splash || 0) * 0.5) / g.reload) * (g === P('door') ? 2 : 1));
+  const fire = guns.reduce((s, g) => s + dps(g), 0) + (P('door').blade || 0) * 0.4;
   return {
     hp, top, back: B.back, accel, turn, grip, mass, ram, guard: front.guard, saw: front.saw || 0,
     power, maxPower: B.power, over: power > B.power, shape: B.shape,
-    gadget: P('gadget'), dps: dps(g1) + dps(g2),
+    gadget: P('gadget'), dps: fire, blade: P('door').blade || 0,
     // the bars in the garage, 0 to 1
-    bars: { armour: hp / 380, speed: (top - 60) / 70, handling: (turn * grip - 9) / 14, firepower: (dps(g1) + dps(g2)) / 130, ram: ram / 3 },
+    bars: { armour: hp / 380, speed: (top - 60) / 70, handling: (turn * grip - 9) / 14, firepower: fire / 170, ram: ram / 3 },
   };
 }
 
@@ -120,8 +139,10 @@ const pick = (a) => a[Math.floor(Math.random() * a.length)];
 export function rivalBuild(wave) {
   const t = Math.min(4, wave);
   const L = {
-    body: pick([['scrapper', 'bruiser'], ['scrapper', 'bruiser', 'viper'], ['bruiser', 'viper', 'hauler'], ['bruiser', 'viper', 'hauler'], ['viper', 'hauler']][t]),
+    body: pick([['scrapper', 'bruiser'], ['scrapper', 'bruiser', 'viper'], ['bruiser', 'viper', 'hauler'], ['bruiser', 'viper', 'hauler', 'mule'], ['viper', 'hauler', 'mule']][t]),
     primary: pick(t < 1 ? ['mg'] : t < 3 ? ['mg', 'mg', 'scatter', 'minigun'] : ['mg', 'scatter', 'minigun']),
+    roof: pick(t < 1 ? ['none'] : t < 3 ? ['none', 'none', 'twin', 'rack'] : ['none', 'twin', 'rack', 'arc']),
+    door: pick(t < 2 ? ['none', 'none', 'guns'] : ['none', 'guns', 'rockets', 'blades']),
     secondary: pick(t < 1 ? ['none', 'none', 'rockets'] : t < 3 ? ['none', 'rockets', 'mines'] : ['rockets', 'cannon', 'mines']),
     front: pick(t < 2 ? ['bumper', 'plow'] : ['plow', 'spikes', 'saws']),
     armour: pick([['none'], ['none', 'light'], ['light', 'medium'], ['medium', 'heavy'], ['heavy']][t]),
@@ -130,7 +151,9 @@ export function rivalBuild(wave) {
     gadget: 'none',
     paint: pick(Object.keys(PAINTS).filter((p) => p !== 'orange')), trim: pick(['black', 'white', 'silver', 'yellow', 'red']), pattern: pick(Object.keys(PATTERNS)),
   };
-  // keep within the body's Power: drop the heavy weapon, then the front, until it fits
+  // keep within the body's Power: drop the doors, the roof, the heavy weapon, then the front, until it fits
+  if (statsOf(L).over) L.door = 'none';
+  if (statsOf(L).over) L.roof = 'none';
   if (statsOf(L).over) L.secondary = 'none';
   if (statsOf(L).over) L.front = 'bumper';
   if (statsOf(L).over) L.primary = 'mg';
