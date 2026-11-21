@@ -67,6 +67,8 @@ function followSun(x, z) {   // the shadow box follows the player, in whole texe
 
 // ---- the town ----------------------------------------------------------------------------------------------------
 generateTown();
+// no parked cars or buses: the streets are the arena (the town's other vehicles, if any, stay)
+{ const keep = world.vehicles.filter((v) => v.kind !== 'car' && v.kind !== 'bus' && v.kind !== 'school'); world.vehicles.length = 0; world.vehicles.push(...keep); }
 {
   const gTex = new THREE.CanvasTexture(groundCanvas()); gTex.colorSpace = THREE.SRGBColorSpace; gTex.anisotropy = 8;
   const g = new THREE.BufferGeometry();
