@@ -1,5 +1,6 @@
 // Auto Destruction: drive a gun car round Crumbletown (Monster Mayhem's town, its destruction and its tuning, used as
 // they are) and wreck waves of rival cars. Scrap from wrecks buys parts in the garage (garage.js, parts.js).
+import './flags.js';   // first: which world this page lays out (New York for the race), before src/world.js reads it
 import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
@@ -537,7 +538,9 @@ function toast(a, b) { $('toast').innerHTML = `<b></b><span></span>`; $('toast')
 function banner(text, sub) { $('banner').querySelector('b').textContent = text; $('banner').querySelector('span').textContent = sub || ''; $('banner').classList.add('on'); game.banner = 2.4; }
 const radar = $('radar').getContext('2d');
 function drawRadar() {
-  const R = radar, s = 150 / Math.max(WX, WZ), w = WX * s, h = WZ * s, ox = (150 - w) / 2, oy = (150 - h) / 2;
+  // the whole map, or the part of it the map asks for (MAP.radarBox: [x0, z0, x1, z1], New York's course)
+  const B = MAP.radarBox || [0, 0, WX, WZ], s = 150 / Math.max(B[2] - B[0], B[3] - B[1]), w = WX * s, h = WZ * s;
+  const R = radar, ox = (150 - (B[2] - B[0]) * s) / 2 - B[0] * s, oy = (150 - (B[3] - B[1]) * s) / 2 - B[1] * s;
   R.clearRect(0, 0, 150, 150);
   R.fillStyle = 'rgba(20,24,28,0.55)'; R.fillRect(ox, oy, w, h);
   MAP.radar(R, s, ox, oy, w, h);

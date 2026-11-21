@@ -1,5 +1,5 @@
 // Bowtie Raceway: a figure-of-eight circuit that fills the map, raced three laps with the guns on (modes/race.js).
-// It is off the start card (hidden; the race is run on Crumbletown's streets, maps/race.js) but loads with ?map=bowtie.
+// It is off the start card (hidden; the race is run on New York's streets, maps/manhattan.js) but loads with ?map=bowtie.
 // The lap starts on the long straight down the east side under the start gantry, brakes into a right-hander at the
 // bottom, sweeps up the diagonal to the crossover in the middle of the map, climbs to a hairpin at the top left,
 // snakes down the west side through a chicane, swings round the bottom left and back up the other diagonal to cross

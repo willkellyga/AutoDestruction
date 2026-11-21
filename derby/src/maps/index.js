@@ -11,22 +11,22 @@
 //   spawnPoint(player, taken)     a place for a rival to come in, away from the cars in `taken`
 //   waypoint(car, tx, tz, out)    the next point for a rival to drive at on the way to (tx, tz)
 //   radar(R, s, ox, oy, w, h)     draws the map on the radar (s: radar pixels a voxel)
+//   radarBox                      optional: [x0, z0, x1, z1], the part of the map the radar shows (all of it if left out)
 //   step(dt)                      optional: anything the map runs each frame (moving hazards, the route grid)
-//   track                         for the race mode: the circuit, its racing line, gates and grid (./race.js, ./bowtie.js)
+//   track                         for the race mode: the circuit, its racing line, gates and grid (./manhattan.js, ./crumble.js, ./bowtie.js)
+//   laps                          for the race mode: how many laps (3 if it is left out)
+// The race ('race') is on New York, a world of its own: ../flags.js has the list of maps built on it.
+import { picked } from '../flags.js';
 import town from './town.js';
-import race from './race.js';
+import manhattan from './manhattan.js';
 import base from './base.js';
 import arena from './arena.js';
+import crumble from './crumble.js';
 import bowtie from './bowtie.js';
 
-const ALL = [town, race, base, arena, bowtie];
+const ALL = [town, manhattan, base, arena, crumble, bowtie];
 export const MAPS = ALL.filter((m) => !m.hidden);   // the ones on the start card
 const KEY = 'ad-map';
-function picked() {
-  const q = /[?&]map=(\w+)/.exec(location.search); if (q) return q[1];
-  try { const v = sessionStorage.getItem(KEY); if (v) return v; } catch (e) { /* storage blocked: the window's name has it */ }
-  const m = /ad-map=(\w+)/.exec(window.name || ''); return m ? m[1] : 'town';
-}
 export const MAP = ALL.find((m) => m.id === picked()) || town;
 // load the page again on another map
 export function chooseMap(id) {
