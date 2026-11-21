@@ -802,6 +802,7 @@ function aimFor(c, dt) {
     }
   }
   if (best) { leadOn(best, c, _tc); c.aim.copy(p).lerp(_tc, TOUCH ? 1 : AIM.pull * Math.min(1, k * 1.3)); }
+  else if (TOUCH && mode.autoAim && mode.autoAim(c, cam.yaw, _tc)) c.aim.copy(_tc);   // no rival in view: the mode may have something else to shoot (survival's zombies)
   else c.aim.copy(p);
   cam.sticky = TOUCH ? 0 : k; aimLock = k > 0.25 ? best : null;
 }
