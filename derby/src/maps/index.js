@@ -12,13 +12,14 @@
 //   waypoint(car, tx, tz, out)    the next point for a rival to drive at on the way to (tx, tz)
 //   radar(R, s, ox, oy, w, h)     draws the map on the radar (s: radar pixels a voxel)
 //   step(dt)                      optional: anything the map runs each frame (moving hazards, the route grid)
-//   track                         for the race mode: the circuit, its racing line, gates and grid (./bowtie.js)
+//   track                         for the race mode: the circuit, its racing line, gates and grid (./race.js, ./bowtie.js)
 import town from './town.js';
+import race from './race.js';
 import base from './base.js';
 import arena from './arena.js';
 import bowtie from './bowtie.js';
 
-const ALL = [town, base, arena, bowtie];
+const ALL = [town, race, base, arena, bowtie];
 export const MAPS = ALL.filter((m) => !m.hidden);   // the ones on the start card
 const KEY = 'ad-map';
 function picked() {
