@@ -206,11 +206,11 @@ export class Vehicle {
     const out = [];
     for (const p of u.parts) {
       if (!LOOSE.includes(p.name) || !p.count) continue;
-      out.length = 0; p.all(out, 0.6);
+      out.length = 0; p.all(out, 0.2);
       for (const [x, y, z, c] of out) {
         _w.set(x, y, z); p.bone.localToWorld(_w);
         const dx = _w.x - point.x, dz = _w.z - point.z, d = Math.hypot(dx, dz) + 0.01, s = push * (0.4 + Math.random());
-        debris(_w.x, _w.y, _w.z, dx / d * s, 6 + Math.random() * 14, dz / d * s, c, u.def.h * 2);
+        debris(_w.x, _w.y, _w.z, dx / d * s, 6 + Math.random() * 14, dz / d * s, c, u.def.h * 3);
       }
       p.col.fill(-1); p.count = 0; p.dirty = true;
     }

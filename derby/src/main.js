@@ -127,7 +127,7 @@ const civ = makeCivilians({ scene, camera, mon: fakeMon, game: { get state() { r
 const debris = civ.debris;
 const cube = (x, y, z, vx, vy, vz, c, s) => debris.spawn(x, y, z, vx, vy, vz, c, s);
 // the cars' cubes are small (a sixteenth of a metre): only some of the ones a hit knocks off fly, a little bigger
-const chip = (x, y, z, vx, vy, vz, c, s) => { if (Math.random() < 0.22) debris.spawn(x, y, z, vx, vy, vz, c, s * 1.7); };
+const chip = (x, y, z, vx, vy, vz, c, s) => { if (Math.random() < 0.07) debris.spawn(x, y, z, vx, vy, vz, c, s * 2.5); };   // the cubes are fine, so keep a few and make them bigger
 // the scattergun's pellets: the rifle's round, with one bang for the whole blast
 WEAPONS.pellet = { ...WEAPONS.rifle, vol: 0, len: 3.5, w: 0.13, tracerEvery: 1 };
 const cars = [];   // every combat car, the player's first
@@ -427,7 +427,7 @@ function blades(c, dt) {
   for (const o of cars) {
     if (o === c || o.gone || Math.hypot(o.x - c.x, o.z - c.z) > c.half + o.half + 6) continue;
     for (const side of [1, -1]) for (const f of [-0.35, 0.1, 0.5]) {
-      const lx = side * (c.wide + 1.2), lz = c.mid + c.half * f;
+      const lx = side * ((c.def.dims.blade || c.wide + 1.5) - 0.3), lz = c.mid + c.half * f;
       const x = c.x + lx * cy + lz * sy, z = c.z - lx * sy + lz * cy;
       if (!o.inside(x, 1.6, z, 0.5)) continue;
       const rel = Math.hypot(o.vx - c.vx, o.vz - c.vz);
