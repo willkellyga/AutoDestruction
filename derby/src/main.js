@@ -25,6 +25,7 @@ import { makeGarage } from './garage.js';
 import { makeSounds } from './audio.js';
 import { makePickups } from './pickups.js';
 import { makeHazards } from './hazards.js';
+import { makeQuality } from './quality.js';
 
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -85,7 +86,7 @@ look.detail.value = 1; look.dusk.value = 0;
 cfg.dust = 0.55; cfg.hang = 0.2;
 
 // ---- the light pass: bloom, grade, vignette ---------------------------------------------------------------------
-const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 }));
+const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: MOBILE ? 0 : 4 }));
 composer.addPass(new RenderPass(scene, camera));
 composer.addPass(new UnrealBloomPass(new THREE.Vector2(4, 4), 0.24, 0.55, 1.3));
 composer.addPass(new ShaderPass({
@@ -636,6 +637,9 @@ function leaveGarage() {
 }
 function startGame() {
   initAudio(); $('menu').hidden = true; game.state = 'play';
+  // phones and tablets: the whole screen for the round, where the browser allows it (a tap on Start counts as asking)
+  const root = document.documentElement;
+  if (MOBILE && root.requestFullscreen && !document.fullscreenElement) { try { root.requestFullscreen({ navigationUI: 'hide' }).catch(() => {}); } catch (err) { /* not allowed here */ } }
   sfx.play('start', 0.9); setTimeout(() => sfx.play('ui_go', 0.8), 350);
   lockMouse();
   mode.start();
@@ -815,7 +819,7 @@ function aimFor(c, dt) {
 function garageCamera(dt) {
   const c = player; if (!cam.drag) cam.orbit += dt * 0.18;
   const wide = innerWidth > 760, short = wide && innerHeight < 520, cx = c.x + Math.sin(c.yaw) * c.mid, cz = c.z + Math.cos(c.yaw) * c.mid;
-  let d = short ? 22 : wide ? 17 : 21;
+  let d = short ? 22 : wide ? 17 : 27;
   const ox = Math.sin(cam.orbit), oz = Math.cos(cam.orbit);
   for (let t = 5; t < d; t += 1) {   // pull in before a wall (lamp posts and trees don't count)
     const ix = Math.floor(cx + ox * t), iz = Math.floor(cz + oz * t);
@@ -835,10 +839,10 @@ function stepCamera(dt) {
   if (!cam.locked) {   // follow the car round its turns
     const want = Math.abs(c.fwd) > 8 && c.fwd < 0 ? c.yaw : c.yaw;
     cam.yaw += wrap(want - cam.yaw) * Math.min(1, dt * 2.6);
-    cam.pitch += (0.2 - cam.pitch) * Math.min(1, dt * 2);
+    cam.pitch += ((tall ? 0.34 : 0.2) - cam.pitch) * Math.min(1, dt * 2);
   }
   cam.cx += (c.x - cam.cx) * Math.min(1, dt * 12); cam.cz += (c.z - cam.cz) * Math.min(1, dt * 12);
-  const dist = cam.dist * (1 + clamp(Math.abs(c.fwd) / 300, 0, 0.25));
+  const dist = cam.dist * (tall ? 1.3 : 1) * (1 + clamp(Math.abs(c.fwd) / 300, 0, 0.25));
   _tgt.set(cam.cx, 7.5, cam.cz);
   // pull in when a wall is behind
   const room = (pitch) => {
@@ -864,20 +868,23 @@ function stepCamera(dt) {
 }
 
 // ---- the frame -----------------------------------------------------------------------------------------------------
+let tall = false;   // a phone held upright: a wider view, from further back and higher up, so the road ahead still shows
 function resize() {
   const w = innerWidth, h = innerHeight;
   renderer.setSize(w, h, false); composer.setSize(w, h);
+  tall = w / h < 0.9; camera.fov = tall ? 76 : 64;
   camera.aspect = w / h; camera.updateProjectionMatrix();
   const ph = h * renderer.getPixelRatio(); setParticleScale(ph, camera.fov); fx.setScale(ph, camera.fov);
 }
 addEventListener('resize', resize); resize();
+const quality = makeQuality({ renderer, composer, bloom: composer.passes[1], scene, camera, sun, resize, playing: () => game.state === 'play', mobile: MOBILE });
 let last = performance.now();
 function frame(now) {
   requestAnimationFrame(frame);
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   if (window.__hold) return;   // tests step the game by hand (window.__derby.step)
   step(dt);
-  composer.render();
+  quality.judge(now); quality.draw();
 }
 function step(dt) {
   game.time += dt; newFrame();
@@ -938,4 +945,4 @@ followSun(player.x, player.z);
 const loadEl = $('loading'); if (loadEl) loadEl.hidden = true;
 $('menu').hidden = false;
 requestAnimationFrame((t) => { last = t; frame(t); });
-window.__derby = { touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH }), useTouch, step, render: () => composer.render(), cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, sfx, mines, gadget, spawnPlayer, addCar, pickups, hazards };
+window.__derby = { touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH }), useTouch, step, render: () => quality.draw(), quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, sfx, mines, gadget, spawnPlayer, addCar, pickups, hazards };

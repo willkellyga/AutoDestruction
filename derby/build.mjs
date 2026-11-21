@@ -18,5 +18,5 @@ const page = readFileSync(here + 'src/page.html', 'utf8');
 const body = page + '\n<script>' + js + '</script>\n';
 writeFileSync(out + 'auto-destruction-artifact.html', body);
 const [head, rest] = page.split('</style>\n');
-writeFileSync(out + 'auto-destruction.html', '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n' + head + '</style>\n</head>\n<body>\n' + rest + '\n<script>' + js + '</script>\n</body>\n</html>\n');
+writeFileSync(out + 'auto-destruction.html', '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">\n' + head + '</style>\n</head>\n<body>\n' + rest + '\n<script>' + js + '</script>\n</body>\n</html>\n');
 console.log('built', Math.round(body.length / 1024), 'KB');
