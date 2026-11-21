@@ -38,6 +38,7 @@ import pump from '../assets/sfx/pump.mp3';
 import cannon_shot from '../assets/sfx/cannon_shot.mp3';
 import rocket_launch from '../assets/sfx/rocket_launch.mp3';
 import rocket_boom from '../assets/sfx/rocket_boom.mp3';
+import rocket_boom_2 from '../assets/sfx/rocket_boom_2.mp3';
 import mine_drop from '../assets/sfx/mine_drop.mp3';
 import mine_beep from '../assets/sfx/mine_beep.mp3';
 import grind from '../assets/sfx/grind.mp3';
@@ -52,14 +53,14 @@ import saw_loop from '../assets/sfx/saw_loop.wav';
 import arc_hum from '../assets/sfx/arc_hum.wav';
 
 const CLIPS = { crunch, crunch_heavy, tink, scrape, carboom, bigboom, nitro, servo, start, door, ui_click, ui_coin, ui_equip, ui_go, ui_open, ui_tab, vo_clear, vo_rampage, engine_loop, skid_loop,
-  mg_shot, mg_shot_2, mg_shot_3, mini_shot, mini_shot_2, twin_shot, twin_shot_2, scatter_shot, pump, cannon_shot, rocket_launch, rocket_boom, mine_drop, mine_beep, grind, reload, brass, tink_2, tink_3, arc_zap, crack, mini_spin, saw_loop, arc_hum };
+  mg_shot, mg_shot_2, mg_shot_3, mini_shot, mini_shot_2, twin_shot, twin_shot_2, scatter_shot, pump, cannon_shot, rocket_launch, rocket_boom, rocket_boom_2, mine_drop, mine_beep, grind, reload, brass, tink_2, tink_3, arc_zap, crack, mini_spin, saw_loop, arc_hum };
 // how loud each clip is against the others. The first ones were levelled by ear. The weapons were set by measured
 // loudness (A-weighted, loudest 300 ms; loops over the loop) against the engine at full throttle (about -25 dBA here):
 // cannon -19, carboom -20, rocket hit and scattergun -22, rocket launch and arc zap -22, machine gun -25 a round
 // (about -22 in a burst), minigun -27, light guns -28, rounds hitting a car (all three tinks) -29. The crunches, carboom,
 // tink and door were cut about 20 dB too quiet; their files are now raised to peak at -1 dB like the rest.
 const LEVEL = { crunch: 0.8, crunch_heavy: 0.9, tink: 0.42, scrape: 0.5, carboom: 1, bigboom: 0.8, nitro: 0.55, servo: 0.5, start: 0.6, door: 0.6, ui_click: 0.35, ui_coin: 0.5, ui_equip: 0.4, ui_go: 0.5, ui_open: 0.45, ui_tab: 0.35, vo_clear: 0.8, vo_rampage: 0.8, engine_loop: 1, skid_loop: 1,
-  mg_shot: 0.75, mg_shot_2: 0.73, mg_shot_3: 0.76, mini_shot: 0.38, mini_shot_2: 0.5, twin_shot: 0.54, twin_shot_2: 0.51, scatter_shot: 1.1, pump: 0.51, cannon_shot: 0.84, rocket_launch: 0.65, rocket_boom: 0.89, mine_drop: 0.6, mine_beep: 0.083, grind: 0.27, reload: 0.74, brass: 0.89, tink_2: 0.73, tink_3: 0.65, arc_zap: 0.78, crack: 1.1, mini_spin: 0.27, saw_loop: 0.82, arc_hum: 0.83 };
+  mg_shot: 0.6, mg_shot_2: 0.62, mg_shot_3: 0.67, mini_shot: 0.45, mini_shot_2: 0.44, twin_shot: 0.47, twin_shot_2: 0.48, scatter_shot: 0.53, pump: 0.66, cannon_shot: 1.2, rocket_launch: 0.65, rocket_boom: 0.89, rocket_boom_2: 0.84, mine_drop: 0.6, mine_beep: 0.083, grind: 0.27, reload: 0.62, brass: 1.2, tink_2: 0.38, tink_3: 0.36, arc_zap: 0.78, crack: 0.6, mini_spin: 0.27, saw_loop: 0.82, arc_hum: 0.83 };
 // takes of the same sound: <base>_<n> joins <base> (mg_shot, mg_shot_2, mg_shot_3; tink, tink_2, tink_3)
 const TAKES = {};
 for (const k of Object.keys(CLIPS)) { const m = /^(.+)_\d+$/.exec(k); if (m && CLIPS[m[1]]) (TAKES[m[1]] = TAKES[m[1]] || [m[1]]).push(k); }
