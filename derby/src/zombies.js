@@ -3,7 +3,7 @@
 // off. A car that hits one fast enough splats it (saws, blades and big rams at any speed), and the guns and blasts kill
 // them through main.js's `extras` hook (solid, hit and explosion below).
 //
-// Kept cheap for phones: at most HORDE.max alive. Each of the three looks is one instanced mesh whose walk, lunge and
+// Kept cheap for phones: at most a set number alive (the mode says how many; fewer on phones). Each of the three looks is one instanced mesh whose walk, lunge and
 // cling are posed in its vertex shader from four numbers an instance, so the whole horde is three draws (and three
 // shadow draws) and no per-limb matrices. One route field serves the whole horde: a flood out from every car over the
 // map's route grid (maps/common.js makeGridNav), a few times a second. Each zombie then does plain seek, separation and
@@ -12,14 +12,18 @@ import * as THREE from 'three';
 import { WX, WZ, solid } from '../../src/world.js';
 import { VoxPart, hash, tone } from '../../units/src/voxpart.js';
 import { lineClear } from './maps/common.js';
+import { AI } from './tuning.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 
 // Every number that sets how the horde plays. Lengths are town voxels, speeds voxels a second (a car does 70 to 150).
 export const HORDE = {
-  max: 48,          // zombies alive at once
-  hp: 6,            // health: two rounds of the player's machine gun, six of a rival's
+  max: 48,          // zombies alive at once, unless the mode asks for more (makeHorde's o.max)
+  hp: 5,            // health: two rounds of the machine gun
+  hitR: 2.0,        // how far either side of one a shot still hits it (a generous box, so bursts connect)
+  rivalGun: 0.7,    // the rivals' guns and blasts do this share of the player's to the dead (not AI.dmg's, which is for cars)
+  pellet: 1.6,      // and the scattergun's pellets hit them this much harder, so a blast clears a group
   speed: [7, 10],   // shambling speed (the mode's `speed` scales it up as the round goes on)
   runner: 16,       // the speed of the runners that come late in the round
   lunge: 2.6,       // how much faster the last few voxels go
@@ -31,7 +35,7 @@ export const HORDE = {
   splat: 30,        // a car hitting one faster than this, divided by its ram strength, splats it
   knock: 9,         // slower than that but faster than this, it is knocked flying instead
   shake: 115,       // a car turning harder than this (speed times turn rate) starts throwing them off
-  scrap: 5,         // scrap for each one the player kills
+  scrap: 1,         // scrap for each one the player kills
 };
 const R = 1.25;     // a zombie's radius
 const TALL = 7.6;   // and its height
@@ -184,7 +188,7 @@ function makeStains(scene, max = 96) {
 // ---- the horde ----------------------------------------------------------------------------------------------------
 // G is main.js's api. o.onKill(z, by) hears of every kill (by: the car that did it, or null).
 export function makeHorde(G, o = {}) {
-  const MAX = HORDE.max;
+  const MAX = o.max || HORDE.max;
   const looks = [0, 1, 2].map(buildLook);
   const mat = posed(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0, color: new THREE.Color(1.15, 1.15, 1.15) }));
   const depth = posed(new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }));
@@ -198,8 +202,9 @@ export function makeHorde(G, o = {}) {
   });
   const stain = makeStains(G.scene);
   const all = [];   // the living, in no order
-  const H_ = { all, strength: { speed: 1, dmg: 1 }, active: true, killed: 0, byPlayer: 0, spawned: 0, ms: 0, tris: looks.map((l) => l.tris) };
+  const H_ = { all, max: MAX, strength: { speed: 1, dmg: 1 }, active: true, killed: 0, byPlayer: 0, spawned: 0, ms: 0, tris: looks.map((l) => l.tris) };
   let seq = 0;
+  function centre(out) { return out.set(this.x, this.y + 3.6 * this.size, this.z); }
 
   // ---- coming in ----
   // x, z: where it appears; entry: a point inside the walls to walk to first (it came in through a gate or a gap);
@@ -213,6 +218,7 @@ export function makeHorde(G, o = {}) {
       speed: sp, phase: Math.random() * 6.283, L: 0, S: 0, seed: hash(id, 7, 3, 1), size: 0.92 + hash(id, 4, 4, 2) * 0.16, tint: 0.85 + hash(id, 5, 1, 3) * 0.3,
       state: opt.drop ? 'drop' : 'walk', t: 0, car: null, lx: 0, lz: 0, clawT: 0.4, lungeCD: 0, grabCD: 0, entry: opt.entry || null, fall: 0,
       seeT: Math.random() * 0.4, see: false, tgt: null, td: 1e9, by: null, holdT: 0,
+      half: 1, centre,   // for main.js's aim assist (a mode's targets): its size and where its middle is
     };
     if (opt.drop && opt.in) { z_.vx = opt.in.x * 7; z_.vz = opt.in.z * 7; }
     all.push(z_); H_.spawned++;
@@ -339,8 +345,9 @@ export function makeHorde(G, o = {}) {
   function claw(z, c) {
     z.clawT = HORDE.clawT * (0.8 + Math.random() * 0.45); z.L = 1;
     G.damage(c, HORDE.claw * H_.strength.dmg, null);
-    // the claws take a little paint and metal off where it hangs on
-    if (Math.random() < 0.5) { _p.set(z.x, 2 + Math.random() * 2.5, z.z); c.unit.hit(_p, 0.45, G.chip, 4); }
+    // the claws take a little paint and metal off where it hangs on (a few times a second at most: each one rebuilds
+    // part of the car's model, and a big crowd claws a lot)
+    if (G.game.time > (c.zChipT || 0)) { c.zChipT = G.game.time + 0.3; _p.set(z.x, 2 + Math.random() * 2.5, z.z); c.unit.hit(_p, 0.45, G.chip, 4); }
     G.sfx.play('scrape', 0.28, z.x, z.z, { gap: 0.12, rate: 1.4, jitter: 0.2 });
   }
 
@@ -487,7 +494,7 @@ export function makeHorde(G, o = {}) {
     head.fill(-1); let n = 0;
     for (let zi = 0; zi < all.length; zi++) {
       const z = all[zi];
-      const i0 = Math.floor((z.x - R + GM) / GC), i1 = Math.floor((z.x + R + GM) / GC), k0 = Math.floor((z.z - R + GM) / GC), k1 = Math.floor((z.z + R + GM) / GC);
+      const r = HORDE.hitR * 1.6, i0 = Math.floor((z.x - r + GM) / GC), i1 = Math.floor((z.x + r + GM) / GC), k0 = Math.floor((z.z - r + GM) / GC), k1 = Math.floor((z.z + r + GM) / GC);
       for (let k = k0; k <= k1; k++) for (let i = i0; i <= i1; i++) {
         if (i < 0 || k < 0 || i >= GX || k >= GZ || n >= who.length) continue;
         const c = k * GX + i; who[n] = zi; next[n] = head[c]; head[c] = n++;
@@ -500,21 +507,34 @@ export function makeHorde(G, o = {}) {
     const c = cellAt(x, z); if (c < 0) return null;
     for (let n = head[c]; n >= 0; n = next[n]) {
       const q = all[who[n]]; if (!q || q.dead) continue;
-      const lying = q.fall > 0.6, h = lying ? 2.4 : TALL * q.size, r = lying ? R * 2.2 : R;
+      const lying = q.fall > 0.6, h = lying ? 3 : TALL * q.size + 1, r = lying ? HORDE.hitR * 1.6 : HORDE.hitR;
       if (Math.abs(q.x - x) < r && Math.abs(q.z - z) < r && y >= q.y && y < q.y + h) return q;
     }
     return null;
   }
-  H_.solid = (x, y, z) => !!at(x, y, z);
+  // A shot stops at the first point inside one, but the point it lands at is stepped back a little from there
+  // (units/src/fx.js), often just outside again: so the last one struck is remembered, and a landing point right by
+  // where it was struck still counts as hitting it.
+  let struck = null; const sp = { x: 0, y: 0, z: 0 };
+  const nearStruck = (x, y, z) => struck && !struck.dead && Math.abs(x - sp.x) < 1 && Math.abs(y - sp.y) < 1 && Math.abs(z - sp.z) < 1;
+  H_.solid = (x, y, z) => {
+    const q = at(x, y, z);
+    if (q) { struck = q; sp.x = x; sp.y = y; sp.z = z; return true; }
+    return nearStruck(x, y, z);
+  };
   H_.hit = (p, dmg, owner, gun, dir) => {
-    const q = at(p.x, p.y, p.z); if (!q) return false;
+    const q = at(p.x, p.y, p.z) || (nearStruck(p.x, p.y, p.z) ? struck : null); if (!q) return false;
+    struck = null;
     const dx = dir ? dir.x : 0, dz = dir ? dir.z : 0;
     for (let k = 0; k < 2; k++) G.cube(p.x, p.y, p.z, dx * 6 + (Math.random() - 0.5) * 6, 3 + Math.random() * 5, dz * 6 + (Math.random() - 0.5) * 6, BLOOD[k], H * 1.4);
     q.L = Math.max(q.L, 0.6); q.vx += dx * 4; q.vz += dz * 4;
+    if (owner && owner.rival) dmg *= HORDE.rivalGun / AI.dmg;   // main.js cut it down for shooting at cars
+    if (gun && gun.pellets) dmg *= HORDE.pellet;
     hurt(q, dmg, owner, dx, dz, 14);
     return true;
   };
   H_.explosion = (x, y, z, reach, base, by) => {
+    if (by && by.rival) base *= HORDE.rivalGun / AI.dmg;
     for (const q of all) {
       if (q.dead) continue;
       const d = Math.hypot(q.x - x, q.z - z); if (d > reach + R) continue;
@@ -535,6 +555,16 @@ export function makeHorde(G, o = {}) {
       best = q; bd = d;
     }
     return best;
+  };
+  // an arc coil's zap at the nearest one within `range` of car c (main.js's arc only zaps cars): a crackle of sparks
+  // along the way and `dmg` to it. False when there is none in reach.
+  H_.zap = (c, range, dmg) => {
+    const q = H_.nearest(c, range + c.wide); if (!q) return false;
+    const n = 6, y0 = 4.2, y1 = q.y + 3.5;
+    for (let i = 1; i <= n; i++) { const t = i / n; G.sparks(c.x + (q.x - c.x) * t + (Math.random() - 0.5), y0 + (y1 - y0) * t + Math.sin(t * Math.PI) * 1.5, c.z + (q.z - c.z) * t + (Math.random() - 0.5), 2, 0.6, 0.85, 1, 10); }
+    G.sfx.play('arc_zap', c === G.player ? 1 : 0.7, c.x, c.z, { jitter: 0.1 });
+    hurt(q, dmg, c, q.x - c.x, q.z - c.z, 18);
+    return true;
   };
   // the horde on the radar: a green fleck each
   H_.radar = (Rd, s, ox, oy) => {
