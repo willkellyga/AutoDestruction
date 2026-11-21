@@ -1,4 +1,4 @@
-// The race: three laps of the map's circuit (its `track`: see maps/race.js, the street course, and maps/bowtie.js) with
+// The race: three laps (or the map's `laps`) of the map's circuit (its `track`: see maps/race.js, the street course, and maps/bowtie.js) with
 // the guns on.
 //
 // Six cars line up on the grid, the player fifth, and are held there through a 3-2-1 countdown (with lights on the
@@ -11,7 +11,7 @@
 import * as THREE from 'three';
 import { makeRacer } from './racer.js';
 
-const LAPS = 3, RESPAWN = 2.5, COUNT = 3;
+const RESPAWN = 2.5, COUNT = 3;
 const PRIZE = [300, 200, 120, 80, 50, 30];   // by place (each rival you wreck already pays 100 as it happens)
 const TIERS = [1, 1, 2, 1, 2];        // the rivals' builds (rivalBuild in parts.js), front of the grid first
 const CLOSE = 40;                     // seconds the race stays open after the winner finishes
@@ -22,6 +22,7 @@ const clock = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0
 
 export function makeRace(G) {
   const TR = G.MAP.track;
+  const LAPS = G.MAP.laps || 3;   // a short, fast course can ask for more
   const { T, line, P, gates, gateS, grid, HALF, PIT_HALF } = TR, NG = gates.length;
   const wrapS = (d) => d - Math.round(d / T.L) * T.L;
   // the room left and right of the centre line at sample i (a street course measures it: T.WL, T.WR)
@@ -43,7 +44,16 @@ export function makeRace(G) {
   function locate(r, fresh) {
     const p = T.project(r.car.x, r.car.z, fresh ? -1 : r.i, 40);
     const prev = r.s; r.i = p.i; r.lat = p.lat; r.s = ((p.s % T.L) + T.L) % T.L;
+    r.ox = fresh ? r.car.x : r.px; r.oz = fresh ? r.car.z : r.pz; r.px = r.car.x; r.pz = r.car.z;   // where it was, and is
     return fresh ? 0 : wrapS(r.s - prev);
+  }
+  // whether a car's path since the last frame crossed gate g's line, forwards and between the course's edges
+  function through(r, g) {
+    const i = gates[g], gx = T.X[i], gz = T.Z[i], tx = T.TX[i], tz = T.TZ[i];
+    const a0 = (r.ox - gx) * tx + (r.oz - gz) * tz, a1 = (r.px - gx) * tx + (r.pz - gz) * tz;
+    if (!(a0 < 0 && a1 >= 0) || Math.hypot(r.px - r.ox, r.pz - r.oz) > 16 || Math.abs(wrapS(r.s - gateS[g])) > 60) return false;
+    const t = a0 / (a0 - a1), x = r.ox + (r.px - r.ox) * t - gx, z = r.oz + (r.pz - r.oz) * t - gz, lat = x * tz - z * tx;
+    return lat < WL(i) + 4 && -lat < WR(i) + 4;
   }
   // how far into the race: gates passed, and how far past the last one (for the places)
   function progressOf(r) {
@@ -121,7 +131,7 @@ export function makeRace(G) {
 
   return {
     go: 'Start the race',
-    note: 'Three laps, six cars, guns on. Wreck whoever gets in front, and take the checkpoints in order.',
+    note: `${G.MAP.laps || 3} laps, six cars, guns on. Wreck whoever gets in front, and take the checkpoints in order.`,
     start() { startRace(); G.hint(null); },
     step(dt) {
       if (phase === 'grid') return;
@@ -155,26 +165,26 @@ export function makeRace(G) {
           continue;
         }
         const moved = locate(r, false);
-        // through the next gate, in order: a lap done each time round to the line (a jump round the lap is not a pass:
-        // a car that cut across the inside of a hairpin has its nearest sample jump past the gate at the far end)
-        if (moved > 0 && moved < 30) {
-          const ng = (r.passed + 1) % NG, a = wrapS(gateS[ng] - (r.s - moved));
-          if (a > 0 && a <= moved) {
-            r.passed++;
-            if (ng === 0) {
-              const lapT = raceT - r.lapT0; r.lapT0 = raceT; r.laps.push(lapT); if (!r.best || lapT < r.best) r.best = lapT;
-              const done = r.passed / NG;
-              if (done >= LAPS && !r.finished) {
-                r.finished = true; r.finishT = raceT; r.place = ++finishers;
-                if (closeT < 0) closeT = CLOSE;
-                if (r.me) {
-                  G.banner(r.place === 1 ? 'Winner!' : `${ord(r.place)} place`, clock(raceT)); G.sfx.play('ui_go', 1);
-                  c.driver = makeRacer(c, race, { autopilot: true, pace: 0.8 }); doneT = AFTER; phase = 'done'; G.hint(null);
-                } else if (phase === 'race') G.toast(`${r.name} finished ${ord(r.place)}`, clock(raceT));
-              } else if (r.me) {
-                if (done === LAPS - 1) G.banner('Final lap', `Lap ${clock(lapT)}`); else G.toast(`Lap ${done} ${clock(lapT)}`, r.best === lapT ? 'Best lap' : `Best ${clock(r.best)}`);
-                G.sfx.play('ui_coin', 0.8);
-              }
+        // through the next gate, in order: a lap done each time round to the line. A pass is the car's nearest sample
+        // moving past the gate (a jump round the lap is not a pass: a car that cut across the inside of a hairpin has its
+        // nearest sample jump past the gate at the far end), or its path crossing the gate's line (a car clipping the
+        // very inside of a tight corner has its nearest sample swing round the bend faster than a jump)
+        const ng = (r.passed + 1) % NG, a = wrapS(gateS[ng] - (r.s - moved));
+        if ((moved > 0 && moved < 30 && a > 0 && a <= moved) || through(r, ng)) {
+          r.passed++;
+          if (ng === 0) {
+            const lapT = raceT - r.lapT0; r.lapT0 = raceT; r.laps.push(lapT); if (!r.best || lapT < r.best) r.best = lapT;
+            const done = r.passed / NG;
+            if (done >= LAPS && !r.finished) {
+              r.finished = true; r.finishT = raceT; r.place = ++finishers;
+              if (closeT < 0) closeT = CLOSE;
+              if (r.me) {
+                G.banner(r.place === 1 ? 'Winner!' : `${ord(r.place)} place`, clock(raceT)); G.sfx.play('ui_go', 1);
+                c.driver = makeRacer(c, race, { autopilot: true, pace: 0.8 }); doneT = AFTER; phase = 'done'; G.hint(null);
+              } else if (phase === 'race') G.toast(`${r.name} finished ${ord(r.place)}`, clock(raceT));
+            } else if (r.me) {
+              if (done === LAPS - 1) G.banner('Final lap', `Lap ${clock(lapT)}`); else G.toast(`Lap ${done} ${clock(lapT)}`, r.best === lapT ? 'Best lap' : `Best ${clock(r.best)}`);
+              G.sfx.play('ui_coin', 0.8);
             }
           }
         }
