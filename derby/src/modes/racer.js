@@ -22,6 +22,9 @@ export function makeRacer(car, race, { autopilot = false, pace = 0.96, grip = 0.
   const b = { i: -1, pi: 0, lane: 0, backT: 0, backSteer: 1, chkT: 0, lx: car.x, lz: car.z, target: null, pickT: 0, seenT: 0, wobT: 0, wob: [0, 0, 0], ahead: { x: 0, z: 0 } };
   car.turretTurn = AI.turretTurn;
   const lim = HALF - 6;
+  // how far left (hi) and right (lo) of the centre the car's middle may go at sample i: the track's own room each side
+  // where it has measured it (a street course, T.WL and T.WR), or HALF either side
+  const room = (i) => { if (!T.WL) return [-lim, lim]; const lo = -(T.WR[i] - 6), hi = T.WL[i] - 6; return lo <= hi ? [lo, hi] : [(lo + hi) / 2, (lo + hi) / 2]; };
   // the fastest the car can go round a bend of curvature k (1 / radius): its turn rate falls off a little with speed
   const cornerSpeed = (k) => { const S = car.spec, t = S.turn * grip; return Math.min(S.top * pace, t / (k + 0.25 * t / S.top + 1e-6)); };
 
@@ -41,23 +44,38 @@ export function makeRacer(car, race, { autopilot = false, pace = 0.96, grip = 0.
     } else {
       // move over for a car in the way ahead, and keep off one alongside
       let want = 0, near = 1e9;
-      const myLine = line.off[p.i];
+      const myLine = line.off[p.i], [lo, hi] = room(p.i);
+      // the road narrowing ahead (a block out from the kerb): which way the car has to move over for it, and whether
+      // it is too narrow to pass in (then the cars go through in single file, on the line)
+      let need = 0, needD = 0, tight = false;
+      if (T.WL) for (let d = 4; d < 36 + sp * 0.6; d += T.STEP * 2) {
+        const [a, c] = room(T.at(p.i + Math.round(d / T.STEP)));
+        if (!need) { need = p.lat < a - 1 ? 1 : p.lat > c + 1 ? -1 : 0; needD = d; }
+        if (c - a < 10) tight = true;
+      }
       for (const o of all) {
         if (o === car || o.dead || o.gone) continue;
         const r = race.rec(o); if (!r || r.i < 0) continue;
         const ds = wrapS(r.s - (me ? me.s : p.s)), dl = r.lat - p.lat;
+        // a car alongside on the side it has to move to: drop back and tuck in behind it, slowing right down short of
+        // the narrowing if it can't (but never quite stopping, so two cars can't wait on each other for ever)
+        if (need && Math.sign(dl) === need && ds > -10 && ds < 18 && Math.abs(dl) < 19) {
+          vmax = Math.min(vmax, Math.max(12, Math.min((r.car ? r.car.fwd : v) - 12, Math.sqrt(2 * BRAKE * Math.max(0, needD - 6)))));
+          continue;
+        }
         if (Math.abs(ds) < 14 && Math.abs(dl) < 13) { want += (dl > 0 ? -1 : 1) * 7; continue; }
         if (ds < 0 || ds > 36 + sp * 0.45 || ds > near) continue;
         if (Math.abs(r.lat - (myLine + b.lane)) > 13) continue;
+        if (tight) { if (ds < 30 && r.car) vmax = Math.min(vmax, Math.max(20, r.car.fwd)); continue; }   // no passing here: follow
         near = ds;
         const left = r.lat + 15, right = r.lat - 15;
-        const side = left > lim ? right : right < -lim ? left : Math.abs(left - p.lat) < Math.abs(right - p.lat) ? left : right;
+        const side = left > hi ? right : right < lo ? left : Math.abs(left - p.lat) < Math.abs(right - p.lat) ? left : right;
         want += side - myLine;
         if (ds < 22 && Math.abs(dl) < 11 && r.car && r.car.fwd < v) vmax = Math.min(vmax, Math.max(30, r.car.fwd + 4));   // boxed in: hang back
       }
       b.lane += clamp(want - b.lane, -34 * dt, 34 * dt);
-      b.lane = clamp(b.lane, -lim - myLine, lim - myLine);
-      const j = T.at(p.i + Math.round(look / T.STEP)), off = clamp(line.off[j] + b.lane, -lim, lim);
+      b.lane = clamp(b.lane, lo - myLine, hi - myLine);
+      const j = T.at(p.i + Math.round(look / T.STEP)), [lj, hj] = room(j), off = clamp(line.off[j] + b.lane, lj, hj);
       tx = T.X[j] + T.TZ[j] * off; tz = T.Z[j] - T.TX[j] * off;
       // the bends coming up, as far ahead as it would need to brake for them
       const reach = sp * sp / (2 * BRAKE) + 24;
@@ -67,7 +85,7 @@ export function makeRacer(car, race, { autopilot = false, pace = 0.96, grip = 0.
         if (allow < vmax) vmax = allow;
       }
       // off the road: back on to it
-      if (Math.abs(p.lat) > HALF + 2) { const jj = T.at(p.i + 4); tx = T.X[jj]; tz = T.Z[jj]; }
+      if (T.WL ? p.lat > T.WL[p.i] + 2 || -p.lat > T.WR[p.i] + 2 : Math.abs(p.lat) > HALF + 2) { const jj = T.at(p.i + 4); tx = T.X[jj]; tz = T.Z[jj]; }
     }
     b.ahead.x = tx; b.ahead.z = tz;
     // steer for the point ahead (pure pursuit: the bend that goes through it, as a share of the car's full lock)
@@ -91,6 +109,7 @@ export function makeRacer(car, race, { autopilot = false, pace = 0.96, grip = 0.
 
   // who to shoot: the nearest car ahead of it in the race that it can see in front, or the player when close
   function pick(all, player) {
+    if (race.time() < 4) return null;   // nobody shoots for the first seconds, while the pack gets away from the grid
     const me = race.rec(car); let best = null, bs = 1e9;
     for (const o of all) {
       if (o === car || o.dead || o.gone) continue;
