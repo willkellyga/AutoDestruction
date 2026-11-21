@@ -1,454 +1,378 @@
-// Bowtie Raceway: a figure-of-eight circuit that fills the map, raced three laps with the guns on (modes/race.js).
-// The lap starts on the long straight down the east side under the start gantry, brakes into a right-hander at the
-// bottom, sweeps up the diagonal to the crossover in the middle of the map, climbs to a hairpin at the top left,
-// snakes down the west side through a chicane, swings round the bottom left and back up the other diagonal to cross
-// the first one at grade, then sweeps round the top right onto the straight. The two halves of the track meet nearly
-// square at the crossover, flat out both ways.
+// Crumbletown Circuit: a street race through Crumbletown, three laps with the guns on (modes/race.js). The town is
+// built exactly as the town map builds it (maps/town.js: generateTown, with the parked cars and buses taken out); then
+// the course is marked out on its streets and the streets it doesn't use are shut off.
 //
-// The shape is a loop of control points (PTS) made into a road by racetrack.js; everything else is worked out from
-// it: the barriers (concrete walls, with tyre walls round the outside of the corners, all 'barrier' bodies that cars
-// bounce off), the gravel traps and grass (slow, see surface()), the paint, the radar and what the race mode needs
-// (the racing line, the checkpoint gates, the starting grid). Round the outside: the main grandstand, a pit lane with
-// its garages and race control, stands at the crossover, light towers, sponsor boards, marshal posts and trees.
-import { WX, WZ, M, set, box, walls, begin, place, ctx, setSeed, rnd, ri } from '../../../src/world.js';
-import { face, text, textW, tree, lampPost, bench, bin } from '../../../src/kit.js';
-import { canvasFor, finish, pickSpot } from './common.js';
-import { makeTrack, findCrossings, racingLine } from './racetrack.js';
+// The lap, from the line on the north street heading west under the start gantry, past the downtown towers and the
+// stadium: a fast kink between concrete blocks, a square left into the west street, its own kink, left again into the
+// south street, then right down the middle street to a hairpin at the bottom of the town that comes back up through a
+// car park. East along the south street past the fuel yard, left up the east street, right onto the middle street and
+// straight into a second hairpin, round the end of a wall and through the corner car park, then right and up the east
+// street to the north street and the line. About 1,320 voxels, eight square corners and two hairpins.
+//
+// The course's centre line is a loop of straight runs and rounded corners (COURSE, made into a track by racetrack.js).
+// How much room there is either side of it is measured from what stands in the town once the course is built (so the
+// racing line uses a crossing's width and keeps off the lamp posts), and the race mode reads that with the rest:
+// the racing line, the checkpoint gates and the grid. Concrete blocks shut the side streets, with sponsor boards and
+// chevrons on them; tyre walls round the hairpins; temporary stands with crowds at the corners. Buildings stay as
+// they are: smash through one if you like, but the gates still have to come in order.
+import { WX, WY, WZ, M, set, put, box, walls, begin, place, ctx, setSeed, rnd, ri, solid, idx, ownerAt, voxAt, setCell, bodies, vehicles, STREET_X, STREET_Z, CARRY } from '../../../src/world.js';
+import { generateTown } from '../../../src/town.js';
+import { groundCanvas, GK } from '../../../src/ground.js';
+import { face, text, textW } from '../../../src/kit.js';
+import { pickSpot } from './common.js';
+import { makeTrack, streetLoop, racingLine } from './racetrack.js';
 
-const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const HALF = 22, PIT_HALF = 8;   // half the width of the track and of the pit lane
-// the centre line, from the start line (heading south down the east side) round the lap
-const PTS = [[449, 195], [449, 250], [449, 300], [437, 352], [409, 364], [392, 360], [379, 351], [305, 288], [279, 241], [250, 208], [221, 175], [190, 148], [156, 118], [146, 92], [136, 60], [112, 40], [86, 40], [66, 60], [62, 100], [62, 150], [66, 172], [102, 192], [102, 210], [66, 230], [58, 252], [52, 300], [63, 352], [91, 364], [108, 360], [121, 351], [177, 272], [221, 241], [250, 208], [279, 175], [305, 129], [379, 65], [392, 56], [409, 52], [437, 64], [449, 92], [449, 140]];
-// the pit lane: off the inside of the straight after the last corner, back on before the first
-const PIT = [[441, 108], [426, 124], [411, 142], [410, 160], [410, 240], [413, 258], [428, 276], [443, 292]];
-const GAR = { x0: 374, x1: 401, z0: 150, z1: 249, bays: 5 };   // the garages, facing the pit lane
-const PADDOCK = [338, 116, 402, 284];
-const ROUGH = [0, 0.7, 1];   // how much each kind of ground holds a car back: road, grass, gravel
+const [X1, X2, X3] = STREET_X, [Z1, Z2, Z3] = STREET_Z;   // the town's streets: 80, 254, 428 across and 80, 202, 324 down
+const LINE_X = 296;   // the start line, on the north street
+// the course: each corner [x, z, radius of the curve round it]. Two corners a diameter apart make a hairpin.
+const COURSE = [
+  [LINE_X, Z1, 0],
+  [X1, Z1, 14], [X1, Z3, 14], [X2, Z3, 14],
+  [X2, Z3 + 72.5, 20.5], [X2 + 41, Z3 + 72.5, 20.5],   // the hairpin below the town, back up through the car park
+  [X2 + 41, Z3, 14], [X3, Z3, 14], [X3, Z2, 14],
+  [X3 + 36, Z2, 16], [X3 + 36, Z2 - 32, 16],           // the hairpin round the end of the wall, through the car park
+  [X3, Z2 - 32, 14], [X3, Z1, 14],
+];
+const APEX = [[X2 + 20.5, Z3 + 72.5], [X3 + 36, Z2 - 16]];   // the far end of each hairpin
+const CARPARKS = [[446, 144, 486, 184], [275, 342, 315, 382]];   // the two car parks the course runs through
+const HALF = 15;      // the usual room each side on a street (the lamp posts stand at 15)
+const MARGIN = 6.5;   // how far inside the room the racing line keeps a car's middle
 
-// ---- the circuit, worked out once (only for this map: the other maps never pay for it) -----------------------------
+// The walls: [x0, z0, x1, z1, kind ('c' concrete blocks, 't' tyres), dressing]. The dressing faces the course from
+// `side` ('f' low z, 'b' high z, 'l' low x, 'r' high x): a sponsor's name, or chevrons ('<' or '>', the way the
+// corner goes as the drivers see it).
+const WALLS = [
+  // north-west corner: shut the north street west and the west street north
+  [57, 61, 59, 99, 'c', ['r', '<']], [61, 57, 100, 59, 'c', ['b', 'SCRAP CITY']],
+  // the north street straight across the middle street
+  [232, 57, 276, 59, 'c', ['b', 'GRIT COLA']], [232, 101, 276, 103, 'c', ['f', 'BOLTZ TYRES']],
+  // north-east corner
+  [406, 57, 447, 59, 'c', ['b', '<']], [449, 61, 451, 99, 'c', ['l', 'HOT SPARK']],
+  // the west street straight across the middle street
+  [57, 183, 59, 221, 'c', ['r', 'DENT KINGS']], [101, 183, 103, 221, 'c', ['l', 'ZAPP OIL']],
+  // east street and middle street: the middle street west shut, and the wall the second hairpin goes round
+  [405, 183, 407, 221, 'c', ['r', 'RUST RACING']], [408, 185, 445, 187, 'c', ['b', '>']],
+  // south-west corner
+  [57, 305, 59, 343, 'c', ['r', 'GRIT COLA']], [61, 345, 100, 347, 'c', ['f', '<']],
+  // the middle street and the south street: shut north, and the wall between the hairpin's two halves
+  [232, 301, 276, 303, 'c', ['b', 'SCRAP CITY']], [273, 304, 275, 372, 'c', ['l', '>']],
+  // south-east corner
+  [449, 305, 451, 343, 'c', ['l', '<']], [406, 345, 447, 347, 'c', ['f', 'BOLTZ TYRES']],
+  // the outside of the second hairpin
+  [487, 140, 489, 224, 't', ['l', '<']],
+  // the kinks: blocks out from alternate kerbs, a little way into the road on the north street (where the pack comes
+  // off the grid still two by two) and further on the west street
+  [176, 62, 183, 70, 'c'], [136, 90, 143, 98, 'c'], [87, 246, 98, 253, 'c'], [62, 286, 73, 293, 'c'],
+];
+// temporary stands: [x, z, length, rows, the way the crowd looks, seat colour, sponsor]
+const STANDS = [
+  [64, 54, 34, 4, 's', 'CAR_B', 'DENT KINGS'], [236, 54, 36, 5, 's', 'CAR_A', 'GRIT COLA'], [455, 64, 32, 4, 'w', 'SIGN', 'ZAPP OIL'],
+  [64, 351, 34, 4, 'n', 'AWN_G', 'HOT SPARK'], [410, 351, 34, 4, 'n', 'CAR_A', 'SCRAP CITY'], [494, 150, 50, 3, 'w', 'CAR_B', 'BOLTZ TYRES'],
+  [232, 386, 26, 3, 'e', 'SIGN', ''],
+];
+const SKIN = [M.REND_C, M.WP_A, M.FLOOR, M.TRUNK, M.MUD];
+const SHIRT = [M.CAR_A, M.CAR_B, M.TRIM, M.AWN_G, M.SIGN, M.DARK, M.FURN_B, M.PL_Y, M.LIT_Y, M.PL_P, M.AWN_B];
+
+// ---- the course's shape: plain geometry, worked out once ------------------------------------------------------------
+let CO = null;
+function course() {
+  if (!CO) CO = { T: makeTrack({ pts: streetLoop(COURSE), halfW: HALF, smooth: false, WX, WZ, reach: 30 }) };
+  return CO;
+}
+
+// ---- the rest, once the town and the course are built: the room each side, the racing line, gates and grid -----
 let TR = null;
-function track() {
+function full() {
   if (TR) return TR;
-  const T = makeTrack({ pts: PTS, halfW: HALF, WX, WZ, reach: 70 });
-  const P = makeTrack({ pts: PIT, halfW: PIT_HALF, WX, WZ, reach: 16, closed: false });
-  const line = racingLine(T, { margin: 7 });
-  const cross = findCrossings(T);
-  const { N, X, Z, TX, TZ, K, STEP, L } = T;
-  // how much room each side of the track gets before its barrier: a little on the inside of a bend, more on a
-  // straight, and a gravel trap on the outside of a corner (less where the map's edge is close)
-  const Ks = new Float32Array(N);
-  for (let i = 0; i < N; i++) { let s = 0; for (let k = -12; k <= 12; k++) s += K[T.at(i + k)]; Ks[i] = s / 25; }
-  const db = [new Float32Array(N), new Float32Array(N)], trap = [new Uint8Array(N), new Uint8Array(N)];   // [left, right]
+  const { T } = course(), { N, X, Z, TX, TZ, K, L, STEP } = T;
+  // the room to the left and right of each sample: out to the first thing standing at car height (a lamp post too),
+  // or the map's edge, a little less on the straights than at the corners, where the crossings are wide
+  const blocked = (x, z) => {
+    if (x < 8 || z < 8 || x > WX - 8 || z > WZ - 8) return true;
+    for (const [dx, dz] of [[-0.6, -0.6], [0.6, -0.6], [-0.6, 0.6], [0.6, 0.6]]) { const ix = Math.floor(x + dx), iz = Math.floor(z + dz); if (solid(ix, 2, iz) || solid(ix, 4, iz)) return true; }
+    return false;
+  };
+  const raw = [new Float32Array(N), new Float32Array(N)];
   for (let i = 0; i < N; i++) for (const sd of [0, 1]) {
-    const side = sd ? -1 : 1, k = Ks[i], inside = Math.abs(k) > 1 / 400 && Math.sign(k) === side;
-    const run = inside ? 6 : 8 + clamp((Math.abs(k) - 1 / 300) * 900, 0, 14);
-    const nx = side * TZ[i], nz = -side * TX[i];
-    const room = Math.min(nx > 1e-3 ? (WX - X[i]) / nx : nx < -1e-3 ? X[i] / -nx : 1e9, nz > 1e-3 ? (WZ - Z[i]) / nz : nz < -1e-3 ? Z[i] / -nz : 1e9);
-    db[sd][i] = Math.min(HALF + run, room - 7); trap[sd][i] = !inside && run > 12 ? 1 : 0;
+    const nx = (sd ? -1 : 1) * TZ[i], nz = (sd ? 1 : -1) * TX[i];
+    let d = 1; while (d < 26 && !blocked(X[i] + nx * d, Z[i] + nz * d)) d++;
+    raw[sd][i] = d - 1;
   }
-  // every voxel of the map: what the ground is (0 road, 1 grass, 2 gravel) and what wall stands there
-  // (1 concrete, 2 tyres, 3 the pit lane's walls)
-  const surf = new Uint8Array(WX * WZ).fill(1), wall = new Uint8Array(WX * WZ), F = T.field, PF = P.field;
-  const garage = (x, z) => x >= GAR.x0 - 2 && x < 410 && z >= GAR.z0 && z <= GAR.z1;
-  for (let z = 0; z < WZ; z++) for (let x = 0; x < WX; x++) {
-    const c = z * WX + x, d = F.dist[c], i = F.near[c], dp = PF.dist[c];
-    if (i >= 0) {
-      const sd = F.lat[c] >= 0 ? 0 : 1, b = db[sd][i], thick = trap[sd][i] ? 3 : 2;
-      if (d >= b && d < b + thick && dp > PIT_HALF + 2.5) wall[c] = trap[sd][i] ? 2 : 1;
-      else if (d < b && trap[sd][i]) surf[c] = 2;
-      if (d < HALF + 2) surf[c] = 0;
-      if (d >= b + 3 && x >= PADDOCK[0] && x <= PADDOCK[2] && z >= PADDOCK[1] && z <= PADDOCK[3]) surf[c] = 0;
-    }
-    if (dp < PIT_HALF + 1) surf[c] = 0;
-    if (dp >= PIT_HALF + 0.5 && dp < PIT_HALF + 2.5 && d > HALF + 3 && !garage(x, z)) wall[c] = 3;
+  const bendy = new Uint8Array(N);
+  for (let i = 0; i < N; i++) for (let k = -12; k <= 12; k++) if (Math.abs(K[T.at(i + k)]) > 1 / 60) { bendy[i] = 1; break; }
+  const WL = new Float32Array(N), WR = new Float32Array(N);
+  for (let i = 0; i < N; i++) for (const [sd, W] of [[0, WL], [1, WR]]) {
+    let m = 1e9; for (let k = -4; k <= 4; k++) m = Math.min(m, raw[sd][T.at(i + k)]);
+    W[i] = Math.min(m, bendy[i] ? 22 : HALF);
   }
-  // the checkpoint gates: evenly round the lap, but not in the crossover (a car put back there would be in the way)
-  const G = 14, gateS = [], crossS = cross.flatMap(([a, b]) => [a * STEP, b * STEP]);
-  const wrapS = (d) => d - Math.round(d / L) * L;
-  for (let k = 0; k < G; k++) {
-    let s = k * L / G;
-    for (const cs of crossS) { const dd = wrapS(s - cs); if (Math.abs(dd) < 70) s = cs + (dd < 0 ? -70 : 70); }
-    gateS.push(((s % L) + L) % L);
+  T.WL = WL; T.WR = WR;
+  const lo = new Float32Array(N), hi = new Float32Array(N);
+  for (let i = 0; i < N; i++) { lo[i] = -WR[i] + MARGIN; hi[i] = WL[i] - MARGIN; if (lo[i] > hi[i]) lo[i] = hi[i] = (lo[i] + hi[i]) / 2; }
+  const line = racingLine(T, { margin: MARGIN, lo, hi });
+  // the checkpoint gates, evenly round the lap from the line, but with one at the far end of each hairpin (the nearest
+  // gate moves there), so that blasting through the wall down a hairpin's middle doesn't save the trip round it
+  const G = 14, gateS = [], gates = [];
+  for (let k = 0; k < G; k++) gateS.push(k * L / G);
+  for (const [x, z] of APEX) {
+    let bi = 0, bd = 1e9; for (let i = 0; i < N; i++) { const d = Math.hypot(X[i] - x, Z[i] - z); if (d < bd) { bd = d; bi = i; } }
+    const s = bi * STEP; let k = 1; for (let j = 2; j < G; j++) if (Math.abs(gateS[j] - s) < Math.abs(gateS[k] - s)) k = j;
+    gateS[k] = s;
   }
-  const gates = gateS.map((s) => Math.round(s / STEP) % N);
-  // the starting grid behind the line, two by two and staggered, pole on the inside of the first corner (the right)
+  for (const s of gateS) gates.push(Math.round(s / STEP) % N);
+  // the grid behind the line, two by two and staggered, pole on the inside of the first corner (a left)
   const grid = [];
   for (let k = 0; k < 6; k++) {
-    const col = k & 1, back = 16 + (k >> 1) * 30 + col * 15, lat = col ? 10 : -10, i = Math.round((L - back) / STEP) % N;
+    const col = k & 1, back = 16 + (k >> 1) * 30 + col * 15, lat = col ? -7 : 7, i = Math.round((L - back) / STEP) % N;
     grid.push({ x: X[i] + TZ[i] * lat, z: Z[i] - TX[i] * lat, yaw: Math.atan2(TX[i], TZ[i]) });
   }
-  // the start gantry spans the track and the pit lane at the line
-  const gantry = { x0: Math.round(X[0]) - 31, x1: Math.round(X[0]) + 32, z: Math.round(Z[0]), y: 19 };
-  TR = { T, P, line, cross, db, trap, surf, wall, gates, gateS, grid, gantry, HALF, PIT_HALF, garage: GAR };
+  const gantry = { x: LINE_X, z: Z1, y: 19 };
+  const lights = { x: LINE_X + 3.3, y: gantry.y - 2.4, z: Z1, yaw: Math.PI / 2, lx: 0, lz: 1 };   // in front of the lights' box, facing the grid
+  TR = { T, P: null, line, gates, gateS, grid, gantry, lights, HALF, PIT_HALF: 0 };
   return TR;
 }
 
 // ---- building ----------------------------------------------------------------------------------------------------
-const SKIN = [M.REND_C, M.WP_A, M.FLOOR, M.TRUNK, M.MUD];
-const SHIRT = [M.CAR_A, M.CAR_B, M.TRIM, M.AWN_G, M.SIGN, M.DARK, M.FURN_B, M.PL_Y, M.LIT_Y, M.PL_P, M.AWN_B];
-// the ground the scenery has taken so far (x0, z0, x1, z1), so that nothing else goes there
-let taken = [];
-const take = (x0, z0, x1, z1) => { taken.push([x0, z0, x1, z1]); };
-// is the ground under this box clear of the track, its run-off, its walls, the pit lane and the scenery so far?
-function clear(x0, z0, x1, z1, pad = 3) {
-  const { T, P, db, wall } = track();
-  for (const [a, b, c, d] of taken) if (x1 + pad >= a && x0 - pad <= c && z1 + pad >= b && z0 - pad <= d) return false;
-  for (let z = Math.max(0, z0 - pad); z <= Math.min(WZ - 1, z1 + pad); z++) for (let x = Math.max(0, x0 - pad); x <= Math.min(WX - 1, x1 + pad); x++) {
-    const c = z * WX + x, i = T.field.near[c];
-    if (wall[c] || P.field.dist[c] < PIT_HALF + 3) return false;
-    if (i >= 0 && T.field.dist[c] < db[T.field.lat[c] >= 0 ? 0 : 1][i] + 2) return false;
+// Take a body out of the town (a lamp post or a tree in the way of the course): its voxels go and it counts as gone.
+function removeBody(b) {
+  for (let y = 0; y <= b.y1; y++) for (let z = b.z0; z <= b.z1; z++) for (let x = b.x0; x <= b.x1; x++) {
+    const i = idx(x, y, z); if (voxAt(i) && ownerAt(i) === b.id) setCell(i, 0, 0);
   }
-  return x0 >= 3 && z0 >= 3 && x1 < WX - 3 && z1 < WZ - 3;
+  b.count = 0; b.init = 0; b.layers.fill(0); b.carry.fill(0); if (b.layers0) b.layers0.fill(0); if (b.dAbove) b.dAbove.fill(0); b.dead = true;
+}
+const small = (b) => b && !b.dead && (b.kind === 'prop' || b.kind === 'tree');
+// the street furniture and trees standing on the course (and in the car parks it runs through) come out
+function clearCourse() {
+  const { T } = course(), F = T.field;
+  for (const b of bodies) {
+    if (!small(b) || b.x1 < 0) continue;
+    let d = 1e9;
+    for (let z = b.z0; z <= b.z1; z++) for (let x = b.x0; x <= b.x1; x++) { const c = z * WX + x; if (F.near[c] >= 0) d = Math.min(d, F.dist[c]); }
+    const inPark = CARPARKS.some(([a, c, e, f]) => b.x0 >= a - 1 && b.x1 <= e + 1 && b.z0 >= c - 1 && b.z1 <= f + 1);
+    if (d < 13.5 || (b.kind === 'tree' && d < 22) || inPark) removeBody(b);
+  }
+}
+// and anything small where a wall or a stand is going
+function clearRect(x0, z0, x1, z1) {
+  for (const b of bodies) if (small(b) && b.x1 >= x0 - 1 && b.x0 <= x1 + 1 && b.z1 >= z0 - 1 && b.z0 <= z1 + 1) removeBody(b);
+}
+// generateTown() has counted every body's voxels already (finalize in world.js): count the ones added after it the same way
+function countFrom(first) {
+  for (let id = first; id < bodies.length; id++) {
+    const b = bodies[id];
+    if (b.x1 >= 0) for (let y = 0; y <= b.y1; y++) for (let z = b.z0; z <= b.z1; z++) for (let x = b.x0; x <= b.x1; x++) {
+      const i = idx(x, y, z), m = voxAt(i);
+      if (m && ownerAt(i) === id) { b.count++; b.layers[y]++; b.carry[y] += CARRY[m]; }
+    }
+    b.init = b.count; b.layers0 = b.layers.slice(); b.dCarry = b.carry.slice(); b.dAbove = new Float64Array(WY);
+    for (let y = WY - 2; y >= 0; y--) b.dAbove[y] = b.dAbove[y + 1] + b.layers[y + 1];
+  }
 }
 
-// The barriers: the wall cells, a body for each 32-voxel square of the map (so a rocket's hit only has a small body to
-// work over). Concrete walls are four voxels high with a red and white cap; tyre walls are three deep, banded.
-function barriers() {
-  const { wall, T, P } = track(), TILE = 32, F = T.field;
-  for (let tz = 0; tz < WZ; tz += TILE) for (let tx = 0; tx < WX; tx += TILE) for (const kind of [1, 2, 3]) {
-    let open = false;
-    for (let z = tz; z < Math.min(WZ, tz + TILE); z++) for (let x = tx; x < Math.min(WX, tx + TILE); x++) {
-      const c = z * WX + x; if (wall[c] !== kind) continue;
-      if (!open) { open = true; begin(kind === 2 ? 'Tyre wall' : kind === 3 ? 'Pit wall' : 'Barrier', 'barrier', false); }
-      const along = kind === 3 ? (P.field.near[c] * P.STEP) : (F.near[c] * T.STEP);
-      if (kind === 2) {
-        const band = [M.TRIM, M.CAR_A, M.TRIM, M.CAR_B][Math.floor(along / 3) & 3];
-        for (let y = 0; y < 4; y++) set(x, y, z, y === 2 ? band : M.TYRE);
-      } else {
-        for (let y = 0; y < 4; y++) set(x, y, z, M.CONC);
-        set(x, 4, z, Math.floor(along / 8) & 1 ? M.CAR_A : M.TRIM);
-      }
+// A wall along a box of cells, a body for each 32 voxels of its length (so a rocket only has a small body to work
+// over): concrete blocks four high with a red and white top, or tyres stacked four high with a coloured band.
+function wall(x0, z0, x1, z1, kind) {
+  const alongX = x1 - x0 >= z1 - z0, a0 = alongX ? x0 : z0, a1 = alongX ? x1 : z1, w0 = alongX ? z0 : x0, w1 = alongX ? z1 : x1;
+  for (let a = a0; a <= a1; a += 32) {
+    begin(kind === 't' ? 'Tyre wall' : 'Barrier', 'barrier', false);
+    for (let t = a; t <= Math.min(a1, a + 31); t++) for (let w = w0; w <= w1; w++) {
+      const x = alongX ? t : w, z = alongX ? w : t;
+      if (kind === 't') for (let y = 0; y < 4; y++) put(x, y, z, y === 2 ? [M.TRIM, M.CAR_A, M.TRIM, M.CAR_B][Math.floor(t / 3) & 3] : M.TYRE);
+      else { for (let y = 0; y < 4; y++) put(x, y, z, M.CONC); put(x, 4, z, Math.floor(t / 6) & 1 ? M.CAR_A : M.TRIM); }
     }
   }
 }
-
-// The start gantry: two steel towers and a beam over the track and the pit lane at the line, the circuit's name on it
-// both ways, and the box the start lights hang from (the race mode lights them).
-function gantry() {
-  const { x0, x1, z, y } = track().gantry;
-  begin('Start gantry', 'gantry', true);
-  for (const px of [x0, x1]) {
-    for (let yy = 0; yy < y; yy++) for (const [a, b] of [[0, 0], [2, 0], [0, 3], [2, 3]]) set(px + a, yy, z - 1 + b, M.STEEL);
-    for (let yy = 0; yy < y; yy += 4) { box(px, yy, z - 1, px + 2, yy, z - 1, M.METAL); box(px, yy, z + 2, px + 2, yy, z + 2, M.METAL); box(px, yy, z - 1, px, yy, z + 2, M.METAL); box(px + 2, yy, z - 1, px + 2, yy, z + 2, M.METAL); }
-    box(px - 1, 0, z - 2, px + 3, 0, z + 3, M.CONC);
+// a board standing on a wall, on its side facing the course: a sponsor's name, or chevrons
+function dress(x0, z0, x1, z1, [side, what]) {
+  const alongX = side === 'f' || side === 'b', len = alongX ? x1 - x0 + 1 : z1 - z0 + 1, w = Math.min(len - 6, what.length > 1 ? textW(what) + 6 : 26);
+  if (w < 8) return;
+  const c = alongX ? (x0 + x1) >> 1 : (z0 + z1) >> 1, a0 = c - (w >> 1), a1 = a0 + w - 1;
+  // the board stands on the course's edge of the wall, two voxels thick: the face, and a plain back behind it
+  const bx0 = alongX ? a0 : side === 'l' ? x0 : x1, bx1 = alongX ? a1 : bx0, bz0 = alongX ? (side === 'f' ? z0 : z1) : a0, bz1 = alongX ? bz0 : a1;
+  const [kx, kz] = { l: [1, 0], r: [-1, 0], f: [0, 1], b: [0, -1] }[side], chev = what === '<' || what === '>';
+  begin(chev ? 'Chevron board' : 'Sponsor board', 'sign', false);
+  for (let y = 5; y <= 12; y++) for (let z = bz0; z <= bz1; z++) for (let x = bx0; x <= bx1; x++) {
+    set(x, y, z, chev ? M.DARK : y === 5 || y === 12 ? M.TRIM : M.CAR_B); set(x + kx, y, z + kz, M.DARK);
   }
-  walls(x0, y, z - 1, x1 + 2, y + 6, z + 2, M.DARK);
-  box(x0, y, z - 1, x1 + 2, y, z + 2, M.DARK); box(x0, y + 6, z - 1, x1 + 2, y + 6, z + 2, M.TRIM);
-  const name = 'BOWTIE RACEWAY', w = textW(name);
-  for (const s of ['f', 'b']) { const F = face(s, x0, z - 1, x1 + 2, z + 2); text(F, name, ((F.W - w) >> 1), y + 1, 0, M.LIT_W); }
-  // the lights' box, over the middle of the track
-  const cx = Math.round(track().T.X[0]);
-  box(cx - 13, y - 4, z - 1, cx + 13, y - 1, z, M.DARK);
+  const F = face(side, bx0, bz0, bx1, bz1);
+  if (chev) {
+    for (let u0 = 2; u0 + 5 < F.W - 1; u0 += 6) for (let t = 0; t <= 3; t++) for (const dy of [t, -t]) for (const k of [0, 1]) {
+      const u = what === '<' ? u0 + t + k : u0 + 3 - t + k; F.p(u, 8 + dy, 0, M.LIT_Y);
+    }
+  } else text(F, what, (F.W - textW(what)) >> 1, 6, 0, M.LIT_Y);
 }
-
-// A grandstand: rows of seats stepping up away from the track, spectators on most of them, a parapet at the front, a
-// back wall and a roof over the back rows with a sponsor on its edge. (ax, az) is the front corner; the stand runs `len`
-// along the track, and `look` is the way the crowd faces: 'w', 'e', 'n' or 's'. A body for each 30 along.
+// the tyre wall round the outside of the first hairpin, below the town
+function hairpinTyres() {
+  const [x, z, r] = COURSE[4], cx = x + r, cz = z - r;   // the middle of its curve
+  begin('Tyre wall', 'barrier', false);
+  for (let wz = Math.floor(cz) + 7; wz < WZ - 2; wz++) for (let wx = Math.floor(cx - 40); wx <= Math.ceil(cx + 40); wx++) {
+    const d = Math.hypot(wx + 0.5 - cx, wz + 0.5 - cz);
+    if (d < 35 || d >= 38) continue;
+    for (let y = 0; y < 4; y++) put(wx, y, wz, y === 2 ? [M.TRIM, M.CAR_A, M.TRIM, M.CAR_B][Math.floor((wx + wz) / 3) & 3] : M.TYRE);
+  }
+}
+// The start gantry over the north street at the line: two steel towers on the pavements, a beam with the race's name
+// on both faces, and the box the race mode hangs its start lights in front of.
+function gantry() {
+  const x0 = LINE_X - 1, x1 = LINE_X + 2, z0 = Z1 - 19, z1 = Z1 + 19, y = 19;
+  clearRect(x0 - 2, z0, x1 + 2, z1);
+  begin('Start gantry', 'gantry', true);
+  for (const tz of [z0 + 1, z1 - 3]) {
+    for (let yy = 0; yy < y; yy++) for (const [a, b] of [[0, 0], [3, 0], [0, 2], [3, 2]]) set(x0 + a, yy, tz + b, M.STEEL);
+    for (let yy = 0; yy < y; yy += 4) { box(x0, yy, tz, x1, yy, tz, M.METAL); box(x0, yy, tz + 2, x1, yy, tz + 2, M.METAL); }
+    box(x0 - 1, 0, tz - 1, x1 + 1, 0, tz + 3, M.CONC);
+  }
+  walls(x0, y, z0, x1, y + 6, z1, M.DARK); box(x0, y + 6, z0, x1, y + 6, z1, M.TRIM);
+  const name = 'GRAND PRIX';
+  for (const s of ['l', 'r']) { const F = face(s, x0, z0, x1, z1); text(F, name, (F.W - textW(name)) >> 1, y + 1, 0, M.LIT_W); }
+  box(x1 - 1, y - 4, Z1 - 13, x1, y - 1, Z1 + 13, M.DARK);
+}
+// A temporary stand: a steel frame with rows of seats stepping up away from the course, a crowd on most of them, a
+// rail along the front and a sponsor's board along the back. (ax, az) is the front corner; it runs `len` along and
+// `look` is the way the crowd faces ('w', 'e', 'n' or 's').
 function stand(ax, az, len, rows, look, seat, sponsor) {
   const at = (u, v) => (look === 'w' ? [ax + v, az + u] : look === 'e' ? [ax - v, az + u] : look === 'n' ? [ax + u, az + v] : [ax + u, az - v]);
   const S = (u, y, v, m) => { const [x, z] = at(u, v); set(x, y, z, m); };
-  const back = 2 * rows + 2, top = 3 + 2 * rows + 8;
-  { const [x0, z0] = at(0, 0), [x1, z1] = at(len - 1, back + 1); take(Math.min(x0, x1), Math.min(z0, z1), Math.max(x0, x1), Math.max(z0, z1)); }
+  const back = 2 * rows + 2, top = 2 * rows + 5;
+  { const [xa, za] = at(0, 0), [xb, zb] = at(len - 1, back + 1); clearRect(Math.min(xa, xb), Math.min(za, zb), Math.max(xa, xb), Math.max(za, zb)); }
   for (let u0 = 0; u0 < len; u0 += 30) {
-    begin('Grandstand', 'stand', true);
+    begin('Stand', 'stand', true);
     for (let u = u0; u < Math.min(len, u0 + 30); u++) {
-      for (let y = 0; y < 4; y++) { S(u, y, 0, M.CONC); S(u, y, 1, M.CONC); }
-      S(u, 4, 0, M.TRIM); S(u, 4, 1, M.TRIM);
-      const rib = u % 10 === 0 || u === len - 1;
+      const post = u % 6 === 0 || u === len - 1;
+      S(u, 3, 0, M.TRIM); if (post) for (let y = 0; y < 3; y++) S(u, y, 0, M.METAL);
       for (let r = 0; r < rows; r++) {
-        const h = 3 + 2 * r, v = 2 + 2 * r;
-        S(u, h - 1, v, M.CONC); S(u, h - 1, v + 1, M.CONC); S(u, h, v + 1, (u + r) % 9 === 0 ? M.SLAB : seat);
-        if (rib) for (let y = 0; y < h - 1; y++) { S(u, y, v, M.CONC); S(u, y, v + 1, M.CONC); }
-        // a spectator in front of most seats
+        const h = 2 + 2 * r, v = 2 + 2 * r;
+        S(u, h - 1, v, M.METAL); S(u, h - 1, v + 1, M.METAL); S(u, h, v + 1, (u + r) % 9 === 0 ? M.SLAB : seat);
+        if (post) for (let y = 0; y < h - 1; y++) S(u, y, v + 1, M.METAL);
         if ((u + r) % 9 !== 0 && rnd() < 0.62) { S(u, h, v, SHIRT[ri(0, SHIRT.length - 1)]); S(u, h + 1, v, SKIN[ri(0, SKIN.length - 1)]); }
       }
-      for (let y = 0; y <= top; y++) S(u, y, back + 1, y === top ? M.TRIM : M.CONC);
-      for (let v = back - 9; v <= back + 1; v++) S(u, top, v, M.ROOF_S);
-      for (let y = top - 3; y < top; y++) S(u, y, back - 9, M.TRIM);
+      for (let y = post ? 0 : top - 1; y <= top; y++) S(u, y, back + 1, y === top ? M.TRIM : M.METAL);
     }
   }
-  // the sponsor along the roof's edge, facing the track
-  if (sponsor) {
+  if (sponsor && textW(sponsor) + 4 <= len) {
     begin('Stand sign', 'sign', false);
-    const w = textW(sponsor), u = Math.max(1, (len - w) >> 1), v = back - 9;
-    const [x0, z0] = at(0, v), [x1, z1] = at(len - 1, v);
-    const F = face(look === 'w' ? 'l' : look === 'e' ? 'r' : look === 'n' ? 'f' : 'b', Math.min(x0, x1), Math.min(z0, z1), Math.max(x0, x1), Math.max(z0, z1));
-    F.box(u - 2, top - 9, u + w + 1, top - 3, 1, 1, M.DARK);
-    text(F, sponsor, u, top - 8, 1, M.LIT_Y);
+    const w = textW(sponsor), u = (len - w) >> 1;
+    for (let uu = u - 2; uu < u + w + 2; uu++) for (let y = top + 1; y <= top + 7; y++) S(uu, y, back + 1, M.DARK);
+    const [xa, za] = at(0, back + 1), [xb, zb] = at(len - 1, back + 1);
+    const F = face(look === 'w' ? 'l' : look === 'e' ? 'r' : look === 'n' ? 'f' : 'b', Math.min(xa, xb), Math.min(za, zb), Math.max(xa, xb), Math.max(za, zb));
+    text(F, sponsor, (F.W - w) >> 1, top + 2, 1, M.LIT_Y);
   }
 }
 
-// The pits: a row of garages opening onto the pit lane, race control at the north end, and the paddock behind
-const TEAMS = [['RUST', M.CAR_A], ['ZAP', M.SIGN], ['GRIT', M.CAR_B], ['BOLT', M.AWN_G], ['DENT', M.LIT_Y]];
-function pits() {
-  const g = GAR, bay = Math.floor((g.z1 - g.z0 + 1) / g.bays), H = 15;
-  for (let k = 0; k < g.bays; k++) {
-    const z0 = g.z0 + k * bay, z1 = z0 + bay - 1, [name, col] = TEAMS[k % TEAMS.length];
-    begin('Garage', 'garage', true);
-    walls(g.x0, 0, z0, g.x1, H, z1, M.CONC);
-    box(g.x0, H, z0, g.x1, H, z1, M.ROOF_S);
-    const F = face('r', g.x0, z0, g.x1, z1);
-    // the door onto the pit lane: some open, some shut
-    const open = k % 2 === 0;
-    for (let u = 3; u < F.W - 3; u++) for (let y = 0; y < 10; y++) { if (open) F.c(u, y, 0); else F.p(u, y, 0, y % 2 ? M.METAL : M.STEEL); }
-    if (open) {
-      for (let z = z0 + 1; z < z1; z++) for (let y = 0; y < 2; y++) set(g.x0 + 1, y + 4, z, M.DARK);   // a bench along the back
-      box(g.x0 + 2, 0, z0 + 2, g.x0 + 4, 4, z0 + 5, col); box(g.x0 + 2, 0, z1 - 5, g.x0 + 4, 4, z1 - 2, col);   // tool chests
-      for (let y = 0; y < 8; y += 2) box(g.x0 + 1, y, z0 + 8, g.x0 + 3, y + 1, z0 + 10, M.TYRE);   // tyres racked up
-    }
-    // the team's colours and name over the door
-    F.box(0, 11, F.W - 1, H, 1, 1, col);
-    const w = textW(name); if (w <= F.W) text(F, name, (F.W - w) >> 1, 11, 1, M.TRIM);
-  }
-  // race control: a tower with a glass top looking down the straight
-  const rx0 = 380, rx1 = 400, rz0 = 128, rz1 = 146, top = 34;
-  begin('Race control', 'tower', true);
-  walls(rx0, 0, rz0, rx1, top - 10, rz1, M.REND_C);
-  for (const y of [9, 18]) box(rx0 + 1, y, rz0 + 1, rx1 - 1, y, rz1 - 1, M.SLAB);
-  walls(rx0 - 1, top - 9, rz0 - 1, rx1 + 1, top - 2, rz1 + 1, M.GLASS);
-  for (const [a, b] of [[rx0 - 1, rz0 - 1], [rx1 + 1, rz0 - 1], [rx0 - 1, rz1 + 1], [rx1 + 1, rz1 + 1]]) box(a, top - 9, b, a, top - 2, b, M.DARK);
-  box(rx0 - 2, top - 10, rz0 - 2, rx1 + 2, top - 10, rz1 + 2, M.TRIM); box(rx0 - 2, top - 1, rz0 - 2, rx1 + 2, top - 1, rz1 + 2, M.TRIM);
-  box(rx0 + 8, top, rz0 + 8, rx0 + 9, top + 12, rz0 + 9, M.DARK); set(rx0 + 8, top + 13, rz0 + 8, M.LIT_R);
-  const Fr = face('r', rx0, rz0, rx1, rz1);
-  for (const y of [3, 12]) for (let u = 2; u < Fr.W - 2; u += 5) Fr.box(u, y, u + 2, y + 3, 0, 0, M.GLASS);
-  text(Fr, 'RACE', (Fr.W - textW('RACE')) >> 1, 18, 1, M.CAR_A);
-  // the paddock: the teams' trucks, a hospitality awning, lamps, and fuel drums that go up if they're hit
-  for (let k = 0; k < 4; k++) {
-    const tz = 156 + k * 24, tx = 352;
-    if (!clear(tx - 4, tz, tx + 4, tz + 18, 1)) continue;
-    begin('Team truck', 'shed', false);
-    box(tx - 4, 1, tz, tx + 4, 10, tz + 14, TEAMS[k][1]); box(tx - 4, 1, tz + 15, tx + 4, 8, tz + 19, M.TRIM);
-    box(tx - 3, 5, tz + 19, tx + 3, 7, tz + 19, M.GLASS);
-    for (const zz of [tz + 2, tz + 10, tz + 16]) { box(tx - 5, 0, zz, tx - 5, 1, zz + 1, M.TYRE); box(tx + 5, 0, zz, tx + 5, 1, zz + 1, M.TYRE); }
-    const F = face('r', tx - 4, tz, tx + 4, tz + 14), w = textW(TEAMS[k][0]);
-    if (w <= 15) text(F, TEAMS[k][0], (F.W - w) >> 1, 4, 1, M.TRIM);
-  }
-  if (clear(340, 250, 368, 266, 1)) {
-    begin('Hospitality', 'shed', false);
-    for (const [a, b] of [[340, 250], [368, 250], [340, 266], [368, 266]]) box(a, 0, b, a, 9, b, M.TRIM);
-    for (let x = 339; x <= 369; x++) for (let z = 249; z <= 267; z++) set(x, 10, z, ((x >> 2) & 1) ? M.AWN_R : M.AWN_W);
-  }
-  for (const [x, z] of [[370, 120], [370, 280], [344, 140]]) if (clear(x - 1, z - 5, x + 1, z + 1, 0)) lampPost(x, z, 22);
-  for (const [x, z] of [[GAR.x0 - 6, 168], [GAR.x0 - 6, 212], [404, 262]]) {
-    if (!clear(x, z, x + 4, z + 4, 0) && !(x > 400)) continue;
-    const p = begin('Fuel drums', 'prop', false); p.explosive = 7;
-    for (const [a, b] of [[0, 0], [2, 0], [0, 2], [2, 2]]) box(x + a, 0, z + b, x + a + 1, 2, z + b + 1, (a + b) & 2 ? M.FUEL : M.CAR_B);
-  }
+function build() {
+  generateTown();
+  const keep = vehicles.filter((v) => v.kind !== 'car' && v.kind !== 'bus' && v.kind !== 'school');
+  vehicles.length = 0; vehicles.push(...keep);
+  place(0, 0, -1); ctx.L = 3; ctx.lot = -1; setSeed(5151);
+  clearCourse();
+  const first = bodies.length;
+  for (const [x0, z0, x1, z1, kind, dressing] of WALLS) { clearRect(x0, z0, x1, z1); wall(x0, z0, x1, z1, kind); if (dressing) dress(x0, z0, x1, z1, dressing); }
+  hairpinTyres();
+  gantry();
+  for (const [x, z, len, rows, look, seat, sponsor] of STANDS) stand(x, z, len, rows, look, M[seat], sponsor);
+  countFrom(first);
 }
 
-// light towers: a steel mast with a bank of lamps on top, turned to the track
-function lightTower(x, z, toward) {
-  take(x - 2, z - 2, x + 3, z + 3);
-  begin('Light tower', 'tower', true);
-  box(x - 2, 0, z - 2, x + 2, 1, z + 2, M.CONC);
-  for (let y = 2; y < 56; y++) { set(x, y, z, M.STEEL); set(x + 1, y, z, M.STEEL); set(x, y, z + 1, M.STEEL); set(x + 1, y, z + 1, M.STEEL); }
-  const [dx, dz] = toward, along = Math.abs(dx) > Math.abs(dz);
-  for (let a = -5; a <= 5; a++) for (let y = 56; y <= 62; y++) {
-    const px = along ? x + Math.sign(dx) : x + a, pz = along ? z + a : z + Math.sign(dz);
-    const edge = a === -5 || a === 5 || y === 56 || y === 62;
-    set(px, y, pz, edge ? M.DARK : M.STEEL);
-    if (!edge) set(px + (along ? Math.sign(dx) : 0), y, pz + (along ? 0 : Math.sign(dz)), (a + y) & 1 ? M.LIT_W : M.LIT_Y);
-  }
-}
-
-// a sponsor board on two legs (or standing on a wall), its face to one side ('f' faces low z, 'b' high z, 'l' low x,
-// 'r' high x)
-function board(x0, z0, x1, z1, side, words, bg, fg, onWall = false) {
-  take(x0, z0, x1, z1);
-  begin('Sponsor board', 'sign', false);
-  const legs = onWall ? [] : side === 'f' || side === 'b' ? [[x0, z0], [x1, z0]] : [[x0, z0], [x0, z1]];
-  for (const [a, b] of legs) box(a, 0, b, a, 4, b, M.DARK);
-  box(x0, 5, z0, x1, 13, z1, bg);
-  const F = face(side, x0, z0, x1, z1), w = textW(words);
-  if (w <= F.W - 2) text(F, words, (F.W - w) >> 1, 7, 0, fg);
-}
-
-// a marshal's hut by the barrier, with a flag on a pole
-function marshal(x, z) {
-  if (!clear(x, z, x + 6, z + 6, 0)) return;
-  take(x - 1, z - 1, x + 12, z + 7);
-  begin('Marshal post', 'hut', false);
-  walls(x, 0, z, x + 6, 7, z + 6, M.TRIM); box(x - 1, 8, z - 1, x + 7, 8, z + 7, M.ROOF_R);
-  for (const F of [face('f', x, z, x + 6, z + 6), face('b', x, z, x + 6, z + 6)]) F.box(1, 4, 5, 6, 0, 0, M.GLASS);
-  box(x + 8, 0, z + 3, x + 8, 13, z + 3, M.DARK); box(x + 9, 10, z + 3, x + 12, 13, z + 3, M.LIT_Y);
-}
-
-function scenery() {
-  const { T } = track();
-  taken = [[205, 366, 300, 398]];   // the circuit's name, mown into the grass (paint)
-  // the main grandstand along the outside of the straight, a stand each side of the crossover looking down on it
-  stand(485, 112, 180, 10, 'w', M.CAR_B, 'GRIT COLA');
-  if (clear(210, 98, 265, 117, 0)) stand(210, 117, 56, 8, 's', M.CAR_A, 'ZAPP OIL');
-  if (clear(205, 292, 260, 311, 0)) stand(205, 292, 56, 8, 'n', M.SIGN, 'BOLTZ TYRES');
-  // light towers round the circuit, each turned to the nearest track
-  for (const [x, z] of [[340, 96], [365, 300], [150, 210], [160, 300], [250, 60], [250, 360], [24, 24], [24, 392], [496, 20], [496, 396], [300, 210], [200, 30]]) {
-    if (!clear(x - 3, z - 3, x + 4, z + 4, 2)) continue;
-    const p = T.project(x, z), dx = T.X[p.i] - x, dz = T.Z[p.i] - z;
-    lightTower(x, z, Math.abs(dx) > Math.abs(dz) ? [Math.sign(dx), 0] : [0, Math.sign(dz)]);
-  }
-  // sponsor boards on the pit wall, facing the straight, and along the outside of the west side
-  const brand = [['DENT KINGS', M.DARK, M.LIT_Y], ['SCRAP CITY', M.CAR_A, M.TRIM], ['HOT SPARK', M.LIT_Y, M.DARK], ['GRIT COLA', M.CAR_A, M.TRIM], ['BOLTZ TYRES', M.DARK, M.TRIM]];
-  [160, 222].forEach((z, k) => { const [w, bg, fg] = brand[k]; board(418, z, 419, z + 44, 'r', w, bg, fg, true); });
-  [80, 270, 320].forEach((z, k) => { const [w, bg, fg] = brand[k + 2]; if (clear(14, z, 16, z + 44, 0)) board(14, z, 16, z + 44, 'r', w, bg, fg); });
-  // marshal posts at the corners
-  for (const [x, z] of [[470, 380], [30, 380], [24, 140], [182, 64], [470, 30], [120, 160], [330, 380]]) marshal(x, z);
-  // trees in the infields and round the edges, keeping clear of the track and each other
-  const trees = [];
-  for (let n = 0; n < 900 && trees.length < 46; n++) {
-    const x = ri(8, WX - 10), z = ri(8, WZ - 10);
-    if (x > PADDOCK[0] - 6 && x < PADDOCK[2] + 6 && z > PADDOCK[1] - 6 && z < PADDOCK[3] + 6) continue;
-    if (trees.some(([a, b]) => Math.hypot(a - x, b - z) < 16) || !clear(x - 6, z - 6, x + 7, z + 7, 1)) continue;
-    trees.push([x, z]); take(x - 4, z - 4, x + 4, z + 4); tree(x, z, ri(10, 15), ri(5, 7));
-  }
-  // benches and bins behind the stands, cones at the pit lane's mouths
-  for (let z = 120; z < 290; z += 34) { if (clear(509, z, 511, z + 2, 0)) bin(509, z); }
-  for (const [x, z] of [[226, 82], [262, 82], [226, 332], [262, 332]]) { if (clear(x, z, x + 8, z + 3, 0)) bench(x, z); }
-  for (let k = 0; k < 8; k++) { const x = 343 + (k % 4) * 5, z = 118 + (k >> 2) * 150; if (!clear(x, z, x, z, 0)) continue; begin('Cone', 'prop', false); set(x, 0, z, M.SIGN); set(x, 1, z, M.TRIM); set(x, 2, z, M.SIGN); }
-}
-
-// ---- the painted ground ------------------------------------------------------------------------------------------
-function strokePath(g, xs, zs, GK, closed) {
-  g.beginPath(); g.moveTo(xs[0] * GK, zs[0] * GK);
-  for (let i = 1; i < xs.length; i++) g.lineTo(xs[i] * GK, zs[i] * GK);
-  if (closed) g.closePath();
-}
+// ---- the painted ground: the town's, with the course marked on it ----------------------------------------------
+let grassy = null;   // the town's grass, a voxel at a time (for surface())
 function paint() {
-  const { T, P, line, surf, cross, grid, gates, garage } = track();
-  const c = canvasFor('#6f9e58', 91), { g, GK } = c;
-  // the ground under everything, a voxel at a time: mown grass in stripes, gravel, the paddock's concrete
-  const small = document.createElement('canvas'); small.width = WX; small.height = WZ;
-  const sg = small.getContext('2d'), img = sg.createImageData(WX, WZ), D = img.data;
-  const hash = (x, z) => { let h = Math.imul(x, 374761393) ^ Math.imul(z, 668265263); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
-  for (let z = 0; z < WZ; z++) for (let x = 0; x < WX; x++) {
-    const k = z * WX + x, s = surf[k], n = hash(x, z), j = (n - 0.5) * 0.12;
-    let r, gg, b;
-    if (s === 1) { const stripe = ((x + z) >> 4) & 1; r = stripe ? 104 : 116; gg = stripe ? 156 : 168; b = stripe ? 84 : 92; if (n > 0.92) { r += 22; gg += 16; } }
-    else if (s === 2) { r = 196; gg = 176; b = 138; if (n > 0.8) { r -= 40; gg -= 40; b -= 36; } else if (n < 0.1) { r += 20; gg += 18; b += 16; } }
-    else { r = 172; gg = 168; b = 158; if (n > 0.9) { r -= 26; gg -= 26; b -= 24; } }
-    D[k * 4] = r * (1 + j); D[k * 4 + 1] = gg * (1 + j); D[k * 4 + 2] = b * (1 + j); D[k * 4 + 3] = 255;
-  }
-  sg.putImageData(img, 0, 0);
-  g.imageSmoothingEnabled = false; g.drawImage(small, 0, 0, WX * GK, WZ * GK);
-  // the circuit's name mown into the infield
-  g.save(); g.translate(252 * GK, 391 * GK); g.rotate(-0.03); g.font = `900 ${20 * GK}px system-ui, sans-serif`; g.textAlign = 'center';
-  g.fillStyle = 'rgba(240,244,226,0.32)'; g.fillText('BOWTIE', 0, 0); g.restore();
+  const { T, grid } = full(), { N, X, Z, TX, TZ, K, WL, WR } = T, cv = groundCanvas(), g = cv.getContext('2d');
+  const P = (a, l, i) => [(X[i] + TX[i] * a + TZ[i] * l) * GK, (Z[i] + TZ[i] * a - TX[i] * l) * GK];   // along and across the course at sample i, on the canvas
+  const quad = (i, j, l0, l1, col) => {
+    const a = P(0, l0, i), b = P(0, l1, i), c = P(0, l1, j), d = P(0, l0, j);
+    g.fillStyle = col; g.beginPath(); g.moveTo(...a); g.lineTo(...b); g.lineTo(...c); g.lineTo(...d); g.closePath(); g.fill();
+  };
   g.lineJoin = 'round'; g.lineCap = 'round';
-  // the pit lane and the track: asphalt, flecked a voxel at a time
-  strokePath(g, P.X, P.Z, GK, false); g.lineWidth = 2 * PIT_HALF * GK; g.strokeStyle = '#53575f'; g.stroke();
-  strokePath(g, T.X, T.Z, GK, true); g.lineWidth = 2 * HALF * GK; g.strokeStyle = '#4a4e57'; g.stroke();
-  for (let n = 0; n < 60000; n++) {
-    const x = Math.floor(c.r() * WX), z = Math.floor(c.r() * WZ), k = z * WX + x;
-    if (T.field.dist[k] > HALF - 0.5 && P.field.dist[k] > PIT_HALF - 0.5) continue;
-    g.fillStyle = c.r() < 0.5 ? 'rgba(28,30,36,0.28)' : 'rgba(120,124,132,0.16)'; c.rect(x, z, x + 1, z + 1);
+  // the first hairpin runs over the grass below the town: a road laid for the race, with a kerb each side
+  const low = []; for (let i = 0; i < N; i++) if (Z[i] > 370 && X[i] > X2 - 30 && X[i] < X2 + 70) low.push(i);
+  for (const [w, col] of [[2 * 12 + 1.2, '#eee8da'], [24, '#474b54']]) {
+    g.beginPath(); low.forEach((i, k) => (k ? g.lineTo(X[i] * GK, Z[i] * GK) : g.moveTo(X[i] * GK, Z[i] * GK)));
+    g.lineWidth = w * GK; g.strokeStyle = col; g.stroke();
   }
-  // rubber laid down along the racing line
-  const lx = [], lz = []; for (let i = 0; i < T.N; i++) { lx.push(line.px[i]); lz.push(line.pz[i]); }
-  strokePath(g, lx, lz, GK, true); g.lineWidth = 8 * GK; g.strokeStyle = 'rgba(22,22,26,0.16)'; g.stroke();
-  // white lines down both edges, and red and white kerbs where the track bends
-  const off = (i, lat) => [T.X[i] + T.TZ[i] * lat, T.Z[i] - T.TX[i] * lat];
-  const kerb = (i) => Math.abs(T.K[i]) > 1 / 120;
-  for (const side of [1, -1]) {
-    g.beginPath(); let on = false;
-    for (let i = 0; i <= T.N; i++) {
-      const k = i % T.N; if (kerb(k)) { on = false; continue; }
-      const [x, z] = off(k, side * (HALF - 1.2)); if (!on) { g.moveTo(x * GK, z * GK); on = true; } else g.lineTo(x * GK, z * GK);
-    }
-    g.lineWidth = 0.7 * GK; g.strokeStyle = '#e9e6dc'; g.stroke();
-    for (let i = 0; i < T.N; i++) {
-      if (!kerb(i) && !kerb((i + 3) % T.N) && !kerb((i - 3 + T.N) % T.N)) continue;
-      const j = (i + 1) % T.N, [ax, az] = off(i, side * (HALF - 2.6)), [bx, bz] = off(i, side * (HALF + 1.6)), [cx, cz] = off(j, side * (HALF + 1.6)), [dx, dz] = off(j, side * (HALF - 2.6));
-      g.fillStyle = Math.floor(i / 3) & 1 ? '#d33b2f' : '#f1ede4';
-      g.beginPath(); g.moveTo(ax * GK, az * GK); g.lineTo(bx * GK, bz * GK); g.lineTo(cx * GK, cz * GK); g.lineTo(dx * GK, dz * GK); g.closePath(); g.fill();
-    }
+  let s = 31; const r = () => { s = (s * 1664525 + 1013904223) | 0; return ((s >>> 8) & 0xffff) / 65536; };
+  for (let n = 0; n < 2400; n++) {
+    const i = low[(r() * low.length) | 0], [x, z] = P(0, (r() - 0.5) * 22, i);
+    g.fillStyle = r() < 0.5 ? 'rgba(30,32,38,0.24)' : 'rgba(110,114,124,0.15)'; g.fillRect(Math.floor(x / GK) * GK, Math.floor(z / GK) * GK, GK, GK);
   }
-  // the crossover: a yellow hatched box where the two halves of the lap meet
-  for (const [a, b] of cross) {
-    const ox = (T.X[a] + T.X[b]) / 2, oz = (T.Z[a] + T.Z[b]) / 2, na = [T.TZ[a], -T.TX[a]], nb = [T.TZ[b], -T.TX[b]];
-    const det = na[0] * nb[1] - na[1] * nb[0], corner = (sa, sb) => [ox + (sa * HALF * nb[1] - sb * HALF * na[1]) / det, oz + (sb * HALF * na[0] - sa * HALF * nb[0]) / det];
-    const q = [corner(1, 1), corner(1, -1), corner(-1, -1), corner(-1, 1)];
-    g.save(); g.beginPath(); q.forEach(([x, z], k) => (k ? g.lineTo(x * GK, z * GK) : g.moveTo(x * GK, z * GK))); g.closePath(); g.clip();
-    g.strokeStyle = 'rgba(236,196,52,0.85)'; g.lineWidth = 1.1 * GK;
-    for (let t = -80; t <= 80; t += 5) { g.beginPath(); g.moveTo((ox + t - 60) * GK, (oz - 60) * GK); g.lineTo((ox + t + 60) * GK, (oz + 60) * GK); g.moveTo((ox + t + 60) * GK, (oz - 60) * GK); g.lineTo((ox + t - 60) * GK, (oz + 60) * GK); g.stroke(); }
-    g.lineWidth = 2.4 * GK; g.beginPath(); q.forEach(([x, z], k) => (k ? g.lineTo(x * GK, z * GK) : g.moveTo(x * GK, z * GK))); g.closePath(); g.stroke();
-    g.restore();
+  // kerbs, red and white, on the inside of every corner
+  for (let i = 0; i < N; i++) {
+    if (Math.abs(K[i]) < 1 / 30) continue;
+    const side = K[i] > 0 ? 1 : -1, l = side * (Math.min(side > 0 ? WL[i] : WR[i], 11.5) - 0.5), j = T.at(i + 1);
+    quad(i, j, l, l - side * 2.4, (i >> 1) & 1 ? '#d8d2c4' : '#c8352c');
   }
-  // the chequered line across the track and the pit lane at the start
-  {
-    const i = 0, tx = T.TX[i], tz = T.TZ[i], nx = tz, nz = -tx;
-    for (let a = -HALF - 40; a < HALF; a += 2) for (let r = 0; r < 2; r++) {
-      const x = T.X[i] + nx * a + tx * (r * 2 - 2), z = T.Z[i] + nz * a + tz * (r * 2 - 2);
-      if (T.field.dist[Math.floor(z) * WX + Math.floor(x)] > HALF && P.field.dist[Math.floor(z) * WX + Math.floor(x)] > PIT_HALF) continue;
-      g.fillStyle = ((a >> 1) + r) & 1 ? '#1d1f24' : '#f3f0e8';
-      g.beginPath(); g.moveTo(x * GK, z * GK); g.lineTo((x + nx * 2) * GK, (z + nz * 2) * GK); g.lineTo((x + nx * 2 + tx * 2) * GK, (z + nz * 2 + tz * 2) * GK); g.lineTo((x + tx * 2) * GK, (z + tz * 2) * GK); g.closePath(); g.fill();
-    }
+  // the start line: a band of chequers across the street, and the grid's boxes behind it
+  for (let a = 0; a < 4; a += 2) for (let l = -12; l < 12; l += 2) {
+    const [x, z] = P(-a, l, 0); g.fillStyle = ((a + l) >> 1) & 1 ? '#f4f2ea' : '#1c1d21'; g.fillRect(Math.round(x / GK - 1) * GK, Math.round(z / GK - 1) * GK, 2 * GK, 2 * GK);
   }
-  // the grid: a white bracket in front of each slot
-  g.strokeStyle = '#ecE8dc'; g.lineWidth = 0.8 * GK; g.lineCap = 'butt';
-  for (const s of grid) {
-    const fx = Math.sin(s.yaw), fz = Math.cos(s.yaw), nx = fz, nz = -fx, cx = s.x + fx * 13, cz = s.z + fz * 13;
-    g.beginPath();
-    g.moveTo((cx - nx * 7 - fx * 5) * GK, (cz - nz * 7 - fz * 5) * GK); g.lineTo((cx - nx * 7) * GK, (cz - nz * 7) * GK);
-    g.lineTo((cx + nx * 7) * GK, (cz + nz * 7) * GK); g.lineTo((cx + nx * 7 - fx * 5) * GK, (cz + nz * 7 - fz * 5) * GK); g.stroke();
+  g.strokeStyle = 'rgba(244,242,234,0.9)'; g.lineWidth = 0.7 * GK;
+  for (const sl of grid) {
+    const fx = Math.sin(sl.yaw), fz = Math.cos(sl.yaw), lx = Math.cos(sl.yaw), lz = -Math.sin(sl.yaw), q = (a, l) => [(sl.x + fx * a + lx * l) * GK, (sl.z + fz * a + lz * l) * GK];
+    g.beginPath(); g.moveTo(...q(4, -6)); g.lineTo(...q(15, -6)); g.lineTo(...q(15, 6)); g.lineTo(...q(4, 6)); g.stroke();
   }
-  // the pit lane: a box painted in front of each garage, and the line to keep to on the way in and out
-  g.fillStyle = 'rgba(236,196,52,0.7)';
-  const bay = Math.floor((garage.z1 - garage.z0 + 1) / garage.bays);
-  for (let k = 0; k < garage.bays; k++) { const z0 = garage.z0 + k * bay + 3, z1 = z0 + bay - 6; c.rect(garage.x1 + 1, z0, garage.x1 + 13, z0 + 0.6); c.rect(garage.x1 + 1, z1, garage.x1 + 13, z1 + 0.6); c.rect(garage.x1 + 12.4, z0, garage.x1 + 13, z1 + 0.6); }
-  g.setLineDash([3 * GK, 3 * GK]); strokePath(g, P.X.map((x, i) => x + P.TZ[i] * (PIT_HALF - 1)), P.Z.map((z, i) => z - P.TX[i] * (PIT_HALF - 1)), GK, false);
-  g.lineWidth = 0.6 * GK; g.strokeStyle = '#ecE8dc'; g.stroke(); g.setLineDash([]);
-  void gates;
-  return c.cv;
+  // an arrow on the road before each square corner, the way it goes
+  g.fillStyle = 'rgba(244,242,234,0.85)'; g.strokeStyle = 'rgba(244,242,234,0.85)'; g.lineWidth = 1.6 * GK;
+  for (let i = 0; i < N; i++) {
+    const j = T.at(i + 1); if (Math.abs(K[i]) >= 1 / 40 || Math.abs(K[j]) < 1 / 40) continue;   // where a bend starts
+    const back = T.at(i - Math.round(34 / T.STEP)), side = K[j] > 0 ? 1 : -1;
+    if (Math.abs(K[back]) > 1 / 60) continue;
+    g.beginPath(); g.moveTo(...P(-8, 0, back)); g.lineTo(...P(4, 0, back)); g.lineTo(...P(4, side * 5, back)); g.stroke();
+    g.beginPath(); g.moveTo(...P(4 + 3, side * 5, back)); g.lineTo(...P(4 - 3, side * 5, back)); g.lineTo(...P(4, side * 9, back)); g.closePath(); g.fill();
+  }
+  // the grass, read back a voxel at a time
+  const sm = document.createElement('canvas'); sm.width = WX; sm.height = WZ;
+  const sg = sm.getContext('2d'); sg.drawImage(cv, 0, 0, WX, WZ);
+  const D = sg.getImageData(0, 0, WX, WZ).data; grassy = new Uint8Array(WX * WZ);
+  for (let c = 0; c < WX * WZ; c++) grassy[c] = D[c * 4 + 1] > D[c * 4] + 12 && D[c * 4 + 1] > D[c * 4 + 2] + 12 ? 1 : 0;
+  return cv;
 }
 
-// the track on the radar, drawn once to a canvas the size of the radar's map
+// the town and the course on the radar, drawn once
 let radarCv = null, radarKey = '';
 function radar(R, s, ox, oy, w, h) {
   const key = [s, ox, oy, w, h].join();
   if (!radarCv || key !== radarKey) {
     radarKey = key; radarCv = radarCv || document.createElement('canvas'); radarCv.width = Math.ceil(ox * 2 + w); radarCv.height = Math.ceil(oy * 2 + h);
-    const g = radarCv.getContext('2d'), { T, P } = track();
+    const g = radarCv.getContext('2d'), { T } = full();
+    g.strokeStyle = 'rgba(255,255,255,0.1)'; g.lineWidth = 24 * s; g.beginPath();
+    for (const x of STREET_X) { g.moveTo(ox + x * s, oy); g.lineTo(ox + x * s, oy + h); }
+    for (const z of STREET_Z) { g.moveTo(ox, oy + z * s); g.lineTo(ox + w, oy + z * s); }
+    g.stroke();
     g.lineJoin = 'round'; g.lineCap = 'round';
-    g.beginPath(); P.X.forEach((x, i) => (i ? g.lineTo(ox + x * s, oy + P.Z[i] * s) : g.moveTo(ox + x * s, oy + P.Z[i] * s)));
-    g.lineWidth = 2 * PIT_HALF * s; g.strokeStyle = 'rgba(255,255,255,0.14)'; g.stroke();
     g.beginPath(); T.X.forEach((x, i) => (i ? g.lineTo(ox + x * s, oy + T.Z[i] * s) : g.moveTo(ox + x * s, oy + T.Z[i] * s))); g.closePath();
-    g.lineWidth = 2 * HALF * s; g.strokeStyle = 'rgba(255,255,255,0.3)'; g.stroke();
-    // the start line
+    g.lineWidth = 22 * s; g.strokeStyle = 'rgba(255,255,255,0.36)'; g.stroke();
     g.lineWidth = 2; g.strokeStyle = 'rgba(255,255,255,0.9)'; g.beginPath();
-    g.moveTo(ox + (T.X[0] - T.TZ[0] * HALF) * s, oy + (T.Z[0] + T.TX[0] * HALF) * s); g.lineTo(ox + (T.X[0] + T.TZ[0] * HALF) * s, oy + (T.Z[0] - T.TX[0] * HALF) * s); g.stroke();
+    g.moveTo(ox + (T.X[0] - T.TZ[0] * 13) * s, oy + (T.Z[0] + T.TX[0] * 13) * s); g.lineTo(ox + (T.X[0] + T.TZ[0] * 13) * s, oy + (T.Z[0] - T.TX[0] * 13) * s); g.stroke();
   }
   R.drawImage(radarCv, 0, 0);
 }
 
 export default {
-  id: 'race', name: 'Bowtie Raceway', mode: 'race',
-  blurb: 'A figure-of-eight circuit whose two halves cross flat out in the middle. Three laps, guns on: finish first, and wreck whoever gets in front.',
-  loading: ['Building the raceway', 'Laying the track, the barriers and the stands'],
-  outer: 0x6c9a56,
-  build() {
-    setSeed(4242); place(0, 0, -1); ctx.L = 3; ctx.lot = -1;
-    barriers(); gantry(); pits(); scenery();
-    finish();
-  },
+  id: 'race', name: 'Crumbletown Circuit', mode: 'race',
+  blurb: 'Three laps round Crumbletown\'s streets: long straights, square corners, two hairpins. Guns on.',
+  loading: ['Closing the streets', 'Building the town and lining the course'],
+  outer: 0x7fb069,
+  build,
   ground: paint,
-  get spawn() { return track().grid[4]; },   // the player starts fifth
+  get spawn() { return full().grid[4]; },   // the player starts fifth
   // a rival coming in (only if a mode asks the map): at a checkpoint far from the player, facing the way round
   spawnPoint(player, taken) {
-    const { T, gates } = track();
+    const { T, gates } = full();
     return pickSpot(gates.map((i) => ({ x: T.X[i], z: T.Z[i], yaw: Math.atan2(T.TX[i], T.TZ[i]) })), player, taken);
   },
-  // the way on round the track from wherever the car is (the race mode's drivers have their own; this is for others)
+  // the way on round the course from wherever the car is (the race mode's drivers have their own; this is for others)
   waypoint(c, tx, tz, out) {
-    const { T } = track(), p = T.project(c.x, c.z, c._rw ?? -1), j = T.at(p.i + Math.round(36 / T.STEP));
+    const { T } = full(), p = T.project(c.x, c.z, c._rw ?? -1), j = T.at(p.i + Math.round(36 / T.STEP));
     c._rw = p.i; out.x = T.X[j]; out.z = T.Z[j]; return out;
   },
   radar,
-  // what the ground is at (x, z): 0 on the road and the paddock, 0.7 on grass, 1 in a gravel trap (see vehicle.js)
+  // what the ground is at (x, z): 0 on the course and the paving, 0.7 on the grass (see vehicle.js)
   surface(x, z) {
-    if (!TR) return 0;
+    if (!grassy || !TR) return 0;
     const ix = Math.floor(x), iz = Math.floor(z);
-    if (ix < 0 || iz < 0 || ix >= WX || iz >= WZ) return ROUGH[1];
-    return ROUGH[TR.surf[iz * WX + ix]];
+    if (ix < 0 || iz < 0 || ix >= WX || iz >= WZ) return 0.7;
+    const c = iz * WX + ix, { T } = TR, i = T.field.near[c];
+    if (i >= 0) { const l = T.field.lat[c]; if (l < T.WL[i] + 2 && l > -T.WR[i] - 2) return 0; }
+    return grassy[c] ? 0.7 : 0;
   },
-  // the circuit itself, for the race mode
-  get track() { return track(); },
+  // the course, for the race mode
+  get track() { return full(); },
 };

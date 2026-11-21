@@ -1,4 +1,5 @@
-// The race: three laps of the map's circuit (its `track`, see maps/race.js) with the guns on.
+// The race: three laps of the map's circuit (its `track`: see maps/race.js, the street course, and maps/bowtie.js) with
+// the guns on.
 //
 // Six cars line up on the grid, the player fifth, and are held there through a 3-2-1 countdown (with lights on the
 // start gantry). Laps are counted through checkpoint gates spaced round the lap, which have to be passed in order, so
@@ -23,6 +24,8 @@ export function makeRace(G) {
   const TR = G.MAP.track;
   const { T, line, P, gates, gateS, grid, HALF, PIT_HALF } = TR, NG = gates.length;
   const wrapS = (d) => d - Math.round(d / T.L) * T.L;
+  // the room left and right of the centre line at sample i (a street course measures it: T.WL, T.WR)
+  const WL = (i) => (T.WL ? T.WL[i] : HALF), WR = (i) => (T.WR ? T.WR[i] : HALF);
   const recs = [];                     // one for each car in the race: see join()
   const byCar = new Map();
   let phase = 'grid', countT = 0, raceT = 0, shown = 0, closeT = -1, doneT = -1, finishers = 0, lights = null, lightsT = -1;
@@ -61,6 +64,7 @@ export function makeRace(G) {
     const gi = gates[r.passed % NG];
     for (const back of [0, 14, 28, 42]) for (const lat of [0, -12, 12, -20, 20]) {
       const i = T.at(gi - Math.round(back / T.STEP)), x = T.X[i] + T.TZ[i] * lat, z = T.Z[i] - T.TX[i] * lat;
+      if (T.WL && (lat > WL(i) - 5 || -lat > WR(i) - 5)) continue;   // too near the kerb on a street
       if (G.cars.some((c) => !c.gone && (c !== r.car || c.dead) && Math.hypot(c.x - x, c.z - z) < 18)) continue;   // wrecks too
       return { x, z, yaw: Math.atan2(T.TX[i], T.TZ[i]) };
     }
@@ -75,11 +79,12 @@ export function makeRace(G) {
   }
 
   // ---- the start lights on the gantry: five lamps, red as the count goes down, all green for the start ----
+  // (TR.lights: the middle lamp's place, which way the row runs (lx, lz) and faces (yaw); or under the gantry's beam)
   function makeLights() {
-    const g = TR.gantry, cx = T.X[0], mats = { off: new THREE.MeshBasicMaterial({ color: 0x2a1c1a }), red: new THREE.MeshBasicMaterial({ color: 0xff2a1a, toneMapped: false }), green: new THREE.MeshBasicMaterial({ color: 0x3dff6a, toneMapped: false }) };
+    const g = TR.gantry, L = TR.lights || { x: T.X[0], y: g.y - 2.4, z: g.z - 1.3, yaw: 0, lx: 1, lz: 0 }, mats = { off: new THREE.MeshBasicMaterial({ color: 0x2a1c1a }), red: new THREE.MeshBasicMaterial({ color: 0xff2a1a, toneMapped: false }), green: new THREE.MeshBasicMaterial({ color: 0x3dff6a, toneMapped: false }) };
     const geo = new THREE.BoxGeometry(2.6, 2.6, 0.5), lamps = [];
     for (let k = 0; k < 5; k++) {
-      const m = new THREE.Mesh(geo, mats.off); m.position.set(cx - 10 + k * 5, g.y - 2.4, g.z - 1.3);
+      const m = new THREE.Mesh(geo, mats.off); m.position.set(L.x + L.lx * (k - 2) * 5, L.y, L.z + L.lz * (k - 2) * 5); m.rotation.y = L.yaw;
       m.matrixAutoUpdate = false; m.updateMatrix(); G.scene.add(m); m.updateMatrixWorld(true); lamps.push(m);
     }
     return { lamps, mats, set(n, mat) { lamps.forEach((m, k) => { m.material = k < n ? mats[mat] : mats.off; }); } };
@@ -116,7 +121,7 @@ export function makeRace(G) {
 
   return {
     go: 'Start the race',
-    note: 'Three laps, six cars, guns on. Wreck whoever gets in front, and mind the crossover.',
+    note: 'Three laps, six cars, guns on. Wreck whoever gets in front, and take the checkpoints in order.',
     start() { startRace(); G.hint(null); },
     step(dt) {
       if (phase === 'grid') return;
@@ -150,8 +155,9 @@ export function makeRace(G) {
           continue;
         }
         const moved = locate(r, false);
-        // through the next gate, in order: a lap done each time round to the line
-        if (moved > 0 && moved < 90) {
+        // through the next gate, in order: a lap done each time round to the line (a jump round the lap is not a pass:
+        // a car that cut across the inside of a hairpin has its nearest sample jump past the gate at the far end)
+        if (moved > 0 && moved < 30) {
           const ng = (r.passed + 1) % NG, a = wrapS(gateS[ng] - (r.s - moved));
           if (a > 0 && a <= moved) {
             r.passed++;
@@ -207,7 +213,7 @@ export function makeRace(G) {
     playerDown: () => ({ respawn: RESPAWN, noGarage: true, noSkip: true }),
     respawnAt(player) { const r = byCar.get(player) || recs.find((o) => o.me); return r ? backAt(r) : { ...grid[4] }; },
     // back to the last gate on request (R, or a tap on the hint) when lost or facing the wrong way
-    resetPlayer() { const r = recs.find((o) => o.me); if (r && phase === 'race' && !r.car.dead && (r.lostT > 0.6 || r.wrongT > 0.8 || Math.abs(r.lat) > HALF + 6)) reset(r); },
+    resetPlayer() { const r = recs.find((o) => o.me); if (r && phase === 'race' && !r.car.dead && (r.lostT > 0.6 || r.wrongT > 0.8 || r.lat > WL(r.i) + 6 || -r.lat > WR(r.i) + 6)) reset(r); },
     hud() {
       const me = recs.find((r) => r.me), n = recs.length || 6;
       if (phase === 'grid') return ['Race', `${LAPS} laps · 6 cars`];
@@ -223,7 +229,7 @@ export function makeRace(G) {
       const me = recs.find((r) => r.me); if (!me || me.finished || phase === 'grid') return;
       const gi = gates[(me.passed + 1) % NG], x = T.X[gi], z = T.Z[gi], nx = T.TZ[gi], nz = -T.TX[gi];
       R.strokeStyle = (performance.now() / 300) % 2 < 1.3 ? '#ffd23a' : 'rgba(255,210,58,0.35)'; R.lineWidth = 3;
-      R.beginPath(); R.moveTo(ox + (x - nx * HALF) * s, oy + (z - nz * HALF) * s); R.lineTo(ox + (x + nx * HALF) * s, oy + (z + nz * HALF) * s); R.stroke();
+      R.beginPath(); R.moveTo(ox + (x - nx * WR(gi)) * s, oy + (z - nz * WR(gi)) * s); R.lineTo(ox + (x + nx * WL(gi)) * s, oy + (z + nz * WL(gi)) * s); R.stroke();
     },
     // for tests and tools
     get race() { return { recs, phase, raceT, gates, gateS, NG, driver: (c, o) => makeRacer(c, race, o) }; },

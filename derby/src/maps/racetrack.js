@@ -1,7 +1,8 @@
 // A race circuit's shape, worked out once from a loop of control points, for the map that lays it out and the race mode
 // that runs on it. Plain numbers only (no three.js, no voxels), so it can be checked on its own.
 //
-// makeTrack({ pts, halfW, ... }) gives:
+// makeTrack({ pts, halfW, ... }) gives (pts: control points for a smooth curve, or with smooth: false a dense path,
+// such as streetLoop() makes for a course of straight runs and rounded corners):
 //   N, L, STEP          the centre line sampled every STEP voxels round the lap: N samples, L voxels a lap
 //   X, Z, TX, TZ, K     each sample's place, its heading (a unit vector) and how sharply it bends (1 / radius; above
 //                       nought it bends to the left, the way a car's left is)
@@ -9,8 +10,11 @@
 //                       (dist), which side (lat: across the track, the left plus), and the nearest sample (near)
 //   project(x, z, hint) the sample nearest a point (searched round `hint`, the car's last one, so the two roads at a
 //                       crossing don't get mixed up) with the point's place across the track
-//   line                the racing line: an offset across the track for each sample (LINE) and how sharply the line bends
+//   line                the racing line (racingLine): an offset across the track for each sample, kept inside the
+//                       track's half-width or inside the room each side (lo, hi), and how sharply the line bends
 //   crossings           the samples where the lap crosses itself, in pairs
+//   WL, WR              (a street course's map adds these) the room left and right of each sample, out to whatever
+//                       stands there; the race mode and its drivers keep inside them instead of halfW
 // Lengths are voxels. A heading of yaw a (as the cars have it) points along (sin a, cos a); a car's left is (cos a, -sin a).
 
 const wrapI = (i, n) => ((i % n) + n) % n;
@@ -47,8 +51,8 @@ function resample(D, step) {
 }
 
 // A loop of points as a road: headings, bends, and the distance field round it. Used for the circuit and the pit lane.
-export function makeTrack({ pts, halfW = 24, step = 2, WX = 512, WZ = 416, reach = 72, closed = true }) {
-  const { pts: S, L } = closed ? resample(spline(pts), step) : openPath(pts, step);
+export function makeTrack({ pts, halfW = 24, step = 2, WX = 512, WZ = 416, reach = 72, closed = true, smooth = true }) {
+  const { pts: S, L } = closed ? resample(smooth ? spline(pts) : pts, step) : openPath(pts, step);
   const N = S.length, STEP = L / N;
   const X = new Float32Array(N), Z = new Float32Array(N), TX = new Float32Array(N), TZ = new Float32Array(N), K = new Float32Array(N);
   for (let i = 0; i < N; i++) { X[i] = S[i][0]; Z[i] = S[i][1]; }
@@ -134,6 +138,36 @@ function openPath(P, step) {
   return { pts: out, L: total };
 }
 
+// A closed loop of straight runs with rounded corners, as a dense path for makeTrack({ smooth: false }). P is the
+// corners in order, [x, z, r]: r is the radius of the arc that rounds that corner off (0 for none), so two corners a
+// diameter apart with the same radius make a hairpin. The path starts at the first corner, which should be on a straight.
+export function streetLoop(P, d = 0.5) {
+  const n = P.length;
+  const arcs = P.map((p, i) => {
+    const a = P[(i - 1 + n) % n], b = P[(i + 1) % n], r = p[2] || 0;
+    let ux = p[0] - a[0], uz = p[1] - a[1], vx = b[0] - p[0], vz = b[1] - p[1];
+    const lu = Math.hypot(ux, uz) || 1, lv = Math.hypot(vx, vz) || 1; ux /= lu; uz /= lu; vx /= lv; vz /= lv;
+    const turn = Math.atan2(ux * vz - uz * vx, ux * vx + uz * vz);
+    if (!r || Math.abs(turn) < 1e-3) return { sx: p[0], sz: p[1], ex: p[0], ez: p[1], r: 0 };
+    const t = r * Math.tan(Math.abs(turn) / 2), sx = p[0] - ux * t, sz = p[1] - uz * t, sg = Math.sign(turn);
+    // the arc's middle is a radius from where it starts, square to the way in, on the side it turns to
+    const cx = sx - uz * sg * r, cz = sz + ux * sg * r;
+    return { sx, sz, ex: p[0] + vx * t, ez: p[1] + vz * t, r, cx, cz, turn };
+  });
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const A = arcs[i], B = arcs[(i + 1) % n];
+    // the arc of this corner, then the straight to the next
+    if (A.r) {
+      const steps = Math.max(2, Math.ceil(Math.abs(A.turn) * A.r / d)), ox = A.sx - A.cx, oz = A.sz - A.cz;
+      for (let k = 0; k < steps; k++) { const th = A.turn * k / steps, c = Math.cos(th), s = Math.sin(th); out.push([A.cx + ox * c - oz * s, A.cz + ox * s + oz * c]); }
+    }
+    const len = Math.hypot(B.sx - A.ex, B.sz - A.ez), m = Math.max(1, Math.ceil(len / d));
+    for (let k = 0; k < m; k++) out.push([A.ex + (B.sx - A.ex) * k / m, A.ez + (B.sz - A.ez) * k / m]);
+  }
+  return out;
+}
+
 // Where the lap crosses itself: pairs of samples far apart round the lap but close on the map.
 export function findCrossings(T) {
   const { N, X, Z, STEP } = T, far = Math.round(200 / STEP), out = [];
@@ -154,8 +188,9 @@ export function findCrossings(T) {
 // gently as it can. Each pass nudges every point against its fourth difference (the way a bent steel strip springs
 // straight), coarse steps first and fine ones after, so a corner is taken wide on the way in, close at the apex and
 // wide on the way out, as one long even curve.
-export function racingLine(T, { margin = 8, passes = 500 } = {}) {
+export function racingLine(T, { margin = 8, passes = 500, lo = null, hi = null } = {}) {
   const { N, X, Z, TX, TZ, halfW, STEP } = T, lim = halfW - margin;
+  const min = (i) => (lo ? lo[i] : -lim), max = (i) => (hi ? hi[i] : lim);
   const off = new Float32Array(N), px = new Float32Array(N), pz = new Float32Array(N);
   for (const span of [24, 12, 6]) {
     const k = Math.max(1, Math.round(span / STEP));
@@ -165,7 +200,7 @@ export function racingLine(T, { margin = 8, passes = 500 } = {}) {
         const a = (i - 2 * k + 2 * N) % N, b = (i - k + N) % N, c = (i + k) % N, d = (i + 2 * k) % N;
         const fx = px[a] - 4 * px[b] + 6 * px[i] - 4 * px[c] + px[d], fz = pz[a] - 4 * pz[b] + 6 * pz[i] - 4 * pz[c] + pz[d];
         const push = fx * TZ[i] - fz * TX[i];
-        off[i] = Math.max(-lim, Math.min(lim, off[i] - push * 0.05));
+        off[i] = Math.max(min(i), Math.min(max(i), off[i] - push * 0.05));
       }
     }
   }
