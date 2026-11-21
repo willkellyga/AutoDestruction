@@ -1,4 +1,4 @@
-// Crumbletown Circuit: a street race through Crumbletown, three laps with the guns on (modes/race.js). The town is
+// Crumbletown Circuit: a street race through Crumbletown, four laps with the guns on (modes/race.js). The town is
 // built exactly as the town map builds it (maps/town.js: generateTown, with the parked cars and buses taken out); then
 // it is opened up for the race: the lots round the edge of the town move back from their streets (BACK), three lots
 // are taken out (GONE), and the street furniture on the course goes, so the course is about twice a street's width
@@ -382,8 +382,8 @@ function radar(R, s, ox, oy, w, h) {
 }
 
 export default {
-  id: 'race', name: 'Crumbletown Circuit', mode: 'race',
-  blurb: 'Three laps round Crumbletown, opened up for the race: long straights, fast sweeps, a hairpin. Guns on.',
+  id: 'race', name: 'Crumbletown Circuit', mode: 'race', laps: 4,   // the widened lap is quick (15 to 19 s), so four laps make a race of about a minute and a half
+  blurb: 'Four laps round Crumbletown, opened up for the race: long straights, fast sweeps, a hairpin. Guns on.',
   loading: ['Closing the streets', 'Building the town and opening up the course'],
   outer: 0x7fb069,
   build,

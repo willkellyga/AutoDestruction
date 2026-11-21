@@ -1,4 +1,4 @@
-// The race: three laps of the map's circuit (its `track`: see maps/race.js, the street course, and maps/bowtie.js) with
+// The race: three laps (or the map's `laps`) of the map's circuit (its `track`: see maps/race.js, the street course, and maps/bowtie.js) with
 // the guns on.
 //
 // Six cars line up on the grid, the player fifth, and are held there through a 3-2-1 countdown (with lights on the
@@ -11,7 +11,7 @@
 import * as THREE from 'three';
 import { makeRacer } from './racer.js';
 
-const LAPS = 3, RESPAWN = 2.5, COUNT = 3;
+const RESPAWN = 2.5, COUNT = 3;
 const PRIZE = [300, 200, 120, 80, 50, 30];   // by place (each rival you wreck already pays 100 as it happens)
 const TIERS = [1, 1, 2, 1, 2];        // the rivals' builds (rivalBuild in parts.js), front of the grid first
 const CLOSE = 40;                     // seconds the race stays open after the winner finishes
@@ -22,6 +22,7 @@ const clock = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0
 
 export function makeRace(G) {
   const TR = G.MAP.track;
+  const LAPS = G.MAP.laps || 3;   // a short, fast course can ask for more
   const { T, line, P, gates, gateS, grid, HALF, PIT_HALF } = TR, NG = gates.length;
   const wrapS = (d) => d - Math.round(d / T.L) * T.L;
   // the room left and right of the centre line at sample i (a street course measures it: T.WL, T.WR)
@@ -130,7 +131,7 @@ export function makeRace(G) {
 
   return {
     go: 'Start the race',
-    note: 'Three laps, six cars, guns on. Wreck whoever gets in front, and take the checkpoints in order.',
+    note: `${G.MAP.laps || 3} laps, six cars, guns on. Wreck whoever gets in front, and take the checkpoints in order.`,
     start() { startRace(); G.hint(null); },
     step(dt) {
       if (phase === 'grid') return;
