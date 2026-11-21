@@ -28,6 +28,27 @@ body.locked #view { cursor: none; }
 #cross { position: fixed; width: 30px; height: 30px; margin: -15px 0 0 -15px; pointer-events: none; border: 2px solid rgba(255,255,255,0.75); border-radius: 50%; box-shadow: 0 0 0 1px rgba(0,0,0,0.3); transition: border-color 0.1s, transform 0.1s; }
 #cross::after { content: ''; position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px; background: #fff; border-radius: 50%; }
 #cross.on { border-color: var(--hot); transform: scale(0.85); }
+#cross.lock { border-color: var(--red); border-width: 3px; transform: scale(1.15); }
+#cross.lock.on { transform: scale(0.95); }
+/* touch: a stick that appears where the left thumb lands, and buttons on the right */
+#touch { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
+#pad { position: absolute; left: 0; bottom: 0; width: 48%; height: 62%; pointer-events: auto; touch-action: none; }
+#stick { position: absolute; left: 120px; top: calc(100% - 130px); width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.35); background: rgba(0,0,0,0.18); pointer-events: none; opacity: 0.55; }
+#stick.on { opacity: 1; }
+#knob { position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; margin: -27px 0 0 -27px; border-radius: 50%; background: rgba(255,255,255,0.8); box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+.tbtn { position: absolute; pointer-events: auto; touch-action: none; border-radius: 50%; border: 3px solid rgba(255,255,255,0.55); background: rgba(20,22,26,0.45); color: #fff; font: 900 italic 14px 'Trebuchet MS', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 0.03em; text-shadow: 0 1px 0 rgba(0,0,0,0.5); padding: 0; }
+.tbtn.down { background: rgba(255,179,58,0.55); border-color: var(--hot); }
+#t-fire { right: 26px; bottom: 34px; width: 104px; height: 104px; font-size: 18px; background: rgba(226,68,47,0.5); }
+#t-heavy { right: 142px; bottom: 26px; width: 78px; height: 78px; }
+#t-drift { right: 40px; bottom: 152px; width: 66px; height: 66px; font-size: 12px; }
+#t-boost { right: 128px; bottom: 120px; width: 66px; height: 66px; font-size: 12px; opacity: 0.6; }
+#t-boost.ready { opacity: 1; border-color: #7fe07a; }
+body.touch #bars { left: 50%; transform: translateX(-50%); top: 64px; bottom: auto; width: min(300px, 46vw); }
+body.touch #speedo { display: none; }
+body.touch #radar { width: 104px; height: 104px; }
+body.touch .desk-only { display: none !important; }
+body:not(.touch) .touch-only { display: none !important; }
+body.in-garage #touch, body.in-garage #cross { display: none; }
 #tags { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
 .tag { position: absolute; left: 0; top: 0; text-align: center; transform-origin: 50% 100%; white-space: nowrap; }
 .tag b { display: block; font-size: 13px; text-shadow: 0 1px 2px #000; }
@@ -115,6 +136,15 @@ button.alt:hover { background: rgba(255,255,255,0.16); }
 .g-pat.eq { border-color: var(--hot); }
 .g-foot { padding: 10px 14px 14px; border-top: 1px solid var(--edge); display: flex; justify-content: center; }
 .g-foot .go { font-size: 22px; padding: 12px 46px; }
+/* phones held sideways: a wider, more compact panel so the parts list has room */
+@media (max-height: 520px) and (min-width: 761px) {
+  #garage .g-panel { width: min(500px, 58vw); }
+  .g-head { padding: 6px 12px 2px; } .g-head .g-t { font-size: 16px; }
+  .g-stats { grid-template-columns: 1fr 1fr; column-gap: 10px; gap: 3px; padding: 2px 12px 4px; } .g-power { grid-column: 1 / -1; } .g-nums { display: none; }
+  .g-tabs { flex-wrap: nowrap; overflow-x: auto; padding: 4px 8px; } .g-tabs button { flex: none; padding: 5px 7px; }
+  .g-foot { padding: 4px 10px 6px; } .g-foot .go { font-size: 16px; padding: 6px 30px; }
+  #garage .g-name b { font-size: 30px; }
+}
 @media (max-width: 760px) {
   #garage .g-panel { top: auto; left: 0; width: 100%; height: 56vh; border-left: 0; border-top: 2px solid var(--edge); }
   .g-stats { grid-template-columns: 1fr 1fr; column-gap: 12px; } .g-power, .g-nums { grid-column: 1 / -1; }
@@ -136,11 +166,14 @@ button.alt:hover { background: rgba(255,255,255,0.16); }
 <div class="card" id="menu" hidden><div>
   <div class="title">Auto<em>Destruction</em></div>
   <div class="keys">
-    <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive</span><span><kbd>Space</kbd> handbrake / drift</span>
-    <span><b>Mouse</b> aim the turret</span><span><b>Wheel</b> camera distance</span>
-    <span><b>Left click</b> roof gun</span><span><b>Right click</b> or <kbd>F</kbd> heavy weapon</span>
-    <span><kbd>Shift</kbd> gadget (nitro, repair)</span><span><kbd>G</kbd> garage between waves</span>
-    <span>Ram walls to smash through</span><span><kbd>M</kbd> sound &nbsp; <kbd>Esc</kbd> free the mouse</span>
+    <span class="desk-only"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive</span><span class="desk-only"><kbd>Space</kbd> handbrake / drift</span>
+    <span class="desk-only"><b>Mouse</b> aim (it pulls onto rivals)</span><span class="desk-only"><b>Wheel</b> camera distance</span>
+    <span class="desk-only"><b>Left click</b> guns</span><span class="desk-only"><b>Right click</b> or <kbd>F</kbd> heavy weapons</span>
+    <span class="desk-only"><kbd>Shift</kbd> gadget (nitro, repair)</span><span class="desk-only"><kbd>G</kbd> garage between waves</span>
+    <span class="desk-only">Ram walls to smash through</span><span class="desk-only"><kbd>M</kbd> sound &nbsp; <kbd>Esc</kbd> free the mouse</span>
+    <span class="touch-only"><b>Left thumb</b> push the way to drive</span><span class="touch-only"><b>Fire</b> the guns aim for you</span>
+    <span class="touch-only"><b>Rockets</b> heavy weapons</span><span class="touch-only"><b>Drift</b> handbrake turn</span>
+    <span class="touch-only">Ram walls to smash through</span><span class="touch-only">Tap the hint between waves for the garage</span>
   </div>
   <div class="row"><button class="alt" id="menu-garage">Garage</button><button class="go" id="go">Start the brawl</button></div>
   <div class="note">Wreck each wave of rival cars. Spend the scrap in the garage on guns, armour, rams, wheels and engines.</div>
@@ -155,4 +188,5 @@ button.alt:hover { background: rgba(255,255,255,0.16); }
     <div class="g-foot"><button class="go g-drive">Drive</button></div>
   </div>
 </div>
+<div id="touch" hidden><div id="pad"></div><div id="stick"><div id="knob"></div></div><button class="tbtn" id="t-fire">Fire</button><button class="tbtn" id="t-heavy">Rockets</button><button class="tbtn" id="t-drift">Drift</button><button class="tbtn" id="t-boost" hidden>Nitro</button></div>
 <div id="loading"><div>Building the city<small>Laying the streets and raising the buildings</small></div></div>

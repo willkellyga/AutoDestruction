@@ -80,12 +80,15 @@ export function makeDriver(car) {
     const lead = d / 340;
     car.aim.set(T.x + T.vx * lead + b.wob[0], 3 + b.wob[1] * 0.4, T.z + T.vz * lead + b.wob[2]);
     b.seenT = sees ? b.seenT + dt : 0;
-    const g0 = car.guns[0].g, g1 = car.guns[1] && car.guns[1].g, reach = Math.min(AI.shoot, (g0.range || AI.shoot) * 0.85);
+    const g0 = car.guns[0].g, sec = car.guns.find((G) => G.slot === 'secondary'), g1 = sec && sec.g, reach = Math.min(AI.shoot, (g0.range || AI.shoot) * 0.85);
+    const arc = car.guns.find((G) => G.g.arc);
     let heavy = sees && b.seenT > AI.reaction + 0.6 && d < AI.shoot && d > 24 && car.onTarget(0.1) && Math.random() < dt * 1.2;
     if (g1 && g1.mine) {   // mines: dropped when someone is on its tail
       heavy = all.some((o) => o !== car && !o.dead && Math.hypot(o.x - car.x, o.z - car.z) < 50 && Math.abs(wrap(Math.atan2(o.x - car.x, o.z - car.z) - car.yaw)) > 2.2) && Math.random() < dt * 1.5;
     }
-    car.fire = [sees && b.seenT > AI.reaction && d < reach && car.onTarget(0.18), heavy];
+    // a rocket rack on the roof or side rockets fire at whatever is ahead, mines or not
+    if (!heavy && car.guns.some((G) => G.group === 1 && G.cone)) heavy = sees && b.seenT > AI.reaction + 0.6 && d < AI.shoot && d > 20 && Math.abs(wrap(Math.atan2(dx, dz) - car.yaw)) < 0.5 && Math.random() < dt * 1.2;
+    car.fire = [(sees && b.seenT > AI.reaction && d < reach && car.onTarget(0.18)) || (arc && d < arc.g.range + 4), heavy];
   }
   return { think, brain: b };
 }

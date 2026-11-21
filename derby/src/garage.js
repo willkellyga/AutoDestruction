@@ -14,11 +14,15 @@ function chips(slot, p) {
   const sign = (v, unit = '') => `${v > 0 ? '+' : ''}${v}${unit}`;
   if (slot === 'body') { c.push(`${p.hp} armour`, `${p.power} Power`, `${Math.round(p.top * KMH)} km/h`); return c; }
   if (p.power) c.push(`${p.power} Power`);
-  if (slot === 'primary' || slot === 'secondary') {
-    if (p.rate) c.push(`${Math.round(p.rate * p.dmg)} dmg/s`);
-    else if (p.dmg) c.push(`${Math.round((p.salvo || 1) * (p.pellets || 1) * p.dmg)} a shot`, `${p.reload}s reload`);
+  if (slot === 'primary' || slot === 'secondary' || slot === 'roof' || slot === 'door') {
+    const two = slot === 'door' && p.dmg ? 2 : 1;   // the doors carry a pair
+    if (p.arc) c.push(`${Math.round(p.dmg / p.reload)} dmg/s`, 'aims itself');
+    else if (p.rate) c.push(`${Math.round(p.rate * p.dmg * two)} dmg/s`);
+    else if (p.dmg) c.push(`${Math.round((p.salvo || 1) * (p.pellets || 1) * p.dmg * two)} a shot`, `${p.reload}s reload`);
     if (p.splash) c.push('blast');
     if (p.range && p.range < 150) c.push('short range');
+    if (p.group) c.push(p.group === 'heavy' ? 'right click' : 'left click');
+    if (p.blade) c.push('cuts what you rub');
   }
   if (slot === 'front') { c.push(`ram ×${p.ram}`); if (p.guard < 0.7) c.push('you take less'); if (p.saw) c.push('grinds'); }
   if (p.hp) c.push(`${sign(p.hp)} armour`);

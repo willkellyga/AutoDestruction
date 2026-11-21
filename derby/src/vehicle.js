@@ -26,7 +26,7 @@ export class Vehicle {
     const seed = SEED++;
     this.def = carDef(load, seed);
     this.unit = new Unit(this.def, mats, { seed });
-    Object.assign(this.unit.state, { spin: 0, steer: 0, roll: 0, pitch: 0, bob: 0, yaw: 0, aim: 0, gunSpin: 0, saw: 0 });
+    Object.assign(this.unit.state, { spin: 0, steer: 0, roll: 0, pitch: 0, bob: 0, yaw: 0, aim: 0, gunSpin: 0, saw: 0, coneYaw: 0, coneAim: 0, arc: 0 });
     const D = this.def.dims;
     this.half = D.half; this.mid = D.mid; this.wide = D.wide; this.top = D.top; this.wheelR = D.wheelR;
     scene.add(this.unit.root);
@@ -35,9 +35,21 @@ export class Vehicle {
     this.steer = 0; this.throttle = 0; this.brake = 0; this.boost = 1; this.accelK = 1;
     this.aimYaw = this.yaw; this.aimPitch = 0; this.gunYaw = this.yaw; this.gunPitch = 0; this.turretTurn = 9;
     this.aim = new THREE.Vector3(at.x, 3, at.z + 40);
+    // every weapon on the car: which trigger it answers (group 0 the guns, left click; group 1 the heavy weapons, right
+    // click), and the barrels it fires from (a bone of the model and a point on it). The main gun always comes first.
+    const M = this.def.muzzles;
     this.guns = [];
-    this.guns.push({ key: load.primary, g: PARTS.primary[load.primary] || PARTS.primary.mg, t: 0, left: 0, gapT: 0 });
-    if (load.secondary && load.secondary !== 'none' && PARTS.secondary[load.secondary]) this.guns.push({ key: load.secondary, g: PARTS.secondary[load.secondary], t: 0, left: 0, gapT: 0 });
+    const add = (slot, key, mounts) => {
+      const g = PARTS[slot][key]; if (!g || !(g.dmg || g.mine)) return;
+      const group = slot === 'primary' ? 0 : slot === 'secondary' ? 1 : g.group === 'heavy' ? 1 : 0;
+      this.guns.push({ slot, key, g, group, mounts: mounts.filter((m) => m && m.p), next: 0, t: 0, left: 0, gapT: 0, cone: g.cone || 0 });
+    };
+    // (a model without barrels for the roof or doors fires them from the body: the front of the roof, the front doors)
+    const D0 = this.def.dims, mount = (x, y, z) => ({ bone: 'body', p: [x, y - D0.lift, z] });
+    add('primary', PARTS.primary[load.primary] ? load.primary : 'mg', [{ bone: 'gun', p: M.gun }]);
+    if (load.roof && load.roof !== 'none') add('roof', load.roof, M.roof && M.roof.length ? M.roof : [mount(0.7, D0.roof + 0.5, D0.mid + D0.half * 0.3), mount(-0.7, D0.roof + 0.5, D0.mid + D0.half * 0.3)]);
+    if (load.door && load.door !== 'none') add('door', load.door, M.door && M.door.length ? M.door : [mount(D0.wide + 0.4, 2, D0.mid + D0.half * 0.4), mount(-D0.wide - 0.4, 2, D0.mid + D0.half * 0.4)]);
+    if (load.secondary && load.secondary !== 'none') add('secondary', load.secondary, [{ bone: M.podBone, p: M.pod }]);
     this.gadget = this.spec.gadget; this.gadgetT = 0; this.boostT = 0;
     this.dead = false; this.deadT = 0; this.gone = false; this.hurtT = 0; this.lastBy = null;
     this.smashT = 0; this.scrape = 0; this.spinA = 0; this.firing = 0;
@@ -137,14 +149,20 @@ export class Vehicle {
     const pitch = Math.atan2(this.aim.y - (this.top + 2), Math.max(6, d));
     this.gunPitch += clamp(clamp(pitch, -0.35, 0.7) - this.gunPitch, -step, step);
   }
-  muzzle(which, out, dir) {
-    const M = this.def.muzzles, b = this.unit.bones[which === 1 ? M.podBone : 'gun'];
-    if (!b) return null;
+  // where weapon G's barrel i is (in the world), and which way it points
+  muzzle(G, out, dir, i = G.next) {
+    const m = G.mounts[i % Math.max(1, G.mounts.length)]; if (!m) return null;
+    const b = this.unit.bones[m.bone]; if (!b) return null;
     this.unit.root.updateWorldMatrix(true, true);
-    const p = which === 1 ? M.pod : M.gun;
+    const p = m.p;
     b.localToWorld(out.set(p[0], p[1], p[2]));
-    if (dir) { b.localToWorld(_w.set(p[0], p[1], p[2] + (which === 1 && M.podBone === 'mines' ? -4 : 4))); dir.subVectors(_w, out).normalize(); }
+    if (dir) { b.localToWorld(_w.set(p[0], p[1], p[2] + (m.bone === 'mines' ? -4 : 4))); dir.subVectors(_w, out).normalize(); }
     return out;
+  }
+  // the weapons on the roof and doors only turn a little either side of straight ahead
+  inCone(G, x, z, slack = 0) {
+    if (!G.cone) return true;
+    return Math.abs(wrap(Math.atan2(x - this.x, z - this.z) - this.yaw)) < G.cone + slack;
   }
   // the gun lines up with the aim point closely enough to fire
   onTarget(tol = 0.12) {
@@ -165,6 +183,7 @@ export class Vehicle {
       s.pitch += (clamp(-acc * 0.0009, -0.06, 0.06) - (s.pitch || 0)) * Math.min(1, dt * 5);
       s.bob = 0.06 * Math.sin(this.spinA * 0.7) * clamp(Math.abs(vf) / 40, 0, 1);
       s.yaw = wrap(this.gunYaw - this.yaw); s.aim = this.gunPitch;
+      s.coneYaw = clamp(s.yaw, -0.4, 0.4); s.coneAim = clamp(this.gunPitch, -0.25, 0.4); s.arc += dt * (this.arcT > 0 ? 18 : 2);
       // the minigun's barrels wind up while it fires; the saws never stop
       this.firing = Math.max(0, this.firing - dt);
       this.barrelV = (this.barrelV || 0) + ((this.firing > 0 ? 30 : 0) - (this.barrelV || 0)) * Math.min(1, dt * 3);
