@@ -1,4 +1,5 @@
 // Bowtie Raceway: a figure-of-eight circuit that fills the map, raced three laps with the guns on (modes/race.js).
+// It is off the start card (hidden; the race is run on Crumbletown's streets, maps/race.js) but loads with ?map=bowtie.
 // The lap starts on the long straight down the east side under the start gantry, brakes into a right-hander at the
 // bottom, sweeps up the diagonal to the crossover in the middle of the map, climbs to a hairpin at the top left,
 // snakes down the west side through a chicane, swings round the bottom left and back up the other diagonal to cross
@@ -79,7 +80,9 @@ function track() {
   }
   // the start gantry spans the track and the pit lane at the line
   const gantry = { x0: Math.round(X[0]) - 31, x1: Math.round(X[0]) + 32, z: Math.round(Z[0]), y: 19 };
-  TR = { T, P, line, cross, db, trap, surf, wall, gates, gateS, grid, gantry, HALF, PIT_HALF, garage: GAR };
+  // where the race mode hangs its start lights: in front of the lights' box, across the track
+  const lights = { x: X[0], y: gantry.y - 2.4, z: gantry.z - 1.3, yaw: 0, lx: 1, lz: 0 };
+  TR = { T, P, line, cross, db, trap, surf, wall, gates, gateS, grid, gantry, lights, HALF, PIT_HALF, garage: GAR };
   return TR;
 }
 
@@ -420,7 +423,7 @@ function radar(R, s, ox, oy, w, h) {
 }
 
 export default {
-  id: 'race', name: 'Bowtie Raceway', mode: 'race',
+  id: 'bowtie', name: 'Bowtie Raceway', mode: 'race', hidden: true,
   blurb: 'A figure-of-eight circuit whose two halves cross flat out in the middle. Three laps, guns on: finish first, and wreck whoever gets in front.',
   loading: ['Building the raceway', 'Laying the track, the barriers and the stands'],
   outer: 0x6c9a56,
