@@ -33,7 +33,7 @@ export function finish() {
 // one cost more, so routes keep a car's width off walls. The grid is checked again a few rows a frame, so walls that
 // get knocked down open up. waypoint() gives the next point to drive at on the way to (tx, tz): the furthest point of
 // the found route that can be seen straight from the car.
-export function makeGridNav({ cell = 4, maxNodes = 6000, every = 0.6 } = {}) {
+export function makeGridNav({ cell = 4, maxNodes = 6000, every = 0.6, side = 3 } = {}) {   // side: how wide a line to a waypoint must be clear
   const NX = Math.ceil(WX / cell), NZ = Math.ceil(WZ / cell), N = NX * NZ;
   const blocked = new Uint8Array(N), near = new Uint8Array(N);
   const cellBlocked = (i, k) => {
@@ -105,7 +105,7 @@ export function makeGridNav({ cell = 4, maxNodes = 6000, every = 0.6 } = {}) {
       for (let i = 0; i < st.path.length - 1; i++) {
         centre(st.path[i], _c);
         if (Math.hypot(_c.x - c.x, _c.z - c.z) > 80) continue;
-        if (lineClear(c.x, c.z, _c.x, _c.z)) { pick = st.path[i]; break; }
+        if (lineClear(c.x, c.z, _c.x, _c.z, 3, side)) { pick = st.path[i]; break; }
       }
       return centre(pick, out);
     },

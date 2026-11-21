@@ -39,4 +39,5 @@ export const AI = {
   reaction: 0.45,     // seconds before they start shooting at a target they have just seen
   infight: 0.25,      // share of the time a rival picks on another rival instead of the player
   ramRange: 46,       // closer than this they floor it and ram
+  mend: 0.45,         // below this share of their health they make for a repair kit, on maps that have them (pickups.js)
 };

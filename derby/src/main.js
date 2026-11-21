@@ -23,6 +23,8 @@ import { CRASH, ROUND, AI } from './tuning.js';
 import { PAINTS, loadSave, keepSave, rivalBuild, RIVAL_NAMES } from './parts.js';
 import { makeGarage } from './garage.js';
 import { makeSounds } from './audio.js';
+import { makePickups } from './pickups.js';
+import { makeHazards } from './hazards.js';
 
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -493,7 +495,7 @@ function gadget(c) {
 }
 function stepGadget(c, dt) {
   c.gadgetT = Math.max(0, c.gadgetT - dt);
-  const N = c.gadget && c.gadget.nitro;
+  const N = (c.gadget && c.gadget.nitro) || c.padNitro;   // padNitro: a burst from a map's nitro pickup or boost strip
   if (N && c.boostT > 0) {
     c.boostT -= dt; c.boost = N.topK; c.accelK = N.accelK;
     const bx = c.x - Math.sin(c.yaw) * (c.half - c.mid + 0.4), bz = c.z - Math.cos(c.yaw) * (c.half - c.mid + 0.4);
@@ -586,6 +588,8 @@ const api = {
   makeDriver, clearLine, spawnPlayer: (at) => spawnPlayer(at),
 };
 const mode = MODES[MAP.mode](api);
+// the map's pickups and hazards, if it lists any (pickups.js, hazards.js)
+const pickups = makePickups(api, MAP.pickups), hazards = makeHazards(api, MAP.hazards);
 function spawnPlayer(at) {
   if (!at) {
     at = { ...MAP.spawn };
@@ -896,6 +900,7 @@ function step(dt) {
     mode.step(dt);
     if ((savedT += dt) > 15) { savedT = 0; keepSave(save); }
   }
+  pickups.step(dt, live); hazards.step(dt, live);
   for (const c of cars) if (!c.gone) { if (!c.dead) c.point(dt); c.pose(dt); }
   stepCamera(dt);
   const fc = player || MAP.spawn;
@@ -931,4 +936,4 @@ followSun(player.x, player.z);
 const loadEl = $('loading'); if (loadEl) loadEl.hidden = true;
 $('menu').hidden = false;
 requestAnimationFrame((t) => { last = t; frame(t); });
-window.__derby = { touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH }), useTouch, step, render: () => composer.render(), cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, sfx, mines, gadget, spawnPlayer, addCar };
+window.__derby = { touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH }), useTouch, step, render: () => composer.render(), cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, sfx, mines, gadget, spawnPlayer, addCar, pickups, hazards };
