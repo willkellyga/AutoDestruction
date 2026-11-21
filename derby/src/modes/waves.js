@@ -7,7 +7,8 @@
 //   step(dt)                 every frame while the round runs
 //   wrecked(c, who)          a car was wrecked (c by who, who may be null); scrap for the player's kills is already paid
 //   playerDown()             the player was wrecked: { respawn: seconds } to come back, or nothing to end the round
-//   hud()                    [the top line, the line under it] for the corner of the screen
+//   hud()                    [the top line, the line under it] for the top of the screen, and optionally a third,
+//                            [label, number], for the counter by the scrap (cars wrecked when it is left out)
 //   garageOK()               the garage can be opened now (G, or the hint)
 //   rivalSpawn()             optional: where a rival comes in (default: the map's spawnPoint)
 import { ROUND } from '../tuning.js';

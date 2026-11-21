@@ -562,8 +562,9 @@ function drawHud() {
   const G = player.gadget, every = G && (G.nitro ? G.nitro.every : G.repair ? G.repair.every : 0);
   $('gad').hidden = !every;
   if (every) { $('gad-fill').style.width = `${(1 - player.gadgetT / every) * 100}%`; $('gad').classList.toggle('ready', player.gadgetT <= 0); }
-  $('kills').textContent = game.kills; $('scrap').textContent = Math.floor(game.scrap);
-  const [top, sub] = mode.hud(); $('wave').textContent = top; $('left').textContent = sub;
+  const [top, sub, count] = mode.hud(); $('wave').textContent = top; $('left').textContent = sub;
+  // the counter by the scrap: cars wrecked, unless the mode counts something else (survival counts zombies)
+  $('kills-l').textContent = count ? count[0] : 'Wrecked'; $('kills').textContent = count ? count[1] : game.kills; $('scrap').textContent = Math.floor(game.scrap);
 }
 
 // ---- the round: the map's mode runs it (modes/) --------------------------------------------------------------------

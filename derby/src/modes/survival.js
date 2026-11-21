@@ -188,7 +188,7 @@ export function makeSurvival(G) {
       if (phase === 'wait') return ['Last car standing', `${S.rivals + 1} cars on the base`];
       if (phase === 'count') return ['Get ready', `${S.rivals + 1} cars on the base`];
       const n = live().length;
-      return [n === 1 ? '1 car left' : `${n} cars left`, `${clockText(clock)} · ${horde.byPlayer} zombies killed`];
+      return [n === 1 ? '1 car left' : `${n} cars left`, `Survived ${clockText(clock)}`, ['Zombies', horde.byPlayer]];
     },
     garageOK: () => false,
     radar(R, s, ox, oy) { if (horde) horde.radar(R, s, ox, oy); },
