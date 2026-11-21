@@ -20,25 +20,28 @@ export const SURVIVAL = {
                               // main.js's cut to a rival's armour, AI.hp, so a starting car can outlast them)
   countdown: 3,               // seconds on the start line
   tough: 3.5,                 // every car's armour is this many times its build's: one car each, so they have to last
-  inside: 8,                  // zombies already wandering the base when the round starts (away from the cars)
+  inside: 24,                 // zombies already wandering the base when the round starts (away from the cars)
   // how many there are: the number on the base at once climbs all round, up to the peak (fewer on phones), and so
   // does how fast they come in. After the peak they keep getting faster and clawing harder, so the end always comes.
-  cap: [14, 0.7],             // zombies on the base at once: at the start, and how many more each second
-  peak: 160,                  // the most there can be at once (zombies.js keeps this many ready to draw) ...
-  peakPhone: 90,              // ... and on a touch screen
-  rate: [1.5, 0.08],          // zombies coming in a second: at the start, and how much faster each second
+  cap: [42, 2.1],             // zombies on the base at once: at the start, and how many more each second
+  peak: 480,                  // the most there can be at once (zombies.js keeps this many ready to draw) ...
+  peakPhone: 270,             // ... and on a touch screen (both reached about three and a half and two minutes in)
+  rate: [4.5, 0.24],          // zombies coming in a second: at the start, and how much faster each second
+  group: [2, 6],              // how many come through a gate together: early on, and the most later
   speed: [1, 0.0035],         // their pace: at the start, and how much faster each second
   dmg: [1, 0.006],            // how hard they claw: at the start, and how much harder each second
   breach: 90,                 // seconds in: the horde blows holes in the walls and pours in
-  surge: 20,                  // zombies that pour in through the gaps at once
+  surge: 60,                  // zombies that pour in through the gaps at once
   runners: [0.25, 0.6, 0.002], // after the breach, this share of them run, rising each second to the most
   // scrap: each zombie the player kills pays as it goes (HORDE.scrap); at the end, the place and the time lasted
   place: [300, 160, 90, 50, 25, 0],
   perMinute: 40,
+  aimAt: 40,                  // the aim assist looks at this many of the nearest
 };
 
 export function makeSurvival(G) {
   const S = SURVIVAL, MAP = G.MAP;
+  const near = { t: -1, list: [] };
   let horde = null, phase = 'wait', countT = 0, clock = 0, owed = 0, breached = false, out = null;
   const held = new Map();
   // where the horde comes from
@@ -60,6 +63,7 @@ export function makeSurvival(G) {
       if (d > 300 || G.cars.some((o) => o !== c && !o.dead && Math.abs(o.x - q.x) < 25 && Math.abs(o.z - q.z) < 25)) continue;
       const off = Math.abs(Math.atan2(Math.sin(Math.atan2(dx, dz) - c.yaw), Math.cos(Math.atan2(dx, dz) - c.yaw)));
       let s = d * (1 + off * 0.6);
+      if (s >= bs) continue;   // (the crowd only makes it worse)
       if (hurt) { let n = 0; for (const o of horde.all) if (Math.abs(o.x - q.x) < 14 && Math.abs(o.z - q.z) < 14) n++; s *= 1 + n * 0.5; }
       if (s < bs) { bs = s; best = q; }
     }
@@ -92,9 +96,9 @@ export function makeSurvival(G) {
     const runs = breached ? Math.min(S.runners[1], S.runners[0] + (clock - S.breach) * S.runners[2]) : 0;
     const runner = () => (Math.random() < runs ? HORDE.runner * (0.9 + Math.random() * 0.2) : undefined);
     if (MAP.wallSpot && Math.random() < 0.35) { const w = MAP.wallSpot(); return horde.spawn(w.x, w.z, { drop: true, in: w.in, speed: runner() }) ? 1 : 0; }
-    const g = pick(gates), n = 1 + (Math.random() < 0.5 ? 1 : 0) + (clock > 60 ? 1 : 0);
+    const g = pick(gates), n = Math.round(S.group[0] + Math.random() * 2 + Math.min(1, clock / 120) * (S.group[1] - S.group[0] - 2));
     let k = 0;
-    for (let i = 0; i < n; i++) if (horde.spawn(g.out.x + (Math.random() - 0.5) * 16, g.out.z + (Math.random() - 0.5) * 16, { entry: g.entry, speed: runner(), yaw: Math.atan2(g.entry.x - g.out.x, g.entry.z - g.out.z) })) k++;
+    for (let i = 0; i < n; i++) if (horde.spawn(g.out.x + (Math.random() - 0.5) * 22, g.out.z + (Math.random() - 0.5) * 22, { entry: g.entry, speed: runner(), yaw: Math.atan2(g.entry.x - g.out.x, g.entry.z - g.out.z) })) k++;
     return k;
   }
   // one already inside: somewhere open on the route grid, well away from every car
@@ -169,7 +173,7 @@ export function makeSurvival(G) {
         owed += (S.rate[0] + S.rate[1] * clock) * dt;
         const cap = capNow();
         while (owed >= 1 && horde.all.length < cap) owed -= Math.max(1, spawn());
-        owed = Math.min(owed, 6);
+        owed = Math.min(owed, 18);
         // the arc coils: main.js's arc only zaps cars, so here they zap the nearest of the dead (no aiming needed)
         for (const c of G.cars) {
           if (c.dead || c.gone) continue;
@@ -192,7 +196,17 @@ export function makeSurvival(G) {
     },
     garageOK: () => false,
     radar(R, s, ox, oy) { if (horde) horde.radar(R, s, ox, oy); },
-    // what the aim assist (and a phone's auto-aim) picks from: the dead, never the other cars
-    targets() { return horde ? horde.all : []; },
+    // what the aim assist (and a phone's auto-aim) picks from: the dead, never the other cars. Only the nearest few
+    // dozen to the player (main.js checks each for a clear line, and there can be hundreds)
+    targets() {
+      if (!horde) return [];
+      const p = G.player, t = G.game.time;
+      if (near.t === t) return near.list;
+      near.t = t; near.list.length = 0;
+      if (!p) return near.list;
+      for (const q of horde.all) { const d = Math.abs(q.x - p.x) + Math.abs(q.z - p.z); if (!q.dead && d < 320) { q._nd = d; near.list.push(q); } }
+      if (near.list.length > S.aimAt) { near.list.sort((a, b) => a._nd - b._nd); near.list.length = S.aimAt; }
+      return near.list;
+    },
   };
 }

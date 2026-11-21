@@ -3,11 +3,13 @@
 // off. A car that hits one fast enough splats it (saws, blades and big rams at any speed), and the guns and blasts kill
 // them through main.js's `extras` hook (solid, hit and explosion below).
 //
-// Kept cheap for phones: at most a set number alive (the mode says how many; fewer on phones). Each of the three looks is one instanced mesh whose walk, lunge and
-// cling are posed in its vertex shader from four numbers an instance, so the whole horde is three draws (and three
-// shadow draws) and no per-limb matrices. One route field serves the whole horde: a flood out from every car over the
-// map's route grid (maps/common.js makeGridNav), a few times a second. Each zombie then does plain seek, separation and
-// sliding along walls.
+// Kept cheap for phones: at most a set number alive (the mode says how many: hundreds, fewer on phones). Each of the
+// three looks is an instanced mesh whose walk, lunge and cling are posed in its vertex shader from four numbers an
+// instance, so there are no per-limb matrices; and each look has a second, plain model of a few boxes for the ones far
+// from the camera (a full one is nearly a thousand triangles, and most of a big horde is far off). So the whole horde
+// is six draws, and six shadow draws. One route field serves the whole horde: a flood out from every car over the map's
+// route grid (maps/common.js makeGridNav), a few times a second. Each zombie then does plain seek, separation (with its
+// neighbours, found through a grid) and sliding along walls.
 import * as THREE from 'three';
 import { WX, WZ, solid } from '../../src/world.js';
 import { VoxPart, hash, tone } from '../../units/src/voxpart.js';
@@ -28,14 +30,17 @@ export const HORDE = {
   runner: 16,       // the speed of the runners that come late in the round
   lunge: 2.6,       // how much faster the last few voxels go
   reach: 5,         // closer than this to a car's side they lunge
-  claw: 3.2,        // health one claw takes (the mode's `dmg` scales it) ...
+  claw: 2.0,        // health one claw takes (the mode's `dmg` scales it; low, as there are hundreds of them) ...
   clawT: 0.85,      // ... about this often, from each zombie hanging on to a car or standing at it
-  hold: 6,          // zombies that can hang on to one car at once
-  drag: 0.11,       // each one hanging on costs the car this share of its speed a second
+  hold: 4,          // zombies that can hang on to one car at once (more in a horde of hundreds would bog any car down)
+  crowd: 6,         // more than this many at one car (hanging on or standing at it) claw no harder than this many: a
+                    // big horde makes it harder to get away, not a car gone in seconds
+  drag: 0.08,       // each one hanging on costs the car this share of its speed a second (a crowd still bogs it down)
   splat: 30,        // a car hitting one faster than this, divided by its ram strength, splats it
   knock: 9,         // slower than that but faster than this, it is knocked flying instead
   shake: 115,       // a car turning harder than this (speed times turn rate) starts throwing them off
   scrap: 1,         // scrap for each one the player kills
+  far: 140,         // further than this from the camera, one is drawn in its plain model (a few boxes)
 };
 const R = 1.25;     // a zombie's radius
 const TALL = 7.6;   // and its height
@@ -43,14 +48,15 @@ const H = 0.5;      // the cubes they are built from: an eighth of a metre, like
 
 // ---- the models ---------------------------------------------------------------------------------------------------
 // Three looks: a dead soldier in torn fatigues and a helmet, a base worker in a bloodied white shirt and jeans, and a
-// mechanic in an orange boiler suit with one boot gone. Grey-green skin, dark sockets and red eyes for all of them.
+// mechanic in an orange boiler suit with one boot gone. Sickly green skin, dark sockets and red eyes for all of them.
+// (The greens are deep and dark on purpose: they have to stand out on the base's sand in a crowd of hundreds.)
 // Six parts each, in cube coordinates in the model's own space (+x is its left, +z forward, y up from the ground):
 // 0 torso, 1 head, 2 left arm, 3 right arm, 4 left leg, 5 right leg. The shader below poses them.
-const SKIN = [0x8d9c76, 0x7f8f69, 0x98a681, 0x86946c], ROT = [0x66724f, 0x5b6646];
+const SKIN = [0x7c9a58, 0x6e8c4c, 0x88a662, 0x759350], ROT = [0x556a38, 0x4a5c31];
 const BLOOD = [0x6b1a14, 0x561410, 0x7c231a];
 const EYE = 0xe0391f, SOCKET = 0x1b1e17, MOUTH = 0x2a120e, TEETH = 0xd9d2b4;
 const LOOKS = [
-  { shirt: [0x5d6a3c, 0x525d34, 0x67744a], legs: [0x4b5532, 0x434c2d, 0x535d38], shoes: [0x2a2520, 0x2a2520], hat: [0x4a562f, 0x3f4a28], sleeves: [1, 0.45], blood: 0.07 },
+  { shirt: [0x48552c, 0x3e4a26, 0x515f34], legs: [0x3a4326, 0x333b21, 0x414b2b], shoes: [0x2a2520, 0x2a2520], hat: [0x384224, 0x2f381e], sleeves: [1, 0.45], blood: 0.07 },
   { shirt: [0xc8c2b0, 0xb9b2a0, 0xd3cdbd], legs: [0x3d587c, 0x354d6e, 0x46628a], shoes: [0x4a3426, 0x4a3426], hair: [0x2e2620, 0x3a3028], sleeves: [0.55, 0], blood: 0.16 },
   { shirt: [0xc2652b, 0xb05a26, 0xcf7434], legs: [0xb45e28, 0xa65524, 0xc2652b], shoes: [0x2b2a28, -1], hair: [0x6b5a44], sleeves: [1, 1], blood: 0.1, bald: true },
 ];
@@ -117,7 +123,50 @@ function buildLook(n) {
   geo.setAttribute('color', new THREE.BufferAttribute(c, 3)); geo.setAttribute('zpart', new THREE.BufferAttribute(part, 1));
   geo.setIndex(new THREE.BufferAttribute(ix, 1));
   const cubes = []; for (const P of parts) P.vp.all(cubes, 1);
-  return { geo, cubes, tris: F * 2 };
+  const far = farLook(parts);
+  return { geo, cubes, tris: F * 2, far: far.geo, farTris: far.tris };
+}
+// The same look for far off: each part as a stack of plain boxes, one a layer of cubes high, a layer merged into the
+// one below when it is much the same colour and size (a shirt is one box, a sleeve and the arm under it two), each
+// box the colour of its cubes on average. About 150 to 200 triangles where the full model has nearly a thousand, and the
+// same parts, so the same shader poses it.
+function farLook(parts) {
+  const P = [], N = [], C = [], Z = [], col = new THREE.Color(), BOX = [
+    [[1, 0, 1], [1, 0, 0], [1, 1, 0], [1, 1, 1], [1, 0, 0]], [[0, 0, 0], [0, 0, 1], [0, 1, 1], [0, 1, 0], [-1, 0, 0]],
+    [[0, 1, 1], [1, 1, 1], [1, 1, 0], [0, 1, 0], [0, 1, 0]], [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1], [0, -1, 0]],
+    [[0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1], [0, 0, 1]], [[1, 0, 0], [0, 0, 0], [0, 1, 0], [1, 1, 0], [0, 0, -1]],
+  ];
+  for (const { id, vp } of parts) {
+    const { nx, ny, nz, h } = vp, slabs = [];
+    for (let j = 0; j < ny; j++) {   // each layer: the cubes' extent and average colour
+      let n = 0, r = 0, g = 0, b = 0, i0 = 1e9, i1 = -1, k0 = 1e9, k1 = -1;
+      for (let k = 0; k < nz; k++) for (let i = 0; i < nx; i++) {
+        const c = vp.at(i, j, k); if (c < 0) continue;
+        col.setHex(c & 0xffffff); r += col.r; g += col.g; b += col.b; n++;
+        i0 = Math.min(i0, i); i1 = Math.max(i1, i); k0 = Math.min(k0, k); k1 = Math.max(k1, k);
+      }
+      if (!n) continue;
+      const s = { j0: j, j1: j, i0, i1, k0, k1, r: r / n, g: g / n, b: b / n, n }, t = slabs[slabs.length - 1];
+      if (t && t.j1 === j - 1 && t.i0 === i0 && t.i1 === i1 && t.k0 === k0 && t.k1 === k1 && Math.abs(t.r - s.r) + Math.abs(t.g - s.g) + Math.abs(t.b - s.b) < 0.14) {
+        t.r = (t.r * t.n + s.r * n) / (t.n + n); t.g = (t.g * t.n + s.g * n) / (t.n + n); t.b = (t.b * t.n + s.b * n) / (t.n + n); t.n += n; t.j1 = j;
+      } else slabs.push(s);
+    }
+    const same = (a, b) => a && b && a.j1 + 1 === b.j0 && a.i0 === b.i0 && a.i1 === b.i1 && a.k0 === b.k0 && a.k1 === b.k1;
+    slabs.forEach((s, n) => {
+      const x0 = (vp.i0 + s.i0) * h, x1 = (vp.i0 + s.i1 + 1) * h, y0 = (vp.j0 + s.j0) * h, y1 = (vp.j0 + s.j1 + 1) * h, z0 = (vp.k0 + s.k0) * h, z1 = (vp.k0 + s.k1 + 1) * h;
+      for (const f of BOX) {
+        if ((f[4][1] > 0 && same(s, slabs[n + 1])) || (f[4][1] < 0 && same(slabs[n - 1], s))) continue;   // hidden: a box of the same size on it, or under it
+        for (let q = 0; q < 4; q++) { P.push(f[q][0] ? x1 : x0, f[q][1] ? y1 : y0, f[q][2] ? z1 : z0); N.push(...f[4]); C.push(s.r * 0.9, s.g * 0.9, s.b * 0.9); Z.push(id); }
+      }
+    });
+  }
+  const quads = P.length / 12, ix = new Uint16Array(quads * 6);
+  for (let f = 0, e = 0, v = 0; f < quads; f++, e += 6, v += 4) { ix[e] = v; ix[e + 1] = v + 1; ix[e + 2] = v + 2; ix[e + 3] = v; ix[e + 4] = v + 2; ix[e + 5] = v + 3; }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); geo.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(C, 3)); geo.setAttribute('zpart', new THREE.Float32BufferAttribute(Z, 1));
+  geo.setIndex(new THREE.BufferAttribute(ix, 1));
+  return { geo, tris: quads * 2 };
 }
 
 // ---- the pose, in the vertex shader -------------------------------------------------------------------------------
@@ -190,10 +239,10 @@ function makeStains(scene, max = 96) {
 export function makeHorde(G, o = {}) {
   const MAX = o.max || HORDE.max;
   const looks = [0, 1, 2].map(buildLook);
-  const mat = posed(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0, color: new THREE.Color(1.15, 1.15, 1.15) }));
+  const mat = posed(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0, color: new THREE.Color(1.05, 1.05, 1.05) }));
   const depth = posed(new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }));
-  const meshes = looks.map((L) => {
-    const geo = L.geo.clone();
+  // the three looks up close, then the same three far off
+  const meshes = [...looks.map((L) => L.geo), ...looks.map((L) => L.far)].map((geo) => {
     geo.setAttribute('zanim', new THREE.InstancedBufferAttribute(new Float32Array(MAX * 4), 4).setUsage(THREE.DynamicDrawUsage));
     const m = new THREE.InstancedMesh(geo, mat, MAX);
     m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); m.setColorAt(0, new THREE.Color(1, 1, 1)); m.instanceColor.setUsage(THREE.DynamicDrawUsage);
@@ -202,7 +251,7 @@ export function makeHorde(G, o = {}) {
   });
   const stain = makeStains(G.scene);
   const all = [];   // the living, in no order
-  const H_ = { all, max: MAX, strength: { speed: 1, dmg: 1 }, active: true, killed: 0, byPlayer: 0, spawned: 0, ms: 0, tris: looks.map((l) => l.tris) };
+  const H_ = { all, max: MAX, strength: { speed: 1, dmg: 1 }, active: true, killed: 0, byPlayer: 0, spawned: 0, ms: 0, tris: looks.map((l) => l.tris), farTris: looks.map((l) => l.farTris), near: 0 };
   let seq = 0;
   function centre(out) { return out.set(this.x, this.y + 3.6 * this.size, this.z); }
 
@@ -269,14 +318,14 @@ export function makeHorde(G, o = {}) {
 
   // ---- dying ----
   const _p = new THREE.Vector3();
-  let puffT = -1;
+  let puffT = -1, heat = 0;   // heat: how many splats lately (a car through a crowd throws fewer cubes for each)
   function splat(z, by, dx = 0, dz = 0, push = 10) {
     if (z.dead) return;
-    z.dead = true; H_.killed++;
+    z.dead = true; H_.killed++; heat++;
     if (by && by === G.player) { H_.byPlayer++; G.game.scrap += HORDE.scrap; }
     if (o.onKill) o.onKill(z, by);
     // fly apart into cubes, thrown the way the blow went
-    const cubes = looks[z.look].cubes, sy = Math.sin(z.yaw), cy = Math.cos(z.yaw), n = Math.min(cubes.length, 26), step = cubes.length / n;
+    const cubes = looks[z.look].cubes, sy = Math.sin(z.yaw), cy = Math.cos(z.yaw), n = Math.min(cubes.length, Math.max(8, Math.round(26 / (1 + heat * 0.2)))), step = cubes.length / n;
     const hd = Math.hypot(dx, dz) || 1;
     for (let k = 0; k < n; k++) {
       const [x, y, zz, c] = cubes[Math.floor(k * step + Math.random() * step) % cubes.length];
@@ -339,15 +388,16 @@ export function makeHorde(G, o = {}) {
     }
     return true;
   }
-  const holding = new Map();
+  const holding = new Map(), at_ = new Map();
   const hold = (c) => holding.get(c) || 0;
   H_.clingers = hold;
   function claw(z, c) {
     z.clawT = HORDE.clawT * (0.8 + Math.random() * 0.45); z.L = 1;
-    G.damage(c, HORDE.claw * H_.strength.dmg, null);
+    const n = at_.get(c) || 1;
+    G.damage(c, HORDE.claw * H_.strength.dmg * Math.min(1, HORDE.crowd / n), null);
     // the claws take a little paint and metal off where it hangs on (a few times a second at most: each one rebuilds
-    // part of the car's model, and a big crowd claws a lot)
-    if (G.game.time > (c.zChipT || 0)) { c.zChipT = G.game.time + 0.3; _p.set(z.x, 2 + Math.random() * 2.5, z.z); c.unit.hit(_p, 0.45, G.chip, 4); }
+    // part of the car's model, and a big crowd claws a lot; the rivals' cars less often than the player's)
+    if (G.game.time > (c.zChipT || 0)) { c.zChipT = G.game.time + (c === G.player ? 0.3 : 0.7); _p.set(z.x, 2 + Math.random() * 2.5, z.z); c.unit.hit(_p, 0.45, G.chip, 4); }
     G.sfx.play('scrape', 0.28, z.x, z.z, { gap: 0.12, rate: 1.4, jitter: 0.2 });
   }
 
@@ -358,8 +408,12 @@ export function makeHorde(G, o = {}) {
     const live = cars.filter((c) => !c.dead && !c.gone);
     if ((fieldT -= dt) <= 0) { fieldT = 0.35; field(live); }
     // how many hang on to each car, and how hard each car is turning (for throwing them off)
-    holding.clear();
-    for (const z of all) if (z.state === 'cling' && z.car) holding.set(z.car, hold(z.car) + 1);
+    holding.clear(); at_.clear();
+    for (const z of all) {
+      if (z.state === 'cling' && z.car) holding.set(z.car, hold(z.car) + 1);
+      if ((z.state === 'cling' || z.state === 'claw') && z.car) at_.set(z.car, (at_.get(z.car) || 0) + 1);
+    }
+    heat *= Math.exp(-dt * 3);
     for (const c of live) {
       const n = hold(c); if (n) { const k = Math.exp(-HORDE.drag * n * dt); c.vx *= k; c.vz *= k; }
       const sp = c.speed; c._zdv = Math.abs(sp - (c._zsp ?? sp)) / Math.max(dt, 1e-3); c._zsp = sp;
@@ -438,17 +492,7 @@ export function makeHorde(G, o = {}) {
       } else { z.vx *= 0.9; z.vz *= 0.9; }
       z.phase += dt * Math.hypot(z.vx, z.vz) * 1.25;
     }
-    // separation: those on their feet keep a body's width apart
-    for (let i = 0; i < all.length; i++) {
-      const a = all[i]; if (a.dead || a.state === 'cling' || a.y > 1) continue;
-      for (let j = i + 1; j < all.length; j++) {
-        const b = all[j]; if (b.dead || b.state === 'cling' || b.y > 1) continue;
-        const dx = b.x - a.x, dz = b.z - a.z, d2 = dx * dx + dz * dz;
-        if (d2 >= 4 * R * R || d2 < 1e-6) continue;
-        const d = Math.sqrt(d2), push = (2 * R - d) * 0.5 / d;
-        a.vx -= dx * push * 2; a.vz -= dz * push * 2; b.vx += dx * push * 2; b.vz += dz * push * 2;
-      }
-    }
+    separate();
     for (const z of all) if (!z.dead && (z.state === 'walk' || z.state === 'lunge' || z.state === 'claw')) move(z, z.vx * dt, z.vz * dt);
     // the cars against everyone not hanging on
     for (const z of all) {
@@ -462,12 +506,43 @@ export function makeHorde(G, o = {}) {
     H_.ms = H_.ms * 0.95 + (performance.now() - t0) * 0.05;
   };
 
-  // ---- drawing: each look's living into its instanced mesh ----
-  const fill = [0, 0, 0];
+  // ---- separation: those on their feet keep a body's width apart. Each looks only at its neighbours, found through a
+  // fine grid of who stands where (with hundreds of them, every pair would be most of the horde's time) ----
+  const SC = 4, SM = 64, SX = Math.ceil((WX + SM * 2) / SC), SZ = Math.ceil((WZ + SM * 2) / SC);
+  const sHead = new Int32Array(SX * SZ), sNext = new Int32Array(MAX), sCell = new Int32Array(MAX);
+  const afoot = (a) => !a.dead && a.state !== 'cling' && a.y <= 1;
+  function separate() {
+    sHead.fill(-1);
+    for (let i = 0; i < all.length; i++) {
+      const a = all[i]; sCell[i] = -1;
+      if (!afoot(a)) continue;
+      const cx = Math.floor((a.x + SM) / SC), cz = Math.floor((a.z + SM) / SC);
+      if (cx < 0 || cz < 0 || cx >= SX || cz >= SZ) continue;
+      sCell[i] = cz * SX + cx; sNext[i] = sHead[sCell[i]]; sHead[sCell[i]] = i;
+    }
+    for (let i = 0; i < all.length; i++) {
+      if (sCell[i] < 0) continue;
+      const a = all[i], cx = sCell[i] % SX, cz = (sCell[i] / SX) | 0;
+      for (let k = Math.max(0, cz - 1); k <= Math.min(SZ - 1, cz + 1); k++) for (let m = Math.max(0, cx - 1); m <= Math.min(SX - 1, cx + 1); m++) {
+        for (let j = sHead[k * SX + m]; j >= 0; j = sNext[j]) {
+          if (j <= i) continue;   // each pair once
+          const b = all[j], dx = b.x - a.x, dz = b.z - a.z, d2 = dx * dx + dz * dz;
+          if (d2 >= 4 * R * R || d2 < 1e-6) continue;
+          const d = Math.sqrt(d2), push = (2 * R - d) * 0.5 / d;
+          a.vx -= dx * push * 2; a.vz -= dz * push * 2; b.vx += dx * push * 2; b.vz += dz * push * 2;
+        }
+      }
+    }
+  }
+
+  // ---- drawing: each look's living into its instanced mesh, the near ones' or the far ones' ----
+  const fill = [0, 0, 0, 0, 0, 0];
   function draw() {
-    fill[0] = fill[1] = fill[2] = 0;
+    fill.fill(0);
+    const cam = G.camera.position, F2 = HORDE.far * HORDE.far;
     for (const z of all) {
-      const m = meshes[z.look], i = fill[z.look]++;
+      const dx = z.x - cam.x, dz = z.z - cam.z, k = dx * dx + dz * dz > F2 ? z.look + 3 : z.look;
+      const m = meshes[k], i = fill[k]++;
       const e = m.instanceMatrix.array, a = m.geometry.attributes.zanim.array, col = m.instanceColor.array, o16 = i * 16, s = z.size;
       // where it stands, which way it faces and how far over it has fallen (on its back), as one matrix
       const sy = Math.sin(z.yaw), cy = Math.cos(z.yaw), f = -z.fall, sf = Math.sin(f), cf = Math.cos(f);
@@ -479,10 +554,12 @@ export function makeHorde(G, o = {}) {
       a[i * 4] = z.phase; a[i * 4 + 1] = z.L; a[i * 4 + 2] = z.state === 'cling' ? 1 : 0; a[i * 4 + 3] = z.seed;
       col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = z.tint;
     }
+    H_.near = fill[0] + fill[1] + fill[2];
     meshes.forEach((m, k) => {
       m.count = fill[k];
       if (!fill[k]) return;
-      m.instanceMatrix.needsUpdate = true; m.geometry.attributes.zanim.needsUpdate = true; m.instanceColor.needsUpdate = true;
+      // only the slots in use go to the GPU, not the whole of each buffer
+      for (const [at, w] of [[m.instanceMatrix, 16], [m.geometry.attributes.zanim, 4], [m.instanceColor, 3]]) { at.clearUpdateRanges(); at.addUpdateRange(0, fill[k] * w); at.needsUpdate = true; }
     });
   }
 
@@ -566,10 +643,12 @@ export function makeHorde(G, o = {}) {
     hurt(q, dmg, c, q.x - c.x, q.z - c.z, 18);
     return true;
   };
-  // the horde on the radar: a green fleck each
+  // the horde on the radar: a small green fleck each, faint enough that a crowd reads as a green haze and the cars
+  // (drawn over it) still stand out
   H_.radar = (Rd, s, ox, oy) => {
-    Rd.fillStyle = 'rgba(150,214,96,0.9)';
-    for (const q of all) if (!q.dead) Rd.fillRect(ox + q.x * s - 1, oy + q.z * s - 1, 2, 2);
+    const big = all.length > 120, w = big ? 1.5 : 2;
+    Rd.fillStyle = big ? 'rgba(120,200,80,0.6)' : 'rgba(150,214,96,0.9)';
+    for (const q of all) if (!q.dead) Rd.fillRect(ox + q.x * s - w / 2, oy + q.z * s - w / 2, w, w);
   };
   H_.splat = splat;
   return H_;
