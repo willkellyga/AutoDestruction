@@ -3,6 +3,9 @@
 // everyone is up against the horde, which comes in through the gates and over the walls in ever greater numbers,
 // faster and hungrier, and breaks through the walls a minute and a half in. No second cars: a wrecked car is out.
 // The player wrecked ends the round with their place and how long they lasted; the last car still running wins.
+// The win card offers to keep going: the same round carries on with the player alone (the clock running on, the
+// horde still growing and the scrap still coming) until they go down, and then a card with how long it all lasted.
+// The longest anyone has lasted on each map is kept in the save (`save.survivalBest`, seconds by map id).
 //
 // The map can say where things happen (maps/base.js does): `starts` (six places to line up, the player's first),
 // `gates` ({ out, entry }: where a group appears outside and the point inside it walks to first), `wallSpot()` (a
@@ -28,7 +31,9 @@ export const SURVIVAL = {
   peakPhone: 270,             // ... and on a touch screen (both reached about three and a half and two minutes in)
   rate: [4.5, 0.24],          // zombies coming in a second: at the start, and how much faster each second
   group: [2, 6],              // how many come through a gate together: early on, and the most later
-  speed: [1, 0.0035],         // their pace: at the start, and how much faster each second
+  speed: [1, 0.0035],         // their pace: at the start, and how much faster each second ...
+  speedMax: 2,                // ... up to this (about 4:45 in: a long overtime gets harder through the claws, not by
+                              // the dead outrunning the cars)
   dmg: [1, 0.006],            // how hard they claw: at the start, and how much harder each second
   breach: 90,                 // seconds in: the horde blows holes in the walls and pours in
   surge: 60,                  // zombies that pour in through the gaps at once
@@ -36,6 +41,8 @@ export const SURVIVAL = {
   // scrap: each zombie the player kills pays as it goes (HORDE.scrap); at the end, the place and the time lasted
   place: [300, 160, 90, 50, 25, 0],
   perMinute: 40,
+  patch: 1,                   // Keep going (after the win): the car's armour back up to at least this share of its most
+                              // (all of it: alone against the whole horde the coached car lasted 32 s on full armour, 16 s on half)
   aimAt: 40,                  // the aim assist looks at this many of the nearest
 };
 
@@ -43,7 +50,12 @@ export function makeSurvival(G) {
   const S = SURVIVAL, MAP = G.MAP;
   const near = { t: -1, list: [] };
   let horde = null, phase = 'wait', countT = 0, clock = 0, owed = 0, breached = false, out = null;
+  // keeping going after the win: when it was won, the time paid for so far, the best before this round, the scrap then
+  let overtime = false, wonAt = 0, paidT = 0, best0 = 0, scrap0 = 0;
   const held = new Map();
+  const bests = () => (G.save.survivalBest && typeof G.save.survivalBest === 'object' ? G.save.survivalBest : (G.save.survivalBest = {}));
+  const bestOf = () => +bests()[MAP.id] || 0;
+  function keepBest() { if (clock > bestOf()) { bests()[MAP.id] = Math.floor(clock); G.keepSave(); } }
   // where the horde comes from
   const edge = [{ out: { x: WX / 2, z: -30 }, entry: { x: WX / 2, z: 30 } }, { out: { x: WX / 2, z: WZ + 30 }, entry: { x: WX / 2, z: WZ - 30 } }, { out: { x: -30, z: WZ / 2 }, entry: { x: 30, z: WZ / 2 } }, { out: { x: WX + 30, z: WZ / 2 }, entry: { x: WX - 30, z: WZ / 2 } }];
   let gates = (MAP.gates || edge).slice();
@@ -117,32 +129,66 @@ export function makeSurvival(G) {
     if (MAP.breach) gates = gates.concat(MAP.breach(G) || []);
     for (let i = 0; i < S.surge; i++) { const g = pick(gates); horde.spawn(g.out.x + (Math.random() - 0.5) * 20, g.out.z + (Math.random() - 0.5) * 20, { entry: g.entry, speed: Math.random() < S.runners[0] ? HORDE.runner : undefined }); }
   }
-  // the round is over: a card with how it went
+  // how this round's time stands against the best before it (the first round here sets one)
+  const bestLine = (beat) => (!best0 ? `Your best to beat: ${clockText(clock)}` : beat ? `New best time! (the old one was ${clockText(best0)})` : `Best: ${clockText(best0)} (${clockText(best0 - clock)} short)`);
+  // the round is over: a card with how it went. A win holds the round (the clock stops, the dead stop clawing) and
+  // offers to keep going
   function finish(won) {
-    if (phase === 'done') return;
-    phase = 'done'; horde.active = false;
+    if (phase === 'done' || phase === 'won') return;
+    if (overtime) { finishOvertime(); return; }
+    phase = won ? 'won' : 'done'; horde.active = false;
     // (the player and the last rival can go down in the same moment: they share first)
     const place = won ? 1 : live().filter((c) => c !== G.player).length + 1, total = S.rivals + 1, tie = !won && place === 1;
     const bonus = S.place[place - 1] || 0, timeScrap = Math.round(clock / 60 * S.perMinute);
+    const beat = clock > best0; keepBest();
     const lines = [
       `${tie ? 'Shared 1st' : ORD[place - 1]} of ${total}`,
       `Survived ${clockText(clock)} (+${timeScrap} scrap)`,
       `Zombies killed: ${horde.byPlayer} (+${horde.byPlayer * HORDE.scrap} scrap)`,
+      bestLine(beat),
     ];
-    out = { won, place, time: clock, zombies: horde.byPlayer, bonus, timeScrap };
-    G.over(won ? 'Last car standing!' : tie ? 'Out together' : 'Wrecked', lines, bonus + timeScrap);
+    out = { won, place, time: clock, zombies: horde.byPlayer, bonus, timeScrap, best: beat };
+    wonAt = paidT = clock;
+    G.over(won ? 'Last car standing!' : tie ? 'Out together' : 'Wrecked', lines, bonus + timeScrap, won ? { label: 'Keep going', go: keepGoing } : null);
+  }
+  // the win card's Keep going: the same round again, with the player the only car on the base
+  function keepGoing() {
+    if (phase !== 'won') return;
+    overtime = true; phase = 'run'; horde.active = true;
+    const p = G.player;
+    if (!p || p.dead) { finish(false); return; }   // (went down with the last rival)
+    const patched = p.hp < p.maxHp * S.patch; if (patched) p.hp = Math.round(p.maxHp * S.patch);
+    G.banner('Keep going!', patched ? 'Patched up. The dead keep coming.' : 'The dead keep coming. How long can you last?');
+    G.sfx.play('ui_go', 1);
+  }
+  // down at last after keeping going: the whole round, and the rest of the time's scrap
+  function finishOvertime() {
+    phase = 'done'; horde.active = false;
+    const rest = Math.max(0, Math.round((clock - paidT) / 60 * S.perMinute)), beat = clock > best0;
+    keepBest();
+    const scrap = Math.round(G.game.scrap + rest - scrap0);
+    const lines = [
+      `Last car standing, then ${clockText(clock - wonAt)} more`,
+      `Survived ${clockText(clock)} in all`,
+      `Zombies killed: ${horde.byPlayer}`,
+      `Scrap this round: ${scrap}`,
+      beat && best0 ? `Old best: ${clockText(best0)}` : bestLine(beat),
+    ];
+    out = { won: true, place: 1, time: clock, overtime: clock - wonAt, zombies: horde.byPlayer, scrap, best: beat, bestWas: best0 };
+    G.over(beat && best0 ? 'New best time!' : 'Overrun', lines, rest);
   }
 
   return {
     go: 'Survive',
-    note: 'The dead are overrunning the base and there are more every minute. One car, no second chances: outlast everyone.',
+    get note() { const b = bestOf(); return 'The dead are overrunning the base and there are more every minute. One car, no second chances: outlast everyone.' + (b ? ` Your best here: ${clockText(b)}.` : ''); },
     friendly: true,   // main.js: cars can't hurt each other, and shots go through them
     get horde() { return horde; }, get phase() { return phase; }, get clock() { return clock; }, get result() { return out; }, get breached() { return breached; },
-    get cap() { return capNow(); },
+    get cap() { return capNow(); }, get overtime() { return overtime; }, get best() { return bestOf(); },
     coach,   // (tests drive the player's car with it)
     start() {
       horde = makeHorde(G, { max: G.TOUCH() ? S.peakPhone : S.peak });
       G.extras.push(horde);
+      best0 = bestOf(); scrap0 = G.game.scrap;
       const starts = MAP.starts || [];
       const tiers = S.tiers.slice().sort(() => Math.random() - 0.5);
       for (let i = 0; i < S.rivals; i++) {
@@ -167,8 +213,10 @@ export function makeSurvival(G) {
       }
       if (phase === 'run') {
         clock += dt;
-        horde.strength.speed = S.speed[0] + S.speed[1] * clock;
+        horde.strength.speed = Math.min(S.speedMax, S.speed[0] + S.speed[1] * clock);
         horde.strength.dmg = S.dmg[0] + S.dmg[1] * clock;
+        // kept going after the win: each whole minute more pays as it passes (the rest when it ends)
+        if (overtime && clock - paidT >= 60) { paidT += 60; G.game.scrap += S.perMinute; G.toast('Another minute', `+${S.perMinute} scrap`); keepBest(); }
         if (!breached && clock >= S.breach) breakThrough();
         owed += (S.rate[0] + S.rate[1] * clock) * dt;
         const cap = capNow();
@@ -184,15 +232,18 @@ export function makeSurvival(G) {
     },
     wrecked(c) {
       if (!horde || c === G.player) return;
-      G.toast(`The dead got ${c.name}`, `${live().length} cars left`);
-      if (phase === 'run' && G.player && !G.player.dead && !live().some((o) => o !== G.player)) finish(true);
+      const n = live().length, win = phase === 'run' && !overtime && G.player && !G.player.dead && n === 1 && live()[0] === G.player;
+      G.toast(`The dead got ${c.name}`, win ? 'You are the last car standing' : `${n} car${n === 1 ? '' : 's'} left`);
+      if (win) finish(true);
     },
-    playerDown() { if (horde) finish(false); },
+    playerDown() { if (horde && phase !== 'won') finish(false); },   // (on the win card, Keep going ends it)
     hud() {
-      if (phase === 'wait') return ['Last car standing', `${S.rivals + 1} cars on the base`];
-      if (phase === 'count') return ['Get ready', `${S.rivals + 1} cars on the base`];
+      const b = best0 || (phase === 'wait' ? bestOf() : 0), was = b ? ` · best ${clockText(b)}` : '';
+      if (phase === 'wait') return ['Last car standing', `${S.rivals + 1} cars on the base${was}`];
+      if (phase === 'count') return ['Get ready', `${S.rivals + 1} cars on the base${was}`];
+      if (overtime) return [`Last car standing · ${clockText(clock)}`, !b ? 'A new best' : clock > b ? `Best ${clockText(b)} · beaten` : `Best ${clockText(b)}`, ['Zombies', horde.byPlayer]];
       const n = live().length;
-      return [n === 1 ? '1 car left' : `${n} cars left`, `Survived ${clockText(clock)}`, ['Zombies', horde.byPlayer]];
+      return [n === 1 ? '1 car left' : `${n} cars left`, `Survived ${clockText(clock)}${was}`, ['Zombies', horde.byPlayer]];
     },
     garageOK: () => false,
     radar(R, s, ox, oy) { if (horde) horde.radar(R, s, ox, oy); },

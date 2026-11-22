@@ -98,6 +98,7 @@ body.in-garage .hud, body.in-garage #radar, body.in-garage #cross, body.in-garag
 button.alt { pointer-events: auto; font: 900 italic 20px 'Trebuchet MS', system-ui, sans-serif; text-transform: uppercase; color: var(--ink); background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.35); border-radius: 8px; padding: 12px 26px; cursor: pointer; transform: skewX(-8deg); }
 button.alt:hover { background: rgba(255,255,255,0.16); }
 #dead .row, #over .row { margin-top: 18px; }
+#over:not(.more) .more-only { display: none; } #over .note.more-only { margin-top: 4px; } #over.more .row:last-child { margin-top: 10px; }   /* the win card's Keep going */
 /* ---- picking a map on the start card, and the end of a round ---- */
 .maps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 18px auto 6px; max-width: 620px; }
 .maps button { pointer-events: auto; text-align: left; padding: 9px 10px 8px; border-radius: 8px; border: 2px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.06); color: var(--ink); cursor: pointer; font: 13px system-ui, sans-serif; }
@@ -229,7 +230,7 @@ body.touch #banner { top: 40%; }
 <div class="hud" id="banner"><b></b><span></span></div>
 <div class="hud" id="hint">Press <kbd>G</kbd> for the garage</div>
 <div class="card" id="dead" hidden><div><b>Wrecked!</b>New car in <span id="dead-t">3</span><div class="row"><button class="alt" id="dead-garage">Garage</button><button class="go" id="dead-go">Drive now</button></div></div></div>
-<div class="card" id="over" hidden><div><b class="t" id="over-t">Round over</b><div id="over-l"></div><div class="row"><button class="alt" id="over-maps">Maps</button><button class="alt" id="over-garage">Garage</button><button class="go" id="over-go">Again</button></div></div></div>
+<div class="card" id="over" hidden><div><b class="t" id="over-t">Round over</b><div id="over-l"></div><div class="row more-only"><button class="go" id="over-more">Keep going</button></div><div class="note desk-only more-only"><kbd>Enter</kbd> or <kbd>C</kbd> to keep going: the same round, on your own</div><div class="row"><button class="alt" id="over-maps">Maps</button><button class="alt" id="over-garage">Garage</button><button class="go" id="over-go">Again</button></div></div></div>
 <div class="card" id="menu" hidden><div>
   <div class="title">Auto<em>Destruction</em></div>
   <div class="maps" id="maps"></div><div class="map-blurb" id="map-blurb"></div>
