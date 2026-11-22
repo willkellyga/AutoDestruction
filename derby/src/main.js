@@ -33,6 +33,7 @@ import { makeBackdrop } from './backdrop.js';
 import { nightLook, makeNight } from './night.js';
 import { makeGround } from './ground.js';
 import { makeDirt } from './dirt.js';
+import { makeStreaks } from './streaks.js';
 
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -98,6 +99,7 @@ const backdrop = MAP.backdrop ? makeBackdrop({ scene, layout: MAP.backdrop, mobi
 initSim(scene);
 const drifts = makeDrift({ scene, camera, mobile: MOBILE, el: $('drift'), soft: floor.dirtAt });   // skid marks, tyre smoke, the drift meter
 const dirt = makeDirt({ scene, camera, renderer, floor, MAP, mobile: MOBILE });   // ruts, rooster tails, dust and clods off the wheels
+const streaks = MAP.mode === 'race' ? makeStreaks({ scene, mobile: MOBILE }) : null;   // the air rushing past, flat out
 look.detail.value = 1; look.dusk.value = 0;
 cfg.dust = 0.55; cfg.hang = 0.2;
 toughen();   // sturdier buildings than the town's own (sturdy.js, tuning.js BUILDINGS)
@@ -988,6 +990,7 @@ function step(dt) {
   civ.update(dt, false); civ.packFar && civ.packFar();
   fx.update(dt); debris.update(dt);
   dirt.step(dt, cars, quality.step);
+  if (streaks) streaks.step(dt, game.state === 'play' ? player : null, quality.step, renderer.domElement);
   if (night) night.step(dt, cars);
   game.shake = Math.max(0, game.shake - dt * 2.4);
   game.hurt = Math.max(0, (game.hurt || 0) - dt * 1.4); grade.uniforms.hurt.value = game.hurt;

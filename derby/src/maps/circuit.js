@@ -181,8 +181,10 @@ export function gridFor(T, pole = 1, row = 26) {
 // The course on the ground canvas: asphalt over all its room, a pale kerb along each edge, red and white round the
 // bends, the start line and the grid's boxes, and an arrow on the road before each corner. The kerbs go down first, just
 // outside the edges, so that where the inside edge of a tight corner crosses the asphalt of the course either side of
-// it the asphalt covers it. `seed` varies the asphalt's grain.
-export function paintCourse(g, T, grid, seed = 31) {
+// it the asphalt covers it. `seed` varies the asphalt's grain. Given the racing line (`line`, for a map whose floor
+// lays a fine grain over its hard ground: ground.js), the asphalt has no fleck a voxel big but the wear of a working
+// street instead (wear()).
+export function paintCourse(g, T, grid, seed = 31, line = null) {
   const { N, X, Z, TX, TZ, K, WL, WR } = T;
   let s = seed; const r = () => { s = (s * 1664525 + 1013904223) | 0; return ((s >>> 8) & 0xffff) / 65536; };
   const P = (a, l, i) => [(X[i] + TX[i] * a + TZ[i] * l) * GK, (Z[i] + TZ[i] * a - TX[i] * l) * GK];   // along and across the course at sample i, on the canvas
@@ -198,7 +200,8 @@ export function paintCourse(g, T, grid, seed = 31) {
     for (const [sd, w] of [[1, WL], [-1, WR]]) quad(i, sd * (w[i] - 0.2), sd * (w[i] + 2.4), sd * (w[j] - 0.2), sd * (w[j] + 2.4), col);
   }
   for (let i = 0; i < N; i++) { const j = T.at(i + 1); quad(i, -WR[i], WL[i], -WR[j], WL[j], '#474b54'); }
-  for (let n = 0; n < N * 70; n++) {
+  if (line) wear(g, T, line, r, P);
+  else for (let n = 0; n < N * 70; n++) {
     const i = (r() * N) | 0, [x, z] = P(r() * T.STEP, -WR[i] + r() * (WL[i] + WR[i]), i);
     g.fillStyle = r() < 0.5 ? 'rgba(30,32,38,0.24)' : 'rgba(110,114,124,0.15)'; g.fillRect(Math.floor(x / GK) * GK, Math.floor(z / GK) * GK, GK, GK);
   }
@@ -221,12 +224,121 @@ export function paintCourse(g, T, grid, seed = 31) {
     g.beginPath(); g.moveTo(...P(4 + 3, side * 5, back)); g.lineTo(...P(4 - 3, side * 5, back)); g.lineTo(...P(4, side * 9, back)); g.closePath(); g.fill();
   }
 }
-// the grass on a painted ground, read back a voxel at a time (for a map's surface())
-export function grassOf(cv) {
+// The wear of a working street on the course's asphalt, drawn over it and kept inside it. Coarse to fine: the paver's
+// strips along it, each a shade apart, with a seam between; the dark bands where the wheels run on the racing line,
+// polished and rubbered in; patches where the road was dug up, some fresh and black, some old and faded, and trenches
+// across it; oil dripped where cars stood and braked; manhole covers; and cracks, most of them sealed with tar.
+function wear(g, T, line, r, P) {
+  const { N, K, WL, WR, STEP } = T, at = T.at, off = line.off;
+  g.save();
+  g.beginPath();
+  for (let i = 0; i < N; i++) {
+    const j = at(i + 1), a = P(-0.6, -WR[i], i), b = P(-0.6, WL[i], i), c = P(0.6, WL[j], j), d = P(0.6, -WR[j], j);
+    g.moveTo(...a); g.lineTo(...b); g.lineTo(...c); g.lineTo(...d); g.closePath();
+  }
+  g.clip();
+  // the paver's strips: 11 voxels wide across the middle line, laid in runs of about 150 voxels
+  const LANE = 11;
+  for (let k = -6; k <= 5; k++) {
+    const runOf = (i) => Math.floor((i * STEP + (k + 6) * 37) / 150);
+    for (let i0 = 0; i0 < N;) {
+      let i1 = i0; while (i1 < N && runOf(i1) === runOf(i0)) i1++;
+      const v = r();
+      g.fillStyle = v < 0.5 ? `rgba(255,255,255,${(0.015 + v * 0.05).toFixed(3)})` : `rgba(0,0,0,${(0.02 + (v - 0.5) * 0.08).toFixed(3)})`;
+      g.beginPath();
+      for (let i = i0; i <= i1; i++) (i > i0 ? g.lineTo : g.moveTo).call(g, ...P(0, k * LANE, at(i)));
+      for (let i = i1; i >= i0; i--) g.lineTo(...P(0, (k + 1) * LANE, at(i)));
+      g.closePath(); g.fill();
+      i0 = i1;
+    }
+  }
+  const along = (l, i0, n, style, width) => {
+    g.strokeStyle = style; g.lineWidth = width * GK; g.beginPath();
+    for (let k = 0; k <= n; k++) { const i = at(i0 + k); (k ? g.lineTo : g.moveTo).call(g, ...P(0, typeof l === 'function' ? l(i) : l, i)); }
+    g.stroke();
+  };
+  g.lineCap = 'round'; g.lineJoin = 'round';
+  for (let k = -5; k <= 5; k++) along(k * LANE, 0, N, 'rgba(18,19,22,0.22)', 0.22);
+  // the wheel lanes on the racing line, a shade darker in stretches, darkest where cars brake and turn, and the oil
+  // dripped down the middle between them
+  g.lineCap = 'butt';
+  for (let i0 = 0; i0 < N; i0 += 6) {
+    const bend = Math.min(1, Math.abs(K[at(i0 + 8)]) * 60), a = 0.09 + 0.06 * r() + 0.1 * bend;
+    along((i) => off[i], i0, 6, `rgba(8,8,10,${(a * 0.3).toFixed(3)})`, 7.5);
+    for (const side of [-2.6, 2.6]) along((i) => off[i] + side, i0, 6, `rgba(8,8,10,${a.toFixed(3)})`, 1.7 + r() * 0.6);
+    if (r() < 0.7) along((i) => off[i] + 0.3, i0, 6, `rgba(6,6,8,${(0.05 + 0.08 * r()).toFixed(3)})`, 0.9 + r() * 0.6);
+  }
+  g.lineCap = 'round';
+  // patches: a box along the course at sample i, from a0 to a1 along it and l0 to l1 across, filled and its seam sealed
+  const patch = (i, a0, a1, l0, l1, fill) => {
+    const pts = [P(a0, l0, i), P(a0, l1, i), P(a1, l1, i), P(a1, l0, i)];
+    g.fillStyle = fill; g.beginPath(); g.moveTo(...pts[0]); for (const p of pts.slice(1)) g.lineTo(...p); g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(16,16,18,0.4)'; g.lineWidth = 0.22 * GK; g.stroke();
+  };
+  for (let n = 0; n < N / 5; n++) {
+    const i = (r() * N) | 0, w = 2 + r() * 5, len = 4 + r() * 16, l = -WR[i] + r() * (WL[i] + WR[i] - w), fresh = r() < 0.45;
+    patch(i, 0, len, l, l + w, fresh ? `rgba(40,42,47,${(0.6 + r() * 0.3).toFixed(2)})` : `rgba(96,98,102,${(0.18 + r() * 0.16).toFixed(2)})`);
+  }
+  for (let n = 0; n < N / 60; n++) {   // trenches dug across the road and filled in
+    const i = (r() * N) | 0, w = 1.4 + r() * 1.6, l0 = -WR[i] - 1, l1 = WL[i] + 1;
+    patch(i, 0, w, l0, l1, r() < 0.5 ? 'rgba(44,46,51,0.8)' : 'rgba(92,94,98,0.3)');
+  }
+  // oil: drips along the middle of each car's way, more where they brake for a bend, and pools on the grid
+  const stain = (x, z, rx, rz, ang, a) => { g.fillStyle = `rgba(10,10,12,${a.toFixed(3)})`; g.beginPath(); g.ellipse(x, z, rx * GK, rz * GK, ang, 0, 6.3); g.fill(); };
+  for (let n = 0; n < N * 0.6; n++) {
+    const i = (r() * N) | 0, bend = Math.min(1, Math.abs(K[at(i + 10)]) * 60);
+    if (r() > 0.35 + 0.65 * bend) continue;
+    const l = r() < 0.6 ? off[i] + (r() - 0.5) * 3 : -WR[i] + r() * (WL[i] + WR[i]), [x, z] = P(r() * STEP, l, i), rx = 0.5 + r() * r() * 2.6;
+    stain(x, z, rx, rx * (0.4 + r() * 0.5), Math.atan2(T.TZ[i], T.TX[i]) + (r() - 0.5) * 0.6, 0.1 + r() * 0.22);
+  }
+  // manhole covers, here and there in the lanes
+  for (let n = 0; n < N / 40; n++) {
+    const i = (r() * N) | 0, [x, z] = P(0, (r() - 0.5) * 2 * Math.min(WL[i], WR[i]) * 0.8, i);
+    g.fillStyle = '#3b3d42'; g.beginPath(); g.arc(x, z, 1.25 * GK, 0, 6.3); g.fill();
+    g.strokeStyle = 'rgba(16,16,18,0.7)'; g.lineWidth = 0.25 * GK; g.stroke();
+    g.strokeStyle = 'rgba(110,112,118,0.35)'; g.lineWidth = 0.12 * GK; g.beginPath(); g.arc(x, z, 0.8 * GK, 0, 6.3); g.stroke();
+  }
+  // cracks: a wandering line, along or across the road, now and then branching; most sealed with tar (wider, black)
+  const crack = (x, z, a, len, sealed, depth = 0) => {
+    g.strokeStyle = sealed ? 'rgba(12,12,14,0.42)' : 'rgba(26,27,30,0.38)'; g.lineWidth = (sealed ? 0.3 : 0.13) * GK;
+    g.beginPath(); g.moveTo(x, z);
+    let da = 0;
+    for (let t = 0; t < len; t += 0.8) {
+      da = da * 0.75 + (r() - 0.5) * 0.3; a += da + (r() - 0.5) * 0.25; x += Math.cos(a) * 0.8 * GK; z += Math.sin(a) * 0.8 * GK; g.lineTo(x, z);
+      if (depth < 1 && r() < 0.06) { g.stroke(); crack(x, z, a + (r() < 0.5 ? 1 : -1) * (0.6 + r()), len * 0.4, sealed, depth + 1); g.beginPath(); g.moveTo(x, z); }
+    }
+    g.stroke();
+  };
+  for (let n = 0; n < N / 7; n++) {
+    const i = (r() * N) | 0, [x, z] = P(0, -WR[i] + r() * (WL[i] + WR[i]), i), head = Math.atan2(T.TZ[i], T.TX[i]);
+    crack(x, z, head + (r() < 0.5 ? 0 : Math.PI / 2) + (r() - 0.5) * 0.5, 5 + r() * 14, r() < 0.75);
+  }
+  g.restore();
+}
+
+// the grass on a painted ground, read back a voxel at a time (for a map's surface()). With `hard`, the paint's alpha is
+// taken down to a half everywhere but on the grass and the water, a voxel at a time: the floor gives that its grain and
+// its rubber (ground.js: MAP.groundDetail with hard). Given the course (`T`, painted by paintCourse() with its racing
+// line, so without a fleck), the streets off it go a little lower still, 0.45: only there does the floor even out the
+// paint's fleck (deFleck), which on the course would only blur its patches and stains away and leave a halo round its
+// lines.
+export function grassOf(cv, hard = false, T = null) {
   const sm = document.createElement('canvas'); sm.width = WX; sm.height = WZ;
   const sg = sm.getContext('2d'); sg.drawImage(cv, 0, 0, WX, WZ);
-  const D = sg.getImageData(0, 0, WX, WZ).data, grassy = new Uint8Array(WX * WZ);
+  const img = sg.getImageData(0, 0, WX, WZ), D = img.data, grassy = new Uint8Array(WX * WZ);
   for (let c = 0; c < WX * WZ; c++) grassy[c] = D[c * 4 + 1] > D[c * 4] + 12 && D[c * 4 + 1] > D[c * 4 + 2] + 12 ? 1 : 0;
+  if (hard) {
+    for (let c = 0; c < WX * WZ; c++) {
+      const water = D[c * 4 + 2] > D[c * 4] + 25 && D[c * 4 + 2] >= D[c * 4 + 1];
+      let on = true;
+      if (T) { const i = T.field.near[c], l = T.field.lat[c]; on = i >= 0 && l < T.WL[i] + 2.5 && l > -T.WR[i] - 2.5; }
+      D[c * 4] = D[c * 4 + 1] = D[c * 4 + 2] = 0; D[c * 4 + 3] = grassy[c] || water ? 0 : on ? 128 : 140;
+    }
+    sg.putImageData(img, 0, 0);
+    const g = cv.getContext('2d');
+    g.save(); g.globalCompositeOperation = 'destination-out'; g.imageSmoothingEnabled = true; g.drawImage(sm, 0, 0, cv.width, cv.height); g.restore();
+  }
+  sm.width = sm.height = 1;
   return grassy;
 }
 // What the ground is at (x, z) on a street course: 0 on the course and paving, 0.7 on the grass (see vehicle.js)

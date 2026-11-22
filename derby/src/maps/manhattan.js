@@ -155,15 +155,18 @@ function build() {
 }
 
 // ---- the painted ground: New York's, with the course laid over it ----------------------------------------------
+// The course's asphalt is laid without fleck, worn as a working street is (circuit.js), and all the paved ground is
+// marked hard in the paint's alpha (grassOf): the floor gives it a fine grain of its own, evens out New York's own
+// fleck on the streets round about, and keeps the rubber the cars lay (ground.js, dirt.js: groundDetail below).
 let grassy = null;   // the grass, a voxel at a time (for surface())
 // New York's ground is painted at four pixels a voxel (4096 square). Phones get it at half that, which keeps about
 // 110 MB off them (the picture on the page and its copy on the graphics chip); two pixels a voxel is still finer than
 // the speckle and the course's lines. The same test for a phone as main.js's.
 const PHONE = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0 && !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
 function paint() {
-  const { T, grid } = full(), cv = groundCanvas(), g = cv.getContext('2d');
-  paintCourse(g, T, grid, 62);
-  grassy = grassOf(cv);
+  const { T, grid, line } = full(), cv = groundCanvas(), g = cv.getContext('2d');
+  paintCourse(g, T, grid, 62, line);
+  grassy = grassOf(cv, true, T);
   if (!PHONE) return cv;
   const half = document.createElement('canvas'); half.width = cv.width >> 1; half.height = cv.height >> 1;
   const h = half.getContext('2d'); h.imageSmoothingQuality = 'high'; h.drawImage(cv, 0, 0, half.width, half.height);
@@ -204,6 +207,10 @@ export default {
   },
   radar,
   radarBox: RADAR_BOX,
+  // the paved ground's grain, New York's fleck evened out, and the rubber laid over the race (ground.js, dirt.js); the
+  // rubber weathers slowly, so it builds up along the racing line over the four laps
+  groundDetail: { hard: true, deFleck: true, fade: 20 },
+  rutBox: [RADAR_BOX[0] - 30, RADAR_BOX[1] - 30, RADAR_BOX[2] + 30, RADAR_BOX[3] + 10],
   // what the ground is at (x, z): 0 on the course and the paving, 0.7 on the park's grass (see vehicle.js)
   surface(x, z) { return grassy && TR ? surfaceAt(TR.T, grassy, x, z) : 0; },
   // the course, for the race mode
