@@ -38,6 +38,7 @@ import { lookSetup, makeLook } from './looks/index.js';
 import { makeGround } from './ground.js';
 import { makeDirt } from './dirt.js';
 import { makeStreaks } from './streaks.js';
+import { makeNet, makeLobby } from './net.js';
 
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -245,14 +246,17 @@ hooks.blast = (cx, cy, cz, r, o) => {
 };
 
 // ---- the cars ----------------------------------------------------------------------------------------------------
-function addCar(load, at, rival) {
+function addCar(load, at, rival, opt) {
   const c = new Vehicle(scene, mats, load, at);
   crumple.attach(c);
-  if (rival) { c.driver = makeDriver(c); c.rival = true; c.maxHp = c.hp = Math.round(c.spec.hp * AI.hp); }
+  if (opt && opt.remote) c.remote = true;   // someone else's car, moved by what their device sends (net.js)
+  if (rival) { if (!c.remote) c.driver = makeDriver(c); c.rival = true; c.maxHp = c.hp = Math.round(c.spec.hp * AI.hp); }
   cars.push(c); makeTag(c);
   return c;
 }
-function damage(c, d, who) {
+// fwd: damage only this device works out (the dead's claws on the host, a stomp from the jump jets), so a car whose
+// owner is on another device is told it (net.js)
+function damage(c, d, who, fwd) {
   if (!c || c.dead || d <= 0 || game.state === 'menu') return;
   if (c.shield > 0) return;   // just back in (the arena's free-for-all): nothing hurts it for a moment
   if (c.shieldT > 0) { specials.shieldHit(c); return; }   // the shield gadget
@@ -261,12 +265,15 @@ function damage(c, d, who) {
   if (c.dummy) c.popAcc = (c.popAcc || 0) + d;   // the target cars show what each hit does (stepDummies)
   if (c === player && who === player) d *= 0.35;   // your own splash hurts, but less
   if (window.__dlog) window.__dlog.push([c.name, who ? who.name : (splashK ? 'boom' : 'wall'), Math.round(d * 10) / 10]);
+  // someone else's car: what hit it here only shows; it is hurt on its owner's own device, by what hit it there
+  if (c.remote) { c.hurtT = 0.25; if (fwd && net) net.hurt(c, d, who); return; }
   c.hp -= d; c.hurtT = 0.25; if (who && who !== c) c.lastBy = who;
   if (c === player && game.state !== 'garage') game.hurt = Math.min(1, (game.hurt || 0) + d / 40);
   if (c.hp <= 0) wreck(c, who);
 }
 function wreck(c, who) {
   if (c.dead) return;
+  if (net && !c.remote) net.wrecked(c, who);   // every other device wrecks its copy, put down to the same car
   c.dead = true; c.deadT = 0; c.hp = 0;
   const p = c.centre(new THREE.Vector3());
   crumple.wrecked(c, chip);   // the roof caves in, the bonnet and a panel or two blow off
@@ -376,6 +383,7 @@ function zap(c, G) {
 function stepBolts(dt) { for (const b of bolts) if (b.t > 0 && (b.t -= dt) <= 0) b.line.visible = false; }
 // the triggers: want[0] the guns, want[1] the heavy weapons
 function guns(c, dt, want, only) {
+  if (!c.remote) c.lastWant = want;   // (what the triggers are doing goes to the other devices: net.js)
   c.arcT = Math.max(0, (c.arcT || 0) - dt);
   if (c.pumpT > 0 && (c.pumpT -= dt) <= 0) sfx.play('pump', c === player ? 0.9 : 0.6, c.x, c.z);
   for (const G of c.guns) {
@@ -572,6 +580,10 @@ function stepMines(dt) {
 // Shift: the gadget. Nitro is a burst of speed; the repair kit patches the car up.
 function gadget(c) {
   const G = c.gadget; if (!G || c.dead || c.gadgetT > 0) return;
+  useGadget(c, G);
+  if (net && !c.remote && c.gadgetT > 0) net.gadget(c);   // the others see it go off too (and an oil slick is on every road)
+}
+function useGadget(c, G) {
   if (G.nitro) { c.boostT = G.nitro.time; c.gadgetT = G.nitro.every; sfx.play('nitro', 1, c.x, c.z); }
   else if (G.repair) {
     if (c.hp >= c.maxHp) { if (c === player) toast('Already in one piece', ''); return; }
@@ -595,8 +607,8 @@ function stepGadget(c, dt) {
 // ---- name tags and the HUD ---------------------------------------------------------------------------------------
 const tags = $('tags');
 function makeTag(c) {
-  if (!c.rival && !c.dummy) return;
-  const el = document.createElement('div'); el.className = c.dummy ? 'tag dummy' : 'tag';
+  if (!c.rival && !c.dummy && !c.remote) return;
+  const el = document.createElement('div'); el.className = c.dummy ? 'tag dummy' : c.remote && !c.rival ? 'tag human' : 'tag';
   el.innerHTML = `<b></b><i><s></s></i>`; el.querySelector('b').textContent = c.name; tags.appendChild(el); c.tag = el;
 }
 const _p = new THREE.Vector3();
@@ -632,7 +644,7 @@ function drawRadar() {
     if (c === player) {
       R.save(); R.translate(x, y); R.rotate(-c.yaw + Math.PI); R.fillStyle = c.dead ? '#888' : '#ffb33a';
       R.beginPath(); R.moveTo(0, -6); R.lineTo(4.5, 5); R.lineTo(-4.5, 5); R.closePath(); R.fill(); R.restore();
-    } else { R.fillStyle = c.dead ? 'rgba(140,140,140,0.6)' : '#ff4a3a'; R.beginPath(); R.arc(x, y, c.dead ? 2.2 : 3.2, 0, 7); R.fill(); }
+    } else { R.fillStyle = c.dead ? 'rgba(140,140,140,0.6)' : c.remote && !c.rival ? '#4ad6ff' : '#ff4a3a'; R.beginPath(); R.arc(x, y, c.dead ? 2.2 : 3.2, 0, 7); R.fill(); }
   }
 }
 function drawHud() {
@@ -688,8 +700,17 @@ const api = {
   get player() { return player; }, TOUCH: () => TOUCH,
   addCar, addRival, rivalBuild, RIVAL_NAMES, damage, wreck, banner, toast, hint, over, keepSave: () => keepSave(save), sound,
   makeDriver, clearLine, spawnPlayer: (at) => spawnPlayer(at),
+  get net() { return net; },
 };
+// playing online (net.js): made before the mode, which asks it how many bots to run and where its player starts
+let net = null;
 const mode = MODES[MAP.mode](api);
+net = makeNet({ cars, game, MAP, mode, api, addCar, wreck, damage, gadget, player: () => player, toast, banner, $,
+  get pickups() { return pickups; }, horde: () => mode.horde || null,
+  removeCar: (c) => { c.gone = true; c.dispose(); if (c.tag) c.tag.remove(); const i = cars.indexOf(c); if (i >= 0) cars.splice(i, 1); },
+  begin: () => { if (game.state === 'menu') startGame(); },
+  onWelcome: () => { const n = net.players.length + net.bots; $('menu-note').textContent = `${net.players.map((p) => p.name).join(', ')}${net.bots ? ` and ${net.bots} bot${net.bots === 1 ? '' : 's'}` : ''}: ${n} cars.`; },
+  noRound: () => { toast('That round is over', 'Back to the lobby'); setTimeout(() => { location.href = net.lobby(); }, 1500); } });
 // the map's pickups and hazards, if it lists any (pickups.js, hazards.js)
 const pickups = makePickups(api, MAP.pickups), hazards = makeHazards(api, MAP.hazards);
 function spawnPlayer(at) {
@@ -1020,6 +1041,7 @@ $('test-back').addEventListener('click', endTest);
 
 function openGarage(from) {
   if (game.state === 'garage' || game.state === 'test') return;
+  if (net) return;   // (an online round: the garage is open from the start card before and after it)
   initAudio();
   game.garageFrom = from; game.stateWas = game.state; game.state = 'garage';
   $('menu').hidden = true; $('dead').hidden = true; $('hint').classList.remove('on');
@@ -1102,7 +1124,10 @@ addEventListener('mousemove', (e) => {
   if (cam.locked) { const f = 1 - 0.35 * (cam.sticky || 0); cam.yaw -= e.movementX * 0.0026 * f; cam.pitch = clamp(cam.pitch + e.movementY * 0.0022 * f, 0.02, 0.75); }   // never down behind the car's back
 });
 addEventListener('wheel', (e) => { cam.dist = clamp(cam.dist + Math.sign(e.deltaY) * 3, 20, 60); }, { passive: true });
-$('go').addEventListener('click', () => { if (game.ended) chooseMap(MAP.id); else startGame(); });
+$('go').addEventListener('click', () => {
+  if (net) { initAudio(); if (game.state !== 'menu') return; if (net.begun) startGame(); else { net.ready_(); $('go').disabled = true; $('go').textContent = 'Waiting for the others...'; } return; }
+  if (game.ended) chooseMap(MAP.id); else startGame();
+});
 // the map picker on the start card: another map loads the page again on it
 {
   const box = $('maps');
@@ -1125,11 +1150,21 @@ $('go').addEventListener('click', () => { if (game.ended) chooseMap(MAP.id); els
     show();
   }
 }
-$('over-go').addEventListener('click', () => chooseMap(MAP.id));
+$('over-go').addEventListener('click', () => { if (net) { net.bye(); location.href = net.lobby(); } else chooseMap(MAP.id); });
 $('over-more').addEventListener('click', overGo);
 $('over-maps').addEventListener('click', () => { $('over').hidden = true; game.ended = true; $('go').textContent = 'Play again'; $('menu').hidden = false; });
 $('over-garage').addEventListener('click', () => { $('over').hidden = true; game.ended = true; $('go').textContent = 'Play again'; openGarage('over'); });
 $('menu-garage').addEventListener('click', () => openGarage('menu'));
+// online (net.js): in a round, the start card is a Ready button for it; otherwise it has the lobby (Play online, With friends)
+if (net) {
+  document.body.classList.add('online');
+  for (const id of ['maps', 'levels', 'menu-garage', 'map-blurb', 'over-maps', 'over-garage']) $(id).hidden = true;
+  $('go').textContent = "I'm ready"; $('menu-note').textContent = 'Joining the round...';
+  $('over-go').textContent = 'Back to the lobby';
+} else {
+  const lobby = makeLobby({ $, MAP, onOpen: () => { $('menu').classList.add('lobby-on'); }, onShut: () => { $('menu').classList.remove('lobby-on'); } });
+  window.__lobby = lobby;
+}
 $('dead-garage').addEventListener('click', () => openGarage('dead'));
 $('dead-go').addEventListener('click', () => { if (game.state === 'dead') game.deadT = 0; });
 // touch: drag to turn the car in the garage
@@ -1312,23 +1347,35 @@ function frame(now) {
   step(dt);
   quality.judge(now); placeSky(); quality.draw();
 }
+// Online, a hidden tab gets no frames: the host's bots (and horde) would stand still for everyone. So while the page is
+// hidden in an online round, a worker's clock steps the game (without drawing it); a worker's timer is not slowed the way
+// the page's own are.
+if (net) {
+  let at = 0;
+  try {
+    const w = new Worker(URL.createObjectURL(new Blob(['setInterval(() => postMessage(0), 50)'], { type: 'text/javascript' })));
+    w.onmessage = () => { const now = performance.now(); if (!document.hidden || window.__hold) { at = now; return; } const dt = Math.min(0.1, (now - (at || now)) / 1000); at = now; if (dt > 0) step(dt); };
+  } catch (e) { /* no workers: a hidden host just waits */ }
+}
 function step(dt) {
   game.time += dt; newFrame();
   const live = game.state === 'play' || game.state === 'dead' || game.state === 'over', test = game.state === 'test';
   if (MAP.step) MAP.step(dt);
+  if (net) net.step(dt);
   if (live || test) {
     drivePlayer(dt);
     // (a test drive moves only the player and the target cars in the yard; the round waits)
     const on = (c) => !c.gone && (live || c === player || c.dummy);
-    if (live) for (const c of cars) if (c.driver) { c.driver.think(dt, cars, player); guns(c, dt, c.dead ? [] : c.fire || []); if (c.useGadget) gadget(c); }
-    for (const c of cars) if (on(c)) { c.hurtT -= dt; if (c.dead) c.deadT += dt; stepGadget(c, dt); c.step(dt, crashHooks); parked(c, dt); saws(c, dt); blades(c, dt); specials.exhaust(c, dt); }
+    if (live) for (const c of cars) if (c.driver) { c.driver.think(dt, cars, player); guns(c, dt, c.dead ? [] : c.fire || []); if (c.useGadget) gadget(c); } else if (c.remote) guns(c, dt, c.dead ? [] : c.want);
+    for (const c of cars) if (on(c) && c.remote) { c.hurtT -= dt; if (c.dead) c.deadT += dt; net.drive(c, dt); stepGadget(c, dt); saws(c, dt); blades(c, dt); specials.exhaust(c, dt); }
+    for (const c of cars) if (on(c) && !c.remote) { c.hurtT -= dt; if (c.dead) c.deadT += dt; stepGadget(c, dt); c.step(dt, crashHooks); parked(c, dt); saws(c, dt); blades(c, dt); specials.exhaust(c, dt); }
     stepMines(dt); stepBolts(dt); drifts.step(dt, cars, player);
     for (let i = 0; i < cars.length; i++) for (let j = i + 1; j < cars.length; j++) if (on(cars[i]) && on(cars[j])) bump(cars[i], cars[j]);
     // wrecks lie a while, then crumble away (the target cars come back on their own: stepDummies)
     for (let i = cars.length - 1; i >= 0; i--) {
       const c = cars[i]; if (c.dummy || !on(c)) continue;
       if (c.dead && !c.gone && c.deadT > ROUND.wreckStays) { c.unit.burst(cube, null, 6, 0.2); c.gone = true; }
-      if (c.gone && c !== player) { c.dispose(); if (c.tag) c.tag.remove(); cars.splice(i, 1); }
+      if (c.gone && c !== player) { if (net) net.forget(c); c.dispose(); if (c.tag) c.tag.remove(); cars.splice(i, 1); }
     }
     if (test) stepTest(dt);
     if (game.state === 'dead') {
@@ -1391,4 +1438,4 @@ followSun(player.x, player.z);
 const loadEl = $('loading'); if (loadEl) loadEl.hidden = true;
 $('menu').hidden = false;
 requestAnimationFrame((t) => { last = t; frame(t); });
-window.__derby = { specials, crumple, cube, room, gcam, garageLight, startTest, endTest, tryPart: (s, k) => onTry(s, k), dummies, renderer, mapLook, touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, sfx, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop };
+window.__derby = { net, specials, crumple, cube, room, gcam, garageLight, startTest, endTest, tryPart: (s, k) => onTry(s, k), dummies, renderer, mapLook, touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, sfx, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop };

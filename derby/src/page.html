@@ -113,6 +113,31 @@ button.alt:hover { background: rgba(255,255,255,0.16); }
 .levels button { pointer-events: auto; padding: 5px 14px; border-radius: 6px; border: 2px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.06); color: var(--ink); cursor: pointer; font: 900 italic 14px 'Trebuchet MS', system-ui, sans-serif; text-transform: uppercase; }
 .levels button.on { border-color: var(--hot); background: rgba(255,179,58,0.16); }
 .levels button:hover { background: rgba(255,255,255,0.12); }
+/* online (net.js): the row under Start, and the room's panel in place of the card's middle while it is open */
+#online { margin: 16px auto 0; padding-top: 12px; border-top: 1px solid var(--edge); max-width: 520px; }
+#online[hidden], #lobby[hidden], #lb-modes[hidden], #lb-start[hidden] { display: none; }
+#online .on-row { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; align-items: center; }
+#online input { pointer-events: auto; font: 600 15px system-ui, sans-serif; color: var(--ink); background: rgba(0,0,0,0.35); border: 2px solid rgba(255,255,255,0.25); border-radius: 6px; padding: 7px 9px; width: 130px; }
+#online input#on-code { width: 70px; text-transform: uppercase; letter-spacing: 0.15em; }
+#online button.alt { font-size: 15px; padding: 8px 14px; }
+#online .on-l { font-size: 12px; opacity: 0.7; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.08em; }
+#lobby { margin: 12px auto 0; padding: 12px; border-radius: 10px; background: rgba(0,0,0,0.38); border: 1px solid var(--edge); }
+#lb-title { font: 900 italic 22px 'Trebuchet MS', system-ui, sans-serif; text-transform: uppercase; }
+#lb-title .code { color: var(--hot); letter-spacing: 0.12em; }
+#lb-sub { font-size: 13px; opacity: 0.8; margin: 4px 0 10px; }
+#lb-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-bottom: 10px; }
+.lb-p { font: 700 13px system-ui, sans-serif; padding: 6px 4px; border-radius: 6px; background: rgba(74,214,255,0.16); border: 1px solid rgba(74,214,255,0.5); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb-p.me { background: rgba(255,179,58,0.2); border-color: var(--hot); }
+.lb-p.bot { background: rgba(255,255,255,0.04); border: 1px dashed rgba(255,255,255,0.25); opacity: 0.6; font-weight: 400; }
+.lb-p.out { opacity: 0.45; }
+#lb-modes { display: flex; gap: 6px; justify-content: center; margin-bottom: 10px; }
+#lb-modes button { pointer-events: auto; padding: 5px 12px; border-radius: 6px; border: 2px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.06); color: var(--ink); cursor: pointer; font: 900 italic 13px 'Trebuchet MS', system-ui, sans-serif; text-transform: uppercase; }
+#lb-modes button.on { border-color: var(--hot); background: rgba(255,179,58,0.16); }
+#lobby .row button.alt { font-size: 14px; padding: 7px 14px; } #lobby .row button.go { font-size: 20px; padding: 9px 26px; }
+#menu.lobby-on .maps, #menu.lobby-on .map-blurb, #menu.lobby-on .levels, #menu.lobby-on .keys, #menu.lobby-on > div > .row, #menu.lobby-on .on-row, #menu.lobby-on .on-l { display: none; }
+.tag.human b { font-size: 15px; color: #0d1a22; background: #4ad6ff; padding: 1px 8px; border-radius: 6px; text-shadow: none; display: inline-block; }
+.tag.human s { background: #4ad6ff; }
+button:disabled { opacity: 0.6; cursor: default; }
 @media (max-width: 560px) { .maps { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; } }
 #over b.t { display: block; font-size: clamp(44px, 9vw, 70px); color: var(--hot); font-weight: 900; font-style: italic; text-transform: uppercase; -webkit-text-stroke: 2px #2a1a0a; }
 #over-l { font-size: 17px; margin-top: 10px; line-height: 1.6; }
@@ -330,6 +355,16 @@ body.in-test #tags .tag:not(.dummy), body.in-garage #tags .tag:not(.dummy) { dis
   </div>
   <div class="row"><button class="alt" id="menu-garage">Garage</button><button class="go" id="go">Start the brawl</button></div>
   <div class="note" id="menu-note"></div>
+  <div id="online" hidden>
+    <div class="on-l">Play online</div>
+    <div class="on-row"><input id="on-name" maxlength="16" placeholder="Your name" aria-label="Your name"><button class="alt" id="on-quick">Play online</button><button class="alt" id="on-new">With friends</button><input id="on-code" maxlength="4" placeholder="Code" aria-label="Room code"><button class="alt" id="on-join">Join</button></div>
+    <div id="lobby" hidden>
+      <div id="lb-title"></div><div id="lb-sub"></div>
+      <div id="lb-modes" hidden></div>
+      <div id="lb-list"></div>
+      <div class="row"><button class="alt" id="lb-leave">Leave</button><button class="alt" id="lb-copy">Copy link</button><button class="go" id="lb-start" hidden>Start</button></div>
+    </div>
+  </div>
   <div class="note rotate">Turn your phone sideways for the widest view</div>
 </div></div>
 <div id="garage" hidden>

@@ -22,6 +22,12 @@ const clock = (s) => { s = Math.max(0, Math.ceil(s)); return `${Math.floor(s / 6
 
 export function makeBrawl(G) {
   const LIMIT = ROUND.timeLimit || BRAWL.time;
+  // online (net.js): the players' cars are the other devices' puppets, and the host's device runs the bots that fill
+  // the rest; each device counts the wrecks as they are reported, so every scoreboard agrees
+  // (asked when the round starts: the relay's welcome has come by then)
+  const NET = () => G.net, CARS = () => (G.net ? G.net.players.length + G.net.bots : BRAWL.rivals + 1);
+  // the seats' spots, spread round the pit: each player's, then the bots'
+  const seatAt = (k) => { const S = G.MAP.spots; if (!S || !S.length) return null; const p = S[[0, 3, 7, 6, 1, 4, 8, 5][k % 8] % S.length]; return { x: p.x, z: p.z, yaw: p.yaw }; };
   let phase = 'wait', left = LIMIT, you = null, warned = 0;
   const rows = new Map();     // name -> { name, me, wrecks, deaths }
   const back = [];            // wrecked rivals waiting to come back: { load, t }
@@ -54,9 +60,13 @@ export function makeBrawl(G) {
     go: 'Start the match',
     note: 'Free-for-all: you and seven rival cars in the pit for three minutes, everyone against everyone. Wrecked cars are back in three seconds. Most wrecks wins.',
     start() {
-      G.hint(null); phase = 'run'; left = LIMIT; warned = 0;
+      const net = NET(), RIVALS = net ? (net.host ? net.bots : 0) : BRAWL.rivals;
+      G.hint(null); phase = 'run'; left = LIMIT - (net && net.lateBy ? net.lateBy : 0); warned = 0;
       you = G.player; row('You', true); if (you) shield(you);
-      for (let i = 0; i < BRAWL.rivals; i++) { const c = G.addRival(BRAWL.tiers[i % BRAWL.tiers.length]); row(c.name); shield(c); }
+      const humans = net ? net.players.length : 1;
+      if (net && you) { const at = seatAt(net.slot); if (at) { you.x = at.x; you.z = at.z; you.yaw = at.yaw; you.gunYaw = at.yaw; } }
+      for (let i = 0; i < RIVALS; i++) { const c = G.addRival(BRAWL.tiers[i % BRAWL.tiers.length], net ? seatAt(humans + i) : undefined); row(c.name); shield(c); }
+      for (const c of G.cars) if (c.remote) row(c.name);
       G.banner('Free-for-all', `${clock(LIMIT)} on the clock. Most wrecks wins`);
     },
     step(dt) {
@@ -96,13 +106,16 @@ export function makeBrawl(G) {
         else if (!who) G.toast(`${by.name} wrecked ${c.name}`, '');
       }
       c.deadT = Math.max(c.deadT, ROUND.wreckStays - BRAWL.wreckLies);
-      if (c.rival) back.push({ load: c.load, t: BRAWL.respawn });
+      if (c.rival && !c.remote) back.push({ load: c.load, t: BRAWL.respawn });
     },
+    // online: someone else's car joined (or came back from a wreck), and a bot taken over when the host left
+    netCar(c) { if (phase !== 'wait') row(c.name); },
+    adopt(c) { if (c.dead) back.push({ load: c.load, t: BRAWL.respawn }); else c.driver = G.makeDriver(c); },
     playerDown: () => ({ respawn: BRAWL.respawn, noGarage: true, noSkip: true }),
     respawnAt: () => freeSpot(),
     rivalSpawn: () => freeSpot(),
     hud() {
-      if (phase === 'wait') return ['Free-for-all', `${BRAWL.rivals + 1} cars · ${clock(LIMIT)}`, ['Wrecks', 0]];
+      if (phase === 'wait') return ['Free-for-all', `${CARS()} cars · ${clock(LIMIT)}`, ['Wrecks', 0]];
       const me = rows.get('You'), order = ranked(), lead = order[0], level = order.filter((r) => r.wrecks === lead.wrecks).length;
       const sub = !lead.wrecks ? 'No wrecks yet' : me.wrecks < lead.wrecks ? `${ord(placeOf(me))} · ${lead.name} leads with ${lead.wrecks}`
         : level > 1 ? `Joint lead on ${lead.wrecks}` : `You lead with ${lead.wrecks}`;

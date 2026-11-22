@@ -133,14 +133,18 @@ export function makeRace(G) {
     return { lamps, mats, set(n, mat) { lamps.forEach((m, k) => { m.material = k < n ? mats[mat] : mats.off; }); } };
   }
 
-  function grab(r) { if (r.car.dead) return; const c = r.car, s = r.slot; c.x = s.x; c.z = s.z; c.yaw = s.yaw; c.vx = c.vz = 0; c.yawRate = 0; }
+  function grab(r) { if (r.car.dead || r.car.remote) return; const c = r.car, s = r.slot; c.x = s.x; c.z = s.z; c.yaw = s.yaw; c.vx = c.vz = 0; c.yawRate = 0; }
   function holdGuns(c) { for (const g of c.guns) { g.t = Math.max(g.t, 0.3); g.left = 0; } c.boostT = 0; }
 
   function startRace() {
     // the rivals take the other slots on the grid, in cars tuned to the player's (the quickest at the front)
     LV = RACE.levels[levelId()];
     const me = G.player.spec, near = (PARTS.body[G.player.load.body] || PARTS.body.scrapper).top;
-    const slots = [0, 1, 2, 3, 5];
+    // online (net.js): the players take the back of the grid in the order they came, and the host's device runs bots
+    // in the rest; the other players' cars are puppets, raced by their own devices, which say how many gates they passed
+    const NET = G.net, ORDER = [4, 3, 5, 2, 1, 0];
+    const mine = NET ? ORDER[NET.slot % 6] : 4, people = NET ? NET.players.map((p) => ORDER[p.slot % 6]) : [4];
+    const slots = NET ? (NET.host ? [0, 1, 2, 3, 5, 4].filter((k) => !people.includes(k)).slice(0, NET.bots) : []) : [0, 1, 2, 3, 5];
     slots.forEach((k, n) => {
       const share = LV.speed * (1 + RACE.spread[n]);
       const c = G.addRival(racerBuild(me.top * share, near), { ...grid[k] });
@@ -149,7 +153,8 @@ export function makeRace(G) {
       c.driver = racer(c, { pace: between(LV.pace), grip: between(LV.grip) });
       join(c, c.name, false, grid[k]).tune = t;
     });
-    join(G.player, 'You', true, grid[4]);
+    join(G.player, 'You', true, grid[mine]);
+    for (const c of G.cars) if (c.remote && !c.dead && !byCar.has(c)) join(c, c.name, false, null).remote = true;
     for (const r of recs) grab(r);
     phase = 'count'; countT = COUNT; shown = COUNT + 1;
     lights = lights || makeLights();
@@ -198,6 +203,7 @@ export function makeRace(G) {
       if (lightsT > 0 && (lightsT -= dt) <= 0) lights.set(0, 'off');
       for (const r of recs) {
         const c = r.car;
+        if (r.remote) { if (!c.dead) { locate(r, false); r.progress = progressOf(r); } continue; }   // (raced on its own device: netTake)
         if (c.dead) {
           // a wrecked rival comes back at its last gate (the player comes back through main.js, at respawnAt)
           if (!r.me && (r.downT -= dt) <= 0) {
@@ -275,14 +281,32 @@ export function makeRace(G) {
     resetPlayer() { const r = recs.find((o) => o.me); if (r && phase === 'race' && !r.car.dead && (r.lostT > 0.6 || r.wrongT > 0.8 || r.lat > WL(r.i) + 6 || -r.lat > WR(r.i) + 6)) reset(r); },
     hud() {
       const me = recs.find((r) => r.me), n = recs.length || 6;
-      if (phase === 'grid') return ['Race', `${LAPS} laps · 6 cars · ${LV.name}`];
-      if (phase === 'count') return ['Get ready', `${ord(5)} on the grid`];
+      if (phase === 'grid') return ['Race', `${LAPS} laps · 6 cars · ${G.net ? 'online' : LV.name}`];
+      if (phase === 'count') return ['Get ready', G.net ? `${n} cars on the grid` : `${ord(5)} on the grid`];
       if (!me) return ['Race', ''];
       if (me.finished) return ['Finished', `${ord(me.place)} of ${n}`];
       const lap = Math.min(LAPS, Math.floor(me.passed / NG) + 1), closing = closeT >= 0 ? ` · ends in ${Math.ceil(closeT)}` : '';
       return [`Lap ${lap}/${LAPS}`, `${ord(place(me))} of ${n} · ${clock(raceT - me.lapT0)}${closing}${me.draft > 0.3 ? ' · Tow!' : ''}`];
     },
     garageOK: () => false,
+    // online: what each car's device says about it (gates passed, its finishing time), and someone else's car coming in
+    netState(c) { const r = byCar.get(c); return r ? [r.passed, r.finished ? Math.round(r.finishT * 100) / 100 : 0] : 0; },
+    netTake(c, ex) {
+      const r = byCar.get(c); if (!r || !Array.isArray(ex)) return;
+      r.passed = Math.max(r.passed, ex[0]);
+      if (ex[1] && !r.finished) { r.finished = true; r.finishT = ex[1]; r.place = ++finishers; if (closeT < 0) closeT = CLOSE; if (phase === 'race') G.toast(`${r.name} finished ${ord(r.place)}`, clock(r.finishT)); }
+    },
+    netCar(c, was) {
+      if (phase === 'grid') return;
+      const r = was && byCar.get(was);
+      if (r) { r.car = c; byCar.set(c, r); r.i = -1; locate(r, true); }
+      else join(c, c.name, false, null).remote = true;
+    },
+    adopt(c) {
+      const r = byCar.get(c); if (!r) return;
+      r.remote = false; r.downT = RESPAWN;
+      if (!c.dead) c.driver = racer(c, { pace: between(LV.pace), grip: between(LV.grip) });
+    },
     // the radar: the player's next gate, blinking
     radar(R, s, ox, oy) {
       const me = recs.find((r) => r.me); if (!me || me.finished || phase === 'grid') return;

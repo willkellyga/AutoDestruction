@@ -263,7 +263,7 @@ export function makeSpecials({ scene, fx, sfx, cars, extras, player, damage, bla
       const dx = (c.x + Math.sin(c.yaw) * c.mid) - (o.x + Math.sin(o.yaw) * o.mid), dz = (c.z + Math.cos(c.yaw) * c.mid) - (o.z + Math.cos(o.yaw) * o.mid);
       if (Math.hypot(dx, dz) > Math.max(o.half, o.wide) * 0.9 + c.wide * 0.5) continue;
       const hard = Math.abs(c.vy);
-      if (!friendly() || o.dummy) damage(o, 18 + hard * 0.9 * (c.spec.mass || 1), c);
+      if (!friendly() || o.dummy) damage(o, 18 + hard * 0.9 * (c.spec.mass || 1), c, true);   // (true: a car driven on another device is told: net.js)
       _p.set(o.x + Math.sin(o.yaw) * o.mid, o.top, o.z + Math.cos(o.yaw) * o.mid);
       o.unit.hit(_p, 2.4, chip, 10);
       sparks(_p.x, _p.y, _p.z, 18, 1, 0.8, 0.4, 24);

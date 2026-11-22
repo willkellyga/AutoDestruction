@@ -253,6 +253,11 @@ export function makeHorde(G, o = {}) {
   const all = [];   // the living, in no order
   const H_ = { all, max: MAX, strength: { speed: 1, dmg: 1 }, active: true, killed: 0, byPlayer: 0, spawned: 0, ms: 0, tris: looks.map((l) => l.tris), farTris: looks.map((l) => l.farTris), near: 0 };
   let seq = 0;
+  // Online (net.js): the host's device runs the horde and sends each other device the dead near its car; there the
+  // horde is a puppet (o.puppet), drawn where the host says. Shots and blasts still strike them there (for the blood),
+  // but they are hurt on the host's device, where the same shots fly. `deaths`: who died since the host last sent.
+  H_.puppet = !!o.puppet; H_.deaths = [];
+  const byId = new Map();
   function centre(out) { return out.set(this.x, this.y + 3.6 * this.size, this.z); }
 
   // ---- coming in ----
@@ -260,7 +265,8 @@ export function makeHorde(G, o = {}) {
   // drop: it climbs over the wall, so it starts on top of it and drops down
   H_.spawn = (x, z, opt = {}) => {
     if (all.length >= MAX) return null;
-    const id = seq++, look = opt.look ?? (id % 3);
+    const id = opt.id ?? seq++, look = opt.look ?? (id % 3);
+    if (id >= seq) seq = id + 1;
     const sp = opt.speed ?? (HORDE.speed[0] + hash(id, 1, 2, 9) * (HORDE.speed[1] - HORDE.speed[0]));
     const z_ = {
       id, look, x, z, y: opt.drop ? 9.5 : 0, vx: 0, vz: 0, vy: 0, yaw: opt.yaw ?? Math.random() * 6.283, hp: HORDE.hp,
@@ -270,7 +276,7 @@ export function makeHorde(G, o = {}) {
       half: 1, centre,   // for main.js's aim assist (a mode's targets): its size and where its middle is
     };
     if (opt.drop && opt.in) { z_.vx = opt.in.x * 7; z_.vz = opt.in.z * 7; }
-    all.push(z_); H_.spawned++;
+    all.push(z_); byId.set(id, z_); H_.spawned++;
     return z_;
   };
 
@@ -321,7 +327,8 @@ export function makeHorde(G, o = {}) {
   let puffT = -1, heat = 0;   // heat: how many splats lately (a car through a crowd throws fewer cubes for each)
   function splat(z, by, dx = 0, dz = 0, push = 10) {
     if (z.dead) return;
-    z.dead = true; H_.killed++; heat++;
+    z.dead = true; H_.killed++; heat++; byId.delete(z.id);
+    if (!H_.puppet) H_.deaths.push(z.id, Math.round(dx), Math.round(dz), Math.round(push));
     if (by && by === G.player) { H_.byPlayer++; G.game.scrap += HORDE.scrap; }
     if (o.onKill) o.onKill(z, by);
     // fly apart into cubes, thrown the way the blow went
@@ -339,7 +346,7 @@ export function makeHorde(G, o = {}) {
     G.sfx.play('crunch', 0.32, z.x, z.z, { gap: 0.05, rate: 1.35, jitter: 0.12 });
     G.sound('bite', 0.35, z.x, 2, z.z);
   }
-  function hurt(z, d, by, dx, dz, push) { z.hp -= d; if (by) z.by = by; if (z.hp <= 0) splat(z, by || z.by, dx, dz, push); }
+  function hurt(z, d, by, dx, dz, push) { if (H_.puppet) { z.L = Math.max(z.L, 0.6); return; } z.hp -= d; if (by) z.by = by; if (z.hp <= 0) splat(z, by || z.by, dx, dz, push); }
   // knocked flying (by a car, a blast, or thrown off a car)
   function fling(z, vx, vz, vy, by) {
     z.state = 'down'; z.t = 0; z.car = null; z.vx = vx; z.vz = vz; z.vy = vy; z.by = by || z.by; z.y = Math.max(z.y, 0.1);
@@ -394,7 +401,7 @@ export function makeHorde(G, o = {}) {
   function claw(z, c) {
     z.clawT = HORDE.clawT * (0.8 + Math.random() * 0.45); z.L = 1;
     const n = at_.get(c) || 1;
-    G.damage(c, HORDE.claw * H_.strength.dmg * Math.min(1, HORDE.crowd / n), null);
+    G.damage(c, HORDE.claw * H_.strength.dmg * Math.min(1, HORDE.crowd / n), null, true);   // (true: a car driven on another device is told: net.js)
     // the claws take a little paint and metal off where it hangs on (a few times a second at most: each one rebuilds
     // part of the car's model, and a big crowd claws a lot; the rivals' cars less often than the player's)
     if (G.game.time > (c.zChipT || 0)) { c.zChipT = G.game.time + (c === G.player ? 0.3 : 0.7); _p.set(z.x, 2 + Math.random() * 2.5, z.z); c.unit.hit(_p, 0.45, G.chip, 4); }
@@ -404,6 +411,7 @@ export function makeHorde(G, o = {}) {
   // ---- each frame ----
   const _q = new THREE.Vector3();
   H_.step = (dt) => {
+    if (H_.puppet) { puppetStep(dt); return; }
     const t0 = performance.now(), cars = G.cars;
     const live = cars.filter((c) => !c.dead && !c.gone);
     if ((fieldT -= dt) <= 0) { fieldT = 0.35; field(live); }
@@ -611,6 +619,7 @@ export function makeHorde(G, o = {}) {
     return true;
   };
   H_.explosion = (x, y, z, reach, base, by) => {
+    if (H_.puppet) return;
     if (by && by.rival) base *= HORDE.rivalGun / AI.dmg;
     for (const q of all) {
       if (q.dead) continue;
@@ -651,5 +660,70 @@ export function makeHorde(G, o = {}) {
     for (const q of all) if (!q.dead) Rd.fillRect(ox + q.x * s - w / 2, oy + q.z * s - w / 2, w, w);
   };
   H_.splat = splat;
+
+  // ---- online: what the host sends, and the puppet horde that shows it ----
+  const ST = ['walk', 'lunge', 'claw', 'cling', 'down', 'drop'], CODE = Object.fromEntries(ST.map((s, i) => [s, i]));
+  const q1 = (v) => Math.round(v * 10) / 10, q2 = (v) => Math.round(v * 100) / 100;
+  // the dead near car c (and every one hanging on to it), for the device that drives it: 10 numbers each
+  H_.pack = (c, range) => {
+    const ids = [], ref = new Map(), z = [];
+    const refOf = (car) => { if (!car || !car.nid) return -1; let k = ref.get(car); if (k === undefined) { k = ids.length; ids.push(car.nid); ref.set(car, k); } return k; };
+    for (const q of all) {
+      if (q.dead) continue;
+      const near = Math.abs(q.x - c.x) < range && Math.abs(q.z - c.z) < range;
+      if (!near && q.car !== c) continue;
+      const k = (q.state === 'cling' || q.state === 'claw') ? refOf(q.car) : -1;
+      z.push(q.id, q1(q.x), q1(q.z), q2(q.yaw), q1(q.y), CODE[q.state] ?? 0, q2(q.fall), k, q1(q.lx), q1(q.lz));
+    }
+    return { cars: ids, z, cl: hold(c), n: all.length };
+  };
+  H_.take = (m, net) => {
+    if (!H_.puppet) return;
+    const seen = new Set(), Z = m.z, now = performance.now();
+    for (let i = 0; i < Z.length; i += 10) {
+      const id = Z[i]; seen.add(id);
+      let q = byId.get(id);
+      if (!q) { q = H_.spawn(Z[i + 1], Z[i + 2], { id, yaw: Z[i + 3] }); if (!q) continue; q.y = Z[i + 4]; }
+      const st = ST[Z[i + 5]] || 'walk', car = Z[i + 7] >= 0 ? net.carById(m.cars[Z[i + 7]]) : null;
+      if (q.tx !== undefined && q.at) { const g = Math.max(0.05, (now - q.at) / 1000); q.evx = (Z[i + 1] - q.tx) / g; q.evz = (Z[i + 2] - q.tz) / g; }
+      q.tx = Z[i + 1]; q.tz = Z[i + 2]; q.tyaw = Z[i + 3]; q.ty = Z[i + 4]; q.state = st; q.tfall = Z[i + 6]; q.car = car; q.lx = Z[i + 8]; q.lz = Z[i + 9]; q.at = now;
+    }
+    // the ones that died go to pieces (first: they are not in the list any more), then the ones out of reach go quietly
+    const D = m.d || [];
+    for (let i = 0; i < D.length; i += 4) { const q = byId.get(D[i]); if (q) splat(q, null, D[i + 1], D[i + 2], D[i + 3]); }
+    for (let i = all.length - 1; i >= 0; i--) { const q = all[i]; if (!seen.has(q.id)) { byId.delete(q.id); all[i] = all[all.length - 1]; all.pop(); } }
+    for (let i = all.length - 1; i >= 0; i--) if (all[i].dead) { all[i] = all[all.length - 1]; all.pop(); }
+    H_.cling = m.cl || 0;
+  };
+  function puppetStep(dt) {
+    const k = 1 - Math.exp(-10 * dt), P = G.player;
+    for (const q of all) {
+      if (q.dead || q.tx === undefined) continue;
+      q.L = Math.max(0, q.L - dt * 3);
+      if (q.state === 'cling' && q.car && !q.car.gone) {
+        const c = q.car, s = Math.sin(c.yaw), co = Math.cos(c.yaw);
+        q.x = c.x + q.lx * co + q.lz * s; q.z = c.z - q.lx * s + q.lz * co; q.y = 0; q.vx = c.vx; q.vz = c.vz;
+        q.yaw = Math.atan2(c.x + c.mid * s - q.x, c.z + c.mid * co - q.z); q.phase += dt * 9; q.fall = 0;
+        continue;
+      }
+      const age = Math.min(0.3, (performance.now() - q.at) / 1000), ex = q.evx || 0, ez = q.evz || 0;
+      const wx = q.tx + ex * age, wz = q.tz + ez * age, ox = q.x, oz = q.z;
+      if (Math.hypot(wx - q.x, wz - q.z) > 30) { q.x = wx; q.z = wz; } else { q.x += (wx - q.x) * k; q.z += (wz - q.z) * k; }
+      q.vx = (q.x - ox) / Math.max(dt, 1e-3); q.vz = (q.z - oz) / Math.max(dt, 1e-3);
+      q.y += (q.ty - q.y) * k; q.fall += (q.tfall - q.fall) * k;
+      q.yaw += wrap(q.tyaw - q.yaw) * k;
+      if (q.state === 'lunge') q.L = 1;
+      q.phase += dt * Math.hypot(q.vx, q.vz) * 1.25;
+    }
+    // the ones hanging on to this device's own car drag it down here, where it is driven
+    if (P && !P.dead && H_.cling) { const e = Math.exp(-HORDE.drag * H_.cling * dt); P.vx *= e; P.vz *= e; }
+    grid(); draw();
+  }
+  // the host left and this device hosts now: the horde runs here, from where it stands
+  H_.adopt = () => {
+    if (!H_.puppet) return;
+    H_.puppet = false;
+    for (const q of all) { q.entry = null; q.hp = HORDE.hp; q.t = 0; if (q.state === 'cling' && !q.car) q.state = 'walk'; q.holdT = q.holdT || 1; }
+  };
   return H_;
 }

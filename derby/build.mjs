@@ -11,7 +11,9 @@ mkdirSync(out, { recursive: true }); mkdirSync(root + 'dist', { recursive: true 
 // New York is a world of its own (src/world.js reads __NYC__ as it loads): the race is on it, the other maps are not, so
 // __NYC__ is a flag set as the page starts (src/flags.js) rather than fixed here. The meshing worker learns it from
 // its name, which flags.js gives it.
-const define = { __STUDIO__: 'false', __TILES__: '1', __CITY__: 'false', __PARIS__: 'false', __NYC__: 'globalThis.__DERBY_NYC__', __TOKYO__: 'false', __CAIRO__: 'false', __DC__: 'false' };
+const define = { __STUDIO__: 'false', __TILES__: '1', __CITY__: 'false', __PARIS__: 'false', __NYC__: 'globalThis.__DERBY_NYC__', __TOKYO__: 'false', __CAIRO__: 'false', __DC__: 'false', __AD_SERVER__: JSON.stringify(process.env.AD_SERVER || '') };
+// (AD_SERVER: a wss://.../ws address for a copy of the page served from somewhere else, so it can still play online;
+// left out, the page plays online only when it came from the game's own server: derby/server)
 await build({ entryPoints: [root + 'src/mesh-worker.js'], bundle: true, minify: true, format: 'iife', outfile: root + 'dist/mesh-worker.wtxt', alias: { three: root + 'src/three-worker-stub.js' }, define, banner: { js: "self.__DERBY_NYC__ = /mm-map=nyc/.test(self.name || '');" }, logLevel: 'warning' });
 const r = await build({ entryPoints: [here + 'src/main.js'], bundle: true, minify: !process.env.NOMIN, format: 'iife', write: false, define, loader: { '.wtxt': 'text', '.mp3': 'binary', '.wav': 'binary' }, logLevel: 'warning' });
 let js = r.outputFiles[0].text.replace(/<\/script/g, '<\\/script');

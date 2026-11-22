@@ -51,7 +51,8 @@ export function makeSurvival(G) {
   const near = { t: -1, list: [] };
   let horde = null, phase = 'wait', countT = 0, clock = 0, owed = 0, breached = false, out = null;
   // keeping going after the win: when it was won, the time paid for so far, the best before this round, the scrap then
-  let overtime = false, wonAt = 0, paidT = 0, best0 = 0, scrap0 = 0;
+  let overtime = false, wonAt = 0, paidT = 0, best0 = 0, scrap0 = 0, mineOver = false;
+  const carsIn = () => (G.net ? G.net.players.length + G.net.bots : S.rivals + 1);
   const held = new Map();
   const bests = () => (G.save.survivalBest && typeof G.save.survivalBest === 'object' ? G.save.survivalBest : (G.save.survivalBest = {}));
   const bestOf = () => +bests()[MAP.id] || 0;
@@ -127,18 +128,19 @@ export function makeSurvival(G) {
     G.banner('The horde breaks through', 'The walls are down. Keep moving.');
     G.sound('alarm', 1); G.sfx.play('bigboom', 0.9);
     if (MAP.breach) gates = gates.concat(MAP.breach(G) || []);
-    for (let i = 0; i < S.surge; i++) { const g = pick(gates); horde.spawn(g.out.x + (Math.random() - 0.5) * 20, g.out.z + (Math.random() - 0.5) * 20, { entry: g.entry, speed: Math.random() < S.runners[0] ? HORDE.runner : undefined }); }
+    for (let i = 0; i < (horde.puppet ? 0 : S.surge); i++) { const g = pick(gates); horde.spawn(g.out.x + (Math.random() - 0.5) * 20, g.out.z + (Math.random() - 0.5) * 20, { entry: g.entry, speed: Math.random() < S.runners[0] ? HORDE.runner : undefined }); }
   }
   // how this round's time stands against the best before it (the first round here sets one)
   const bestLine = (beat) => (!best0 ? `Your best to beat: ${clockText(clock)}` : beat ? `New best time! (the old one was ${clockText(best0)})` : `Best: ${clockText(best0)} (${clockText(best0 - clock)} short)`);
   // the round is over: a card with how it went. A win holds the round (the clock stops, the dead stop clawing) and
   // offers to keep going
   function finish(won) {
-    if (phase === 'done' || phase === 'won') return;
+    if (phase === 'done' || phase === 'won' || mineOver) return;
     if (overtime) { finishOvertime(); return; }
-    phase = won ? 'won' : 'done'; horde.active = false;
+    // online: the round goes on for the others (and the host's device runs the horde), so it is only over here
+    if (G.net) mineOver = true; else { phase = won ? 'won' : 'done'; horde.active = false; }
     // (the player and the last rival can go down in the same moment: they share first)
-    const place = won ? 1 : live().filter((c) => c !== G.player).length + 1, total = S.rivals + 1, tie = !won && place === 1;
+    const place = won ? 1 : live().filter((c) => c !== G.player).length + 1, total = carsIn(), tie = !won && place === 1;
     const bonus = S.place[place - 1] || 0, timeScrap = Math.round(clock / 60 * S.perMinute);
     const beat = clock > best0; keepBest();
     const lines = [
@@ -149,7 +151,7 @@ export function makeSurvival(G) {
     ];
     out = { won, place, time: clock, zombies: horde.byPlayer, bonus, timeScrap, best: beat };
     wonAt = paidT = clock;
-    G.over(won ? 'Last car standing!' : tie ? 'Out together' : 'Wrecked', lines, bonus + timeScrap, won ? { label: 'Keep going', go: keepGoing } : null);
+    G.over(won ? 'Last car standing!' : tie ? 'Out together' : 'Wrecked', lines, bonus + timeScrap, won && !G.net ? { label: 'Keep going', go: keepGoing } : null);
   }
   // the win card's Keep going: the same round again, with the player the only car on the base
   function keepGoing() {
@@ -186,17 +188,22 @@ export function makeSurvival(G) {
     get cap() { return capNow(); }, get overtime() { return overtime; }, get best() { return bestOf(); },
     coach,   // (tests drive the player's car with it)
     start() {
-      horde = makeHorde(G, { max: G.TOUCH() ? S.peakPhone : S.peak });
+      // online (net.js): the host's device runs the horde and the bots; the others show its horde as a puppet, and tell
+      // the host's device nothing about it (the same shots fly there). A zombie a player kills is paid on their device.
+      const net = G.net;
+      horde = makeHorde(G, { max: G.TOUCH() && !(net && net.host) ? S.peakPhone : S.peak, puppet: !!(net && !net.host), onKill: (z, by) => { if (net && by && by.remote) net.zkill(by); } });
       G.extras.push(horde);
       best0 = bestOf(); scrap0 = G.game.scrap;
       const starts = MAP.starts || [];
       const tiers = S.tiers.slice().sort(() => Math.random() - 0.5);
-      for (let i = 0; i < S.rivals; i++) {
-        const at = starts[i + 1] || MAP.spawnPoint(G.player, live());
+      const humans = net ? net.players.length : 1, rivals = net ? (net.host ? net.bots : 0) : S.rivals;
+      if (net && G.player && starts[net.slot]) { const a = starts[net.slot], p = G.player; p.x = a.x; p.z = a.z; p.yaw = p.gunYaw = a.yaw ?? Math.atan2(WX / 2 - a.x, WZ / 2 - a.z); }
+      for (let i = 0; i < rivals; i++) {
+        const at = starts[i + humans] || MAP.spawnPoint(G.player, live());
         const c = G.addRival(tiers[i % tiers.length], { x: at.x, z: at.z, yaw: at.yaw ?? Math.atan2(WX / 2 - at.x, WZ / 2 - at.z) });
         coach(c);
       }
-      for (const c of G.cars) { c.maxHp = c.hp = Math.round(c.maxHp * S.tough); held.set(c, { x: c.x, z: c.z, yaw: c.yaw }); }
+      for (const c of G.cars) { if (c.remote) continue; c.maxHp = c.hp = Math.round(c.maxHp * S.tough); held.set(c, { x: c.x, z: c.z, yaw: c.yaw }); }
       phase = 'count'; countT = S.countdown;
       G.banner(String(S.countdown), 'Outlast them all'); G.sfx.play('ui_tab', 0.9);
     },
@@ -207,7 +214,7 @@ export function makeSurvival(G) {
         for (const c of G.cars) { const h = held.get(c); if (!h) continue; c.x = h.x; c.z = h.z; c.yaw = h.yaw; c.vx = c.vz = 0; c.yawRate = 0; for (const g of c.guns) { g.t = Math.max(g.t, 0.15); g.left = 0; } }
         const was = Math.ceil(countT); countT -= dt; const now = Math.ceil(countT);
         if (now !== was && now > 0) { G.banner(String(now), 'Outlast them all'); G.sfx.play('ui_tab', 0.9); }
-        if (countT <= 0) { phase = 'run'; G.banner('Survive!', 'The dead are at the gates'); G.sfx.play('ui_go', 1); for (let i = 0; i < 4; i++) spawn(); for (let i = 0; i < S.inside; i++) lurker(); }
+        if (countT <= 0) { phase = 'run'; G.banner('Survive!', 'The dead are at the gates'); G.sfx.play('ui_go', 1); if (!horde.puppet) { for (let i = 0; i < 4; i++) spawn(); for (let i = 0; i < S.inside; i++) lurker(); } }
         horde.step(dt);
         return;
       }
@@ -218,7 +225,8 @@ export function makeSurvival(G) {
         // kept going after the win: each whole minute more pays as it passes (the rest when it ends)
         if (overtime && clock - paidT >= 60) { paidT += 60; G.game.scrap += S.perMinute; G.toast('Another minute', `+${S.perMinute} scrap`); keepBest(); }
         if (!breached && clock >= S.breach) breakThrough();
-        owed += (S.rate[0] + S.rate[1] * clock) * dt;
+        if (horde.puppet) owed = 0;   // (the host's device brings them in)
+        owed += horde.puppet ? 0 : (S.rate[0] + S.rate[1] * clock) * dt;
         const cap = capNow();
         while (owed >= 1 && horde.all.length < cap) owed -= Math.max(1, spawn());
         owed = Math.min(owed, 18);
@@ -232,20 +240,22 @@ export function makeSurvival(G) {
     },
     wrecked(c) {
       if (!horde || c === G.player) return;
-      const n = live().length, win = phase === 'run' && !overtime && G.player && !G.player.dead && n === 1 && live()[0] === G.player;
+      const n = live().length, win = phase === 'run' && !overtime && !mineOver && G.player && !G.player.dead && n === 1 && live()[0] === G.player;
       G.toast(`The dead got ${c.name}`, win ? 'You are the last car standing' : `${n} car${n === 1 ? '' : 's'} left`);
       if (win) finish(true);
     },
     playerDown() { if (horde && phase !== 'won') finish(false); },   // (on the win card, Keep going ends it)
     hud() {
       const b = best0 || (phase === 'wait' ? bestOf() : 0), was = b ? ` · best ${clockText(b)}` : '';
-      if (phase === 'wait') return ['Last car standing', `${S.rivals + 1} cars on the base${was}`];
-      if (phase === 'count') return ['Get ready', `${S.rivals + 1} cars on the base${was}`];
+      if (phase === 'wait') return ['Last car standing', `${carsIn()} cars on the base${was}`];
+      if (phase === 'count') return ['Get ready', `${carsIn()} cars on the base${was}`];
       if (overtime) return [`Last car standing · ${clockText(clock)}`, !b ? 'A new best' : clock > b ? `Best ${clockText(b)} · beaten` : `Best ${clockText(b)}`, ['Zombies', horde.byPlayer]];
       const n = live().length;
       return [n === 1 ? '1 car left' : `${n} cars left`, `Survived ${clockText(clock)}${was}`, ['Zombies', horde.byPlayer]];
     },
     garageOK: () => false,
+    // online: a bot taken over when the host left drives here from now on
+    adopt(c) { if (!c.dead) { c.driver = G.makeDriver(c); coach(c); } },
     radar(R, s, ox, oy) { if (horde) horde.radar(R, s, ox, oy); },
     // what the aim assist (and a phone's auto-aim) picks from: the dead, never the other cars. Only the nearest few
     // dozen to the player (main.js checks each for a clear line, and there can be hundreds)

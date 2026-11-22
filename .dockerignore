@@ -9,3 +9,4 @@ playtest/vendor/cloudflared*
 *.html
 !src/**/*.html
 **/.DS_Store
+!derby/src/*.html

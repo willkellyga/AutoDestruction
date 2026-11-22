@@ -215,6 +215,8 @@ export function makePickups(api, spots = []) {
     const [r, g, b] = K.rgb;
     sparks(p.x, 5, p.z, 22, r, g, b, 22); ring(p.x, 0.4, p.z, 9, new THREE.Color(r, g, b), 0.45);
     p.up = false; p.t = K.every * (0.9 + Math.random() * 0.2);
+    // online (net.js): the other devices see it go, to the same car, and it is back on all of them at once
+    if (api.net && !c.remote) api.net.picked(live.indexOf(p), c, p.t);
   }
   // ---- the Hammerdown strike: a ring on each foe, then a strike from above on wherever the ring stopped
   const marks = [], markGeo = new THREE.RingGeometry(0.82, 1, 40), shaftGeo = new THREE.CylinderGeometry(1.4, 1.4, 90, 10, 1, true);
@@ -262,6 +264,12 @@ export function makePickups(api, spots = []) {
   const _o = { x: 0, z: 0 };
   return {
     spots: live,
+    // online: pickup i was taken on another device, by car c (one of ours there, a puppet here) or by nobody we know
+    taken(i, c, t) {
+      const p = live[i]; if (!p) return;
+      if (p.up) { if (c) take(p, c); else p.up = false; }
+      p.up = false; p.model.visible = p.beam.visible = false; if (t > 0) p.t = t;
+    },
     step(dt, on) {
       stepMarks(dt);
       const T = performance.now() / 1000;
@@ -286,7 +294,7 @@ export function makePickups(api, spots = []) {
         if (!on) continue;
         // taken by the first car whose box it is in
         for (const c of cars) {
-          if (c.dead || c.gone) continue;
+          if (c.dead || c.gone || c.remote) continue;   // (someone else's car takes it on its own device: taken())
           const s = Math.sin(c.yaw), co = Math.cos(c.yaw); _o.x = p.x - c.x; _o.z = p.z - c.z;
           const lx = _o.x * co - _o.z * s, lz = _o.x * s + _o.z * co - c.mid;
           if (Math.abs(lx) > c.wide + 3 || Math.abs(lz) > c.half + 3) continue;
