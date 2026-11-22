@@ -60,6 +60,15 @@ body.in-garage #touch, body.in-garage #cross { display: none; }
 #toast.on { opacity: 1; transform: translate(-50%, 0); }
 #toast b { display: block; font-size: 24px; font-weight: 900; font-style: italic; text-transform: uppercase; }
 #toast span { color: var(--hot); font-size: 16px; }
+/* the drift meter (drift.js): fills while a slide is held, flashes when it pays out a burst */
+#drift { left: 50%; bottom: 23%; transform: translateX(-50%); text-align: center; opacity: 0; transition: opacity 0.15s; }
+#drift.on { opacity: 1; }
+#drift b { display: block; font: 900 italic 22px 'Trebuchet MS', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 0.05em; transition: transform 0.15s, color 0.15s; }
+#drift i { display: block; width: 130px; height: 7px; margin: 4px auto 0; background: rgba(0,0,0,0.45); border: 1px solid var(--edge); border-radius: 4px; overflow: hidden; transform: skewX(-12deg); }
+#drift s { display: block; height: 100%; width: 0; background: #fff7ea; text-decoration: none; }
+#drift.lv1 b { color: var(--hot); } #drift.lv1 s { background: var(--hot); }
+#drift.lv2 b { color: #ff7a3a; } #drift.lv2 s { background: #ff7a3a; }
+#drift.boost b { color: var(--hot); transform: scale(1.25); -webkit-text-stroke: 1px #2a1a0a; } #drift.boost s { background: var(--hot); }
 #banner { left: 50%; top: 36%; transform: translate(-50%, -50%) scale(0.9); text-align: center; opacity: 0; transition: opacity 0.25s, transform 0.25s; }
 #banner.on { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 #banner b { display: block; font-size: 64px; color: var(--hot); font-weight: 900; font-style: italic; text-transform: uppercase; -webkit-text-stroke: 2px #2a1a0a; }
@@ -216,6 +225,7 @@ body.touch #banner { top: 40%; }
 <div class="hud" id="bars"><div id="labels"><span class="big">Armour</span><span id="sec-name">Rockets</span></div><div id="hp"><div id="hp-fill"></div><span id="hp-text">160</span></div><div id="sec"><div id="sec-fill"></div></div><div id="gad" hidden><div id="gad-fill"></div></div></div>
 <div class="hud" id="speedo"><span id="speed" class="big">0</span><small>km/h</small></div>
 <div class="hud" id="toast"></div>
+<div class="hud" id="drift"><b>Drift</b><i><s></s></i></div>
 <div class="hud" id="banner"><b></b><span></span></div>
 <div class="hud" id="hint">Press <kbd>G</kbd> for the garage</div>
 <div class="card" id="dead" hidden><div><b>Wrecked!</b>New car in <span id="dead-t">3</span><div class="row"><button class="alt" id="dead-garage">Garage</button><button class="go" id="dead-go">Drive now</button></div></div></div>
