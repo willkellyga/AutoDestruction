@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { Unit } from '../../units/src/unit.js';
 import { solid, idx, ownerAt, bodies, WX, WZ } from '../../src/world.js';
 import { blast, dust } from '../../src/sim.js';
-import { CRASH, BUILDINGS } from './tuning.js';
+import { CRASH, DRIFT, BUILDINGS } from './tuning.js';
 import { EASY } from './sturdy.js';
 import { MAP } from './maps/index.js';
 import { carDef, LOOSE } from './carmodel.js';
@@ -55,39 +55,92 @@ export class Vehicle {
     this.gadget = this.spec.gadget; this.gadgetT = 0; this.boostT = 0;
     this.dead = false; this.deadT = 0; this.gone = false; this.hurtT = 0; this.lastBy = null;
     this.smashT = 0; this.scrape = 0; this.spinA = 0; this.firing = 0;
+    // drifting (see handbrake()): how far the back is out, the handbrake's braking, how long a slide has been held, the
+    // burst after one, the slip angle, how hard the tyres skid, and how loose this car's tyres let the back go
+    this.drift = false; this.slide = 0; this.hbBrake = 0; this.driftT = 0; this.miniT = 0; this.slipA = 0; this.skid = 0;
+    this.loose = DRIFT.tyres[load.wheels] || 1;
   }
   get speed() { return Math.hypot(this.vx, this.vz); }
   get fwd() { return this.vx * Math.sin(this.yaw) + this.vz * Math.cos(this.yaw); }
 
   // ---- driving ----------------------------------------------------------------------------------------------
+  // The car's velocity, taken forwards (vf) and sideways (vs) to where it points. Gripping, the velocity turns with
+  // the car and any sideways slide dies away fast (S.grip). With the handbrake held while steering at speed the back
+  // lets go (slide, 0 to 1, see handbrake()): the car yaws faster than its velocity follows, so it slides at an angle,
+  // the slide dies away slowly, and most of the speed it scrubs off carries on forwards. slide 0 is the plain grip
+  // driving the racers use.
   step(dt, hooks) {
     const S = this.spec, sy = Math.sin(this.yaw), cy = Math.cos(this.yaw);
     let vf = this.vx * sy + this.vz * cy, vs = this.vx * cy - this.vz * sy;   // forwards, and sideways to the left
     if (this.dead) { this.throttle = 0; this.steer = 0; this.brake = 1; }
+    const d = this.handbrake(dt, vf, vs, hooks);
     // engine, brakes and drag
     const t = this.throttle;
     // rough ground (a map's grass and gravel: MAP.surface gives 0 on the road up to 1) holds a car back and makes it
     // slide; off-road and monster tyres hardly feel it (S.rough)
     const rough = MAP.surface ? MAP.surface(this.x, this.z) * S.rough : 0;
-    const top = S.top * this.boost * (1 - 0.45 * rough), acc = S.accel * this.accelK;
-    if (t > 0) vf += (vf < 0 ? acc * 2.2 : acc * (1 - Math.max(0, vf) / top * 0.7)) * t * dt;
+    const mini = this.miniT > 0 ? Math.min(1, this.miniT / 0.3) : 0;   // a drift's burst, fading over its last 0.3 s
+    const top = S.top * this.boost * (1 - 0.45 * rough) * (1 + (DRIFT.boost.topK - 1) * mini), acc = S.accel * this.accelK * (1 + (DRIFT.boost.accelK - 1) * mini);
+    const vEng = d > 0 ? Math.hypot(vf, vs) : vf;   // sliding, the engine pulls against the whole speed
+    if (t > 0) vf += (vf < 0 ? acc * 2.2 : acc * (1 - Math.max(0, vEng) / top * 0.7)) * t * dt;
     else if (t < 0) vf += (vf > 0 ? -S.accel * 2.2 : -S.accel * 0.8 * (1 + vf / S.back)) * -t * dt;
     else vf *= Math.exp(-0.55 * dt);
-    if (this.brake) vf *= Math.exp(-(this.dead ? 2.2 : 3.5) * this.brake * dt);
+    const brake = Math.max(this.brake, this.hbBrake);
+    if (brake) vf *= Math.exp(-(this.dead ? 2.2 : 3.5) * brake * dt);
     vf = clamp(vf, -S.back, rough > 0 && vf > top ? top + (vf - top) * Math.exp(-2.4 * dt) : top);   // ploughing onto grass slows a car over a moment
-    // turning: none standing still, full at about a third of top speed, a little less flat out
+    // turning: none standing still, full at about a third of top speed, a little less flat out; faster with the back out
     const k = clamp(Math.abs(vf) / 26, 0, 1) * (1 - 0.25 * clamp(Math.abs(vf) / S.top, 0, 1));
-    const want = this.steer * S.turn * k * Math.sign(vf || 1) * (this.drift ? 1.35 : 1);
-    this.yawRate += (want - this.yawRate) * Math.min(1, dt * 10);
-    this.yaw = wrap(this.yaw + this.yawRate * dt);
-    // grip: sideways sliding dies away, slower in a handbrake turn
-    vs *= Math.exp(-(this.drift ? S.grip * 0.18 : S.grip) * (1 - 0.35 * rough) * dt);
+    const want = this.steer * S.turn * k * Math.sign(vf || 1) * (1 + (DRIFT.turn - 1) * d);
+    this.yawRate += (want - this.yawRate) * Math.min(1, dt * (10 + 8 * d));   // (the nose swings round quicker with the back out)
+    const turned = this.yawRate * dt;
+    this.yaw = wrap(this.yaw + turned);
+    let g = S.grip * (1 - 0.35 * rough);
+    if (d > 0) {
+      // the velocity follows only part of the turn: the rest swings the nose past the way the car is going
+      const lag = -turned * d * (1 - DRIFT.follow), lc = Math.cos(lag), ls = Math.sin(lag);
+      const f = vf * lc - vs * ls; vs = vf * ls + vs * lc; vf = f;
+      g += (DRIFT.rearGrip / this.loose * (1 - DRIFT.power * Math.max(0, t)) - g) * d;
+    }
+    // grip: sideways sliding dies away
+    const vs0 = vs;
+    vs *= Math.exp(-g * dt);
+    if (d > 0 && vf > 0) {
+      // what the slide loses sideways mostly carries on forwards, so a drift keeps its pace; never past top speed,
+      // and never further off the line than maxAngle
+      vf = Math.sqrt(vf * vf + DRIFT.keep * Math.min(1, d * 3) * (vs0 * vs0 - vs * vs));
+      const m = DRIFT.maxAngle;
+      if (Math.abs(vs) > vf * Math.tan(m)) { const sp = Math.hypot(vf, vs); vf = sp * Math.cos(m); vs = Math.sign(vs) * sp * Math.sin(m); }
+      const sp = Math.hypot(vf, vs); if (sp > top) { vf *= top / sp; vs *= top / sp; }
+    }
     const ny = Math.sin(this.yaw), nyc = Math.cos(this.yaw);
-    // the old velocity's sideways part carries on through the turn: that is the slide
     this.vx = ny * vf + nyc * vs; this.vz = nyc * vf - ny * vs;
     this.scrape = Math.abs(vs);
+    this.slipA = vf > 4 ? Math.atan2(vs, vf) : 0;   // how far the travel is off the nose (+ to the left)
+    // how hard the tyres are skidding, for the marks, the smoke and the sound (drift.js): sliding sideways, or the back
+    // wheels locked by the handbrake
+    this.skid = this.dead ? 0 : Math.max(clamp((Math.abs(vs) - 8) / 25, 0, 1), this.hbBrake === DRIFT.stop && vf > 20 ? 0.55 : 0);
     this.collide(dt, hooks);
     this.x = clamp(this.x, 8, WX - 8); this.z = clamp(this.z, 8, WZ - 8);
+  }
+  // The handbrake: steered at speed (or still sliding) the back lets go, straight it is a brake. Returns how far out
+  // the back is (0 to 1), and sets the handbrake's own braking. A slide held at an angle long enough gives a burst
+  // when it ends (hooks.drift tells main.js, for the HUD and the sound).
+  handbrake(dt, vf, vs, hooks) {
+    const D = DRIFT, hb = this.drift && !this.dead;
+    this.miniT = Math.max(0, (this.miniT || 0) - dt);
+    const sliding = vf > 4 && Math.abs(Math.atan2(vs, vf)) > D.holdAngle && this.slide > 0.3;
+    const go = hb && (Math.abs(this.steer) >= D.steerMin || sliding);
+    const reach = go ? clamp((vf - D.minSpeed * 0.5) / (D.minSpeed * 0.5), 0, 1) : 0;
+    this.slide += clamp(reach - this.slide, -dt / D.recover, dt / D.kickIn);
+    this.hbBrake = !hb ? 0 : go ? D.drag : D.stop;
+    // a slide held at an angle counts towards a burst; when it ends, the burst
+    if (reach > 0) { if (this.slide > 0.7 && Math.abs(Math.atan2(vs, Math.max(1, vf))) > D.boost.angle) this.driftT += dt; }
+    else if (this.driftT > 0) {
+      const lvl = this.driftT >= D.boost.after2 ? 2 : this.driftT >= D.boost.after ? 1 : 0;
+      if (lvl && vf > D.minSpeed * 0.8) { this.miniT = D.boost.time * lvl; if (hooks && hooks.drift) hooks.drift(this, lvl); }
+      this.driftT = 0;
+    }
+    return this.slide;
   }
   // the points round the car that feel for walls, in the car's own space (left, forward)
   probes() {
