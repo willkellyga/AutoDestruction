@@ -554,7 +554,8 @@ function drawTags() {
   }
 }
 let toastT = 0;
-function toast(a, b) { $('toast').innerHTML = `<b></b><span></span>`; $('toast').querySelector('b').textContent = a; $('toast').querySelector('span').textContent = b; $('toast').classList.add('on'); toastT = 2.2; }
+function toast(a, b) { if (!$('over').hidden) return;   // a late wreck message would sit over the results card
+  $('toast').innerHTML = `<b></b><span></span>`; $('toast').querySelector('b').textContent = a; $('toast').querySelector('span').textContent = b; $('toast').classList.add('on'); toastT = 2.2; }
 function banner(text, sub) { $('banner').querySelector('b').textContent = text; $('banner').querySelector('span').textContent = sub || ''; $('banner').classList.add('on'); game.banner = 2.4; }
 const radar = $('radar').getContext('2d');
 function drawRadar() {
