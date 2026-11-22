@@ -189,6 +189,8 @@ export default {
   blurb: 'Four laps through New York: river sweeps, two long U-turns round the towers, the downtown straight. Guns on.',
   loading: ['Closing the streets', 'Building New York and opening up the course'],
   outer: 0x4e8fa6,   // the water round the city
+  // raced at the end of the day, the sun low in the south-east (looks/dusk.js)
+  look: { kind: 'dusk' },
   build,
   ground: paint,
   get spawn() { return full().grid[4]; },   // the player starts fifth

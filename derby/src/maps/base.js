@@ -32,6 +32,13 @@ const POOL = { x0: 290, x1: 410, z0: 250, z1: 366 };
 const HUTS = [[56, 128, 268], [150, 222, 268]];   // two quonset huts in a row
 const WTOWER = [98, 352];
 const TANKS = [[452, 272], [452, 306], [452, 340]];
+const CORNERS = [[17, 17], [WX - 17, 17], [17, WZ - 17], [WX - 17, WZ - 17]];   // the guard towers
+// what burns on the night of the storm (looks/storm.js): oil drums by the buildings, and two wrecked cars (on the
+// hangar's apron, and south of the barracks), all clear of the runway, the road and the places to line up
+const DRUMS = [[196, 64], [48, 120], [286, 108], [46, 300], [118, 372], [470, 246]];
+const WRECKS = [[60, 160, true], [200, 330, true]];
+// the gate pillars whose lamps are red beacons: one at each gate (the middle of the pillar's top)
+const BEACONS = [[280, 7], [230, 408], [7, 182], [504, 232]];
 
 // the six places to line up for the round, the player's first, far apart and facing into the base
 const STARTS = [
@@ -272,7 +279,7 @@ function build() {
   wallRun(W0, S0, GX - GATE - 1, S1); wallRun(GX + GATE, S0, E1, S1);
   wallRun(W0, N1 + 1, W1, GZ - GATE - 1); wallRun(W0, GZ + GATE, W1, S0 - 1);
   wallRun(E0, N1 + 1, E1, GZ - GATE - 1); wallRun(E0, GZ + GATE, E1, S0 - 1);
-  for (const [cx, cz] of [[17, 17], [WX - 17, 17], [17, WZ - 17], [WX - 17, WZ - 17]]) tower(cx, cz);
+  for (const [cx, cz] of CORNERS) tower(cx, cz);
   // the gates: pillars, and a boom across the north and south ones
   pillar(GX - GATE - 6, N0, GX - GATE - 1, N1 + 5); pillar(GX + GATE, N0, GX + GATE + 5, N1 + 5);
   pillar(GX - GATE - 6, S0 - 5, GX - GATE - 1, S1); pillar(GX + GATE, S0 - 5, GX + GATE + 5, S1);
@@ -302,8 +309,29 @@ function build() {
   for (const [i, x] of [306, 340, 374].entries()) stamp('tank', x, 300 + (i & 1) * 4, 'n', 1.25, tankPaint, 'Tank', 9);
   for (const [x, z] of TANKS) fuelTank(x, z, 9, 18);
 
+  // the night's fires and beacons
+  for (const [x, z] of DRUMS) drum(x, z);
+  for (const [x, z, alongX] of WRECKS) wreck(x, z, alongX);
+  for (const [x, z] of BEACONS) set(x, 15, z, M.LIT_R);
+
   // the killing field, the runway and the crossing, is left open
   finish();
+}
+// An oil drum burning (the flames are the storm's, looks/storm.js): olive with dark hoops, its rim burnt black. Knocked
+// over by anything that hits it.
+function drum(x, z) {
+  begin('Burning drum', 'prop', false);
+  for (let y = 0; y <= 4; y++) disc(x, z, y, 2, y === 4 ? M.CHAR : y === 1 || y === 3 ? M.DARK : OLIVE_D);
+}
+// A car burnt out where it stopped: a blackened shell on its rims, the cab's roof caved in. Pushed aside by anything
+// that hits it.
+function wreck(x, z, alongX) {
+  begin('Burnt-out wreck', 'prop', false);
+  const b = (a0, y0, c0, a1, y1, c1, m) => (alongX ? box(x + a0, y0, z + c0, x + a1, y1, z + c1, m) : box(x + c0, y0, z + a0, x + c1, y1, z + a1, m));
+  for (const a of [-5, 3]) for (const c of [-3, 2]) b(a, 0, c, a + 1, 1, c, M.TYRE);
+  b(-7, 1, -3, 6, 3, 2, M.CHAR); b(-6, 2, -2, 5, 3, 1, M.DARK);
+  b(-3, 4, -3, 2, 4, -3, M.CHAR); b(-3, 4, 2, 2, 4, 2, M.CHAR); b(-3, 4, -3, -3, 5, 2, M.CHAR); b(2, 4, -3, 2, 5, 2, M.CHAR);
+  b(-2, 5, -2, 1, 5, 1, M.CHAR);
 }
 
 // ---- the painted ground -----------------------------------------------------------------------------------------------
@@ -397,6 +425,13 @@ export default {
   blurb: 'An army base overrun by the dead, and more of them every minute. No fighting the other cars: outlast them all.',
   loading: ['Building the base', 'Raising the fences and the hangars'],
   outer: 0x8d8566,
+  // a stormy night (looks/storm.js): the guard towers' searchlights (the lamps), the fires (on the drums' and the
+  // wrecks' tops: x, y, z, size) and the beacons, round the middle of the base
+  look: {
+    kind: 'storm', middle: [GX, GZ], towers: CORNERS.map(([x, z]) => [x + 0.5, 25.5, z + 0.5]),
+    fires: [...DRUMS.map(([x, z]) => [x, 5, z, 1]), ...WRECKS.map(([x, z]) => [x + 0.5, 6, z + 0.5, 1.6])],
+    beacons: BEACONS.map(([x, z]) => [x + 0.5, 15.5, z + 0.5]),
+  },
   build, ground,
   spawn: STARTS[0], starts: STARTS, gates: GATES, wallSpot, breach,
   waypoint: (c, tx, tz, out) => nav.waypoint(c, tx, tz, out),

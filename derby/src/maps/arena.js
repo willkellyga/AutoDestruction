@@ -420,16 +420,16 @@ function floodlights() {
     box(hx - 9, TOWER_Y - 10, hz - 9, hx + 10, TOWER_Y - 10, hz + 10, M.STEEL);
     walls(hx - 9, TOWER_Y - 9, hz - 9, hx + 10, TOWER_Y - 9, hz + 10, M.TAXI);
   }
-  // the searchlights out past the stands, for the show by night (night.js sweeps their beams): a drum on a trailer,
-  // its lens looking up
+  // the searchlights out past the stands, for the show by night (looks/night.js sweeps their beams): a drum on a
+  // trailer, its lens looking up
   for (const [x, z] of SEARCH) {
     begin('Searchlight', 'prop', true);
     box(x - 4, 0, z - 3, x + 4, 2, z + 3, M.DARK); box(x - 3, 0, z - 4, x - 1, 1, z + 4, M.TYRE); box(x + 1, 0, z - 4, x + 3, 1, z + 4, M.TYRE);
     for (let y = 3; y <= 7; y++) disc(x, z, y, 3, y === 7 ? M.LIT_W : M.STEEL, y === 7 ? -1 : 2);
   }
 }
-// By night (night.js), the lamps on each tower's two faces are the banks that light the pit: where a bank's face is,
-// which way it looks, and the spot on the floor it is aimed at. A tower lights its own quarter of the pit, one bank
+// By night (looks/night.js), the lamps on each tower's two faces are the banks that light the pit: where a bank's face
+// is, which way it looks, and the spot on the floor it is aimed at. A tower lights its own quarter of the pit, one bank
 // along the arena and one across it, so the four towers' pools overlap in the middle.
 const BANKS = TOWERS.flatMap(([px, pz]) => {
   const hx = px + 2, hz = pz + 2, fx = Math.sign(CX - hx), fz = Math.sign(CZ - hz), y = TOWER_Y - 4.5;
@@ -683,9 +683,9 @@ export default {
   spawnPoint: (player, taken) => pickSpot(SPOTS, player, taken),
   step: routeStep,
   pickups: PICKUP_SPOTS,
-  // the show runs at night (night.js): the floodlights' banks of lamps, the ring (the light falls off toward its walls),
-  // the searchlights outside and the crowd's cameras
-  night: { banks: BANKS, ring: { x: CX, z: CZ, ...WALL }, searchlights: SEARCH, crowd: crowdSpots() },
+  // the show runs at night (looks/night.js): the floodlights' banks of lamps, the ring (the light falls off toward its
+  // walls), the searchlights outside and the crowd's cameras
+  look: { kind: 'night', banks: BANKS, ring: { x: CX, z: CZ, ...WALL }, searchlights: SEARCH, crowd: crowdSpots() },
   // the set pieces first (they move cars about), then the bounds (which hold cars inside the ring's line even where
   // rockets have blown it open) and the keepouts (nothing can shove a car into the steel of the frame's legs, which it
   // could not dig out of)

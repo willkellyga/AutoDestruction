@@ -1,5 +1,5 @@
-// Hammerdown Arena runs at night, as a show under floodlights. A map asks for it with a `night` field (maps/arena.js:
-// the floodlights' banks of lamps, the ring, the searchlights and the crowd); every other map keeps main.js's daylight.
+// Hammerdown Arena runs at night, as a show under floodlights (its `look`, maps/arena.js: the floodlights' banks of
+// lamps, the ring, the searchlights and the crowd).
 //   - The sky: blue-black overhead, the city's orange-brown glow round its foot, a few faint clouds lit from below and a
 //     moon with a soft halo, all in the dome's own shader; and stars, one cloud of points that rides along with the dome.
 //   - The fog: the colour of that glow at the horizon, and thin, so a lit city a long way out still shows through it
@@ -26,8 +26,8 @@
 //   4     off            off           off       on                   on
 //   5-6   off            off           off       on                   off
 import * as THREE from 'three';
-import { look } from '../../src/mesh.js';
-import { GLOW } from '../../units/src/voxpart.js';
+import { look } from '../../../src/mesh.js';
+import { TAU, ADD, TONE, rng, cloudStrip, BEAM_FRAG, glowSprites, lampPools, carLamps, commit, pixelAt, outOfReach } from './kit.js';
 
 // the look: the haze (the fog, and the sky at the horizon), the fog's start and end, the exposure, the sky light (sky
 // colour, ground colour, strength), the floodlight bank (colour, strength), the fill from the far tower (colour,
@@ -37,15 +37,12 @@ export const NIGHT = {
   fill: [0xd8e4ff, 0.85, [-0.68, 0.55, -0.45]], spill: 0.14,
 };
 const MOON = new THREE.Vector3(0.36, 0.33, -0.87).normalize();   // up over the north stand from the start
-const TAU = Math.PI * 2;
-const ADD = { transparent: true, depthWrite: false, blending: THREE.AdditiveBlending };
-const TONE = '\n#include <tonemapping_fragment>\n#include <colorspace_fragment>\n';   // (no-ops inside the light pass, which does both at the end)
 
 // The sky, the fog and the light: called as main.js sets them up, before anything else reads them.
 // The floodlight bank casts the shadows. The fill is the tower across the arena from it: no shadows, lower, so the
 // side of a car turned away from the bank is lit too (by day the sky does that; a moonlit sky is too dim to), and a
-// rival reads from any side.
-export function nightLook({ scene, renderer, sky, hemi, sun }) {
+// rival reads from any side. (The bank shines the way main.js's sun already does, so the shadow box needs no new way.)
+export function setup(L, { scene, renderer, sky, hemi, sun }) {
   scene.fog.color.set(NIGHT.haze); scene.fog.near = NIGHT.fog[0]; scene.fog.far = NIGHT.fog[1];
   renderer.setClearColor(scene.fog.color);
   renderer.toneMappingExposure = NIGHT.exposure;
@@ -54,6 +51,7 @@ export function nightLook({ scene, renderer, sky, hemi, sun }) {
   const fill = new THREE.DirectionalLight(NIGHT.fill[0], NIGHT.fill[1]);
   fill.position.set(...NIGHT.fill[2]); fill.updateMatrixWorld(); scene.add(fill);   // (its target stays at the origin: only the way matters)
   sky.material.dispose(); sky.material = skyMaterial();
+  return {};
 }
 
 // ---- the sky ------------------------------------------------------------------------------------------------------
@@ -66,7 +64,7 @@ function skyMaterial() {
     side: THREE.BackSide, depthWrite: false, fog: false,
     uniforms: {
       top: { value: new THREE.Color(0x02040b) }, mid: { value: new THREE.Color(0x0a1128) }, glow: { value: new THREE.Color(0x5c3b2a) }, haze: { value: new THREE.Color(NIGHT.haze) },
-      moon: { value: MOON }, clouds: { value: cloudTexture() }, time: { value: 0 },
+      moon: { value: MOON }, clouds: { value: cloudStrip() }, time: { value: 0 },
     },
     vertexShader: 'varying vec3 vD; void main(){ vD = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
     fragmentShader: `uniform vec3 top; uniform vec3 mid; uniform vec3 glow; uniform vec3 haze; uniform vec3 moon; uniform sampler2D clouds; uniform float time;
@@ -97,39 +95,10 @@ function skyMaterial() {
       }`,
   });
 }
-// The clouds: soft noise in a strip that wraps round, thinned to patches. Red is how thick a cloud is there, green how
-// much of its underside shows (thicker just above its foot).
-function cloudTexture() {
-  const W = 512, H = 128, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
-  const g = cv.getContext('2d'), img = g.createImageData(W, H), D = img.data;
-  let s = 271828; const r = () => { s = (s * 1664525 + 1013904223) | 0; return ((s >>> 8) & 0xffff) / 65536; };
-  const oct = [[5, 2], [10, 4], [20, 8], [40, 14]].map(([n, m]) => { const v = new Float32Array(n * (m + 1)); for (let i = 0; i < v.length; i++) v[i] = r(); return { n, m, v }; });
-  const sm = (t) => t * t * (3 - 2 * t);
-  const at = (o, x, y) => {
-    const fx = x * o.n, fy = y * o.m, i = Math.floor(fx), j = Math.min(o.m - 1, Math.floor(fy)), tx = sm(fx - i), ty = sm(fy - j);
-    const i0 = i % o.n, i1 = (i0 + 1) % o.n, a = o.v[j * o.n + i0], b = o.v[j * o.n + i1], c = o.v[(j + 1) * o.n + i0], d = o.v[(j + 1) * o.n + i1];
-    return a + (b - a) * tx + (c + (d - c) * tx - a - (b - a) * tx) * ty;
-  };
-  const f = new Float32Array(W * H);
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    let v = 0, amp = 0.53;
-    for (const o of oct) { v += at(o, x / W, y / H) * amp; amp *= 0.5; }
-    f[y * W + x] = Math.max(0, Math.min(1, (v - 0.5) / 0.3));
-  }
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    const i = y * W + x, below = y < H - 4 ? f[i + 4 * W] : 0;   // (the canvas is upside down to the sky: its bottom row is the horizon)
-    D[i * 4] = f[i] * f[i] * 255; D[i * 4 + 1] = Math.max(0, f[i] - below * 0.8) * 255; D[i * 4 + 3] = 255;
-  }
-  g.putImageData(img, 0, 0);
-  const t = new THREE.CanvasTexture(cv);
-  // no mipmaps: the picture's seam is where the angle round wraps, and a mipmap would draw a line down the sky there
-  t.wrapS = THREE.RepeatWrapping; t.generateMipmaps = false; t.minFilter = THREE.LinearFilter;
-  return t;
-}
 // The stars: points on the dome's upper half, most faint, a few bright, some a little blue or warm, twinkling slowly,
 // fading into the glow near the horizon.
 function stars(n) {
-  let s = 31337; const r = () => { s = (s * 1664525 + 1013904223) | 0; return ((s >>> 8) & 0xffff) / 65536; };
+  const r = rng(31337);
   const pos = new Float32Array(n * 3), col = new Float32Array(n * 3), ph = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     const y = 0.04 + 0.96 * Math.pow(r(), 0.8), a = r() * TAU, k = Math.sqrt(1 - y * y), R = 2190;
@@ -213,16 +182,6 @@ function floorLayer(night) {
 }
 
 // ---- beams --------------------------------------------------------------------------------------------------------
-// A beam is a soft cone, drawn from both sides and added on. Brightest where its side is seen square on (through the
-// middle of it), fading to its edges, toward its far end, and close to the camera.
-const BEAM_FRAG = `uniform vec3 col; uniform float near; varying vec3 vN; varying vec3 vW; varying float vT;
-  void main() {
-    vec3 v = cameraPosition - vW; float d = length(v);
-    float side = abs(dot(normalize(vN), v / d));
-    float a = side * side * pow(1.0 - vT, 1.4) * smoothstep(0.0, 0.05, vT) * smoothstep(near * 0.2, near, d);
-    gl_FragColor = vec4(col * a, 1.0);
-    ${TONE}
-  }`;
 // the floodlights' beams: one cone a bank, from its lamps to where it is aimed; the banks facing along the arena first,
 // then those across it (so the quality ladder can draw only the first four)
 function towerBeams(banks) {
@@ -291,8 +250,7 @@ function searchBeams(spots, centre) {
 // A point on a seat flashes for a moment every few seconds, each on its own beat. Between flashes it is moved off the
 // screen with no size, so it costs next to nothing.
 function flashes(spots) {
-  const n = spots.length / 3, ph = new Float32Array(n * 2);
-  let s = 4242; const r = () => { s = (s * 1664525 + 1013904223) | 0; return ((s >>> 8) & 0xffff) / 65536; };
+  const n = spots.length / 3, ph = new Float32Array(n * 2), r = rng(4242);
   for (let i = 0; i < n; i++) { ph[i * 2] = r(); ph[i * 2 + 1] = 2 + 6 * r(); }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(spots, 3)); g.setAttribute('ph', new THREE.BufferAttribute(ph, 2));
@@ -313,125 +271,21 @@ function flashes(spots) {
   return p;
 }
 
-// ---- glows: the towers' banks and the cars' lamps -------------------------------------------------------------------
-// One quad an instance, turned to face the camera in the shader: a hot core, a wide soft halo and (for the towers) a
-// thin flat streak. A lamp that faces a way is brightest seen from in front of it. Each is pulled a little toward the
-// camera, so it is not buried in what it hangs on, and kept between a few pixels across far off and a set part of the
-// view close to.
-// per instance: gp (x, y, z, size), gc (colour, streak), gd (the way it faces, how much that matters)
-const GLOW_MAX = 8 + 4 * 40, POOL_MAX = 2 * 40;
-function glowSprites() {
-  const g = new THREE.InstancedBufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0], 3)); g.setIndex([0, 1, 2, 0, 2, 3]);
-  for (const k of ['gp', 'gc', 'gd']) g.setAttribute(k, new THREE.InstancedBufferAttribute(new Float32Array(GLOW_MAX * 4), 4).setUsage(THREE.DynamicDrawUsage));
-  g.instanceCount = 0;
-  const m = new THREE.ShaderMaterial({
-    ...ADD, uniforms: { ppx: { value: 0.002 } },
-    vertexShader: `attribute vec4 gp; attribute vec4 gc; attribute vec4 gd; uniform float ppx; varying vec2 vUv; varying vec3 vC; varying float vS;
-      void main() {
-        vec3 to = cameraPosition - gp.xyz; float dist = length(to); vec3 v = to / dist;
-        float face = mix(1.0, smoothstep(-0.2, 0.75, dot(gd.xyz, v)), gd.w);
-        vec4 mv = viewMatrix * vec4(gp.xyz + v * min(gp.w * 0.8, dist * 0.5), 1.0);
-        float s = clamp(gp.w * (0.4 + 0.6 * face), -mv.z * ppx * 3.0, -mv.z * 0.09);
-        mv.xy += position.xy * s;
-        gl_Position = projectionMatrix * mv;
-        vUv = position.xy; vC = gc.rgb * face * face; vS = gc.w;
-      }`,
-    fragmentShader: `varying vec2 vUv; varying vec3 vC; varying float vS;
-      void main() { float r2 = dot(vUv, vUv);
-        float a = exp(-r2 * 16.0) + 0.18 * exp(-r2 * 4.0) + vS * exp(-abs(vUv.y) * 26.0) * (1.0 - abs(vUv.x)) * 0.35;
-        gl_FragColor = vec4(vC * a * (1.0 - smoothstep(0.7, 1.0, r2)), 1.0); ${TONE} }`,
-  });
-  const mesh = new THREE.Mesh(g, m); mesh.frustumCulled = false; mesh.matrixAutoUpdate = false; mesh.renderOrder = 2;
-  return mesh;
-}
-// The pools of light the lamps throw on the ground: a fan ahead of each car from its headlamps, a small red one behind.
-// per instance: pa (x, z, heading, strength), pb (where it starts along the heading, its length, its width there and at
-// its end), pc (colour)
-function lampPools() {
-  const g = new THREE.InstancedBufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute([0, -1, 0, 1, -1, 0, 1, 1, 0, 0, 1, 0], 3)); g.setIndex([0, 2, 1, 0, 3, 2]);
-  for (const k of ['pa', 'pb', 'pc']) g.setAttribute(k, new THREE.InstancedBufferAttribute(new Float32Array(POOL_MAX * 4), 4).setUsage(THREE.DynamicDrawUsage));
-  g.instanceCount = 0;
-  const m = new THREE.ShaderMaterial({
-    ...ADD, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -6,
-    vertexShader: `attribute vec4 pa; attribute vec4 pb; attribute vec4 pc; varying vec2 vUv; varying vec3 vC;
-      void main() {
-        vec2 f = vec2(sin(pa.z), cos(pa.z)), side = vec2(f.y, -f.x);
-        vec2 xz = pa.xy + f * (pb.x + pb.y * position.x) + side * mix(pb.z, pb.w, position.x) * position.y;
-        gl_Position = projectionMatrix * viewMatrix * vec4(xz.x, 0.07, xz.y, 1.0);
-        vUv = position.xy; vC = pc.rgb * pa.w;
-      }`,
-    fragmentShader: `varying vec2 vUv; varying vec3 vC;
-      void main() { float a = smoothstep(0.0, 0.12, vUv.x) * pow(1.0 - vUv.x, 1.5) * (1.0 - vUv.y * vUv.y);
-        gl_FragColor = vec4(vC * a, 1.0); ${TONE} }`,
-  });
-  const mesh = new THREE.Mesh(g, m); mesh.frustumCulled = false; mesh.matrixAutoUpdate = false; mesh.renderOrder = 0;
-  return mesh;
-}
-
-// Where a car's lamps are, found once from its model: the glowing cubes of its body that are white or warm (the
-// headlamps) toward the front, and red toward the back (the tail lamps), each side's averaged, at the lamps' outer
-// face. In the car's own space (+x its left, +z forward), from its middle on the ground.
-const _v = new THREE.Vector3();
-function lampsOf(c) {
-  const u = c.unit, body = u.parts.find((p) => p.name === 'body');
-  const L = { head: [[0, 0, -1e9, 0], [0, 0, -1e9, 0]], tail: [[0, 0, 1e9, 0], [0, 0, 1e9, 0]] }, acc = [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]];
-  if (body && body.bone) {
-    u.root.updateWorldMatrix(true, true);
-    const { nx, ny, nz, col, h } = body;
-    for (let k = 0, n = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++, n++) {
-      const v = col[n]; if (v < 0 || !(v & GLOW)) continue;
-      const R = (v >> 16) & 255, G = (v >> 8) & 255, Bc = v & 255, z = (body.k0 + k + 0.5) * h;
-      const kind = R > 200 && G > 190 && Bc > 140 && z > 0 ? 'head' : R > 180 && G < 90 && z < 0 ? 'tail' : null;
-      if (!kind) continue;
-      _v.set((body.i0 + i + 0.5) * h, (body.j0 + j + 0.5) * h, z); body.bone.localToWorld(_v); u.root.worldToLocal(_v);
-      const side = _v.x > 0 ? 0 : 1, e = L[kind][side], a = acc[(kind === 'head' ? 0 : 2) + side];
-      a[0] += _v.x; a[1] += _v.y; e[3]++;
-      e[2] = kind === 'head' ? Math.max(e[2], _v.z + h) : Math.min(e[2], _v.z - h);
-    }
-    for (const [kind, o] of [['head', 0], ['tail', 2]]) for (const s of [0, 1]) { const e = L[kind][s]; if (e[3]) { e[0] = acc[o + s][0] / e[3]; e[1] = acc[o + s][1] / e[3]; } }
-  }
-  // a model without lamps found (they were shot off, say) still shows where they would be
-  for (const [kind, z] of [['head', c.mid + c.half], ['tail', c.mid - c.half]]) for (const s of [0, 1]) {
-    const e = L[kind][s]; if (!e[3]) { e[0] = (s ? -1 : 1) * c.wide * 0.65; e[1] = 2; e[2] = z; }
-  }
-  // a ram or a plow standing out past the headlamps would hide them, so their glow goes on its front (and the tail
-  // lamps' on the back of a mine dropper)
-  for (const e of L.head) e[2] = Math.max(e[2], c.mid + c.half + 0.3);
-  for (const e of L.tail) e[2] = Math.min(e[2], c.mid - c.half - 0.3);
-  return L;
-}
-
 // ---- it all, and its frame --------------------------------------------------------------------------------------------
-// The floodlight bank and the fill are the scene's two direct lights (three.js's directional lights reach everywhere),
-// but they are aimed into the pit: the city round the stadium (backdrop.js) gets only their spill, and is lit by the
-// moon, its own lamps and windows. Its lit materials take one more step, after their own: the direct light scaled down.
-function outOfReach(objects) {
-  for (const o of objects) {
-    const m = o.material; if (!m || !m.isMeshLambertMaterial) continue;
-    const before = m.onBeforeCompile, key = m.customProgramCacheKey;
-    m.onBeforeCompile = (sh, r) => {
-      before.call(m, sh, r);
-      sh.fragmentShader = sh.fragmentShader.replace('#include <aomap_fragment>', `reflectedLight.directDiffuse *= ${NIGHT.spill.toFixed(3)};\n#include <aomap_fragment>`);
-    };
-    m.customProgramCacheKey = () => key.call(m) + '-spill';
-    m.needsUpdate = true;
-  }
-}
-export function makeNight({ scene, renderer, camera, sky, mats, bloom, quality, night, backdrop }) {
+const GLOW_MAX = 8 + 4 * 40, POOL_MAX = 2 * 40;
+const _v = new THREE.Vector3();
+export function make(night, { scene, renderer, camera, sky, mats, bloom, quality, backdrop }) {
   look.dusk.value = 1;                 // lit signs, LED strips and the scoreboard's bands glow
-  if (backdrop) outOfReach(backdrop.objects);
+  if (backdrop) outOfReach(backdrop.objects, NIGHT.spill);
   mats[1].color.setScalar(1.5);        // and the cars' lamps (and gun flashes) glow enough for the light pass to bloom them
   bloom.strength = 0.36; bloom.radius = 0.6; bloom.threshold = 1.25;
   const starPts = stars(1800); sky.add(starPts);
   const floor = floorLayer(night), beams = towerBeams(night.banks), search = searchBeams(night.searchlights, [night.ring.x, night.ring.z]);
-  const flash = flashes(night.crowd), glows = glowSprites(), pools = lampPools();
+  const flash = flashes(night.crowd), glows = glowSprites(GLOW_MAX), pools = lampPools(POOL_MAX);
   for (const o of [floor, beams, search, flash, glows, pools]) scene.add(o);
   const T = [sky.material.uniforms.time, starPts.material.uniforms.time, search.material.uniforms.time, flash.material.uniforms.time];
   const PX = [starPts.material.uniforms.px, flash.material.uniforms.px];
   const gp = glows.geometry.attributes.gp, gc = glows.geometry.attributes.gc, gd = glows.geometry.attributes.gd;
-  const pa = pools.geometry.attributes.pa, pb = pools.geometry.attributes.pb, pc = pools.geometry.attributes.pc;
   // the towers' glare: one a bank, facing down its beam
   const nb = night.banks.length;
   night.banks.forEach((b, i) => {
@@ -450,27 +304,10 @@ export function makeNight({ scene, renderer, camera, sky, mats, bloom, quality, 
     time += dt; for (const u of T) u.value = time;
     if (quality.step !== q) ladder(quality.step);
     const pr = renderer.getPixelRatio(); for (const u of PX) u.value = pr;
-    glows.material.uniforms.ppx.value = 2 * Math.tan(camera.fov * Math.PI / 360) / Math.max(1, renderer.domElement.height);
+    glows.material.uniforms.ppx.value = pixelAt(camera, renderer);
     // the cars' lamps: from each car's heading and its lamps' places, every frame
-    let n = nb, k = 0;
-    for (const c of cars) {
-      if (c.gone || c.dead || !c.unit.root.visible || n + 4 > GLOW_MAX) continue;   // (out with the car as it blinks back in)
-      const L = c._lamps || (c._lamps = lampsOf(c)), s = Math.sin(c.yaw), co = Math.cos(c.yaw);
-      const braking = c.brake > 0 || c.throttle < 0 || c.hbBrake > 0;
-      for (const [kind, sgn] of [['head', 1], ['tail', -1]]) for (const e of L[kind]) {
-        gp.array.set([c.x + e[0] * co + e[2] * s, e[1], c.z - e[0] * s + e[2] * co, kind === 'head' ? 1.9 : braking ? 2 : 1.5], n * 4);
-        gc.array.set(kind === 'head' ? [1.2, 1.1, 0.9, 0.3] : braking ? [2.4, 0.25, 0.15, 0] : [1.3, 0.12, 0.08, 0], n * 4);
-        gd.array.set([s * sgn, 0, co * sgn, 0.92], n * 4); n++;
-      }
-      if (pools_ && k + 2 <= POOL_MAX) {
-        const front = Math.max(L.head[0][2], L.head[1][2]) - 0.5, back = Math.min(L.tail[0][2], L.tail[1][2]) + 0.5;
-        pa.array.set([c.x, c.z, c.yaw, 1], k * 4); pb.array.set([front, 34, c.wide * 0.8, c.wide * 3.2], k * 4); pc.array.set([0.26, 0.23, 0.18, 0], k * 4); k++;
-        pa.array.set([c.x, c.z, c.yaw, braking ? 1.8 : 1], k * 4); pb.array.set([back, -9, c.wide * 0.8, c.wide * 1.6], k * 4); pc.array.set([0.12, 0.012, 0.008, 0], k * 4); k++;
-      }
-    }
-    glows.geometry.instanceCount = n; pools.geometry.instanceCount = k;
-    for (const a of [gp, gc, gd]) { a.clearUpdateRanges(); a.addUpdateRange(0, n * 4); a.needsUpdate = true; }
-    for (const a of [pa, pb, pc]) { a.clearUpdateRanges(); a.addUpdateRange(0, k * 4); a.needsUpdate = true; }
+    const [n, k] = carLamps(cars, glows, pools, nb, 0, pools_, GLOW_MAX);
+    commit(glows, n, ['gp', 'gc', 'gd']); commit(pools, k, ['pa', 'pb', 'pc']);
   }
   return { step };
 }
