@@ -16,6 +16,8 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const FAR = 260;   // voxels from the camera past which a car throws nothing (its ruts are still laid)
 const SEG = 1.1;   // voxels a wheel goes between one piece of rut and the next
 const G = -52;     // gravity on a clod, voxels a second a second
+// clods are drawn a little lighter than the ground they came from: it faces the sun square, their faces mostly turn away
+const CLOD_LIT = 1.3;
 // how many of each there can be at once, by quality step (0 best .. 6 lightest)
 const DUST = [2400, 2000, 1600, 1000, 700, 500, 380], CLODS = [520, 420, 340, 240, 170, 120, 90];
 
@@ -49,6 +51,8 @@ void main() {
     for ( int i = 0; i < NUM_POINT_LIGHTS; i ++ ) { getPointLightInfo( pointLights[ i ], mvPosition.xyz, L ); irr += L.color * 0.7; }
   #endif
   vC = vec4( pcol.rgb * irr * RECIPROCAL_PI, pcol.a ); vKind = pkind;
+  // a puff right in front of the camera fades away rather than fill the screen as a flat disc
+  if ( pkind < 0.5 ) vC.a *= smoothstep( 2.0, 9.0, - mvPosition.z );
   #include <fog_vertex>
 }`;
 // kind 0 a soft puff; kind 1..2 a speck of grit, hard edged and a little lumpy (the fraction turns its lumps)
@@ -158,7 +162,14 @@ function clodPool(scene, n) {
       }
       mesh.count = hi + 1;
       if (hi >= 0) { const m = mesh.instanceMatrix; m.clearUpdateRanges(); m.addUpdateRange(0, (hi + 1) * 16); m.needsUpdate = true; }
-      if (cHi >= 0) { const c = mesh.instanceColor; c.clearUpdateRanges(); c.addUpdateRange(cLo * 3, (cHi - cLo + 1) * 3); c.needsUpdate = true; cLo = n; cHi = -1; }
+      // the colours of the clods thrown since the last upload (three.js empties the list once it has sent them; until it
+      // has, as when the game takes two steps a frame, the one waiting is widened, or the first step's would never go)
+      if (cHi >= 0) {
+        const c = mesh.instanceColor, w = c.updateRanges[0];
+        if (w) { const e = Math.max(w.start + w.count, (cHi + 1) * 3); w.start = Math.min(w.start, cLo * 3); w.count = e - w.start; }
+        else c.addUpdateRange(cLo * 3, (cHi - cLo + 1) * 3);
+        c.needsUpdate = true; cLo = n; cHi = -1;
+      }
     },
   };
 }
@@ -196,7 +207,7 @@ export function makeDirt({ scene, camera, renderer, floor, MAP, mobile }) {
     const nc = take(st, 'c', 42 * k * K, dt), ns = take(st, 's', 190 * k * K, dt), nd = take(st, 'd', 40 * k * K, dt);
     for (let i = 0; i < nc; i++) {
       const sp = 14 + 34 * k * (0.5 + Math.random() * 0.7), j = (Math.random() - 0.5) * 0.7;
-      const ex = dx - dz * j, ez = dz + dx * j, sh = 0.85 + Math.random() * 0.45;
+      const ex = dx - dz * j, ez = dz + dx * j, sh = CLOD_LIT * (0.85 + Math.random() * 0.45);
       clods.spawn(x, y, z, ex * sp + cvx * 0.35, 10 + Math.random() * 22 * k + 6 * k, ez * sp + cvz * 0.35, 0.16 + Math.random() * Math.random() * 0.42, 1.1 + Math.random() * 1.2, c[0] * sh, c[1] * sh, c[2] * sh);
     }
     for (let i = 0; i < ns; i++) {
@@ -214,7 +225,7 @@ export function makeDirt({ scene, camera, renderer, floor, MAP, mobile }) {
   function burst(x, z, k, c) {
     const kb = Math.sqrt(K), nc = Math.round(clamp(6 + 14 * k, 0, 40) * kb), nd = Math.round(clamp(4 + 8 * k, 0, 22) * kb), dc = dustCol(c);
     for (let i = 0; i < nc; i++) {
-      const a = Math.random() * 6.283, sp = (8 + Math.random() * 26) * (0.6 + 0.5 * k), sh = 0.85 + Math.random() * 0.45;
+      const a = Math.random() * 6.283, sp = (8 + Math.random() * 26) * (0.6 + 0.5 * k), sh = CLOD_LIT * (0.85 + Math.random() * 0.45);
       clods.spawn(x + Math.cos(a), 0.6, z + Math.sin(a), Math.cos(a) * sp, 14 + Math.random() * 26 * Math.min(1.6, k), Math.sin(a) * sp, 0.18 + Math.random() * Math.random() * 0.5 * (0.7 + 0.4 * k), 1.3 + Math.random() * 1.2, c[0] * sh, c[1] * sh, c[2] * sh);
     }
     for (let i = 0; i < nd; i++) {

@@ -111,16 +111,17 @@ const AFTER_MAP = /* glsl */`
   if ( gDirt > 0.0 ) {
     float gDist = length( vViewPosition );
     float k1 = gDirt * ( 1.0 - smoothstep( detailK.z, detailK.w, gDist ) ) * ( 1.0 - gWet * 0.7 );
+    float gFlat = 1.0 - gWet * 0.85;   // standing water lies flat over the lumps (bumpy, it glittered like foil)
     vec4 d1 = texture2D( detailMap, vGround * detailK.x );
     float lum = dot( diffuseColor.rgb, vec3( 0.3, 0.59, 0.11 ) );
     diffuseColor.rgb = mix( diffuseColor.rgb, vec3( lum * 1.12 ), d1.a * k1 * 0.55 );   // the stones, greyer than the dirt
     diffuseColor.rgb *= mix( 1.0, d1.b * 2.0, k1 );
-    gSlope = ( d1.rg * 2.0 - 1.0 ) * 2.0 * k1;
+    gSlope = ( d1.rg * 2.0 - 1.0 ) * 2.0 * k1 * gFlat;
     #ifdef DETAIL2
       float k2 = gDirt * ( 1.0 - smoothstep( detailK.z * 2.0, detailK.w * 2.2, gDist ) ) * ( 1.0 - gWet * 0.7 );
       vec4 d2 = texture2D( detailMap, mat2( 0.8, 0.6, -0.6, 0.8 ) * vGround * detailK.y + 0.37 );
       diffuseColor.rgb *= mix( 1.0, d2.b * 2.0, k2 * 0.8 );
-      gSlope += ( ( d2.rg * 2.0 - 1.0 ) * mat2( 0.8, 0.6, -0.6, 0.8 ) ) * 1.3 * k2;   // (turned back the way the world goes)
+      gSlope += ( ( d2.rg * 2.0 - 1.0 ) * mat2( 0.8, 0.6, -0.6, 0.8 ) ) * 1.3 * k2 * gFlat;   // (turned back the way the world goes)
     #endif
     #ifdef RUTS
       vec2 ru = ( vGround - rutBox.xy ) * rutBox.zw;
@@ -206,7 +207,23 @@ export function makeGround({ scene, renderer, MAP, mobile }) {
   const lin = new Float32Array(256); for (let i = 0; i < 256; i++) { const c = i / 255; lin[i] = c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
   const at = (x, z) => (clamp(Math.floor(z / 2), 0, SH - 1) * SW + clamp(Math.floor(x / 2), 0, SW - 1)) * 4;
   const dirtAt = (x, z) => clamp((px[at(x, z) + 3] / 255 - 0.55) / 0.15, 0, 1);
-  const colourAt = (x, z, out) => { const i = at(x, z); out[0] = lin[px[i]]; out[1] = lin[px[i + 1]]; out[2] = lin[px[i + 2]]; return out; };
+  // The colour of the dirt thrown up: the dirt's own colour round about (the mean of the dirt in each 32 voxels square),
+  // only a little lighter or darker as the paint just there is. Read straight off the paint it came out black off an
+  // old tyre mark and blue off the edge of a boost plate.
+  const CELL = 16, CW = Math.ceil(SW / CELL), CH = Math.ceil(SH / CELL), mean = new Float32Array(CW * CH * 4), all = [0, 0, 0, 0];
+  for (let y = 0; y < SH; y++) for (let x = 0; x < SW; x++) {
+    const i = (y * SW + x) * 4; if (px[i + 3] < 230) continue;   // (dirt only: not the wet, not the hard)
+    const o = ((y / CELL | 0) * CW + (x / CELL | 0)) * 4;
+    for (let c = 0; c < 3; c++) { mean[o + c] += lin[px[i + c]]; all[c] += lin[px[i + c]]; }
+    mean[o + 3]++; all[3]++;
+  }
+  for (let o = 0; o < mean.length; o += 4) for (let c = 0; c < 3; c++) mean[o + c] = mean[o + 3] > 8 ? mean[o + c] / mean[o + 3] : all[c] / Math.max(1, all[3]);
+  const lum = (r, g, b) => r * 0.3 + g * 0.59 + b * 0.11;
+  const colourAt = (x, z, out) => {
+    const i = at(x, z), o = (clamp(Math.floor(z / 2 / CELL), 0, CH - 1) * CW + clamp(Math.floor(x / 2 / CELL), 0, CW - 1)) * 4;
+    const m = lum(mean[o], mean[o + 1], mean[o + 2]), k = clamp(lum(lin[px[i]], lin[px[i + 1]], lin[px[i + 2]]) / Math.max(1e-4, m), 0.8, 1.2);
+    out[0] = mean[o] * k; out[1] = mean[o + 1] * k; out[2] = mean[o + 2] * k; return out;
+  };
 
   // the ruts' box (the whole map unless the map says), and the texture over it
   const box = MAP.rutBox || [0, 0, WX, WZ], bw = box[2] - box[0], bh = box[3] - box[1];
