@@ -482,6 +482,10 @@ export function carDef(load, seed = 0) {
     half: (nose - tail) / 2, mid: (nose + tail) / 2, wide: outer * H, top: (ty + lift + 3) * H, roof: (lo(S.roofY) + plate + lift) * H,
     wheelR: R * H, lift: lift * H, length: nose - tail,
     // the engine bay's middle (town units along the car) and which way the bonnet lifts (-1 from the back edge)
+    // where the loose panels are (crumple.js), in the body's cubes: the bumpers past the nose and tail up to bumpTop, the
+    // front doors (from the first side window) between the sills and the base of the glass
+    panels: { zN: S.zN, zT: S.zT, bumpTop: Sx.bumpTop || Math.round(S.belt(S.zN) * 0.55), c0: S.c0, W: S.W, belt: S.belt(S.door.z),
+      door: S.win && S.win.length && !S.openTop && S.kind !== 'bus' ? [S.win[0][0], S.win[0][1]] : null },
     bayZ: body.bay ? body.bay.zc * H : nose * 0.6, hoodDir: body.bay ? body.bay.dir : -1, hood: !!body.hood,
     // where the side saws or the hub spikes cut, out to the sides: [out, along] in town units, both sides
     cut: doorLook === 'blades' ? [-0.7, 0, 0.7].map((f) => [(sawX(S) + 0.5) * H, (dz + f * DOOR_SAW.R) * H]) : doorLook === 'hubs' ? S.ax.map((a) => [(S.W - wk.out + 5) * H, a * H]) : null,

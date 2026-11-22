@@ -27,6 +27,7 @@ import { makeGarage } from './garage.js';
 import { makeGarageRoom } from './garageroom.js';
 import { makePartArt } from './partart.js';
 import { makeSpecials } from './specials.js';
+import { makeCrumple } from './crumple.js';
 import { makeSounds } from './audio.js';
 import { makePickups } from './pickups.js';
 import { makeHazards } from './hazards.js';
@@ -163,6 +164,8 @@ const fakeMon = { x: -9999, y: 0, z: -9999, S: 1, hp: 1e9, maxHp: 1e9, chargeT: 
 const civ = makeCivilians({ scene, camera, mon: fakeMon, game: { get state() { return 'idle'; }, time: 0 }, U: 2.5, R: () => 6, hurt() {}, toast() {}, addXp() {}, PROPS, muted: () => muted, mixer: audioMix, tanks: () => [], rivals: () => [], viewH: () => renderer.domElement.height, cubePx: () => 0 });
 const debris = civ.debris;
 const cube = (x, y, z, vx, vy, vz, c, s) => debris.spawn(x, y, z, vx, vy, vz, c, s);
+// cars dent, their panels work loose and tear off, and they smoke as they are hurt (crumple.js)
+const crumple = makeCrumple({ scene }); crumple.setChip(cube);
 // the cars' cubes are small (a sixteenth of a metre): only some of the ones a hit knocks off fly, a little bigger
 const chip = (x, y, z, vx, vy, vz, c, s) => { if (Math.random() < 0.07) debris.spawn(x, y, z, vx, vy, vz, c, s * 2.5); };   // the cubes are fine, so keep a few and make them bigger
 // the scattergun's pellets: the rifle's round, with one bang for the whole blast
@@ -244,6 +247,7 @@ hooks.blast = (cx, cy, cz, r, o) => {
 // ---- the cars ----------------------------------------------------------------------------------------------------
 function addCar(load, at, rival) {
   const c = new Vehicle(scene, mats, load, at);
+  crumple.attach(c);
   if (rival) { c.driver = makeDriver(c); c.rival = true; c.maxHp = c.hp = Math.round(c.spec.hp * AI.hp); }
   cars.push(c); makeTag(c);
   return c;
@@ -265,6 +269,7 @@ function wreck(c, who) {
   if (c.dead) return;
   c.dead = true; c.deadT = 0; c.hp = 0;
   const p = c.centre(new THREE.Vector3());
+  crumple.wrecked(c, chip);   // the roof caves in, the bonnet and a panel or two blow off
   c.unit.kill(p, 6, chip);
   c.blowParts(cube, p, 16);
   sfx.play(c.maxHp > 200 ? 'bigboom' : 'carboom', 1, p.x, p.z);
@@ -402,7 +407,7 @@ function onLand(s, hit, p) {
         if (g.pellets) d *= clamp(1.3 - s.from.distanceTo(p) / g.range, 0.15, 1);   // the scattergun is brutal close and weak far
         damage(c, d, s.owner);
         const q = c.surface(_q.copy(p).addScaledVector(s.dir, -0.8), s.dir, 7) || p;   // carve where the cubes are
-        c.unit.hit(q, g.carve, chip, 8);
+        c.unit.hit(q, g.carve, chip, 8, s.dir);
         if (c.dead && g.splash) c.unit.hit(q, g.carve * 1.4, chip, 14);
         if (!g.splash) sfx.play('tink', 0.9, p.x, p.z, { gap: 0.045, jitter: 0.2 });
       } else if (!c) {
@@ -448,6 +453,7 @@ function bump(a, b) {
   const was = by; by = ram;
   try { damage(hit, dmg * (ram.rival && hit === player ? AI.ram : 1), ram); damage(ram, dmg * CRASH.ramShare * (ram.spec.guard ?? 1), hit); } finally { by = was; }
   hit.unit.hit(cp, clamp(0.8 + hitSp * 0.03, 0.8, 3.2), chip, 6);
+  ram.unit.hit(cp, clamp(0.5 + hitSp * 0.015, 0.5, 1.8) * (ram.spec.guard ?? 1), chip, 4);   // the rammer's own front crumples, less
   sparks(cp.x, cp.y, cp.z, Math.round(6 + hitSp * 0.3), 1, 0.8, 0.4, 24);
   sound(hitSp > 40 ? 'crash' : 'metal', clamp(hitSp / 60, 0.35, 1.2), cp.x, cp.y, cp.z);
   sfx.play(hitSp > 38 ? 'crunch_heavy' : 'crunch', clamp(hitSp / 45, 0.35, 1.2), cp.x, cp.z, { gap: 0.1 });
@@ -457,10 +463,12 @@ function bump(a, b) {
 const crashHooks = {
   smash(c, into, H, n) {
     if (c === player) { game.shake = Math.min(1.2, game.shake + clamp(n / 160, 0.1, 0.7)); noteHit(H.x, H.z); }
+    if (into > 40 && Math.random() < 0.5) crumple.crash(c, into, H, clamp(into * 0.012, 0.5, 1.4));   // smashing through dents the nose too
     if (n > 30) { sound('crash', clamp(n / 140, 0.3, 1.1), H.x, H.y, H.z); sfx.play('crunch_heavy', clamp(n / 120, 0.3, 1), H.x, H.z, { gap: 0.15 }); }
   },
   bump(c, into, H) {
     damage(c, (into - CRASH.bump) * CRASH.wallHurt * 4, null);
+    crumple.crash(c, into, H, clamp(0.5 + (into - CRASH.bump) * 0.035, 0.5, 2.6));   // the end that hit the wall crumples
     sound('thud', clamp(into / 50, 0.3, 1), H.x, H.y, H.z); sparks(H.x, 2.5, H.z, 6, 1, 0.8, 0.4, 14);
     sfx.play(into > 30 ? 'crunch' : 'scrape', clamp(into / 40, 0.3, 1), H.x, H.z, { gap: 0.25 });
     if (c === player) game.shake = Math.min(1.2, game.shake + into / 90);
@@ -749,7 +757,7 @@ function garageLight(on) {
 const TARGET = { body: 'hauler', primary: 'mg', roof: 'none', door: 'none', secondary: 'none', front: 'bumper', armour: 'medium', wheels: 'street', engine: 'stock', gadget: 'none', paint: 'white', trim: 'red', pattern: 'checker' };
 const dummies = [];
 function addDummy(at) {
-  const c = new Vehicle(scene, mats, { ...TARGET, name: 'Target' }, at);
+  const c = new Vehicle(scene, mats, { ...TARGET, name: 'Target' }, at); crumple.attach(c);
   c.dummy = true; c.maxHp = c.hp = 420; c.bounds = room.bounds; c.home = { ...at };
   cars.push(c); makeTag(c); dummies.push(c);
   return c;
@@ -805,7 +813,7 @@ function stepBolt(dt) {
   const B = bolt, c = player;
   if (c) {   // the bonnet lifts while the engines are being looked at; the engine rocks as it revs
     const st = c.unit.state, want = game.state === 'garage' && gcam.view === 'engine' && c.def.dims.hood ? (c.def.dims.hoodDir > 0 ? 1.75 : 1.15) : 0;   // (a lid behind the cabin goes up past upright, out of the way)
-    st.hood = game.state === 'garage' ? st.hood + (want - st.hood) * Math.min(1, dt * 3.2) : 0;
+    st.hood = game.state === 'garage' ? st.hood + (want - st.hood) * Math.min(1, dt * 3.2) : (c.hoodUp || 0);   // (out of the garage: popped by a crash, crumple.js)
     st.shake = game.state === 'garage' && game.revT > 0 ? 0.045 * Math.sin(Math.min(1, game.revT / 1.4) * Math.PI) : 0;
   }
   if (c && game.state === 'garage') {
@@ -1333,6 +1341,7 @@ function step(dt) {
   if (game.state === 'garage' || test) stepDummies(dt);
   if (game.state === 'garage') { stepTry(dt); if (player) specials.hop(player, dt); }
   specials.step(dt);
+  crumple.step(dt, cars);
   for (const c of cars) if (c.flameT > 0) c.flameT -= dt;
   if (!lightWas) { pickups.step(dt, live); hazards.step(dt, live); }   // (the map's pickups and hazards wait while the garage is open: their walls would shove the cars in the yard)
   for (const c of cars) if (!c.gone) { if (!c.dead) c.point(dt); c.pose(dt); }
@@ -1382,4 +1391,4 @@ followSun(player.x, player.z);
 const loadEl = $('loading'); if (loadEl) loadEl.hidden = true;
 $('menu').hidden = false;
 requestAnimationFrame((t) => { last = t; frame(t); });
-window.__derby = { specials, room, gcam, garageLight, startTest, endTest, tryPart: (s, k) => onTry(s, k), dummies, renderer, mapLook, touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, sfx, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop };
+window.__derby = { specials, crumple, cube, room, gcam, garageLight, startTest, endTest, tryPart: (s, k) => onTry(s, k), dummies, renderer, mapLook, touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, sfx, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop };
