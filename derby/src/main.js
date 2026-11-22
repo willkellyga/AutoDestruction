@@ -946,8 +946,9 @@ function resize() {
 }
 addEventListener('resize', resize); resize();
 const quality = makeQuality({ renderer, composer, bloom: composer.passes[1], scene, camera, sun, resize, playing: () => game.state === 'play', mobile: MOBILE });
-// the night show's beams, glows and lamps (night.js), on a map that runs at night
-const night = MAP.night ? makeNight({ scene, renderer, camera, sky, mats, bloom: composer.passes[1], quality, night: MAP.night }) : null;
+// the night show's beams, glows and lamps (night.js), on a map that runs at night (the city round it is out of the
+// floodlights' reach)
+const night = MAP.night ? makeNight({ scene, renderer, camera, sky, mats, bloom: composer.passes[1], quality, night: MAP.night, backdrop }) : null;
 let last = performance.now();
 function frame(now) {
   requestAnimationFrame(frame);

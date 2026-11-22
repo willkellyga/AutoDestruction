@@ -8,9 +8,10 @@
 //     daylight sun already stood, so the shadows fall the way that tower throws them), and a weaker fill without
 //     shadows comes from the north-west tower, so a rival's far side still reads; the sky's light is a dim moonlit blue;
 //     lit signs and LED strips glow (look.dusk), and so do the cars' lamps.
-//   - The floor: a layer over the ground that brightens the pools under the towers' lamps and darkens the dirt toward
-//     the walls and the land outside the stadium. It multiplies what is already drawn, after everything solid, so a car
-//     standing on it is never darkened: the cars are lit by the floodlight bank itself, as brightly as by day.
+//   - The floor: a layer over the pit's dirt that brightens the pools under the towers' lamps and darkens it between
+//     them. It multiplies what is already drawn, after everything solid, so a car standing on it is never darkened: the
+//     cars are lit by the floodlight bank itself, as brightly as by day. (The ground past the ring wall is the city's,
+//     backdrop.js, which lights its own lot.)
 //   - The towers: a soft beam from each bank of lamps down into the pit (fading as it is looked along, and close to, so
 //     it never washes the picture out), and a glare round each bank.
 //   - The show: searchlights sweeping the sky outside, and cameras flashing in the stands.
@@ -29,11 +30,11 @@ import { look } from '../../src/mesh.js';
 import { GLOW } from '../../units/src/voxpart.js';
 
 // the look: the haze (the fog, and the sky at the horizon), the fog's start and end, the exposure, the sky light (sky
-// colour, ground colour, strength), the floodlight bank (colour, strength) and the fill from the far tower (colour,
-// strength, the way to it)
+// colour, ground colour, strength), the floodlight bank (colour, strength), the fill from the far tower (colour,
+// strength, the way to it) and how much of those two the city round the stadium gets (backdrop.js)
 export const NIGHT = {
   haze: 0x2b211f, fog: [320, 3100], exposure: 1.05, hemi: [0x6276a8, 0x2a2420, 0.95], flood: [0xf1f4ff, 2.85],
-  fill: [0xd8e4ff, 0.85, [-0.68, 0.55, -0.45]],
+  fill: [0xd8e4ff, 0.85, [-0.68, 0.55, -0.45]], spill: 0.14,
 };
 const MOON = new THREE.Vector3(0.36, 0.33, -0.87).normalize();   // up over the north stand from the start
 const TAU = Math.PI * 2;
@@ -154,28 +155,24 @@ function stars(n) {
 // ---- the floor ----------------------------------------------------------------------------------------------------
 // The layer over the ground. What it draws scales what is under it: by its colour, plus its alpha (a blend that does
 // dst * (src + alpha)), so it can brighten as well as darken, up to twice, on any screen. How much, at each point of
-// the world, is worked out once here into a small picture (8 voxels a pixel, smoothed between): the light a bank of
-// lamps puts on a point of the floor is inside its cone (soft at the edge), less the further off (as the square), and
-// less the flatter it meets the floor, made 1 at the spot it is aimed at; the towers' pools add up, saturating, a
-// little cooler where they are bright; and past the ring's wall the ground falls away to dark. Past the picture's edge
-// it carries on dark, and the fog takes the layer off with distance, as it does the ground.
+// the pit, is worked out once here into a small picture over the ring (a pixel about 5 voxels by 3, smoothed between):
+// the light a bank of lamps puts on a point of the floor is inside its cone (soft at the edge), less the further off
+// (as the square), and less the flatter it meets the floor, made 1 at the spot it is aimed at; the towers' pools add
+// up, saturating, a little cooler where they are bright. The layer stops at the ring wall (past it is the city's
+// ground, which has lamps of its own), and the fog takes it off with distance, as it does the ground.
 const FIELD = 128, FK = 1.5;   // the picture's size, and the most it brightens (stored over FK)
-const outside = (d) => { const t = Math.min(1, Math.max(0, (1000 - d) / 620)); return 0.17 + 0.23 * t * t * (3 - 2 * t); };
 function floorField(night) {
-  const R = night.ring, x0 = R.x - 512, z0 = R.z - 512, S = 1024 / FIELD, data = new Uint8Array(FIELD * FIELD * 4);
+  const R = night.ring, x0 = R.x - R.hx, z0 = R.z - R.hz, SX = 2 * R.hx / FIELD, SZ = 2 * R.hz / FIELD, data = new Uint8Array(FIELD * FIELD * 4);
   const B = night.banks.map((b) => { const ax = b.aim[0] - b.x, ay = -b.y, az = b.aim[1] - b.z, D = Math.hypot(ax, ay, az); return [b.x, b.y, b.z, ax / D, ay / D, az / D, D]; });
   const sm = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
   for (let j = 0; j < FIELD; j++) for (let i = 0; i < FIELD; i++) {
-    const x = x0 + (i + 0.5) * S, z = z0 + (j + 0.5) * S;
+    const x = x0 + (i + 0.5) * SX, z = z0 + (j + 0.5) * SZ;
     let pool = 0;
     for (const [bx, by, bz, ax, ay, az, D] of B) {
       const lx = x - bx, ly = -by, lz = z - bz, d2 = lx * lx + ly * ly + lz * lz, d = Math.sqrt(d2);
       pool += sm(0.9, 0.995, (lx * ax + ly * ay + lz * az) / d) * Math.min(1.5, D * D / d2) * ((-ly / d) / -ay);
     }
-    const lit = 1 - Math.exp(-0.7 * pool);
-    const qx = Math.abs(x - R.x) - (R.hx - R.r), qz = Math.abs(z - R.z) - (R.hz - R.r);
-    const e = Math.hypot(Math.max(qx, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qz), 0) - R.r;
-    const k = sm(40, -10, e), f = outside(Math.hypot(x - R.x, z - R.z)) * (1 - k) + 0.72 * k + 0.55 * lit;
+    const lit = 1 - Math.exp(-0.7 * pool), f = 0.72 + 0.55 * lit;
     const o = (j * FIELD + i) * 4;
     data[o] = Math.round(f * (1 - 0.05 * lit) / FK * 255); data[o + 1] = Math.round(f * (1 - 0.02 * lit) / FK * 255); data[o + 2] = Math.min(255, Math.round(f * (1 + 0.05 * lit) / FK * 255)); data[o + 3] = 255;
   }
@@ -188,17 +185,18 @@ function floorLayer(night) {
     transparent: true, depthWrite: false, fog: true, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2,
     blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.DstColorFactor, blendDst: THREE.SrcAlphaFactor,
     blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
-    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { field: { value: null }, box: { value: new THREE.Vector3(R.x - 512, R.z - 512, 1024) }, mid: { value: new THREE.Vector2(R.x, R.z) } }]),
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { field: { value: null }, mid: { value: new THREE.Vector2(R.x, R.z) }, ring: { value: new THREE.Vector3(R.hx, R.hz, R.r) } }]),
     vertexShader: `varying vec3 vW;
       #include <fog_pars_vertex>
       void main() { vW = (modelMatrix * vec4(position, 1.0)).xyz; vec4 mvPosition = viewMatrix * vec4(vW, 1.0); gl_Position = projectionMatrix * mvPosition;
         #include <fog_vertex>
       }`,
-    fragmentShader: `uniform sampler2D field; uniform vec3 box; uniform vec2 mid; varying vec3 vW;
+    fragmentShader: `uniform sampler2D field; uniform vec2 mid; uniform vec3 ring; varying vec3 vW;
       #include <fog_pars_fragment>
       void main() {
-        vec2 uv = (vW.xz - box.xy) / box.z;
-        vec3 f = uv == clamp(uv, 0.0, 1.0) ? texture2D(field, uv).rgb * ${FK.toFixed(2)} : vec3(0.17 + 0.23 * smoothstep(1000.0, 380.0, length(vW.xz - mid)));
+        vec2 p = vW.xz - mid, q = abs(p) - (ring.xy - ring.z);
+        if (length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) > ring.z) discard;   // (past the ring wall's line)
+        vec3 f = texture2D(field, p / (2.0 * ring.xy) + 0.5).rgb * ${FK.toFixed(2)};
         #ifdef USE_FOG
           f = mix(f, vec3(1.0), smoothstep(fogNear, fogFar, vFogDepth));
         #endif
@@ -208,7 +206,7 @@ function floorLayer(night) {
       }`,
   });
   m.uniforms.field.value = floorField(night);   // (set after the merge, which would copy it)
-  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(6400, 6400), m);
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2 * R.hx, 2 * R.hz), m);
   mesh.rotation.x = -Math.PI / 2; mesh.position.set(R.x, 0.02, R.z); mesh.updateMatrix(); mesh.matrixAutoUpdate = false;
   mesh.renderOrder = -1;   // first of what is drawn after the solid things: the skid marks and anything else on the ground go over it
   return mesh;
@@ -406,8 +404,24 @@ function lampsOf(c) {
 }
 
 // ---- it all, and its frame --------------------------------------------------------------------------------------------
-export function makeNight({ scene, renderer, camera, sky, mats, bloom, quality, night }) {
+// The floodlight bank and the fill are the scene's two direct lights (three.js's directional lights reach everywhere),
+// but they are aimed into the pit: the city round the stadium (backdrop.js) gets only their spill, and is lit by the
+// moon, its own lamps and windows. Its lit materials take one more step, after their own: the direct light scaled down.
+function outOfReach(objects) {
+  for (const o of objects) {
+    const m = o.material; if (!m || !m.isMeshLambertMaterial) continue;
+    const before = m.onBeforeCompile, key = m.customProgramCacheKey;
+    m.onBeforeCompile = (sh, r) => {
+      before.call(m, sh, r);
+      sh.fragmentShader = sh.fragmentShader.replace('#include <aomap_fragment>', `reflectedLight.directDiffuse *= ${NIGHT.spill.toFixed(3)};\n#include <aomap_fragment>`);
+    };
+    m.customProgramCacheKey = () => key.call(m) + '-spill';
+    m.needsUpdate = true;
+  }
+}
+export function makeNight({ scene, renderer, camera, sky, mats, bloom, quality, night, backdrop }) {
   look.dusk.value = 1;                 // lit signs, LED strips and the scoreboard's bands glow
+  if (backdrop) outOfReach(backdrop.objects);
   mats[1].color.setScalar(1.5);        // and the cars' lamps (and gun flashes) glow enough for the light pass to bloom them
   bloom.strength = 0.36; bloom.radius = 0.6; bloom.threshold = 1.25;
   const starPts = stars(1800); sky.add(starPts);

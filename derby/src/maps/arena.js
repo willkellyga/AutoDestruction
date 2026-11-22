@@ -439,8 +439,9 @@ const BANKS = TOWERS.flatMap(([px, pz]) => {
     { x: hx + 0.5, y, z: fz > 0 ? hz + 10 : hz - 8, nx: 0, nz: fz, w: 13, h: 7, aim: [mx, mz + fz * 45] },
   ];
 });
-// where the searchlights stand: behind the middle of each grandstand and off each end
-const SEARCH = [[330, 196], [694, 196], [694, 827], [330, 827], [52, 512], [972, 512]];
+// where the searchlights stand: on the concrete apron round the stadium (the city's, `backdrop` below), between each
+// grandstand's back and the drive, and off each end
+const SEARCH = [[330, 232], [694, 232], [694, 791], [330, 791], [86, 512], [920, 512]];
 // Where cameras flash in the crowd: eight hundred seats, half in each stand, at the height of a head (stand() fills most seats)
 function crowdSpots() {
   let s = 99991; const r = () => { s = (s * 1664525 + 1013904223) | 0; return ((s >>> 8) & 0xffff) / 65536; };
