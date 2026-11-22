@@ -37,11 +37,14 @@ Scrap comes from wrecking cars (100), clearing waves (50 a wave), finishing plac
 
 The rivals are built from the same parts, better ones each wave.
 
+The garage is a workshop of its own: the car stands on a turntable, and the camera flies to whichever part you're changing. Drag to turn the car, or tap a glowing spot on it to open that slot. A part you pick bolts on with a drop and a clank, the stat bars slide and show what changed, and a build rating (D up to S) sums the car up. A part you don't own goes on as a look first; tap it again to buy it. Weapon cards have a Fire button that shoots the part at a target car on the firing range through the door (engines rev, nitro boosts), and Test drive takes the build out to the yard for 30 seconds against three target cars. Three saved builds sit at the top of the panel.
+
 ## Source (`derby/src`)
 - `parts.js`: the garage's catalogue. Every part, what it does and costs (`PARTS`), the Power and weight rules and the stats a build adds up to (`statsOf`), the save, and the rivals' builds for each wave.
 - `carshapes.js` and `carmodel.js`: the cars, built in code at cubes a third the size of the street cars' (`H = 1/6` of a town unit). Each body takes after a kind of real car, with no makes or badges: an early-80s boxy hot hatch, a mid-70s wood-sided station wagon, a late-60s fastback, a late-70s square-body pickup and an early-80s panel van. `carshapes.js` holds the body shapes and the shared builder that colours each cube by what it is and which faces show (lamps and grille, chrome, shut lines and handles, glass and pillars, arches, wood trim); `carmodel.js` turns a build into parts. Wheels, turret, guns, roof and door weapons, heavy weapons and rams are parts of their own that turn, spin and get blown off.
 - `vehicle.js`: a combat car: arcade driving with sliding, the weapons it carries and where their barrels are, and the crash rules (probes round the car feel for voxels, and a car going faster than `CRASH.smash` knocks a hole with the town's `blast()`).
-- `garage.js`: the garage panel (stat bars, the Power meter, a tab per slot, a card per part: try it on, then buy and fit it).
+- `garage.js`: the garage panel (the build rating, stat bars that slide with what changed, the Power meter, a tab per slot, a card per part with its picture: try it on, fire it, then buy and fit it; three saved builds), and the glowing spots on the car.
+- `garageroom.js`: the workshop (turntable, tool wall, lift, scrap pile that grows with your scrap) and the yard for test drives, built past the edge of the map. `partart.js`: the cards' pictures, drawn from each part's own model on a small renderer of its own.
 - `audio.js`: the game's own recorded sounds, placed in the street, with a few takes of the sounds heard most (see `assets/sfx/CREDITS.md`).
 - `ai.js`: the rival drivers. They follow the map's routes to their target, cut straight across when they have a clear run, shoot when their gun is on target, ram when close, drop mines on whoever is chasing, back out when stuck, go for repair kits when hurt, and sometimes go after each other or whoever hit them last.
 - `tuning.js`: crashing (`CRASH`), the waves (`ROUND`) and the rivals (`AI`).
@@ -56,7 +59,7 @@ The rivals are built from the same parts, better ones each wave.
 - `quality.js`: the picture quality steps (pixels, shadows, glow, far detail) and the frame-rate check that moves between them.
 - `pickups.js` and `hazards.js`: pickups (repair, nitro, overcharge, scrap, the Hammerdown strike) and hazards (fire grates, the press, explosive barrels, boost strips, sweeper, hammer, flame jets, magnet, conveyor belts, and timed show events) for any map that lists them; `steerClear()` keeps rivals out of live ones.
 - `../docs/arena.md`: what vehicle combat games do with their arenas, with sources, and how Hammerdown Arena uses it.
-- `main.js`: the scene and light (as Monster Mayhem's), the map and its rules, the guns (`units/src/fx.js`) and what their hits do, aim assist and the phones' auto-aim, the arc coil, blades, saws, mines and gadgets, the touch controls, car against car crashes, the garage camera, the HUD, the radar and the results card.
+- `main.js`: the scene and light (as Monster Mayhem's), the map and its rules, the guns (`units/src/fx.js`) and what their hits do, aim assist and the phones' auto-aim, the arc coil, blades, saws, mines and gadgets, the touch controls, car against car crashes, the garage (its camera and lighting, parts bolting on, the firing range, the test drive and the target cars), the HUD, the radar and the results card.
 - `page.html`: the HUD, the garage panel and the start card. `build.mjs`: bundles everything into one page.
 
 ## Not done yet

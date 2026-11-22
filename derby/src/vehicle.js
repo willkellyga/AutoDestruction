@@ -120,7 +120,8 @@ export class Vehicle {
     // wheels locked by the handbrake
     this.skid = this.dead ? 0 : Math.max(clamp((Math.abs(vs) - 8) / 25, 0, 1), this.hbBrake === DRIFT.stop && vf > 20 ? 0.55 : 0);
     this.collide(dt, hooks);
-    this.x = clamp(this.x, 8, WX - 8); this.z = clamp(this.z, 8, WZ - 8);
+    if (this.bounds) this.fence(hooks);   // the garage's yard: a walled lot of its own, off the map
+    else { this.x = clamp(this.x, 8, WX - 8); this.z = clamp(this.z, 8, WZ - 8); }
   }
   // The handbrake: steered at speed (or still sliding) the back lets go, straight it is a brake. Returns how far out
   // the back is (0 to 1), and sets the handbrake's own braking. A slide held at an angle long enough gives a burst
@@ -141,6 +142,15 @@ export class Vehicle {
       this.driftT = 0;
     }
     return this.slide;
+  }
+  // kept inside a box (bounds: x0, x1, z0, z1 for the car's middle), bouncing off its sides like a wall
+  fence(hooks) {
+    const B = this.bounds; let into = 0;
+    if (this.x < B.x0) { this.x = B.x0; into = Math.max(into, -this.vx); if (this.vx < 0) this.vx *= -0.25; }
+    if (this.x > B.x1) { this.x = B.x1; into = Math.max(into, this.vx); if (this.vx > 0) this.vx *= -0.25; }
+    if (this.z < B.z0) { this.z = B.z0; into = Math.max(into, -this.vz); if (this.vz < 0) this.vz *= -0.25; }
+    if (this.z > B.z1) { this.z = B.z1; into = Math.max(into, this.vz); if (this.vz > 0) this.vz *= -0.25; }
+    if (into > CRASH.bump && hooks && hooks.bump) hooks.bump(this, into, { x: this.x + Math.sin(this.yaw) * this.mid, y: 2, z: this.z + Math.cos(this.yaw) * this.mid });
   }
   // the points round the car that feel for walls, in the car's own space (left, forward)
   probes() {

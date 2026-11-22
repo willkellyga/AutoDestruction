@@ -22,8 +22,10 @@ import { MAP, MAPS, chooseMap } from './maps/index.js';
 import { MODES } from './modes/index.js';
 import { CRASH, ROUND, AI, DRIFT, BUILDINGS } from './tuning.js';
 import { toughen, boom, chipAt, fuelBlast } from './sturdy.js';
-import { PAINTS, loadSave, keepSave, rivalBuild, RIVAL_NAMES } from './parts.js';
+import { PARTS, PAINTS, loadSave, keepSave, rivalBuild, RIVAL_NAMES } from './parts.js';
 import { makeGarage } from './garage.js';
+import { makeGarageRoom } from './garageroom.js';
+import { makePartArt } from './partart.js';
 import { makeSounds } from './audio.js';
 import { makePickups } from './pickups.js';
 import { makeHazards } from './hazards.js';
@@ -75,8 +77,11 @@ scene.add(sun); scene.add(sun.target);
 // A map with a look of its own (looks/: the arena by night, the race at sundown, the base in a storm) sets its own sky,
 // fog and light; the sun can be its floodlight bank, a low evening sun or the moon, and the shadows go its way
 const LOOK = MAP.look ? lookSetup(MAP.look, { scene, renderer, sky, hemi, sun }) : null;
-const SUN_DIR = (LOOK && LOOK.sunDir) || new THREE.Vector3(0.55, 0.95, 0.35).normalize();
-const SUN_R = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), SUN_DIR).normalize(), SUN_U = new THREE.Vector3().crossVectors(SUN_DIR, SUN_R);
+const SUN_DIR0 = (LOOK && LOOK.sunDir) || new THREE.Vector3(0.55, 0.95, 0.35).normalize();
+// (the garage has a light of its own from overhead: sunFrom swaps the way to the sun, and back)
+const SUN_DIR = new THREE.Vector3(), SUN_R = new THREE.Vector3(), SUN_U = new THREE.Vector3();
+function sunFrom(d) { SUN_DIR.copy(d).normalize(); SUN_R.crossVectors(new THREE.Vector3(0, 1, 0), SUN_DIR).normalize(); SUN_U.crossVectors(SUN_DIR, SUN_R); }
+sunFrom(SUN_DIR0);
 const _sunC = new THREE.Vector3();
 function followSun(x, z) {   // the shadow box follows the player, in whole texels so shadows do not crawl
   const tex = (sc.right - sc.left) / sun.shadow.mapSize.x;
@@ -103,6 +108,8 @@ const streaks = MAP.mode === 'race' ? makeStreaks({ scene, mobile: MOBILE }) : n
 look.detail.value = 1; look.dusk.value = 0;
 cfg.dust = 0.55; cfg.hang = 0.2;
 toughen();   // sturdier buildings than the town's own (sturdy.js, tuning.js BUILDINGS)
+// the garage's own workshop and yard, out past the edge of the map (garageroom.js)
+const room = makeGarageRoom({ scene, WX, mobile: MOBILE });
 
 // ---- the light pass: bloom, grade, vignette ---------------------------------------------------------------------
 const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: MOBILE ? 0 : 4 }));
@@ -167,7 +174,7 @@ let player = null;
 let by = null;      // whose shot or crash is breaking things right now (for scrap and kills)
 // what the guns' shots can strike: the combat cars
 const target = {
-  solid: (x, y, z) => { if (!mode.friendly) for (const c of cars) if (!c.gone && c.inside(x, y, z)) return true; for (const e of extras) if (e.solid(x, y, z)) return true; return false; },   // (a friendly mode's shots go through cars)
+  solid: (x, y, z) => { for (const c of cars) if ((!mode.friendly || c.dummy) && !c.gone && c.inside(x, y, z)) return true; for (const e of extras) if (e.solid(x, y, z)) return true; return false; },   // (a friendly mode's shots go through cars, but not the garage's target cars)
   colorAt: (p) => { for (const c of cars) if (c.inside(p.x, p.y, p.z, 1)) return PAINTS[c.load.paint] ?? 0x777b82; return 0x777b82; },
   scorch() {}, update() {}, scorched: 0,
 };
@@ -234,11 +241,13 @@ function addCar(load, at, rival) {
 function damage(c, d, who) {
   if (!c || c.dead || d <= 0 || game.state === 'menu') return;
   if (c.shield > 0) return;   // just back in (the arena's free-for-all): nothing hurts it for a moment
-  if (mode.friendly && who && who !== c) return;   // a mode with no fighting between cars (survival): only the dead and the map hurt
+  if (mode.friendly && who && who !== c && !c.dummy) return;   // a mode with no fighting between cars (survival): only the dead and the map hurt
+  if (c === player && game.state === 'garage') return;   // nothing hurts the car on the turntable (a mine tried out behind it, say)
+  if (c.dummy) c.popAcc = (c.popAcc || 0) + d;   // the target cars show what each hit does (stepDummies)
   if (c === player && who === player) d *= 0.35;   // your own splash hurts, but less
   if (window.__dlog) window.__dlog.push([c.name, who ? who.name : (splashK ? 'boom' : 'wall'), Math.round(d * 10) / 10]);
   c.hp -= d; c.hurtT = 0.25; if (who && who !== c) c.lastBy = who;
-  if (c === player) game.hurt = Math.min(1, (game.hurt || 0) + d / 40);
+  if (c === player && game.state !== 'garage') game.hurt = Math.min(1, (game.hurt || 0) + d / 40);
   if (c.hp <= 0) wreck(c, who);
 }
 function wreck(c, who) {
@@ -250,6 +259,8 @@ function wreck(c, who) {
   sfx.play(c.maxHp > 200 ? 'bigboom' : 'carboom', 1, p.x, p.z);
   const was = by; by = who || (mode.friendly ? c : null); splashK = { splash: 18, reach: 18 };   // (friendly: the wreck's own blast spares the other cars)
   try { boom(p.x, 2.5, p.z, 5.5, 0.6, { maxDebris: 260, fire: true }, BUILDINGS.wreck); } finally { by = was; splashK = null; }
+  if (c.dummy) { c.respawnT = 2.6; if (who === player) toast('Target wrecked', 'Another one is on its way'); return; }   // no scrap for these
+  if (c === player && game.state === 'test') { game.testEnd = Math.min(game.testEnd ?? 9, 1.8); toast('Wrecked!', 'Back to the garage'); return; }
   if (c === player) {
     game.deaths++; keepSave(save);
     const r = mode.playerDown();
@@ -322,7 +333,7 @@ function nearMiss(from, to) {
 const bolts = [], boltMat = new THREE.LineBasicMaterial({ color: 0xa8e4ff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
 function zap(c, G) {
   let best = null, bd = G.g.range;
-  for (const o of mode.friendly ? [] : cars) { if (o === c || o.dead || o.gone) continue; const d = Math.hypot(o.x - c.x, o.z - c.z) - o.wide; if (d < bd) { bd = d; best = o; } }
+  for (const o of cars) { if (o === c || o.dead || o.gone || (mode.friendly && !o.dummy)) continue; const d = Math.hypot(o.x - c.x, o.z - c.z) - o.wide; if (d < bd) { bd = d; best = o; } }
   if (!best || !c.muzzle(G, _m, null, 0)) return false;
   const to = best.centre(_a); to.y = 2.2 + Math.random();
   let b = bolts.find((x) => x.t <= 0);
@@ -344,10 +355,11 @@ function zap(c, G) {
 }
 function stepBolts(dt) { for (const b of bolts) if (b.t > 0 && (b.t -= dt) <= 0) b.line.visible = false; }
 // the triggers: want[0] the guns, want[1] the heavy weapons
-function guns(c, dt, want) {
+function guns(c, dt, want, only) {
   c.arcT = Math.max(0, (c.arcT || 0) - dt);
   if (c.pumpT > 0 && (c.pumpT -= dt) <= 0) sfx.play('pump', c === player ? 0.9 : 0.6, c.x, c.z);
   for (const G of c.guns) {
+    if (only && G.slot !== only) continue;   // (the garage's firing range tries one weapon at a time)
     const g = G.g, pull = !!want[G.group];
     G.t = Math.max(0, G.t - dt);
     // the rivals don't waste the roof and door weapons on cars that aren't in front of them
@@ -368,7 +380,7 @@ function onLand(s, hit, p) {
   const was = by; by = s.owner;
   try {
     if (hit === 1) {
-      const c = !mode.friendly && cars.find((o) => !o.gone && o.inside(p.x, p.y, p.z, 1.2));
+      const c = cars.find((o) => (!mode.friendly || o.dummy) && !o.gone && o.inside(p.x, p.y, p.z, 1.2));
       if (c && c !== s.owner) {
         let d = g.dmg * (s.owner && s.owner.rival ? AI.dmg : 1);
         if (g.pellets) d *= clamp(1.3 - s.from.distanceTo(p) / g.range, 0.15, 1);   // the scattergun is brutal close and weak far
@@ -523,11 +535,12 @@ function stepMines(dt) {
     if (m.t < 1.2) continue;
     if (!m.armed) { m.armed = true; sfx.play('mine_beep', 0.8, m.x, m.z); }
     const hit = cars.find((o) => !o.gone && !o.dead && Math.hypot(o.x - m.x, o.z - m.z) < o.wide + 1.6 && (o !== m.owner || m.t > 3));
-    if (!hit && m.t < 45) continue;
+    const fused = m.fuse !== undefined && m.t >= m.fuse;   // (one dropped on the garage floor goes off by itself)
+    if (!hit && !fused && m.t < 45) continue;
     mines.splice(i, 1); m.mesh.removeFromParent();
-    if (!hit) continue;
+    if (!hit && !fused) continue;
     const was = by; by = m.owner; splashK = m.g;
-    try { boom(m.x, 1, m.z, m.g.wall, 0.5, { maxDebris: 160, fire: true }, BUILDINGS.shell); hit.vx *= 0.3; hit.vz *= 0.3; } finally { by = was; splashK = null; }
+    try { boom(m.x, 1, m.z, m.g.wall, 0.5, { maxDebris: 160, fire: true }, BUILDINGS.shell); if (hit) { hit.vx *= 0.3; hit.vz *= 0.3; } } finally { by = was; splashK = null; }
   }
 }
 // Shift: the gadget. Nitro is a burst of speed; the repair kit patches the car up.
@@ -553,8 +566,8 @@ function stepGadget(c, dt) {
 // ---- name tags and the HUD ---------------------------------------------------------------------------------------
 const tags = $('tags');
 function makeTag(c) {
-  if (!c.rival) return;
-  const el = document.createElement('div'); el.className = 'tag';
+  if (!c.rival && !c.dummy) return;
+  const el = document.createElement('div'); el.className = c.dummy ? 'tag dummy' : 'tag';
   el.innerHTML = `<b></b><i><s></s></i>`; el.querySelector('b').textContent = c.name; tags.appendChild(el); c.tag = el;
 }
 const _p = new THREE.Vector3();
@@ -564,7 +577,7 @@ function drawTags() {
     if (!c.tag) continue;
     _p.set(c.x, c.top + 6, c.z);
     const d = camera.position.distanceTo(_p); _p.project(camera);
-    const show = !c.dead && _p.z < 1 && d < 320 && game.state !== 'menu';
+    const show = !c.dead && _p.z < 1 && d < 320 && game.state !== 'menu' && !(c.dummy && game.state === 'garage' && !tryer.slot);   // (the range's target shows its bar only while something is fired at it)
     c.tag.style.display = show ? '' : 'none'; if (!show) continue;
     c.tag.style.transform = `translate(${(_p.x * 0.5 + 0.5) * W}px, ${(-_p.y * 0.5 + 0.5) * H}px) translate(-50%, -100%) scale(${clamp(90 / d, 0.55, 1)})`;
     c.tag.querySelector('s').style.width = `${(c.hp / c.maxHp) * 100}%`;
@@ -663,32 +676,336 @@ function spawnPlayer(at) {
   cars.splice(cars.indexOf(player), 1); cars.unshift(player);
 }
 
-// ---- the garage: the car stands in the street, the camera goes round it, the panel is beside it -------------------
+// ---- the garage: the car on the turntable in the workshop (garageroom.js), the panel beside it (garage.js) ----------
+// The workshop is out past the edge of the map. While it is open the map's own light and weather are put by for the
+// workshop's (garageLight), the camera swings round to whichever part is being changed (VIEWS), parts drop on with a
+// clunk (stepBolt), weapons are fired at a target car through the door (stepTry), and a build can be taken out into
+// the yard for half a minute (startTest).
+const art = makePartArt({ mats });
 const garage = makeGarage({
-  root: $('garage'), save,
-  onChange: (load) => { const at = { x: player.x, z: player.z, yaw: player.yaw }; player.dispose(); cars.splice(cars.indexOf(player), 1); player = null; player = addCar({ ...load, name: 'You' }, at, false); cars.splice(cars.indexOf(player), 1); cars.unshift(player); player.turretTurn = 10; },
+  root: $('garage'), save, art,
+  onChange: (load, how, slot) => {
+    const old = player, same = old.load[slot] === load[slot];
+    if ((how === 'fit' || how === 'look') && !same) shedPart(old, slot);   // the old part comes off in a shower of bits
+    const at = { x: old.x, z: old.z, yaw: old.yaw };
+    old.dispose(); cars.splice(cars.indexOf(old), 1); player = null;
+    player = addCar({ ...load, name: 'You' }, at, false); cars.splice(cars.indexOf(player), 1); cars.unshift(player);
+    player.turretTurn = 10; player.gunYaw = old.gunYaw; player.aim.copy(old.aim);
+    if (how === 'fit' || how === 'look' || how === 'build') boltOn(how === 'build' ? 'body' : slot, how, same);
+    room.setScrap(save.scrap);
+  },
   onDrive: leaveGarage,
+  onTest: (load) => startTest(load),
+  onTry: (slot, key) => onTry(slot, key),
+  onTab: (slot) => { gcam.view = slot; gcam.user = 0; tryer.slot = null; },
   sound: (n, v = 1) => { initAudio(); sfx.play(n, v); },
   toast,
 });
+
+// the workshop's light in place of the map's, and back
+const GLIGHT = { sky: 0xdde6ff, ground: 0x6a5a48, hemi: 1.15, sun: 0xfff0dc, sunI: 2.4, dir: new THREE.Vector3(0.35, 1, 0.6) };
+let lightWas = null;
+function garageLight(on) {
+  if (on === !!lightWas) return;
+  if (on) {
+    lightWas = { hc: hemi.color.getHex(), hg: hemi.groundColor.getHex(), hi: hemi.intensity, sc: sun.color.getHex(), si: sun.intensity, fog: scene.fog ? [scene.fog.near, scene.fog.far] : null, bd: backdrop ? backdrop.objects.map((o) => o.visible) : [], lk: lookObjs.map((o) => o.visible) };
+    hemi.color.set(GLIGHT.sky); hemi.groundColor.set(GLIGHT.ground); hemi.intensity = GLIGHT.hemi;
+    sun.color.set(GLIGHT.sun); sun.intensity = GLIGHT.sunI; sunFrom(GLIGHT.dir);
+    if (scene.fog) { scene.fog.near = 320; scene.fog.far = 1500; }
+    if (backdrop) for (const o of backdrop.objects) o.visible = false;
+    for (const o of lookObjs) o.visible = false;
+  } else {
+    const w = lightWas; lightWas = null;
+    hemi.color.setHex(w.hc); hemi.groundColor.setHex(w.hg); hemi.intensity = w.hi; sun.color.setHex(w.sc); sun.intensity = w.si; sunFrom(SUN_DIR0);
+    if (scene.fog && w.fog) { scene.fog.near = w.fog[0]; scene.fog.far = w.fog[1]; }
+    if (backdrop) backdrop.objects.forEach((o, i) => { o.visible = w.bd[i]; });
+    lookObjs.forEach((o, i) => { o.visible = w.lk[i]; });
+  }
+  room.show(on);
+}
+
+// ---- the target cars: one on the firing range, three about the yard on a test drive ---------------------------------
+const TARGET = { body: 'hauler', primary: 'mg', roof: 'none', door: 'none', secondary: 'none', front: 'bumper', armour: 'medium', wheels: 'street', engine: 'stock', gadget: 'none', paint: 'white', trim: 'red', pattern: 'checker' };
+const dummies = [];
+function addDummy(at) {
+  const c = new Vehicle(scene, mats, { ...TARGET, name: 'Target' }, at);
+  c.dummy = true; c.maxHp = c.hp = 420; c.bounds = room.bounds; c.home = { ...at };
+  cars.push(c); makeTag(c); dummies.push(c);
+  return c;
+}
+function dropDummy(c) {
+  c.dispose(); if (c.tag) c.tag.remove();
+  const i = cars.indexOf(c); if (i >= 0) cars.splice(i, 1);
+  const j = dummies.indexOf(c); if (j >= 0) dummies.splice(j, 1);
+}
+function clearDummies() { while (dummies.length) dropDummy(dummies[0]); }
+const popsEl = $('pops'), _pp = new THREE.Vector3();
+function pop(text, at, big) {
+  _pp.copy(at).project(camera); if (_pp.z > 1) return;
+  const el = document.createElement('i'); el.textContent = text; if (big) el.className = 'big';
+  el.style.left = `${(_pp.x * 0.5 + 0.5) * canvas.clientWidth + (Math.random() - 0.5) * 40}px`; el.style.top = `${(-_pp.y * 0.5 + 0.5) * canvas.clientHeight}px`;
+  popsEl.appendChild(el); setTimeout(() => el.remove(), 950);
+}
+function stepDummies(dt) {
+  for (const c of [...dummies]) {
+    if (game.state === 'garage') { c.hurtT -= dt; if (c.dead) c.deadT += dt; }
+    c.popT = (c.popT || 0) - dt;
+    if (c.popAcc >= 1 && c.popT <= 0) { pop(`-${Math.round(c.popAcc)}`, c.centre(_pp).setY(c.top + 2.5), c.popAcc >= 25); c.popAcc = 0; c.popT = 0.2; }
+    if (c.dead && (c.respawnT -= dt) <= 0) { const at = c.home; dropDummy(c); addDummy(at); }
+  }
+}
+
+// ---- parts going on and coming off ----------------------------------------------------------------------------------
+// which bones of the car's model are each slot's part (null: the whole car)
+const SLOT_BONES = { primary: ['yaw'], roof: ['roof'], door: ['doorL', 'doorR', 'blades'], secondary: ['pod', 'mines'], front: ['front'], wheels: ['wFL', 'wFR', 'wRL', 'wRR'] };
+const _w2 = new THREE.Vector3();
+function shedPart(c, slot) {
+  const names = SLOT_BONES[slot]; if (!names) return;
+  c.unit.root.updateWorldMatrix(true, true);
+  const out = [];
+  for (const p of c.unit.parts) {
+    if (!names.includes(p.name) || !p.count) continue;
+    out.length = 0; p.all(out, 0.16);
+    for (const [x, y, z, col] of out) {
+      _w2.set(x, y, z); p.bone.localToWorld(_w2);
+      const dx = _w2.x - c.x, dz = _w2.z - c.z, d = Math.hypot(dx, dz) || 1;
+      cube(_w2.x, _w2.y, _w2.z, dx / d * (3 + Math.random() * 5), 7 + Math.random() * 9, dz / d * (3 + Math.random() * 5), col, H3);
+    }
+  }
+}
+const H3 = 0.5;   // the size of a bit coming off a part
+let bolt = null;
+function boltOn(slot, how, same) {
+  const names = SLOT_BONES[slot] || null;
+  bolt = { names, t: same ? 0.3 : 0, lockOnly: same, big: how === 'fit', whole: !names, landed: false, slot };
+  sfx.play('servo', 0.6);
+}
+function stepBolt(dt) {
+  const B = bolt, c = player;
+  if (c && game.state === 'garage') {
+    // the engine tried out: the car shakes as it revs, smoke from the back
+    if (game.revT > 0) {
+      game.revT -= dt;
+      c.unit.root.position.y += (Math.random() - 0.5) * 0.05; c.unit.bones.body.rotation.z += (Math.random() - 0.5) * 0.012;
+      if (Math.random() < dt * 14) { const s = Math.sin(c.yaw), co = Math.cos(c.yaw); dust(c.x + s * (c.mid - c.half), 1, c.z + co * (c.mid - c.half), 3, 2.5); }
+    }
+    if (game.boostT > 0) {
+      game.boostT -= dt;
+      const s = Math.sin(c.yaw), co = Math.cos(c.yaw), bx = c.x + s * (c.mid - c.half - 0.4), bz = c.z + co * (c.mid - c.half - 0.4);
+      sparks(bx, 1.2, bz, 4, 0.45, 0.75, 1, 12);
+    }
+  }
+  if (!B || !c) return;
+  B.t += dt;
+  const T = 0.32, t = B.t;
+  const fall = t < T ? (1 - t / T) ** 2 : 0, spring = t >= T ? Math.exp(-(t - T) * 6) * Math.sin((t - T) * 21) : 0;
+  const body = c.unit.bones.body;
+  if (B.whole) c.unit.root.position.y += fall * 7 - spring * 0.3;
+  else {
+    for (const n of B.names) { const b = c.unit.bones[n]; if (b) { b.position.y += fall * 4.5 + spring * 0.25; b.scale.multiplyScalar(1 + spring * 0.06); } }
+    if (body) body.position.y -= spring * 0.18;
+  }
+  if (!B.landed && t >= T) {
+    B.landed = true;
+    sfx.play('reload', 0.8); sfx.play('tink', 0.7, undefined, undefined, { rate: 0.8 });
+    if (B.whole || B.big) sound('thud', 0.7);
+    // sparks where it lands
+    c.unit.root.updateWorldMatrix(true, true);
+    const at = new THREE.Vector3();
+    const b = B.names && B.names.map((n) => c.unit.bones[n]).find((x) => x && c.unit.parts.some((p) => p.bone === x && p.count));
+    if (b) b.getWorldPosition(at); else c.centre(at).setY(0.6);
+    sparks(at.x, at.y + 0.4, at.z, B.big ? 26 : 12, 1, 0.85, 0.45, B.big ? 26 : 16);
+    if (B.big) game.shake = Math.min(0.5, game.shake + 0.25);
+  }
+  if (t > 1.3) bolt = null;
+}
+
+// ---- the camera and the turntable -------------------------------------------------------------------------------------
+// Each slot has its view: which way the turntable turns the car (turn: from nose-on to the camera, round to the car's
+// side and back), how high the camera is (h) and how far off (d), the height it looks at (y), how far along the car
+// it looks (f, in half-lengths: + towards the nose), and how much of the car must fit on the screen (r, in
+// half-lengths). The overall views turn the car slowly by themselves; a drag turns it by hand.
+const VIEWS = {
+  body: { turn: 0.75, h: 7, d: 21, y: 2.4, f: 0, r: 1.25, spin: true },
+  primary: { turn: 0.55, h: 11.5, d: 15, y: 4, f: 0, r: 0.95 },
+  roof: { turn: 0.85, h: 13.5, d: 14.5, y: 4, f: 0.1, r: 0.95 },
+  door: { turn: 1.5, h: 4.6, d: 14, y: 2.3, f: 0.2, r: 1.05 },
+  secondary: { turn: 0.5, h: 10.5, d: 15, y: 3.8, f: -0.1, r: 0.95 },
+  rear: { turn: 2.55, h: 8, d: 15, y: 2.4, f: -0.5, r: 0.95 },
+  front: { turn: 0.38, h: 5, d: 13, y: 1.9, f: 0.75, r: 0.8 },
+  armour: { turn: 1.05, h: 7.5, d: 16, y: 2.4, f: 0, r: 1.15 },
+  wheels: { turn: 1.3, h: 2.8, d: 11, y: 1.6, f: 0.55, r: 0.7 },
+  engine: { turn: 0.3, h: 9.5, d: 14, y: 2.5, f: 0.45, r: 0.9 },
+  gadget: { turn: 2.6, h: 6.5, d: 15, y: 2.4, f: -0.5, r: 1 },
+  paint: { turn: 0.75, h: 7, d: 19, y: 2.4, f: 0, r: 1.2, spin: true },
+  range: { turn: 0, h: 13, d: 30, y: 3.2, f: 0.55, r: 1.6, yaw: Math.PI, az: 0.16 },   // the firing range: nose to the door, looking out past the car
+};
+const gcam = { view: 'body', user: 0, pos: new THREE.Vector3(), look: new THREE.Vector3(), init: false, az: 0.35, idle: 0 };
+const _gl = new THREE.Vector3(), _gp = new THREE.Vector3(), _gr = new THREE.Vector3(), _gu = new THREE.Vector3();
+function turnTable(dx) { gcam.user += dx * 0.012; gcam.idle = 0; }
+function viewNow() {
+  if (tryer.slot && tryer.view) return VIEWS[tryer.view];
+  if (gcam.view === 'secondary' && player && player.load.secondary === 'mines') return VIEWS.rear;
+  return VIEWS[gcam.view] || VIEWS.body;
+}
+function garageCamera(dt) {
+  const c = player, V = viewNow(), az = V.az ?? gcam.az;
+  if (V.spin && !cam.drag) { gcam.idle += dt; if (gcam.idle > 1.5) gcam.user += dt * 0.22; }
+  // the turntable turns the car to the view (the shorter way round), not faster than a real one would
+  const want = V.yaw ?? (az + V.turn + gcam.user), dy = wrap(want - c.yaw), rate = cam.drag ? 30 : 3.2;
+  const turn = clamp(dy * Math.min(1, dt * 5), -rate * dt, rate * dt);
+  c.yaw = wrap(c.yaw + turn); c.x = room.spot.x; c.z = room.spot.z;
+  room.lift.rotation.y = c.yaw;
+  if (Math.abs(turn) > dt * 1.2 && !cam.drag) { gcam.motor = (gcam.motor || 0) - dt; if (gcam.motor <= 0) { gcam.motor = 0.8; sfx.play('servo', 0.25, undefined, undefined, { rate: 0.7 }); } }
+  // what to look at: a point along the car, at the view's height
+  const sy = Math.sin(c.yaw), cy = Math.cos(c.yaw);
+  _gl.set(c.x + sy * (c.mid + c.half * V.f), V.y, c.z + cy * (c.mid + c.half * V.f));
+  // how far off: the view's distance, or further if the part of the screen the panel leaves is small
+  const fr = garage.free(), W = innerWidth, H = innerHeight, tanV = Math.tan(camera.fov * Math.PI / 360);
+  const fw = Math.max(0.2, (fr.x1 - fr.x0) / W), fh = Math.max(0.2, (fr.y1 - fr.y0) / H);
+  const need = (c.half + 1) * V.r / (tanV * Math.min(fh, camera.aspect * fw * 0.9));
+  const d = clamp(Math.max(V.d, need), 7, 30), h = V.y + (V.h - V.y) * d / V.d;
+  _gp.set(_gl.x + Math.sin(az) * d, Math.min(h, 21), _gl.z + Math.cos(az) * d);
+  // the car in the middle of the free part of the screen: look past it by as much
+  camera.position.copy(_gp); camera.lookAt(_gl); camera.updateMatrixWorld();
+  _gr.setFromMatrixColumn(camera.matrixWorld, 0); _gu.setFromMatrixColumn(camera.matrixWorld, 1);
+  const nx = (fr.x0 + fr.x1) / W - 1, ny = 1 - (fr.y0 + fr.y1) / H, dist = _gp.distanceTo(_gl);
+  _gl.addScaledVector(_gr, -nx * tanV * camera.aspect * dist).addScaledVector(_gu, -ny * tanV * dist);
+  // ease there
+  if (!gcam.init) { gcam.pos.copy(_gl).lerp(_gp, 1.9); gcam.pos.y += 5; gcam.look.copy(_gl); gcam.init = true; }   // (it swoops in as the garage opens)
+  const k = 1 - Math.exp(-dt * 4.5);
+  gcam.pos.lerp(_gp, k); gcam.look.lerp(_gl, k);
+  camera.position.copy(gcam.pos);
+  if (game.shake > 0) camera.position.add(_gp.set((Math.random() - 0.5) * game.shake, (Math.random() - 0.5) * game.shake * 0.7, (Math.random() - 0.5) * game.shake));
+  camera.lookAt(gcam.look); camera.updateMatrixWorld();
+  // the turret: at the target car on the range, else off to one side
+  const tg = dummies[0];
+  if (tryer.slot && tg && !tg.dead) tg.centre(c.aim).setY(2.4);
+  else c.aim.set(c.x + Math.sin(c.yaw + 0.5) * 60, 6, c.z + Math.cos(c.yaw + 0.5) * 60);
+  hotspots();
+}
+// the glowing spots: a point on the car for each slot, shown when its side faces the camera
+const _hp = new THREE.Vector3(), _hn = new THREE.Vector3(), _hc = new THREE.Vector3();
+function hotspots() {
+  const c = player, D = c.def.dims, sy = Math.sin(c.yaw), cy = Math.cos(c.yaw), u = c.unit, list = [];
+  if (tryer.slot || game.revT > 0 || game.boostT > 0 || !garage.open_) { garage.place(list); return; }
+  u.root.updateWorldMatrix(true, true);
+  // which side of the car is towards the camera (+1 its left)
+  const side = (camera.position.x - c.x) * cy - (camera.position.z - c.z) * sy > 0 ? 1 : -1;
+  const local = (lx, ly, lz, nx, ny, nz) => { _hp.set(c.x + lx * cy + lz * sy, ly, c.z - lx * sy + lz * cy); _hn.set(nx * cy + nz * sy, ny, -nx * sy + nz * cy); };
+  const bone = (n, ox = 0, oy = 0, nx = 0, ny = 1, nz = 0) => { const b = u.bones[n]; if (!b || !u.parts.some((p) => p.bone === b && p.count)) return false; b.getWorldPosition(_hp); _hp.y += oy; _hp.x += ox; _hn.set(nx * cy + nz * sy, ny, -nx * sy + nz * cy); return true; };
+  const add = (slot) => {
+    _hc.subVectors(camera.position, _hp);
+    const facing = _hn.dot(_hc) > 0;
+    _hc.copy(_hp).project(camera);
+    list.push({ slot, x: (_hc.x * 0.5 + 0.5) * canvas.clientWidth, y: (-_hc.y * 0.5 + 0.5) * canvas.clientHeight, on: facing && _hc.z < 1 });
+  };
+  local(0, 2, D.mid + D.half - 0.4, 0, 0.2, 1); add('front');
+  local(0, D.roof * 0.78, D.mid + D.half * 0.6, 0, 1, 0.5); add('engine');
+  if (!bone('yaw', 0, 1.6)) local(0, D.top, D.mid, 0, 1, 0); add('primary');
+  if (!bone('roof', 0, 0.8)) local(0, D.roof + 0.4, D.mid + D.half * 0.25, 0, 1, 0.3); add('roof');
+  local(side * (D.wide + 0.1), 2.3, D.mid + D.half * 0.25, side, 0, 0); add('door');
+  local(side * (D.wide - 0.2), D.wheelR + D.lift, D.mid + D.half * 0.62, side, 0.2, 0); add('wheels');
+  local(side * D.wide, D.roof * 0.55, D.mid - D.half * 0.4, side, 0, 0); add('armour');
+  if (c.load.secondary === 'mines') { local(0, 1.4, D.mid - D.half, 0, 0, -1); add('secondary'); }
+  else { if (!bone('pod', 0, 0.8)) local(side * D.wide * 0.5, D.top - 0.4, D.mid - D.half * 0.2, 0, 1, 0); add('secondary'); }
+  local(0, 1.3, D.mid - D.half - 0.2, 0, 0.3, -1); add('gadget');
+  // two spots on top of each other (the main gun and the heavy weapon on the turret): the second steps aside
+  for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) if (list[i].on && list[j].on && Math.hypot(list[i].x - list[j].x, list[i].y - list[j].y) < 34) list[j].x = list[i].x + 38;
+  garage.place(list);
+}
+
+// ---- trying a part: fire it on the range, rev the engine, light the nitro -------------------------------------------------
+const tryer = { slot: null, key: null, t: 0, wait: 0, view: null, fired: 0 };
+function onTry(slot, key) {
+  if (game.state !== 'garage') return;
+  const p = PARTS[slot][key];
+  if (slot === 'engine') { game.revT = 1.4; sfx.play('start', 0.7); gcam.view = 'engine'; return; }
+  if (slot === 'gadget') { game.boostT = 1.6; sfx.play('nitro', 0.9); return; }
+  const mine = !!p.mine;
+  tryer.slot = slot; tryer.key = key; tryer.t = 0; tryer.wait = 0.75; tryer.fired = 0;
+  tryer.view = mine ? 'rear' : 'range';
+  tryer.long = p.rate || p.arc ? 2.4 : mine ? 2.8 : Math.min(4.2, (p.reload || 1) * 1.6 + 0.6);
+  if (!mine && (!dummies[0] || dummies[0].dead)) { clearDummies(); addDummy(room.target); }
+}
+function stepTry(dt) {
+  const T = tryer; if (!T.slot || !player) return;
+  T.t += dt;
+  const c = player, G = c.guns.find((g) => g.slot === T.slot);
+  const ready = T.t > T.wait && (T.view !== 'range' || Math.abs(wrap(c.yaw - Math.PI)) < 0.05);
+  if (G && ready && T.fired < T.long) {
+    T.fired += dt;
+    const want = [G.group === 0, G.group === 1];
+    if (G.g.mine && G.left === 0 && G.t > 0) want[1] = false;   // (one mine is enough)
+    guns(c, dt, want, T.slot);
+    for (const m of mines) if (m.owner === c && m.fuse === undefined) m.fuse = 1.5;
+  }
+  if (!G || T.fired >= T.long) { T.after = (T.after || 0) + dt; if (T.after > 1.4) { T.slot = null; T.after = 0; } }
+}
+
+// ---- the test drive: half a minute in the yard with the build on the turntable ----------------------------------------
+function placePlayer(load, at) {
+  if (player && !player.dead) { player.dispose(); cars.splice(cars.indexOf(player), 1); }
+  player = addCar({ ...load, name: 'You' }, at, false); cars.splice(cars.indexOf(player), 1); cars.unshift(player);
+  player.turretTurn = 10;
+}
+function startTest(load) {
+  if (game.state !== 'garage') return;
+  tryer.slot = null; bolt = null;
+  garage.hide(); $('testbar').hidden = false;
+  game.state = 'test'; game.testT = 30; game.testEnd = null; game.testLoad = { ...load };
+  placePlayer(load, room.start); player.bounds = room.bounds;
+  clearDummies(); for (const d of room.dummies) addDummy(d);
+  cam.yaw = player.yaw; cam.cx = player.x; cam.cz = player.z; cam.d = undefined; cam.p = undefined;
+  sfx.play('start', 0.9); setTimeout(() => sfx.play('ui_go', 0.8), 300); lockMouse();
+  toast('Test drive', TOUCH ? 'Try the build on the targets' : 'WASD to drive, click to fire. G to come back');
+}
+function endTest() {
+  if (game.state !== 'test') return;
+  $('testbar').hidden = true; game.state = 'garage';
+  if (document.exitPointerLock && cam.locked) document.exitPointerLock();
+  clearDummies(); addDummy(room.target);
+  for (let i = mines.length - 1; i >= 0; i--) if (mines[i].z < 0) { mines[i].mesh.removeFromParent(); mines.splice(i, 1); }
+  placePlayer(garage.shown(), { x: room.spot.x, z: room.spot.z, yaw: Math.PI + gcam.az });
+  gcam.init = false; garage.show(); sfx.play('door', 0.6);
+}
+function stepTest(dt) {
+  game.testT -= dt; $('test-t').textContent = Math.max(0, Math.ceil(game.testT));
+  if (game.testT <= 0 || (game.testEnd != null && (game.testEnd -= dt) <= 0)) endTest();
+}
+$('test-back').addEventListener('click', endTest);
+
 function openGarage(from) {
-  if (game.state === 'garage') return;
+  if (game.state === 'garage' || game.state === 'test') return;
   initAudio();
   game.garageFrom = from; game.stateWas = game.state; game.state = 'garage';
   $('menu').hidden = true; $('dead').hidden = true; $('hint').classList.remove('on');
   if (document.exitPointerLock && cam.locked) document.exitPointerLock();
-  // in the garage the car is fixed up: a fresh one where it stands (or at a spawn point if it was wrecked)
-  const at = player && !player.dead ? { x: player.x, z: player.z, yaw: player.yaw } : null;
-  if (player && player.dead) { const o = (mode.respawnAt && mode.respawnAt(player)) || MAP.spawnPoint(null, cars.filter((c) => !c.gone && c !== player)); player = null; spawnPlayer({ x: o.x, z: o.z, yaw: Math.random() * 6.28 }); } else spawnPlayer(at);
-  player.vx = player.vz = 0; cam.orbit = player.yaw + 0.8;
+  // where the car goes back to when the garage closes: where it stood, or a spawn point if it was wrecked
+  if (player && !player.dead) game.garageBack = { x: player.x, z: player.z, yaw: player.yaw };
+  else {
+    const o = (mode.respawnAt && mode.respawnAt(player)) || MAP.spawnPoint(null, cars.filter((c) => !c.gone && c !== player));
+    game.garageBack = { x: o.x, z: o.z, yaw: o.yaw ?? Math.random() * 6.28 };
+    player = null;   // (the wreck stays where it is)
+  }
+  // in the garage the car is fixed up: a fresh one on the turntable
+  garageLight(true); room.setScrap(save.scrap);
+  placePlayer(save.load, { x: room.spot.x, z: room.spot.z, yaw: Math.PI + gcam.az });
+  player.vx = player.vz = 0;
+  clearDummies(); addDummy(room.target);
+  gcam.init = false; gcam.user = 0; tryer.slot = null;
   garage.open();
 }
 function leaveGarage() {
   garage.close(); keepSave(save);
+  tryer.slot = null; bolt = null; game.revT = 0; game.boostT = 0;
+  clearDummies(); garage.place([]);
+  for (let i = mines.length - 1; i >= 0; i--) if (mines[i].z < 0) { mines[i].mesh.removeFromParent(); mines.splice(i, 1); }
+  garageLight(false);
   const from = game.garageFrom; game.garageFrom = null;
   if (game.ended) { chooseMap(MAP.id); return; }   // the round is over: a fresh map for the next one
-  spawnPlayer({ x: player.x, z: player.z, yaw: player.yaw });
-  cam.yaw = player.yaw;
+  spawnPlayer(game.garageBack || null);
+  cam.yaw = player.yaw; cam.d = undefined; cam.p = undefined;
   if (from === 'menu') { game.state = 'menu'; startGame(); return; }
   game.state = 'play';
   if (from === 'break' && mode.afterGarage) mode.afterGarage();
@@ -715,6 +1032,8 @@ addEventListener('keydown', (e) => {
   if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight') && game.state === 'play' && player) gadget(player);
   if (e.code === 'KeyG' && (game.state === 'menu' || (game.state === 'dead' && !game.noGarage) || (game.state === 'play' && mode.garageOK()))) openGarage(game.state === 'play' ? 'break' : game.state);
   else if ((e.code === 'KeyG' || e.code === 'Escape') && game.state === 'garage') leaveGarage();
+  else if ((e.code === 'KeyG' || e.code === 'Escape' || e.code === 'KeyT') && game.state === 'test') endTest();
+  if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight') && game.state === 'test' && player) gadget(player);
   if (e.code === 'KeyR' && game.state === 'play' && mode.resetPlayer) mode.resetPlayer();   // back on the track (the race)
   if ((e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'KeyC') && overMore && overGo()) e.preventDefault();   // the end card's Keep going (not a click on a focused button too)
   if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
@@ -733,7 +1052,7 @@ addEventListener('mouseup', (e) => { cam.drag = false; if (e.button === 0) mouse
 document.addEventListener('pointerlockchange', () => { cam.locked = document.pointerLockElement === canvas; document.body.classList.toggle('locked', cam.locked); });
 document.addEventListener('pointerlockerror', () => { cam.noLock = true; });
 addEventListener('mousemove', (e) => {
-  if (cam.drag && game.state === 'garage') { cam.orbit -= (e.clientX - cam.mx) * 0.01; }
+  if (cam.drag && game.state === 'garage') turnTable(e.clientX - cam.mx);
   cam.mx = e.clientX; cam.my = e.clientY;
   // the aim slows a little over a rival, so it is easier to stay on one
   if (cam.locked) { const f = 1 - 0.35 * (cam.sticky || 0); cam.yaw -= e.movementX * 0.0026 * f; cam.pitch = clamp(cam.pitch + e.movementY * 0.0022 * f, 0.02, 0.75); }   // never down behind the car's back
@@ -771,7 +1090,7 @@ $('dead-garage').addEventListener('click', () => openGarage('dead'));
 $('dead-go').addEventListener('click', () => { if (game.state === 'dead') game.deadT = 0; });
 // touch: drag to turn the car in the garage
 canvas.addEventListener('touchstart', (e) => { if (game.state === 'garage' && e.touches[0]) { cam.drag = true; cam.mx = e.touches[0].clientX; } }, { passive: true });
-canvas.addEventListener('touchmove', (e) => { if (cam.drag && game.state === 'garage' && e.touches[0]) { cam.orbit -= (e.touches[0].clientX - cam.mx) * 0.01; cam.mx = e.touches[0].clientX; } }, { passive: true });
+canvas.addEventListener('touchmove', (e) => { if (cam.drag && game.state === 'garage' && e.touches[0]) { turnTable(e.touches[0].clientX - cam.mx); cam.mx = e.touches[0].clientX; } }, { passive: true });
 canvas.addEventListener('touchend', () => { cam.drag = false; }, { passive: true });
 
 // On a touch screen: a stick on the left (push it the way to go), and buttons on the right to fire the guns, fire the
@@ -807,7 +1126,7 @@ for (const [id, key] of [['t-fire', 'fire'], ['t-heavy', 'heavy'], ['t-drift', '
   const up = (e) => { touch[key] = false; el.classList.remove('down'); e.preventDefault(); };
   el.addEventListener('touchend', up, { passive: false }); el.addEventListener('touchcancel', up, { passive: false });
 }
-$('t-boost').addEventListener('touchstart', (e) => { e.preventDefault(); initAudio(); if (game.state === 'play' && player) gadget(player); }, { passive: false });
+$('t-boost').addEventListener('touchstart', (e) => { e.preventDefault(); initAudio(); if ((game.state === 'play' || game.state === 'test') && player) gadget(player); }, { passive: false });
 
 function drivePlayer(dt) {
   const c = player; if (!c || c.dead) return;
@@ -856,7 +1175,7 @@ function autoTarget(c, dt) {
   const ok = (o) => o && !o.dead && !o.gone && Math.hypot(o.x - c.x, o.z - c.z) < 240 && clearLine(c.x, c.z, o.x, o.z, 4);
   if (autoT && autoKeep > 0 && ok(autoT)) return autoT;
   let best = null, bs = 1e9;
-  for (const o of mode.targets ? mode.targets() : cars) {   // (a mode can give other things to aim at: survival's zombies)
+  for (const o of game.state !== 'test' && mode.targets ? mode.targets() : cars) {   // (a mode can give other things to aim at: survival's zombies)
     if (o === c || !ok(o)) continue;
     const d = Math.hypot(o.x - c.x, o.z - c.z), off = Math.abs(wrap(Math.atan2(o.x - c.x, o.z - c.z) - cam.yaw));
     const score = d * (1 + off * 0.9) * (o === autoT ? 0.7 : 1);
@@ -871,7 +1190,7 @@ function aimFor(c, dt) {
   if (TOUCH) { best = autoTarget(c, dt); k = best ? 1 : 0; }
   else {
     const tan = Math.tan(camera.fov * Math.PI / 360);
-    for (const o of mode.targets ? mode.targets() : cars) {
+    for (const o of game.state !== 'test' && mode.targets ? mode.targets() : cars) {
       if (o === c || o.dead || o.gone) continue;
       leadOn(o, c, _tc); const dist = camera.position.distanceTo(_tc); if (dist > AIM.range) continue;
       _ts.copy(_tc).project(camera); if (_ts.z > 1) continue;
@@ -885,24 +1204,6 @@ function aimFor(c, dt) {
   if (best) { leadOn(best, c, _tc); c.aim.copy(p).lerp(_tc, TOUCH ? 1 : AIM.pull * Math.min(1, k * 1.3)); }
   else c.aim.copy(p);
   cam.sticky = TOUCH ? 0 : k; aimLock = k > 0.25 ? best : null;
-}
-// in the garage: round and round the car, which sits clear of the panel
-function garageCamera(dt) {
-  const c = player; if (!cam.drag) cam.orbit += dt * 0.18;
-  const wide = innerWidth > 760, short = wide && innerHeight < 520, cx = c.x + Math.sin(c.yaw) * c.mid, cz = c.z + Math.cos(c.yaw) * c.mid;
-  let d = short ? 22 : wide ? 17 : 27;
-  const ox = Math.sin(cam.orbit), oz = Math.cos(cam.orbit);
-  for (let t = 5; t < d; t += 1) {   // pull in before a wall (lamp posts and trees don't count)
-    const ix = Math.floor(cx + ox * t), iz = Math.floor(cz + oz * t);
-    if (!solid(ix, 6, iz)) continue;
-    const b = bodies[ownerAt(idx(ix, 6, iz))]; if (b && (b.kind === 'prop' || b.kind === 'rubble')) continue;
-    d = Math.max(9, t - 1.5); break;
-  }
-  camera.position.set(cx + ox * d, wide ? 6.5 : 9, cz + oz * d);
-  const rx = oz, rz = -ox, k = short ? d * 0.36 : wide ? d * 0.24 : 0;   // the camera's right: look past the car so it sits to the left
-  camera.lookAt(cx + rx * k, wide ? 2 : -3.5, cz + rz * k);
-  camera.updateMatrixWorld();
-  c.aim.set(c.x + Math.sin(c.yaw + 0.5) * 60, 6, c.z + Math.cos(c.yaw + 0.5) * 60);
 }
 function stepCamera(dt) {
   const c = player; if (!c) return;
@@ -954,9 +1255,11 @@ function resize() {
   const ph = h * renderer.getPixelRatio(); setParticleScale(ph, camera.fov); fx.setScale(ph, camera.fov);
 }
 addEventListener('resize', resize); resize();
-const quality = makeQuality({ renderer, composer, bloom: bloomPass, scene, camera, sun, resize, playing: () => game.state === 'play', mobile: MOBILE });
+const quality = makeQuality({ renderer, composer, bloom: bloomPass, scene, camera, sun, resize, playing: () => game.state === 'play' || game.state === 'test', mobile: MOBILE });
 // the rest of a map's look (looks/): its beams, glows, lamps, weather and the rest
+const lookFrom = scene.children.length;
 const mapLook = MAP.look ? makeLook(MAP.look, { scene, renderer, camera, sky, hemi, sun, mats, bloom: bloomPass, quality, backdrop, sfx, setup: LOOK }) : null;
+const lookObjs = scene.children.slice(lookFrom);   // the look's own draws (the storm's rain, mist and beams): put away in the garage
 let last = performance.now();
 function frame(now) {
   requestAnimationFrame(frame);
@@ -967,29 +1270,35 @@ function frame(now) {
 }
 function step(dt) {
   game.time += dt; newFrame();
-  const live = game.state === 'play' || game.state === 'dead' || game.state === 'over';
+  const live = game.state === 'play' || game.state === 'dead' || game.state === 'over', test = game.state === 'test';
   if (MAP.step) MAP.step(dt);
-  if (live) {
+  if (live || test) {
     drivePlayer(dt);
-    for (const c of cars) if (c.driver) { c.driver.think(dt, cars, player); guns(c, dt, c.dead ? [] : c.fire || []); }
-    for (const c of cars) if (!c.gone) { c.hurtT -= dt; if (c.dead) c.deadT += dt; stepGadget(c, dt); c.step(dt, crashHooks); parked(c, dt); saws(c, dt); blades(c, dt); }
+    // (a test drive moves only the player and the target cars in the yard; the round waits)
+    const on = (c) => !c.gone && (live || c === player || c.dummy);
+    if (live) for (const c of cars) if (c.driver) { c.driver.think(dt, cars, player); guns(c, dt, c.dead ? [] : c.fire || []); }
+    for (const c of cars) if (on(c)) { c.hurtT -= dt; if (c.dead) c.deadT += dt; stepGadget(c, dt); c.step(dt, crashHooks); parked(c, dt); saws(c, dt); blades(c, dt); }
     stepMines(dt); stepBolts(dt); drifts.step(dt, cars, player);
-    for (let i = 0; i < cars.length; i++) for (let j = i + 1; j < cars.length; j++) if (!cars[i].gone && !cars[j].gone) bump(cars[i], cars[j]);
-    // wrecks lie a while, then crumble away
+    for (let i = 0; i < cars.length; i++) for (let j = i + 1; j < cars.length; j++) if (on(cars[i]) && on(cars[j])) bump(cars[i], cars[j]);
+    // wrecks lie a while, then crumble away (the target cars come back on their own: stepDummies)
     for (let i = cars.length - 1; i >= 0; i--) {
-      const c = cars[i];
+      const c = cars[i]; if (c.dummy || !on(c)) continue;
       if (c.dead && !c.gone && c.deadT > ROUND.wreckStays) { c.unit.burst(cube, null, 6, 0.2); c.gone = true; }
       if (c.gone && c !== player) { c.dispose(); if (c.tag) c.tag.remove(); cars.splice(i, 1); }
     }
+    if (test) stepTest(dt);
     if (game.state === 'dead') {
       game.deadT -= dt; $('dead-t').textContent = Math.max(0, Math.ceil(game.deadT));
       if (game.deadT <= 0) { $('dead').hidden = true; game.state = 'play'; spawnPlayer(); }
     }
-    mode.step(dt);
+    if (live) mode.step(dt);
     if ((savedT += dt) > 15) { savedT = 0; keepSave(save); }
   }
-  pickups.step(dt, live); hazards.step(dt, live);
+  if (game.state === 'garage' || test) stepDummies(dt);
+  if (game.state === 'garage') stepTry(dt);
+  if (!lightWas) { pickups.step(dt, live); hazards.step(dt, live); }   // (the map's pickups and hazards wait while the garage is open: their walls would shove the cars in the yard)
   for (const c of cars) if (!c.gone) { if (!c.dead) c.point(dt); c.pose(dt); }
+  stepBolt(dt);   // (after the cars' poses: a part dropping on in the garage, the car settling on its springs)
   stepCamera(dt);
   if (backdrop) backdrop.step(dt, quality.step);
   const fc = player || MAP.spawn;
@@ -999,16 +1308,17 @@ function step(dt) {
   fx.update(dt); debris.update(dt);
   dirt.step(dt, cars, quality.step);
   if (streaks) streaks.step(dt, game.state === 'play' ? player : null, quality.step, renderer.domElement);
-  if (mapLook) mapLook.step(dt, cars);
+  if (mapLook && !lightWas) mapLook.step(dt, cars);   // (the map's weather and show wait while the garage is open)
   game.shake = Math.max(0, game.shake - dt * 2.4);
   game.hurt = Math.max(0, (game.hurt || 0) - dt * 1.4); grade.uniforms.hurt.value = game.hurt;
   if (toastT > 0 && (toastT -= dt) <= 0) $('toast').classList.remove('on');
   if (game.banner > 0 && (game.banner -= dt) <= 0) $('banner').classList.remove('on');
   // the engines and the tyres
   if (engine && player) {
-    const sp = Math.abs(player.fwd), on = !muted && (live || game.state === 'garage') && !player.dead, k = clamp(sp / player.spec.top, 0, 1.4);
+    const sp = Math.abs(player.fwd), on = !muted && (live || test || game.state === 'garage') && !player.dead, k = clamp(sp / player.spec.top, 0, 1.4);
     sfx.listen(player.x, player.z, cam.yaw);
-    engine.me.set(on ? 0.5 + 0.35 * Math.abs(player.throttle) : 0, 0.72 + k * 1.05 + (player.boostT > 0 ? 0.22 : 0), player.x, player.z);
+    const rev = game.revT > 0 ? Math.sin(Math.min(1, game.revT / 1.4) * Math.PI) : 0;   // an engine tried in the garage: a rev
+    engine.me.set(on ? 0.5 + 0.35 * Math.max(Math.abs(player.throttle), rev) : 0, 0.72 + k * 1.05 + (player.boostT > 0 ? 0.22 : 0) + rev * 0.9, player.x, player.z);
     engine.skid.set(on && player.speed > 14 ? clamp(player.skid, 0, 0.9) : 0, 0.85 + clamp(player.speed / 160, 0, 0.3) + 0.12 * player.skid, player.x, player.z);
     const near = live ? cars.filter((c) => c.rival && !c.dead).sort((a, b) => Math.hypot(a.x - player.x, a.z - player.z) - Math.hypot(b.x - player.x, b.z - player.z)) : [];
     // the minigun's barrels, the saws' motor and the arc coil's hum, on the player's car
@@ -1019,7 +1329,8 @@ function step(dt) {
     engine.rivals.forEach((L, i) => { const c = near[i]; if (!c) L.set(0); else L.set(0.45 + 0.3 * Math.abs(c.throttle), 0.68 + clamp(Math.abs(c.fwd) / c.spec.top, 0, 1.3) * 0.95, c.x, c.z); });
   }
   document.body.classList.toggle('in-garage', game.state === 'garage');
-  if (TOUCH) $('touch').hidden = game.state !== 'play';
+  document.body.classList.toggle('in-test', game.state === 'test');
+  if (TOUCH) $('touch').hidden = game.state !== 'play' && game.state !== 'test';
   drawHud(); drawTags(); drawRadar();
 }
 $('hint').addEventListener('click', () => { if (game.state === 'play' && mode.garageOK()) openGarage('break'); else if (game.state === 'play' && mode.resetPlayer) mode.resetPlayer(); });
@@ -1028,4 +1339,4 @@ followSun(player.x, player.z);
 const loadEl = $('loading'); if (loadEl) loadEl.hidden = true;
 $('menu').hidden = false;
 requestAnimationFrame((t) => { last = t; frame(t); });
-window.__derby = { renderer, mapLook, touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, sfx, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop };
+window.__derby = { room, gcam, garageLight, startTest, endTest, tryPart: (s, k) => onTry(s, k), dummies, renderer, mapLook, touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, sfx, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop };
