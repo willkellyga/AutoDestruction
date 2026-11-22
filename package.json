@@ -1,10 +1,12 @@
 {
-  "name": "monster",
+  "name": "auto-destruction",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Auto Destruction: a car combat game, with online play",
+  "main": "derby/server/server.mjs",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "node derby/build.mjs",
+    "start": "node derby/server/server.mjs",
+    "test": "node derby/server/test.mjs"
   },
   "keywords": [],
   "author": "",
@@ -12,5 +14,6 @@
   "dependencies": {
     "esbuild": "^0.28.2",
     "three": "^0.170.0"
-  }
+  },
+  "private": true
 }

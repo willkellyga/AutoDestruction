@@ -1,10 +1,10 @@
-# Auto Destruction's online server on Fly.io (see derby/FLY.md). Deploy from the repo's root:
-#   fly deploy --config derby/fly.toml --dockerfile derby/Dockerfile --ha=false
+# Auto Destruction's online server on Fly.io (see FLY.md). From the repo's root: fly deploy --ha=false
 # The rooms live in the server's memory, so there is exactly one machine, always on.
 app = 'auto-destruction'
 primary_region = 'iad'
 
 [build]
+  dockerfile = 'Dockerfile'
 
 [http_service]
   internal_port = 8080

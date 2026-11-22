@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Auto Destruction's online server: hands out the game page and runs the lobby and round relay (relay.mjs) at /ws.
 //   node derby/build.mjs && node derby/server/server.mjs     (then open http://localhost:8080)
-// On Fly.io (derby/FLY.md) it runs on one small always-on machine: the rooms live in its memory, so there must be one.
+// On Fly.io (FLY.md at the repo root) it runs on one small always-on machine: the rooms live in its memory, so there must be one.
 // It serves derby/dist/auto-destruction.html (or $GAME_FILE) at /, zipped, and /healthz and /stats (counts only).
 import http from 'node:http';
 import fs from 'node:fs';
