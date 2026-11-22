@@ -100,14 +100,14 @@ button.alt:hover { background: rgba(255,255,255,0.16); }
 #dead .row, #over .row { margin-top: 18px; }
 #over:not(.more) .more-only { display: none; } #over .note.more-only { margin-top: 4px; } #over.more .row:last-child { margin-top: 10px; }   /* the win card's Keep going */
 /* ---- picking a map on the start card, and the end of a round ---- */
-.maps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 18px auto 6px; max-width: 620px; }
+.maps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 18px auto 6px; max-width: 620px; }   /* the three ways to play, in one row */
 .maps button { pointer-events: auto; text-align: left; padding: 9px 10px 8px; border-radius: 8px; border: 2px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.06); color: var(--ink); cursor: pointer; font: 13px system-ui, sans-serif; }
 .maps button b { display: block; font: 900 italic 16px 'Trebuchet MS', system-ui, sans-serif; text-transform: uppercase; }
 .maps button i { font-style: normal; opacity: 0.7; font-size: 12px; }
 .maps button.on { border-color: var(--hot); background: rgba(255,179,58,0.16); }
 .maps button:hover { background: rgba(255,255,255,0.12); }
 .map-blurb { font-size: 14px; opacity: 0.85; min-height: 2.6em; max-width: 520px; margin: 4px auto 0; }
-@media (max-width: 560px) { .maps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .maps { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; } }
 #over b.t { display: block; font-size: clamp(44px, 9vw, 70px); color: var(--hot); font-weight: 900; font-style: italic; text-transform: uppercase; -webkit-text-stroke: 2px #2a1a0a; }
 #over-l { font-size: 17px; margin-top: 10px; line-height: 1.6; }
 /* ---- phones and tablets ---- */
