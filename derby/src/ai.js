@@ -1,4 +1,5 @@
-// The rival drivers. Each picks a target (mostly the player, sometimes another rival), drives the map's routes towards
+// The rival drivers. Each picks a target (mostly the player, sometimes another rival; in the arena's free-for-all, any
+// car), drives the map's routes towards
 // it (the town's street grid, or the route-finder on open maps), cuts straight across once it has a clear run (through
 // a wall if it is going fast enough), shoots once its gun is on and it can see, and rams when close. When it is stuck
 // it backs out and tries the other way. On a map with pickups, a hurt rival makes for a repair kit (still shooting at
@@ -11,6 +12,7 @@ import { steerClear } from './hazards.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+const FFA = MAP.mode === 'brawl';   // every car for itself (modes/brawl.js)
 
 // a clear line at car height between two points (every 3 voxels)
 export function clearLine(x0, z0, x1, z1, y = 3) {
@@ -22,7 +24,27 @@ export function clearLine(x0, z0, x1, z1, y = 3) {
 export function makeDriver(car) {
   const b = { target: null, pickT: 0, stuckT: 0, backT: 0, backSteer: 1, seenT: 0, wp: { x: car.x, z: car.z }, wobT: 0, wob: [0, 0, 0] };
   car.turretTurn = AI.turretTurn;
+  // the free-for-all (the arena's brawl): every car is fair game, the player no more than any other. A near one more
+  // often than not, and seldom one that others are already on (so the fights spread out over the floor rather than all
+  // piling on one car), nor one just back in (its spawn shield is up, modes/brawl.js) unless there is nothing else;
+  // whoever hit it lately (brawl.js forgets an old hit), four times in ten.
+  function pickAny(all) {
+    const L = car.lastBy;
+    if (L && !L.dead && !L.gone && !(L.shield > 0) && Math.random() < 0.4) return L;
+    let best = null, bw = 0;
+    for (const pass of [0, 1]) {
+      for (const o of all) {
+        if (o === car || o.dead || o.gone || (!pass && o.shield > 0)) continue;
+        let on = 0; for (const q of all) if (q !== car && q.driver && q.driver.brain.target === o) on++;
+        const w = (0.3 + Math.random()) / ((Math.hypot(o.x - car.x, o.z - car.z) + 140) * (1 + on));
+        if (w > bw) { bw = w; best = o; }
+      }
+      if (best) return best;
+    }
+    return null;
+  }
   function pick(all, player) {
+    if (FFA) return pickAny(all);
     const foes = all.filter((o) => o !== car && !o.dead);
     if (car.lastBy && !car.lastBy.dead && Math.random() < 0.6) return car.lastBy;   // get back at whoever hit it last
     if (player && !player.dead && Math.random() > AI.infight) return player;
@@ -44,7 +66,12 @@ export function makeDriver(car) {
     if (b.pk && !b.pk.up) b.pk = null;
     let gx, gz;
     if (b.pk) { if (clearLine(car.x, car.z, b.pk.x, b.pk.z, 4)) { gx = b.pk.x; gz = b.pk.z; } else { MAP.waypoint(car, b.pk.x, b.pk.z, b.wp); gx = b.wp.x; gz = b.wp.z; } }
-    else if (sees || d < 30) { gx = T.x; gz = T.z; } else { MAP.waypoint(car, T.x, T.z, b.wp); gx = b.wp.x; gz = b.wp.z; }
+    else if (sees || d < 30) { gx = T.x; gz = T.z; }
+    else {
+      // (in the free-for-all a target far off is gone after by way of the middle of the pit, where the fighting is)
+      let tx = T.x, tz = T.z; if (FFA && MAP.pit && d > 260) { tx = (tx + MAP.pit.x) / 2; tz = (tz + MAP.pit.z) / 2; }
+      MAP.waypoint(car, tx, tz, b.wp); gx = b.wp.x; gz = b.wp.z;
+    }
     // and round the map's hazards while they are dangerous (hazards.js knows when each one is)
     if (steerClear(car, gx, gz, b.sc || (b.sc = { x: 0, z: 0 }), b.pk ? b.pk.x : T.x, b.pk ? b.pk.z : T.z)) { gx = b.sc.x; gz = b.sc.z; }
     const want = Math.atan2(gx - car.x, gz - car.z), off = wrap(want - car.yaw), sp = car.fwd;

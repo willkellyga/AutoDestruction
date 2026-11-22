@@ -201,6 +201,7 @@ function addCar(load, at, rival) {
 }
 function damage(c, d, who) {
   if (!c || c.dead || d <= 0 || game.state === 'menu') return;
+  if (c.shield > 0) return;   // just back in (the arena's free-for-all): nothing hurts it for a moment
   if (mode.friendly && who && who !== c) return;   // a mode with no fighting between cars (survival): only the dead and the map hurt
   if (c === player && who === player) d *= 0.35;   // your own splash hurts, but less
   if (window.__dlog) window.__dlog.push([c.name, who ? who.name : (splashK ? 'boom' : 'wall'), Math.round(d * 10) / 10]);
@@ -696,7 +697,7 @@ $('go').addEventListener('click', () => { if (game.ended) chooseMap(MAP.id); els
   const box = $('maps');
   for (const m of MAPS) {
     const b = document.createElement('button'); b.className = m.id === MAP.id ? 'on' : '';
-    b.innerHTML = '<b></b><i></i>'; b.querySelector('b').textContent = m.name; b.querySelector('i').textContent = { waves: 'Waves', race: 'Race', survival: 'Last one standing' }[m.mode] || m.mode;
+    b.innerHTML = '<b></b><i></i>'; b.querySelector('b').textContent = m.name; b.querySelector('i').textContent = { waves: 'Waves', race: 'Race', survival: 'Zombie Survival', brawl: 'Arena · free-for-all' }[m.mode] || m.mode;
     b.addEventListener('click', () => { if (m.id !== MAP.id || game.ended) chooseMap(m.id); });
     box.appendChild(b);
   }

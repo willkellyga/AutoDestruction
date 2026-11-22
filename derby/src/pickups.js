@@ -27,35 +27,121 @@ export const PICKUPS = {
 };
 
 // ---- the models ------------------------------------------------------------------------------------------------
-// a model from boxes [x0, y0, z0, x1, y1, z1, colour] (in voxels, round the model's middle), as one geometry with colours
-function blocks(list) {
+// A model drawn in small cubes, CELL to a voxel (three times finer than the boxes the models were first made of, as the
+// cars went to a sixth of a voxel), so each pickup reads as a little pixel-art icon. fn(x, y, z) gives the colour of the
+// cube whose middle is at (x, y, z), in cells from the model's middle, or 0 for none; R is [x0, x1, y0, y1, z0, z1],
+// the cells to look at. Only the faces that no other cube covers are drawn, each a little darker the further it turns
+// from the light, and each cube a shade lighter or darker than the next so the grain shows.
+const CELL = 3;
+const FACES = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+function cubes(R, fn) {
+  const [x0, x1, y0, y1, z0, z1] = R, NX = x1 - x0, NY = y1 - y0, NZ = z1 - z0;
+  const grid = new Int32Array(NX * NY * NZ).fill(-1);
+  const at = (i, j, k) => (i < 0 || j < 0 || k < 0 || i >= NX || j >= NY || k >= NZ ? -1 : grid[(k * NY + j) * NX + i]);
+  for (let k = 0; k < NZ; k++) for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) {
+    const c = fn(x0 + i + 0.5, y0 + j + 0.5, z0 + k + 0.5); if (c) grid[(k * NY + j) * NX + i] = c;
+  }
   const pos = [], nor = [], col = [], c = new THREE.Color();
-  for (const [x0, y0, z0, x1, y1, z1, hex] of list) {
-    const g = new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0).toNonIndexed(); g.translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+  for (let k = 0; k < NZ; k++) for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) {
+    const hex = at(i, j, k); if (hex < 0) continue;
     c.setHex(hex);
-    const p = g.attributes.position, n = g.attributes.normal;
-    for (let i = 0; i < p.count; i++) {
-      pos.push(p.getX(i), p.getY(i), p.getZ(i)); nor.push(n.getX(i), n.getY(i), n.getZ(i));
-      const k = 0.75 + 0.25 * Math.max(n.getY(i), Math.abs(n.getX(i)) * 0.6, 0);   // faces a little darker the further they turn from the light
-      col.push(c.r * k, c.g * k, c.b * k);
+    const grain = 0.94 + 0.12 * ((((i * 73856093) ^ (j * 19349663) ^ (k * 83492791)) >>> 0) % 100) / 100;
+    for (const [nx, ny, nz] of FACES) {
+      if (at(i + nx, j + ny, k + nz) >= 0) continue;
+      const kk = (0.75 + 0.25 * Math.max(ny, Math.abs(nx) * 0.6, 0)) * grain;
+      // the face's four corners, from the cube's middle out along the normal
+      const cx = x0 + i + 0.5 + nx * 0.5, cy = y0 + j + 0.5 + ny * 0.5, cz = z0 + k + 0.5 + nz * 0.5;
+      const [ux, uy, uz] = nx ? [0, 0.5, 0] : [0.5, 0, 0], [vx, vy, vz] = nz ? [0, 0.5, 0] : [0, 0, 0.5];
+      // (wound so the face looks out along the normal)
+      const flip = (nx + ny + nz) < 0 !== !!ny;
+      const q = [[-1, -1], [1, -1], [1, 1], [-1, -1], [1, 1], [-1, 1]];
+      for (const [a, b0] of q) {
+        const b = flip ? -b0 : b0;
+        pos.push((cx + ux * a + vx * b) / CELL, (cy + uy * a + vy * b) / CELL, (cz + uz * a + vz * b) / CELL);
+        nor.push(nx, ny, nz); col.push(c.r * kk, c.g * kk, c.b * kk);
+      }
     }
-    g.dispose();
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   return g;
 }
+const inBox = (x, y, z, ax, bx, ay, by, az, bz) => x > ax && x < bx && y > ay && y < by && z > az && z < bz;
+// a pixel bitmap on a face: rows top to bottom, '#' for a pixel; (u, v) from the bitmap's middle, in cells
+const bitmap = (rows) => (u, v) => { const r = rows[Math.floor(rows.length / 2 - v)], ch = r && r[Math.floor(u + r.length / 2)]; return ch === '#'; };
+const BOLT = bitmap(['....##', '...##.', '..##..', '.#####', '...##.', '..##..', '.##...', '##....']);
 const MODELS = {
-  // a white case with a green cross on both faces
-  repair: () => blocks([[-3, -2.6, -1.2, 3, 2.6, 1.2, 0xf2f2ee], [-2.4, -0.7, -1.5, 2.4, 0.7, 1.5, 0x2fd35a], [-0.7, -2.1, -1.5, 0.7, 2.1, 1.5, 0x2fd35a], [-1, 2.6, -0.4, 1, 3.3, 0.4, 0x8a8f96]]),
-  // a blue bottle with a silver neck and a red valve
-  nitro: () => blocks([[-1.5, -3, -1.5, 1.5, 2, 1.5, 0x2b7fe0], [-1.55, -1.2, -1.55, 1.55, -0.4, 1.55, 0xf2f2ee], [-0.9, 2, -0.9, 0.9, 3, 0.9, 0xc3ccd6], [-0.5, 3, -0.5, 0.5, 3.8, 0.5, 0xe0402a], [-1.4, 3.2, -0.3, 1.4, 3.6, 0.3, 0xe0402a]]),
-  // three rounds: brass cases and copper tips
-  ammo: () => blocks([-2.2, 0, 2.2].flatMap((x) => [[x - 0.8, -3, -0.8, x + 0.8, 1.2, 0.8, 0xd9a840], [x - 0.6, 1.2, -0.6, x + 0.6, 2.6, 0.6, 0xc8683a], [x - 0.35, 2.6, -0.35, x + 0.35, 3.1, 0.35, 0xc8683a], [x - 0.85, -3.2, -0.85, x + 0.85, -2.7, 0.85, 0xb88a2a]])),
-  // a gold crate with dark edges
-  scrap: () => blocks([[-2.5, -2.5, -2.5, 2.5, 2.5, 2.5, 0xe8b830], ...[-2.6, 2.1].flatMap((a) => [[a, -2.6, -2.6, a + 0.5, 2.6, 2.6, 0x6a4a1e], [-2.6, a, -2.6, 2.6, a + 0.5, 2.6, 0x6a4a1e]]), [-0.6, -0.6, -2.7, 0.6, 0.6, 2.7, 0xfff0b0]]),
-  // a sledgehammer: a dark handle, a pink head with gold bands
-  super: () => blocks([[-0.6, -4.2, -0.6, 0.6, 1.6, 0.6, 0x4a3420], [-3.6, 1.6, -1.8, 3.6, 5, 1.8, 0xff3da8], [-3.8, 1.4, -2, -2.8, 5.2, 2, 0xffd23a], [2.8, 1.4, -2, 3.8, 5.2, 2, 0xffd23a], [-0.8, -4.6, -0.8, 0.8, -3.8, 0.8, 0xffd23a]]),
+  // a first-aid case: white with a grey rim, a raised green cross on both faces (outlined darker), latches and a handle
+  repair: () => cubes([-9, 9, -8, 10, -5, 5], (x, y, z) => {
+    const ax = Math.abs(x), az = Math.abs(z);
+    const cross = (ax < 6 && Math.abs(y + 0.5) < 2) || (ax < 2 && Math.abs(y + 0.5) < 6), ring = !cross && ((ax < 7 && Math.abs(y + 0.5) < 3) || (ax < 3 && Math.abs(y + 0.5) < 7));
+    if (az > 4) return cross ? 0x2fd35a : 0;
+    if (y > 7) {   // the handle on top
+      if (az > 1.5) return 0;
+      return (y < 8 && ax > 2.5 && ax < 4) || (y > 8 && y < 9 && ax < 4) ? 0x4e535a : 0;
+    }
+    if (!inBox(x, y, z, -9, 9, -8, 7, -4, 4)) return 0;
+    if (az > 3) { if (cross) return 0x26b84c; if (ring) return 0x177a35; if (y > 5 && y < 6 && ax > 4 && ax < 7) return 0x8a8f96; }
+    const edges = (ax > 8) + (y > 6 || y < -7) + (az > 3);
+    return edges >= 2 ? 0xc2c6cc : 0xf2f2ee;
+  }),
+  // a nitro bottle: a blue cylinder with a light stripe down one side, a white band with a red stripe round it, a
+  // darker foot, a silver neck and a red valve with its T handle
+  nitro: () => cubes([-5, 5, -10, 12, -5, 5], (x, y, z) => {
+    const r = Math.hypot(x, z), lit = x - z > 3.2;
+    if (y < -9) return r < 4 ? 0x1d5aa8 : 0;
+    if (y < 6) {
+      if (r >= 4.7) return 0;
+      if (y > -4.5 && y < -1.5) return y > -3.5 && y < -2.5 ? 0xe0402a : 0xf2f2ee;
+      return y < -8 ? 0x1d5aa8 : lit ? 0x62b2ff : 0x2b7fe0;
+    }
+    if (y < 7.5) return r < 3.6 ? (lit ? 0x62b2ff : 0x2b7fe0) : 0;
+    if (y < 9.5) return r < 2.4 ? (y < 8.2 ? 0x8d96a0 : 0xd0d8e0) : 0;
+    if (y < 11) return r < 1.6 || (y > 10 && Math.abs(z) < 0.8 && Math.abs(x) < 4.5) ? 0xe0402a : 0;
+    return r < 0.9 ? 0xff7a5a : 0;
+  }),
+  // overcharge: three shells, brass cases with a lit edge, a groove and a rim at the foot, and copper tips
+  ammo: () => cubes([-10, 10, -11, 10, -4, 4], (x, y, z) => {
+    for (const sx of [-6, 0, 6]) {
+      const dx = x - sx, r = Math.hypot(dx, z), lit = dx - z > 1.2;
+      if (y < -9) { if (r < 2.9) return 0xa87a22; continue; }
+      if (y < 3.5) { if (r < 2.5) return y > -7.6 && y < -6.6 ? 0x9a7020 : lit ? 0xf2d070 : 0xd9a840; continue; }
+      const t = (y - 3.5) / 6.5; if (t < 1 && r < 2.4 * (1 - t * t) + 0.4) return lit ? 0xec9060 : 0xc8683a;
+    }
+    return 0;
+  }),
+  // a crate of scrap: gold boards with dark edges and corner bolts, and a pale cog raised on each side
+  scrap: () => cubes([-9, 9, -8, 8, -9, 9], (x, y, z) => {
+    const ax = Math.abs(x), ay = Math.abs(y), az = Math.abs(z);
+    // the cog, on the four sides: a toothed ring round a hub
+    const cog = (u, v) => { const r = Math.hypot(u, v), a = Math.atan2(v, u); return (r < 1.3) || (r > 2.2 && r < 3.3) || (r >= 3.3 && r < 4.4 && Math.cos(a * 8) > 0.3); };
+    if (ax > 7.5 || az > 7.5) {
+      if (ay > 7.5 || (ax > 7.5 && az > 7.5)) return 0;
+      if (ax > 7.5 && ax < 8.5 && az < 5) return cog(z, y) ? 0xfff0b0 : 0;
+      if (az > 7.5 && az < 8.5 && ax < 5) return cog(x, y) ? 0xfff0b0 : 0;
+      return 0;
+    }
+    if (ay > 7.5) return 0;
+    const edges = (ax > 6) + (ay > 6) + (az > 6);
+    if (edges >= 2) return (ax > 6) + (ay > 6) + (az > 6) === 3 ? 0xfff0b0 : 0x6a4a1e;
+    return Math.abs(((ay > 6 ? x + z : y) + 8) % 5) < 0.6 ? 0xc99a26 : 0xe8b830;   // the boards' joins
+  }),
+  // the Hammerdown strike: a sledgehammer, a wrapped wooden handle with a gold knob, a pink head with gold bands,
+  // a lit top edge and a yellow bolt on each face
+  super: () => cubes([-12, 12, -15, 16, -7, 7], (x, y, z) => {
+    const r = Math.hypot(x, z), ax = Math.abs(x), az = Math.abs(z);
+    if (y < 5) {
+      if (y < -12) return r < 2.4 ? 0xffd23a : 0;
+      if (r >= 1.9) return 0;
+      return y < -4 && ((y + 13) % 3) < 1 ? 0x2a1c10 : x - z > 0.8 ? 0x6a4c30 : 0x4a3420;
+    }
+    if (y > 15.5) return 0;
+    if (ax > 8.5) return ax < 11.5 && az < 6 && y > 4.5 ? 0xffd23a : 0;
+    if (az > 5 && az < 6.2 && BOLT(x, y - 10)) return 0xffe24a;
+    if (az > 5) return 0;
+    if (y > 14) return 0xff86ce;
+    return (az > 4 && (y < 6 || y > 13)) ? 0xc8247e : 0xff3da8;
+  }),
 };
 // a beam of light: brightest at the foot, fading out up top
 let beamTex = null;
@@ -136,7 +222,8 @@ export function makePickups(api, spots = []) {
   function strike(c, K) {
     const me = c === api.player, P = api.player;
     const foes = cars.filter((o) => o !== c && !o.dead && !o.gone && Math.hypot(o.x - c.x, o.z - c.z) < K.range).sort((a, b) => Math.hypot(a.x - c.x, a.z - c.z) - Math.hypot(b.x - c.x, b.z - c.z));
-    if (!me && P && foes.includes(P)) { foes.splice(foes.indexOf(P), 1); foes.unshift(P); }   // a rival's strike always has the player in it
+    // a rival's strike always has the player in it (but not in the arena's free-for-all, where the player is one car of eight)
+    if (!me && P && foes.includes(P) && api.MAP.mode !== 'brawl') { foes.splice(foes.indexOf(P), 1); foes.unshift(P); }
     for (const o of foes.slice(0, K.hits)) {
       const rm = new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 0.3, 0.9), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
       const sm = new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.25, 0.75), map: beamTexture(), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });

@@ -30,6 +30,9 @@
 //   show     the announcer: every so often it calls an event (a banner and a siren), and for a while the hazards whose
 //            `wild` names that event's tag go wild (faster, more often, all at once). { first, every, time,
 //            events: [{ tag, name, sub }], onEvent(event) }
+//   scoreboard  the show's scoreboard, hung high over the floor on cables: a screen on all four sides with the clock and
+//            the leaders, from api.game.board ({ left, rows: [{ name, wrecks, me }] }, which a mode keeps: brawl.js), or
+//            the show's name when there is none. It hurts nobody. { x, z, y (its foot), w (across), h, anchors: [[x, y, z]] }
 // Keep what hangs over the floor (a sweeper's drum and beams, a magnet) above about 30: the chase camera rides from 23
 // to 28 up behind the car, and would pass through it.
 // None of them are voxels: they are meshes that move and glow, so nothing has to be rebuilt. The map's own list objects
@@ -871,4 +874,51 @@ function show(api, h, S) {
   };
 }
 
-const KINDS = { grates, press, barrels, boost, conveyor, bounds, keepout, sweeper, hammer, jets, magnet, show };
+// ---- the scoreboard ----------------------------------------------------------------------------------------------
+// A box hung from four cables, a screen on each side, lit bands top and bottom. The screens are one picture, drawn
+// small and shown with its pixels square (an LED board), and drawn again twice a second.
+function scoreboard(api, h) {
+  const W = h.w ?? 46, H = h.h ?? 24, PW = 96, PH = 48;
+  const cv = document.createElement('canvas'); cv.width = PW * 2; cv.height = PH * 2;
+  const g = cv.getContext('2d'), tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace; tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.LinearFilter; tex.generateMipmaps = false;
+  const screen = new THREE.MeshBasicMaterial({ map: tex, color: new THREE.Color(1.5, 1.5, 1.5), toneMapped: false }), dark = steelMat();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(W, H, W), [screen, screen, dark, dark, screen, screen]);
+  body.position.set(h.x, h.y + H / 2, h.z); api.scene.add(body);
+  const bandM = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.15, 0.8, 0.22), toneMapped: false });
+  for (const y of [h.y - 0.4, h.y + H + 0.6]) { const b = new THREE.Mesh(new THREE.BoxGeometry(W + 0.8, y < h.y ? 0.8 : 1.2, W + 0.8), y < h.y ? bandM : dark); b.position.set(h.x, y, h.z); api.scene.add(b); }
+  // the cables, from each top corner out to its anchor
+  const cableM = new THREE.MeshStandardMaterial({ color: 0x23272d, roughness: 0.6, metalness: 0.5 }), up = new THREE.Vector3(0, 1, 0);
+  for (const [ax, ay, az] of h.anchors || []) {
+    const a = new THREE.Vector3(h.x + Math.sign(ax - h.x) * W / 2, h.y + H + 1.2, h.z + Math.sign(az - h.z) * W / 2), b = new THREE.Vector3(ax, ay, az), d = b.clone().sub(a);
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, d.length(), 5, 1, true), cableM);
+    m.position.copy(a).addScaledVector(d, 0.5); m.quaternion.setFromUnitVectors(up, d.normalize()); api.scene.add(m);
+  }
+  const clock = (s) => { s = Math.max(0, Math.ceil(s)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+  let t = 0;
+  function draw() {
+    const B = api.game.board;
+    g.setTransform(2, 0, 0, 2, 0, 0);
+    g.fillStyle = '#0b0d12'; g.fillRect(0, 0, PW, PH);
+    g.textBaseline = 'top'; g.textAlign = 'center';
+    g.fillStyle = '#ffd23a'; g.font = 'bold 8px monospace'; g.fillText('HAMMERDOWN', PW / 2, 1);
+    if (!B) { g.fillStyle = '#ff5a48'; g.font = 'bold 16px monospace'; g.fillText('LIVE', PW / 2, 16); }
+    else {
+      g.fillStyle = B.left <= 10 && (performance.now() / 250 | 0) & 1 ? '#ff5a48' : '#fff6e0'; g.font = 'bold 12px monospace'; g.fillText(clock(B.left), PW / 2, 9);
+      g.textAlign = 'left'; g.font = 'bold 7px monospace';
+      B.rows.slice(0, 3).forEach((r, i) => {
+        const y = 23 + i * 8;
+        g.fillStyle = r.me ? '#ffb33a' : '#7fd8ff'; g.fillText(`${i + 1} ${r.name.toUpperCase().slice(0, 11)}`, 3, y);
+        g.textAlign = 'right'; g.fillStyle = '#fff6e0'; g.fillText(String(r.wrecks), PW - 3, y); g.textAlign = 'left';
+      });
+    }
+    // the board's lamps: a fine dark grid over it all
+    g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = 'rgba(0,0,0,0.3)';
+    for (let x = 0; x < PW * 2; x += 2) g.fillRect(x, 0, 1, PH * 2); for (let y = 0; y < PH * 2; y += 2) g.fillRect(0, y, PW * 2, 1);
+    tex.needsUpdate = true;
+  }
+  draw();
+  return { step(dt) { if ((t -= dt) <= 0) { t = 0.5; draw(); } } };
+}
+
+const KINDS = { grates, press, barrels, boost, conveyor, bounds, keepout, sweeper, hammer, jets, magnet, show, scoreboard };
