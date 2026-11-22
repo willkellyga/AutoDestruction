@@ -592,14 +592,23 @@ function addRival(n, at) {
   return addCar(load, at || (mode.rivalSpawn && mode.rivalSpawn()) || MAP.spawnPoint(player, cars.filter((c) => !c.gone)), true);
 }
 function hint(html) { if (html) { $('hint').innerHTML = html; $('hint').classList.add('on'); } else $('hint').classList.remove('on'); }
-// the round is over: a card with how it went, and the way to the next one
-function over(title, lines = [], scrap = 0) {
+// the round is over: a card with how it went, and the way to the next one. `more` ({ label, go }), if the mode gives
+// it, is a button (and Enter or C) to carry on the same round instead: overGo hides the card and calls `go`
+let overMore = null;
+function over(title, lines = [], scrap = 0, more = null) {
   if (game.state === 'over') return;
+  overMore = more; $('over').classList.toggle('more', !!more); $('over-go').className = more ? 'alt' : 'go';
+  if (more) $('over-more').textContent = more.label || 'Keep going';
   game.state = 'over'; game.scrap += scrap; keepSave(save); hint(null);
   $('dead').hidden = true;
   $('over-t').textContent = title;
   $('over-l').innerHTML = ''; for (const l of [...lines, ...(scrap ? [`+${Math.round(scrap)} scrap`] : [])]) { const d = document.createElement('div'); d.textContent = l; $('over-l').appendChild(d); }
   setTimeout(() => { if (game.state === 'over') { $('over').hidden = false; if (document.exitPointerLock) document.exitPointerLock(); } }, 1600);
+}
+function overGo() {
+  const m = overMore; if (!m || game.state !== 'over' || $('over').hidden) return;
+  overMore = null; $('over').hidden = true; $('over').classList.remove('more'); $('over-go').className = 'go';
+  game.state = 'play'; lockMouse(); m.go(); return true;
 }
 const api = {
   game, cars, extras, MAP, scene, mats, camera, sfx, save, cube, chip, blast, explode, sparks, dust, CRASH, ROUND, AI,
@@ -676,6 +685,7 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyG' && (game.state === 'menu' || (game.state === 'dead' && !game.noGarage) || (game.state === 'play' && mode.garageOK()))) openGarage(game.state === 'play' ? 'break' : game.state);
   else if ((e.code === 'KeyG' || e.code === 'Escape') && game.state === 'garage') leaveGarage();
   if (e.code === 'KeyR' && game.state === 'play' && mode.resetPlayer) mode.resetPlayer();   // back on the track (the race)
+  if ((e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'KeyC') && overMore && overGo()) e.preventDefault();   // the end card's Keep going (not a click on a focused button too)
   if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
 });
 addEventListener('keyup', (e) => { keys[e.code] = false; });
@@ -711,6 +721,7 @@ $('go').addEventListener('click', () => { if (game.ended) chooseMap(MAP.id); els
   $('map-blurb').textContent = MAP.blurb; $('go').textContent = mode.go; $('menu-note').textContent = mode.note;
 }
 $('over-go').addEventListener('click', () => chooseMap(MAP.id));
+$('over-more').addEventListener('click', overGo);
 $('over-maps').addEventListener('click', () => { $('over').hidden = true; game.ended = true; $('go').textContent = 'Play again'; $('menu').hidden = false; });
 $('over-garage').addEventListener('click', () => { $('over').hidden = true; game.ended = true; $('go').textContent = 'Play again'; openGarage('over'); });
 $('menu-garage').addEventListener('click', () => openGarage('menu'));
