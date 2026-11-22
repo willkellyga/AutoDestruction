@@ -8,17 +8,24 @@
 // gate it passed, facing the right way, after RESPAWN seconds: wrecking someone costs them time. When the player takes
 // the flag the car drives itself and the rivals race on for a few seconds; then the results, with scrap for the place
 // and for every rival wrecked. If a rival wins and the player is still out there, the race closes after a while.
+//
+// Difficulty (Easy, Normal, Hard on the start card, kept in the save as `raceLevel`: tuning.js RACE): the rivals' cars
+// are tuned to the player's, faster or slower by the level, and drive better or worse; Easy and Normal have a little
+// catch-up, Hard none. Every car, the player's too, gets a tow tucked in behind another (slipstream), which keeps the
+// pack together the fair way.
 import * as THREE from 'three';
 import { makeRacer } from './racer.js';
+import { RACE } from '../tuning.js';
+import { PARTS, racerBuild } from '../parts.js';
 
 const RESPAWN = 2.5, COUNT = 3;
-const PRIZE = [300, 200, 120, 80, 50, 30];   // by place (each rival you wreck already pays 100 as it happens)
-const TIERS = [1, 1, 2, 1, 2];        // the rivals' builds (rivalBuild in parts.js), front of the grid first
+const PRIZE = [300, 200, 120, 80, 50, 30];   // by place, on Normal (each rival you wreck already pays 100 as it happens)
 const CLOSE = 40;                     // seconds the race stays open after the winner finishes
 const AFTER = 9;                      // seconds the rivals race on after the player finishes, before the results
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const ord = (n) => n + (n % 10 === 1 && n % 100 !== 11 ? 'st' : n % 10 === 2 && n % 100 !== 12 ? 'nd' : n % 10 === 3 && n % 100 !== 13 ? 'rd' : 'th');
 const clock = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`;
+const between = ([a, b]) => a + Math.random() * (b - a);
 
 export function makeRace(G) {
   const TR = G.MAP.track;
@@ -31,10 +38,13 @@ export function makeRace(G) {
   const byCar = new Map();
   let phase = 'grid', countT = 0, raceT = 0, shown = 0, closeT = -1, doneT = -1, finishers = 0, lights = null, lightsT = -1;
   const race = { T, line, P, HALF, PIT_HALF, phase: () => phase, time: () => raceT, rec: (c) => byCar.get(c), pull };
+  // the difficulty: the save's, or Normal
+  const levelId = () => (RACE.levels[G.save.raceLevel] ? G.save.raceLevel : 'normal');
+  let LV = RACE.levels[levelId()];
 
   // a car joins the race (or comes back): its record follows it to its new car
   function join(car, name, me, slot) {
-    const r = { car, name, me, slot, i: -1, s: 0, lat: 0, passed: 0, lapT0: 0, laps: [], best: 0, wrecks: 0, kills: 0, finished: false, finishT: 0, place: 0, downT: 0, wrongT: 0, lostT: 0, stuckT: 0, lastProg: 0, progress: 0, resets: 0 };
+    const r = { car, name, me, slot, i: -1, s: 0, lat: 0, draft: 0, tune: null, passed: 0, lapT0: 0, laps: [], best: 0, wrecks: 0, kills: 0, finished: false, finishT: 0, place: 0, downT: 0, wrongT: 0, lostT: 0, stuckT: 0, lastProg: 0, progress: 0, resets: 0 };
     recs.push(r); byCar.set(car, r); locate(r, true);
     return r;
   }
@@ -60,13 +70,36 @@ export function makeRace(G) {
     const g = r.passed % NG, base = Math.floor(r.passed / NG) * T.L + gateS[g], next = g + 1 < NG ? gateS[g + 1] : T.L;
     return base + clamp(wrapS(r.s - gateS[g]), -150, next - gateS[g]);
   }
-  // a rival well ahead of the player eases off a little, and one well behind pushes a little, so the race stays a race
+  // the catch-up: a rival well ahead of the player eases off a little (pull, a share of its pace), and one well behind
+  // pushes a little (push, more top speed: see step), so the race stays a race; as much as the level allows
   function pull(c) {
     const r = byCar.get(c), me = recs.find((o) => o.me);
     if (!r || r.me || !me || me.finished || phase !== 'race') return 1;
     const gap = r.progress - me.progress;
-    return gap > 100 ? 1 - Math.min(0.08, (gap - 100) / 2500) : gap < -150 ? 1 + Math.min(0.04, (-gap - 150) / 3000) : 1;
+    return gap > 100 ? 1 - Math.min(LV.ease, (gap - 100) / 2500) : 1;
   }
+  function push(r, me) {
+    if (r.me || !me || me.finished || phase !== 'race') return 0;
+    const gap = r.progress - me.progress;
+    return gap < -150 ? Math.min(LV.push, (-gap - 150) / 3000) : 0;
+  }
+  // slipstream: how much tow a car gets now, 0 to 1, from the nearest car just ahead of it on the same line
+  function tow(r) {
+    const S = RACE.slip, c = r.car;
+    if (c.dead || c.fwd < S.min || r.i < 0) return 0;
+    let best = 0;
+    for (const o of recs) {
+      if (o === r || o.car.dead || o.i < 0) continue;
+      const ds = wrapS(o.s - r.s);
+      if (ds < 4 || ds > S.reach || Math.abs(o.lat - r.lat) > S.width) continue;
+      best = Math.max(best, 1 - (ds - 4) / (S.reach - 4));
+    }
+    return best;
+  }
+  // a rival's car, tuned to the player's (see RACE): its top speed and pull, its turning, and its grip if the
+  // player's tyres hold better; again each time it comes back from a wreck (a new car is built from the load)
+  function tune(c, t) { const S = c.spec; S.top = t.top; S.accel = t.accel; S.turn = t.turn; S.grip = Math.max(S.grip, t.grip); }
+  const racer = (c, d) => makeRacer(c, race, { pace: d.pace, grip: d.grip, brake: LV.brake, aim: LV.aim });
   const place = (r) => 1 + recs.filter((o) => o !== r && (o.finished ? !r.finished || o.finishT < r.finishT : !r.finished && o.progress > r.progress)).length;
 
   // where a car comes back: at its last gate, on the road and clear of the other cars, facing on round the lap
@@ -104,12 +137,17 @@ export function makeRace(G) {
   function holdGuns(c) { for (const g of c.guns) { g.t = Math.max(g.t, 0.3); g.left = 0; } c.boostT = 0; }
 
   function startRace() {
-    // the rivals take the other slots on the grid
+    // the rivals take the other slots on the grid, in cars tuned to the player's (the quickest at the front)
+    LV = RACE.levels[levelId()];
+    const me = G.player.spec, near = (PARTS.body[G.player.load.body] || PARTS.body.scrapper).top;
     const slots = [0, 1, 2, 3, 5];
     slots.forEach((k, n) => {
-      const c = G.addRival(TIERS[n], { ...grid[k] });
-      c.driver = makeRacer(c, race, { pace: 0.94 + Math.random() * 0.05, grip: 0.8 + Math.random() * 0.06 });
-      join(c, c.name, false, grid[k]);
+      const share = LV.speed * (1 + RACE.spread[n]);
+      const c = G.addRival(racerBuild(me.top * share, near), { ...grid[k] });
+      const t = { top: me.top * share, accel: me.accel * share, turn: me.turn, grip: me.grip };
+      tune(c, t);
+      c.driver = racer(c, { pace: between(LV.pace), grip: between(LV.grip) });
+      join(c, c.name, false, grid[k]).tune = t;
     });
     join(G.player, 'You', true, grid[4]);
     for (const r of recs) grab(r);
@@ -123,15 +161,21 @@ export function makeRace(G) {
     const order = [...recs].sort((a, b) => (a.finished && b.finished ? a.finishT - b.finishT : a.finished ? -1 : b.finished ? 1 : b.progress - a.progress));
     order.forEach((r, k) => { r.place = k + 1; });
     const lines = order.map((r) => `${ord(r.place)}  ${r.name}  ${r.finished ? clock(r.finishT) : `lap ${Math.min(LAPS, Math.floor(r.passed / NG) + 1)}`}${r.wrecks ? ` (wrecked ${r.wrecks})` : ''}`);
-    lines.push(`Best lap ${me.best ? clock(me.best) : '-'}  ·  You wrecked ${me.kills}`);
+    lines.push(`Best lap ${me.best ? clock(me.best) : '-'}  ·  You wrecked ${me.kills}  ·  ${LV.name}`);
     const title = me.place === 1 ? 'You win!' : me.finished ? `${ord(me.place)} place` : 'Out of time';
-    G.over(title, lines, PRIZE[me.place - 1]);
+    G.over(title, lines, Math.round(PRIZE[me.place - 1] * LV.prize));
     phase = 'over';
   }
 
   return {
     go: 'Start the race',
-    note: `${G.MAP.laps || 3} laps, six cars, guns on. Wreck whoever gets in front, and take the checkpoints in order.`,
+    get note() { return `${G.MAP.laps || 3} laps, six cars, guns on. ${LV.note} Tuck in behind a car for a tow.`; },
+    // the start card's difficulty buttons (main.js)
+    levels: {
+      list: Object.entries(RACE.levels).map(([id, L]) => [id, L.name]),
+      get: levelId,
+      set(id) { if (!RACE.levels[id]) return; G.save.raceLevel = id; LV = RACE.levels[id]; G.keepSave(); },
+    },
     start() { startRace(); G.hint(null); },
     step(dt) {
       if (phase === 'grid') return;
@@ -158,7 +202,8 @@ export function makeRace(G) {
           // a wrecked rival comes back at its last gate (the player comes back through main.js, at respawnAt)
           if (!r.me && (r.downT -= dt) <= 0) {
             const nc = G.addCar({ ...c.load }, backAt(r), true);
-            nc.driver = makeRacer(nc, race, { pace: (c.driver && c.driver.pace) || 0.96, grip: (c.driver && c.driver.grip) || 0.82 });
+            if (r.tune) tune(nc, r.tune);
+            nc.driver = racer(nc, { pace: (c.driver && c.driver.pace) || 0.96, grip: (c.driver && c.driver.grip) || 0.82 });
             swapCar(r, nc);
             r.lastProg = progressOf(r); r.stuckT = 0;
           }
@@ -189,6 +234,10 @@ export function makeRace(G) {
           }
         }
         r.progress = progressOf(r);
+        // the tow, building up over a moment and fading as fast, and a rival's catch-up: more top speed and pull for
+        // the car (main.js stepGadget turns c.lift into its boost)
+        r.draft += (tow(r) - r.draft) * Math.min(1, dt * 2.5);
+        c.lift = r.draft * RACE.slip.topK + push(r, me); c.liftAccel = r.draft * RACE.slip.accelK;
         // the player: wrong way, or past a gate it missed
         if (r.me && !r.finished) {
           const fx = Math.sin(c.yaw), fz = Math.cos(c.yaw), dot = fx * T.TX[r.i] + fz * T.TZ[r.i];
@@ -226,12 +275,12 @@ export function makeRace(G) {
     resetPlayer() { const r = recs.find((o) => o.me); if (r && phase === 'race' && !r.car.dead && (r.lostT > 0.6 || r.wrongT > 0.8 || r.lat > WL(r.i) + 6 || -r.lat > WR(r.i) + 6)) reset(r); },
     hud() {
       const me = recs.find((r) => r.me), n = recs.length || 6;
-      if (phase === 'grid') return ['Race', `${LAPS} laps · 6 cars`];
+      if (phase === 'grid') return ['Race', `${LAPS} laps · 6 cars · ${LV.name}`];
       if (phase === 'count') return ['Get ready', `${ord(5)} on the grid`];
       if (!me) return ['Race', ''];
       if (me.finished) return ['Finished', `${ord(me.place)} of ${n}`];
       const lap = Math.min(LAPS, Math.floor(me.passed / NG) + 1), closing = closeT >= 0 ? ` · ends in ${Math.ceil(closeT)}` : '';
-      return [`Lap ${lap}/${LAPS}`, `${ord(place(me))} of ${n} · ${clock(raceT - me.lapT0)}${closing}`];
+      return [`Lap ${lap}/${LAPS}`, `${ord(place(me))} of ${n} · ${clock(raceT - me.lapT0)}${closing}${me.draft > 0.3 ? ' · Tow!' : ''}`];
     },
     garageOK: () => false,
     // the radar: the player's next gate, blinking

@@ -152,12 +152,30 @@ export function rivalBuild(wave) {
     gadget: 'none',
     paint: pick(Object.keys(PAINTS).filter((p) => p !== 'orange')), trim: pick(['black', 'white', 'silver', 'yellow', 'red']), pattern: pick(Object.keys(PATTERNS)),
   };
-  // keep within the body's Power: drop the doors, the roof, the heavy weapon, then the front, until it fits
+  return fit(L);
+}
+// keep within the body's Power: drop the doors, the roof, the heavy weapon, then the front, until it fits
+function fit(L) {
   if (statsOf(L).over) L.door = 'none';
   if (statsOf(L).over) L.roof = 'none';
   if (statsOf(L).over) L.secondary = 'none';
   if (statsOf(L).over) L.front = 'bumper';
   if (statsOf(L).over) L.primary = 'mg';
   return L;
+}
+// A rival for the race (modes/race.js), matched to the player's car: one of the two bodies nearest the player's in
+// speed (`near`, the player's body's top speed), with the engine and tyres that bring it nearest the top speed it is to
+// have (`target`), and middling guns. The race then tunes it the rest of the way, so the field looks like cars of the
+// player's sort rather than vans keeping up with a muscle car.
+export function racerBuild(target, near) {
+  const B = PARTS.body, bodies = Object.keys(B).sort((a, b) => Math.abs(B[a].top - near) - Math.abs(B[b].top - near));
+  const L = rivalBuild(2);
+  L.body = pick(bodies.slice(0, 2));
+  let best = null, bd = Infinity;
+  for (const engine of ['stock', 'turbo', 'v8']) for (const wheels of ['street', 'offroad', 'slicks']) {
+    const d = Math.abs(statsOf({ ...L, engine, wheels }).top - target) + Math.random() * 4;   // (a little luck in a near thing)
+    if (d < bd) { bd = d; best = { engine, wheels }; }
+  }
+  return fit(Object.assign(L, best));
 }
 export const RIVAL_NAMES = ['Rust Bucket', 'Nitro Nell', 'Grinder', 'Blue Fury', 'The Sheriff', 'Silver Shark', 'Black Widow', 'Cream Puff', 'Hot Rod Hank', 'Mad Maxine', 'Bolt', 'Junkyard Dog', 'Crash Kid', 'Tin Can', 'Boom Boom', 'Road Hog'];

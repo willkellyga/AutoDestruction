@@ -5,18 +5,19 @@
 // heavy weapons at cars ahead and drops mines when someone is right behind. When it is stuck it backs out.
 //
 // race: { T, line, P, HALF, PIT_HALF, phase(), time(), rec(car), pull(car) } from the race mode (pull: a share of its
-// pace, a little under 1 for a rival far ahead of the player and a little over for one far behind). A driver made with { autopilot: true }
-// only drives (the player's car after the flag).
+// pace, a little under 1 for a rival far ahead of the player). The car's own `lift` (a tow, or the catch-up for a rival
+// far behind: race.js) is more top speed for the while, and the driver uses it. A driver made with { autopilot: true }
+// only drives (the player's car after the flag). `brake` and `aim` come from the race's difficulty (tuning.js RACE).
 import { AI } from '../tuning.js';
 import { clearLine } from '../ai.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
-const BRAKE = 150;   // voxels a second, a second: how hard a rival counts on braking (the cars can do about twice that)
+const BRAKE0 = 150;  // voxels a second, a second: how hard a rival counts on braking, on Normal (the cars can do about twice that)
 const CLOSE = 45;    // how near the player has to be to be shot at when not ahead (and not in the first seconds of the race)
 const WOBBLE = 1.4;  // a racer's aim wobbles more than a derby rival's (AI.aimErr): it has the driving to think about
 
-export function makeRacer(car, race, { autopilot = false, pace = 0.96, grip = 0.82 } = {}) {
+export function makeRacer(car, race, { autopilot = false, pace = 0.96, grip = 0.82, brake: BRAKE = BRAKE0, aim = 1 } = {}) {
   const { T, line, P, HALF, PIT_HALF } = race;
   const wrapS = (d) => d - Math.round(d / T.L) * T.L;
   const b = { i: -1, pi: 0, lane: 0, backT: 0, backSteer: 1, chkT: 0, lx: car.x, lz: car.z, target: null, pickT: 0, seenT: 0, wobT: 0, wob: [0, 0, 0], ahead: { x: 0, z: 0 } };
@@ -34,7 +35,7 @@ export function makeRacer(car, race, { autopilot = false, pace = 0.96, grip = 0.
     // in the pit lane: follow it out
     const k = Math.floor(car.z) * T.field.WX + Math.floor(car.x);
     const inPit = P && P.field.dist[k] < PIT_HALF + 1 && T.field.dist[k] > HALF + 1;
-    let tx, tz, vmax = Math.min(S.top, S.top * pace * race.pull(car)), look = 12 + sp * 0.3;
+    let tx, tz, vmax = S.top * (1 + (car.lift || 0)) * Math.min(1, pace * race.pull(car)), look = 12 + sp * 0.3;
     if (inPit) {
       let best = b.pi, bd = 1e9;
       for (let j = Math.max(0, b.pi - 20); j < Math.min(P.N, b.pi + 20); j++) { const d = Math.hypot(P.X[j] - car.x, P.Z[j] - car.z); if (d < bd) { bd = d; best = j; } }
@@ -128,7 +129,7 @@ export function makeRacer(car, race, { autopilot = false, pace = 0.96, grip = 0.
     b.pickT -= dt;
     if (b.pickT <= 0 || (b.target && (b.target.dead || b.target.gone))) { b.pickT = 0.35 + Math.random() * 0.3; const t = pick(all, player); if (t !== b.target) b.seenT = 0; b.target = t; }
     const Tg = b.target, me = race.rec(car);
-    b.wobT -= dt; if (b.wobT <= 0) { b.wobT = 0.5; for (let i = 0; i < 3; i++) b.wob[i] = (Math.random() - 0.5) * 2 * AI.aimErr * WOBBLE; }
+    b.wobT -= dt; if (b.wobT <= 0) { b.wobT = 0.5; for (let i = 0; i < 3; i++) b.wob[i] = (Math.random() - 0.5) * 2 * AI.aimErr * WOBBLE * aim; }
     let gun = false, heavy = false;
     const sec = car.guns.find((G) => G.slot === 'secondary'), mines = sec && sec.g.mine, arc = car.guns.find((G) => G.g.arc);
     if (Tg) {

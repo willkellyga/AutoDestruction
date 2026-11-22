@@ -651,6 +651,24 @@ export default {
   blurb: 'A demolition derby pit on television: a big mud bowl for ramming, ringed by tyre walls, concrete and stacked wrecks, with the traps round the edge: a sweeper, two hammers, flame jets, a press, a magnet and a strike in the eye.',
   loading: ['Building the pit', 'Setting the sweeper, the hammers and the magnet'],
   outer: 0x6e6b64,
+  // The world past the stadium, at night (backdrop.js): the parking lot round it, the avenues out east and west, an
+  // elevated road round the lot, the city beyond and the show's blimp. All of it is to look at; nothing of it is solid.
+  //   - The ground stops under the ring wall (the hole is the wall's line, a little out).
+  //   - The apron is concrete round everything build() puts outside the ring (the booth reaches out to x 96, the stands'
+  //     backs to z 243 and 780, the fuel tanks and the crane's jib to x 884), with margin; the drive goes round it, and
+  //     the lot's first aisle meets the drive (backdrop.js has the lot's rows).
+  //   - The towers stand out to `city` from the middle: with the camera anywhere in the pit, their far sides are still
+  //     inside its far edge (2400).
+  backdrop: {
+    x: CX, z: CZ,
+    hole: { hx: WALL.hx + 2.5, hz: WALL.hz + 2.5, r: WALL.r + 2.5 },
+    apron: { hx: 436, hz: 290, r: 40 }, drive: 36,
+    lot: { hx: 840, hz: 720, r: 340 },
+    avenueEnd: 1640,
+    highway: { hx: 1060, hz: 920, r: 440, w: 90, y: 56 },
+    city: 1930,
+    blimp: { name: 'HAMMERDOWN', sub: 'CH 6 LIVE', x: CX, z: CZ, rx: 940, rz: 800, y: 190, len: 200, speed: 55, a0: 2.2 },
+  },
   build() {
     ctx.L = 2; seed = 1234567;
     ring(); stand(0); stand(1); gantry(0); gantry(1); sweeperFrame(); westEnd(); eastEnd(); boneyard(); floodlights();
