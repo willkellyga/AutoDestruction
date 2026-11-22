@@ -191,108 +191,122 @@ Our cars never leave the floor.
 
 ## How Hammerdown Arena uses them
 
-The arena is a floor about 450 by 320 voxels (113 by 81 metres) inside a barrier wall. Stands rise on the north and
-south sides. Race control stands at the west end, and the fuel depot with a tower crane at the east end.
+The arena has been laid out twice. The first layout was a racing-style loop, 450 by 320 voxels, round a sweeper in the
+middle, for waves of rivals. It was too small, and it was asked to feel more like a demolition derby pit, keeping the
+traps and pickups. At the same time the arena became the game's free-for-all (below). The second layout is described here.
 
-1. **Loop, no dead ends.**
-   - A wide loop runs round inside the wall. It is 60 voxels wide on the straights and 78 at the ends. Its corners are
-     round, with a radius of 72, well over a car's turning circle at speed (about 48).
-   - A lap is about 1,200 voxels, or 15 seconds at full speed.
-   - The infield opens onto the loop all round. Every piece of cover is a short wall or an L that opens towards the
-     middle, so there is nothing to drive into and get stuck in.
-   - No set piece closes the loop. Each one sits across or beside the racing line and leaves a way round or through.
-   - The route-finder keeps rivals' lines six voxels clear of walls.
-   - Anything a car can smash its way into is packed solid, so a breach is a dent and not a trap: the containers, the
-     tanker's tank and the press's base.
-   - The wall holds cars in even after rockets have blown it open: hazards.js `bounds`.
-2. **Size.** Across the infield takes three or four seconds at speed, so a wave of rivals is never far off. The stands,
-   race control, the depot and the crane all stand outside the floor and use none of it.
-3. **A set piece in every part of the arena** (`src/hazards.js`, usable by any map). Each one warns before it hurts,
-   shows on the radar, and is placed where the driving is, not off in a corner.
+The floor is 672 by 440 voxels inside the ring (168 by 110 metres), with corners of radius 100. That is about 287,000
+square voxels, twice the first layout's 142,000. Crumbletown's world (512 by 416) could not hold that, so the arena
+stands on New York's world (1024 by 1024: `src/flags.js`), with none of the city built.
 
-   | Set piece | Where | Taken from | Warning | What it does |
-   |---|---|---|---|---|
-   | **Sweeper** | The middle | Chain Chomp Wheel, Black Rock's spiky balls | Always visible: a red wedge on the floor runs ahead of each blade, the blade's lamps blink, and its saw grows louder as it nears | Three blades turn low over the floor from 14 to 46 voxels out, one turn every 12 seconds. A blade hits for 20 and throws the car on and out of the ring. The eye inside it is still and safe |
-   | **Hammers** | Under each gantry, across both straights | The Thwomp's beat | Latched up at one side for 2.2 seconds. For the last second its lamps blink, it beeps and shudders | It swings across the lane in 1.3 seconds, latches on the far side, and comes back. A hit at full swing does 34 and knocks the car across the lane with the head. The two are out of step |
-   | **Flame jets** | Three in the wall of each corner | Construction Yard's flamethrowers, Shock Therapy's burners | A second of pilot flame, sparks and a hiss | Each burns 26 voxels across the corner for 2.4 seconds, at 32 a second. Two opposite corners fire at a time, each corner's three in the order the traffic reaches them |
-   | **Magnet** | Hung from the crane over the fuel depot (east) | Thwomp Desert's quicksand, Construction Yard's crane | It rests 6 seconds, then hums for 1.6 seconds with an alarm while blue rings run in across the floor | For 3.6 seconds it drags every car within 48 voxels toward the middle, into the barrels round the nitro. It holds the cars it gets, at 7 a second, and drops them with a clang. A car flooring it from the edge gets away |
-   | **Press and belts** | The west lane | Construction Yard's belts | Lamps, an alarm and a shudder for a second | Two belts on the inside line carry cars into the press. It slams down for 75 |
-   | **Barrels and boost strips** | The depot and the straights | | | As before: barrels blow up when shot or rammed, and the boost strips give a burst of speed |
+1. **A pit, not a loop.**
+   - The middle is an open bowl of churned mud, 476 by 252, with nothing standing in it. It is the contested centre
+     (Crossout's "direction for those who want to get into battle"), and the place to ram.
+   - The set pieces stand round the edge and in the corners. So the middle stays open, and every trap is somewhere to
+     shove a rival into.
+   - A rival going after a far target goes by way of the middle of the pit (`ai.js`), so the fights keep coming back to it.
+   - The ring holds cars in. Concrete barriers and tyre walls are `'barrier'` bodies, which cars bounce off and only
+     rockets wear down. hazards.js `bounds` holds cars in where the barrier has been blown open.
+2. **Size.** The floor is twice the first layout, for eight cars at once. End to end takes about eight seconds at full
+   speed, and across about five. The small-map lesson above still holds, so other things keep the fights coming: the
+   open middle that rivals pass through, eight cars instead of a wave of three to six, and spawn spots no more than a
+   few seconds' drive from the middle. The first cars meet about two and a half seconds into a match. All the dressing stands outside the ring and uses none of the floor: the stands, the
+   booth, the depot, the crane and the towers.
+3. **A set piece in every part of the arena** (`src/hazards.js`). Each one warns before it hurts, shows on the radar, and
+   stands at the edge of the pit, where cars get shoved.
+
+   | Set piece | Where | What changed from the first layout |
+   |---|---|---|
+   | **Sweeper** | The north-west corner, under its frame and the big screen | Moved out of the middle. Same blades (14 to 46 out, a turn every 12 seconds), the strike in its eye, scrap among its blades |
+   | **Hammers** | The middle of each long side, hung from a TV gantry reaching out over the floor | Each swings out from the wall across the first sixty voxels of floor. The two are out of step |
+   | **Flame jets** | Four round each of the north-east and south-west corners | Four a corner instead of three, each 30 long |
+   | **Magnet** | The east end, from the crane over the fuel depot | Same pull (48 voxels) into the barrels round its nitro, with the tanker beside it |
+   | **Press and belts** | The west end, against the wall, with a belt either side of it along the wall | The belts carry cars along the wall into the press. The announcer's booth stands over it |
+   | **Barrels** | The fuel depot (round the magnet's nitro and at the tanker's ends) and the boneyard | As before: they blow up when shot or rammed |
+   | **Boost strips** | Two on each long side, pointing into the pit | They launch a car from the wall towards the middle |
+   | **The boneyard** | The south-east corner | New: loose wrecks and stacks of tyres to hide among (`'wall'` bodies a fast car smashes through) |
 
 4. **A super weapon: the Hammerdown strike** (`src/pickups.js`, kind `super`).
-   - It sits in the sweeper's eye, so taking it means timing a run between the blades. It first comes up 30 seconds into
-     a round. After it is taken it comes back in 70 seconds, or sooner if a show event starts.
-   - It locks on to the three nearest cars within 320 voxels. A pink ring follows each one for a second, then holds
-     still for 0.4 seconds, and the strike comes down: 55 at the middle, falling to nothing 16 voxels out, on top of the
-     blast.
-   - Driving out of the ring in time dodges it. A rival that takes the strike always marks the player first.
+   - It sits in the sweeper's eye, as before. It comes up 30 seconds into a match, again 70 seconds after it is taken,
+     and a second after a show event starts.
+   - It works as before: three marked cars, a ring that follows each one and then holds still, and the blow. In the
+     free-for-all a rival that takes it does not mark the player first (in the other modes it still does).
 5. **The show changes the arena** (hazards.js `show`).
-   - 35 seconds into a round, and every 45 seconds after that, the announcer calls an event. A banner, a siren and
-     thunder start it.
-   - For 15 seconds one set of hazards goes wild, and the strike comes up in the eye:
-     - **Hammer time!** The hammers swing almost nonstop (they hold 0.55 seconds, warn for 0.45, swing in one), and the
-       press slams more often.
-     - **Fire in the hole!** All twelve jets burn for the whole event, with flames 30% longer.
-     - **Spin cycle!** The sweeper turns twice as fast and hits 30% harder. The magnet rests only 1.6 seconds, and pulls
-       40% longer and 25% harder.
-   - The radar is framed in the event's colour and shows its name and the seconds left.
-   - This is the map changing in play (Antarctica, Gridfall, Rumble's timer) with no floor that drops away.
-6. **Bait** (`src/pickups.js`).
-   - The strike is in the sweeper's eye.
-   - Scrap sits among the sweeper's blades. It is for the player alone: rivals never go for it (`rivals: false`).
-   - A repair kit sits under each hammer and under the press.
-   - Nitro is under the magnet, among the barrels, with two more in the cover. Overcharge (fast reloads) is in the cover.
-   - Each pickup glows and spins over a ring painted in its colour, and comes back after 14 to 30 seconds.
-   - Rivals make for a repair kit when they are under 45% health, and grab any other pickup they are about to pass.
-7. **Rivals use the set pieces too** (`steerClear` in hazards.js, called from ai.js).
-   - Each kind of hazard says where it is dangerous and when. A rival heading through one is sent round it:
-     - It crosses a hammer's lane only while the head is up.
-     - It times its way into the sweeper's eye between blades, and drives out of the eye just behind a blade.
-     - It drives out of a magnet's reach, and out of a jet's flame sideways.
-     - It leaves the press's pad by the nearest open side.
-   - The map's route grid shuts over each hazard while it is dangerous, and opens again after.
-   - Rivals still get caught: rammed or shoved into a set piece, or passing a jet or the magnet just as it comes on. So
-     the player's way to use the set pieces is to time them, and to knock rivals into them.
-8. **Landmarks.**
-   - The middle: the sweeper, under a steel frame that carries the four-sided big screen (HAMMERDOWN, LIVE, CH 6) and the
-     trophy, which can be seen from everywhere.
-   - The west end has the press, its belts and race control. The east end has the fuel depot, its red barrels and the
-     KRANKO FUEL tanks, and the yellow crane with its MAGNET board.
-   - The north side has blue seats and the television gantry. The south side has red seats, the start gantry with its
-     lights, and the chequered line. Each gantry has its hammer.
+   - 35 seconds in, and every 45 seconds after that, the announcer calls one of three events for 15 seconds:
+     **Hammer time!**, **Fire in the hole!** or **Spin cycle!**. Each works as in the first layout, and the strike comes
+     up in the eye.
+   - The radar is framed in the event's colour.
+6. **Bait** (`src/pickups.js`). Every pickup is at the edge, next to a set piece:
+   - Repair kits: under each hammer, and on the press's pad.
+   - Nitro: under the magnet, in the boneyard, and on each long side between a boost strip and the hammer.
+   - Overcharge: in each flame corner, and in the boneyard.
+   - The strike is in the sweeper's eye. Scrap sits among its blades, for the player alone (`rivals: false`).
+7. **Rivals use the set pieces too** (`steerClear` in hazards.js, called from `ai.js`).
+   - Rivals keep out of a hazard while it is dangerous, as before, and the route grid shuts over it.
+   - In the free-for-all, a rival with no car near takes in a pickup on its way, one nearer than its target that no
+     other car is after (`ai.js`). That brings the fighting out to the edges, where the set pieces are.
+8. **Landmarks.** Each end and each corner looks different:
+   - North-west: the sweeper's frame and the big screen.
+   - North-east and south-west: the flame corners, in red and white concrete.
+   - The other two corners: tyre walls, with wrecked cars stacked three high behind them. South-east: the boneyard.
+   - West: the press, and the announcer's booth with the HAMMERDOWN sign on its roof.
+   - East: the yellow crane and its MAGNET board, the KRANKO FUEL tanks, and the tanker.
+   - Over the middle: the scoreboard on four cables from the floodlight towers. It shows the clock and the top three on
+     all four faces (hazards.js `scoreboard`).
    - The floor is painted to match:
-     - a dark asphalt loop, a dirt infield, and red and white kerbs;
-     - a steel deck with a hazard band round the sweeper, and a target in its eye;
-     - a red HAMMER zone under each hammer, soot and hazard bars at the jets, and the MAGNET ring with arrows.
-9. **Sight lines and cover.**
-   - A concrete barrier stands across each straight's view of the middle. It is a `'barrier'` that cars bounce off, and
-     only rockets wear it down.
-   - Between the loop and the middle there are tyre walls and stacked shipping containers. These are `'wall'` bodies, so
-     a fast car smashes through them, and the infield opens up as a wave goes on.
-   - The cover is 11 to 14 voxels high, taller than a car's roof (7 to 11) but low under the chase camera.
-   - The tall things (stands, floodlights, the crane and the gantry pillars) stand at the edges. The frame's four legs
-     stand just outside the sweeper.
+     - dark mud in the pit, with puddles and ruts, and HAMMERDOWN written faintly across it;
+     - lighter dirt round the edge;
+     - each set piece's own paint (as before), chevrons on the boost strips, and a ring in its colour round each pickup.
+9. **Sight lines and cover.** A derby pit is open on purpose: the other cars are the cover. What there is stands at the
+   edges: the boneyard's wrecks and tyres, the tanker and the depot's barrels. The guns reach across the pit, so ramming
+   decides most fights. A match's wrecks are mostly rams and gunfire in the pit, and 3% to 10% are by the map.
 10. **Symmetry.**
-    - The floor is laid out twice, turned half way round the middle, so each side has the same cover, pickups, hammer and
-      pair of jet corners.
-    - The ends differ: the press and repair kit at the west, the magnet and nitro at the east. So do the two stands (blue
-      and red). That is how you tell where you are.
-11. **Height without ramps.** Things hang overhead, higher than any car:
-    - the hammers from the gantries, and the sweeper's drum from the frame;
-    - the magnet from the crane's jib, and the press arm over the west lane, which comes down.
+    - The long sides are laid out twice, turned half way round the middle: the stands, the gantries and their hammers,
+      the boost strips, and the two flame corners.
+    - The ends and the other two corners differ (press and booth against crane and magnet; sweeper against boneyard), so
+      you can tell where you are.
+11. **Height without ramps.** Things hang overhead, higher than any car: the scoreboard, the hammers from the gantries'
+    arms, the sweeper's drum and screen, the magnet, and the press's arm.
 12. **A television show.**
-    - The announcer's events, and stands full of crowd and flags.
-    - Four floodlight towers, a TV gantry with cameras, a start gantry with lights, and the big screen.
-    - Sponsor boards, all made up: KRANKO OIL, BOLTZ, GRIT TYRES, FIZZBANG, LUGNUT, AMPED, CH 6 LIVE, MEGAWATT.
-13. **Spawns.**
-    - 14 spots spread evenly round the loop, each facing clockwise along it.
-    - A rival comes in far from the player (`pickSpot`), never nose to a wall or straight in the player's sights.
+    - Grandstands full of crowd along both long sides, each with a HAMMERDOWN board and sponsors on its roof.
+    - The booth, the floodlights, the TV gantries with their cameras, the scoreboard, and the announcer's events.
+    - Sponsor boards, all made up: KRANKO OIL, BOLTZ, GRIT TYRES, FIZZBANG, LUGNUT, AMPED, CH 6 LIVE, MEGAWATT,
+      DENTS R US, SCRAPCO.
+13. **Spawns.** There are 17 spots round the edge of the pit and a few in it, each facing the middle and clear of the
+    hazards. In the free-for-all a wrecked car comes back at one of the three spots furthest from every live car.
 14. **Light to run.**
-    - About 368,000 voxels and 179 bodies, against the town's 532,000 and 511.
+    - The bigger world costs memory: on the test machine the page's renderer used about 0.5 to 0.8 GB while playing (the
+      race, on the same world, about 1.25 GB). The floor's chunk meshes are built the first time something chews into a chunk, so this
+      grows a little over a match.
     - Every set piece is a few meshes, not voxels, so nothing is rebuilt when it moves.
-    - On phones (`api.TOUCH()`), the flames, sparks and dust spawn about a third as many particles.
+    - On phones (`api.TOUCH()`), the flames, sparks and dust spawn about a third as many particles, and the floor is
+      painted at half the detail.
+
+## The free-for-all (`src/modes/brawl.js`)
+
+The game has three modes on its start card: the race (Manhattan Circuit), zombie survival (Camp Deadfall), and the arena.
+The arena is the free-for-all. (Crumbletown's waves are still there at `?map=town`.)
+
+- **Eight cars.** You and seven rivals, of three builds (`BRAWL.tiers`). Every car is out for every other.
+- **Three minutes** (`BRAWL.time`, or `ROUND.timeLimit` when that is set). A toast warns at 30 seconds, and a banner
+  at 10. The clock is on the HUD and on the scoreboard.
+- **Back in three seconds.** A wrecked car comes back at the free spawn spot furthest from everyone. For 2.5 seconds it
+  blinks, and nothing can hurt it: main.js `damage()` skips a car with its `shield` up, and rivals leave it alone. So
+  nobody is wrecked again on the spot. A wreck lies in the pit for a few seconds, then crumbles.
+- **Most wrecks wins.** A wreck by the map counts for whoever hit that car in the last six seconds. The HUD shows your
+  wrecks, the clock, and your place against the leader.
+- **The results card** ranks everyone by wrecks (cars level on wrecks share a place). It pays scrap by place (400, 250,
+  160, 110, 80, 60, 40, 20), on top of the 100 a wreck that is paid as it happens. The garage is open from the start card
+  and the results card, not during a match.
+- **How rivals pick a target** (`ai.js` `pickAny`):
+  - Any car will do. A near one is likelier, and one that other rivals are already after is less likely. So the fights
+    spread out instead of everyone piling on one car.
+  - A car whose shield is up is passed over unless there is nothing else.
+  - Four times in ten, a rival goes after whoever hit it in the last six seconds.
 
 ## What testing taught us
+
+### The first layout
 
 Every set piece was tested on its own (32 checks: does it warn first, hurt what it should, push the way it should, and
 leave alone what it shouldn't). We also ran long rounds with six to eight rivals: the cars were made unbreakable, and the
@@ -322,3 +336,40 @@ player hopped round the arena every six seconds so that the rivals chased it eve
     the third, one rival was pressed into the south concrete wall for about eight seconds before it worked free.
   - All three events came round in every round, and every set piece hurt rivals.
   - There were no page errors.
+
+### The pit (the second layout, with the free-for-all)
+
+We ran whole three-minute matches with the player's car driven by the rivals' AI, so it fought like a ninth driver
+(with the player's full-strength guns). The coverage figure is the share of the open floor, in cells 16 voxels
+across, that some live car drove through.
+
+- **Rivals stayed in the middle.** At first, rivals picked the nearest car and went for far ones by way of the pit. The
+  fighting stayed in a band across the middle, and the cars reached only 50% of the floor. The ends and corners went
+  almost unvisited, and nobody took an overcharge all match. Now a rival with no car near takes in a pickup on its way
+  (`ai.js` `forage`). That brought coverage to 65% to 74% and pickups taken from 24 to 62 to 71 a match, with no
+  fewer wrecks.
+- **The catch fence.** A fence of posts and rails stood on top of the long straights' barriers. With a car pinned to
+  the wall, the chase camera sat behind the barrier, and the fence's one-voxel rails slipped between the points that
+  main.js tests for walls (every 1.5 voxels), so the view was through bars. The fence is gone. The barrier is 8 high,
+  and the camera rises over it.
+- **The opening.** All eight cars meet in the first few seconds, and the first hit lands about 2.5 seconds in. The
+  damage to the cars' models (rebuilt on every hit) makes the first second or two the slowest frames of a match.
+- **Memory.** A long match's memory climbs and falls but does not run away. What it keeps is the floor's chunk meshes
+  (one for each 16 by 16 chunk anything has chewed into), and a wreck held for a while by a mine it dropped (up to
+  45 seconds).
+- **Results** of four matches (the first before rivals took in pickups):
+
+  | | Wrecks a minute | Coverage | Longest stall | Wrecked within 40 voxels of its spawn | Wrecked under 6 s after coming in | Pickups taken |
+  |---|---|---|---|---|---|---|
+  | Before | 34 | 50% | none | (not measured) | 15 | 24 |
+  | After, 1 | 35 | 65% | about 2 s | (not measured) | 10 | 67 |
+  | After, 2 | 29 | 67% | about 2 s | none | 5, all 138 or more voxels from where it came in | 62 |
+  | After, 3 (with drifting and sturdier buildings merged) | 29 | 74% | about 2.5 s | none | 4, all 89 or more voxels from where it came in | 71 |
+
+  - A stall is a live car, with no other car within 34 voxels and its shield down, that moves less than 6 voxels in
+    1.5 seconds or more. Rivals that hold the handbrake now really slide (since drifting was merged), and that made no
+    real difference to the stalls. The 2.5 seconds was one rival backing out from beside the tanker.
+  - The wrecks spread across the cars. In the last match, rivals made 4 to 11 wrecks each and were wrecked 8 to 14
+    times; the AI-driven player made 29. A car lived about 12 seconds between wrecks (the median).
+  - Between 3% and 10% of a match's wrecks were by the map (a hammer, the press, the flames, the sweeper or the magnet).
+  - No page errors.

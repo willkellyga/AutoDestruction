@@ -1,9 +1,9 @@
 // Which world this page lays out, settled before anything else in the bundle runs (main.js imports this first).
 // Most maps stand on Crumbletown; the New York race stands on Monster Mayhem's New York map, which src/world.js builds
 // when __NYC__ is true (bigger, taller, with nyc.js's lots). Hammerdown Arena is built on the same world for its size
-// alone (1024 by 1024, where Crumbletown's is 512 by 416): it lays out none of New York, only the pit. The derby's build (build.mjs) defines __NYC__ as
-// globalThis.__DERBY_NYC__, so this sets that from the map the page is on, the same choice maps/index.js makes: the
-// address's ?map=, or the one kept from the start card.
+// alone (1024 by 1024, where Crumbletown's is 512 by 416): it lays out none of New York, only the pit. The derby's
+// build (build.mjs) defines __NYC__ as globalThis.__DERBY_NYC__, so this sets that from the map the page is on, the
+// same choice maps/index.js makes: the address's ?map=, or the one kept from the start card.
 // The meshing worker (src/mesh-worker.js, started by src/sim.js) is bundled with the same define and has its own copy of
 // the world, so it has to agree: sim.js names it 'mm-map=city' for any city, and on New York this renames that
 // 'mm-map=nyc', which the worker's banner (build.mjs) reads to set the flag on its side.

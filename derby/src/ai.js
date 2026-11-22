@@ -1,9 +1,9 @@
 // The rival drivers. Each picks a target (mostly the player, sometimes another rival; in the arena's free-for-all, any
-// car), drives the map's routes towards
-// it (the town's street grid, or the route-finder on open maps), cuts straight across once it has a clear run (through
-// a wall if it is going fast enough), shoots once its gun is on and it can see, and rams when close. When it is stuck
-// it backs out and tries the other way. On a map with pickups, a hurt rival makes for a repair kit (still shooting at
-// its target on the way), and any rival takes a pickup it is about to drive past.
+// car), drives the map's routes towards it (the town's street grid, or the route-finder on open maps), cuts straight
+// across once it has a clear run (through a wall if it is going fast enough), shoots once its gun is on and it can
+// see, and rams when close. When it is stuck it backs out and tries the other way. On a map with pickups, a hurt rival
+// makes for a repair kit (still shooting at its target on the way), and any rival takes a pickup it is about to drive
+// past.
 import { solid } from '../../src/world.js';
 import { MAP } from './maps/index.js';
 import { AI } from './tuning.js';
