@@ -107,13 +107,22 @@ toughen();   // sturdier buildings than the town's own (sturdy.js, tuning.js BUI
 // ---- the light pass: bloom, grade, vignette ---------------------------------------------------------------------
 const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: MOBILE ? 0 : 4 }));
 composer.addPass(new RenderPass(scene, camera));
+// A pixel that came out as not-a-number (or infinite) from any shader would be spread by the bloom's blur into big black
+// blocks over the whole picture on real graphics cards (the software renderer the tests use rarely makes one). Clear
+// any such pixel to black, and any below zero to zero, before the bloom sees it. Checked by the bits, which a shader
+// compiler's fast maths can't assume away.
+composer.addPass(new ShaderPass({
+  uniforms: { tDiffuse: { value: null } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+  fragmentShader: 'uniform sampler2D tDiffuse; varying vec2 vUv; bool bad(float x){ return (floatBitsToUint(x) & 0x7f800000u) == 0x7f800000u; } void main(){ vec4 c=texture2D(tDiffuse,vUv); if (bad(c.r) || bad(c.g) || bad(c.b)) c.rgb = vec3(0.0); if (bad(c.a)) c.a = 1.0; gl_FragColor=vec4(max(c.rgb, vec3(0.0)), c.a); }',
+}));
 composer.addPass(new UnrealBloomPass(new THREE.Vector2(4, 4), 0.24, 0.55, 1.3));
 composer.addPass(new ShaderPass({
   uniforms: { tDiffuse: { value: null }, sat: { value: 1.05 }, con: { value: 1.07 }, vig: { value: 0.32 }, hurt: { value: 0 } },
   vertexShader: 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
   fragmentShader: 'uniform sampler2D tDiffuse; uniform float sat; uniform float con; uniform float vig; uniform float hurt; varying vec2 vUv; void main(){ vec4 c=texture2D(tDiffuse,vUv); float l=dot(c.rgb,vec3(0.2126,0.7152,0.0722)); c.rgb=mix(vec3(l),c.rgb,sat); c.rgb=max(vec3(0.0),(c.rgb-0.18)*con+0.18)*vec3(1.03,1.0,0.96); vec2 d=vUv-0.5; float e=smoothstep(0.18,0.9,dot(d,d)*2.2); c.rgb*=1.0-vig*e; c.rgb=mix(c.rgb,vec3(0.9,0.08,0.04),hurt*e*0.8); gl_FragColor=c; }',
 }));
-const grade = composer.passes[2];
+const bloomPass = composer.passes[2], grade = composer.passes[3];
 composer.addPass(new OutputPass());
 
 // ---- sound: Monster Mayhem's mixer and recorded clips ------------------------------------------------------------
@@ -945,9 +954,9 @@ function resize() {
   const ph = h * renderer.getPixelRatio(); setParticleScale(ph, camera.fov); fx.setScale(ph, camera.fov);
 }
 addEventListener('resize', resize); resize();
-const quality = makeQuality({ renderer, composer, bloom: composer.passes[1], scene, camera, sun, resize, playing: () => game.state === 'play', mobile: MOBILE });
+const quality = makeQuality({ renderer, composer, bloom: bloomPass, scene, camera, sun, resize, playing: () => game.state === 'play', mobile: MOBILE });
 // the rest of a map's look (looks/): its beams, glows, lamps, weather and the rest
-const mapLook = MAP.look ? makeLook(MAP.look, { scene, renderer, camera, sky, hemi, sun, mats, bloom: composer.passes[1], quality, backdrop, sfx, setup: LOOK }) : null;
+const mapLook = MAP.look ? makeLook(MAP.look, { scene, renderer, camera, sky, hemi, sun, mats, bloom: bloomPass, quality, backdrop, sfx, setup: LOOK }) : null;
 let last = performance.now();
 function frame(now) {
   requestAnimationFrame(frame);

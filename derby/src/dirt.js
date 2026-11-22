@@ -76,7 +76,7 @@ void main() {
   float a;
   if ( vKind > 2.5 ) { if ( r > 1.0 ) discard; a = vC.a * ( 1.0 - r * r ); }
   else if ( vKind > 1.95 ) { if ( r > 1.0 ) discard; a = vC.a * ( 1.0 - r * r * 0.7 ); }
-  else if ( vKind > 0.5 ) { r *= 1.0 + 0.3 * sin( atan( d.y, d.x ) * 3.0 + vKind * 40.0 ); if ( r > 1.0 ) discard; a = vC.a; }
+  else if ( vKind > 0.5 ) { r *= 1.0 + 0.3 * sin( atan( d.y, d.x + 1e-5 ) * 3.0 + vKind * 40.0 ); if ( r > 1.0 ) discard; a = vC.a; }
   else { if ( r > 1.0 ) discard; a = vC.a * ( 1.0 - r ) * ( 1.0 - r * 0.4 ); }
   gl_FragColor = vec4( vC.rgb, a );
   #include <tonemapping_fragment>

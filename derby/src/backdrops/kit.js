@@ -261,7 +261,7 @@ void main() {
     float s = fract(aD.z + uTime * aD.w);
     p = mix(position, aB, s);
     if (kind > 2.5) k *= smoothstep(0.0, 0.05, s) * smoothstep(1.0, 0.95, s);
-    vec2 dir = normalize(aB.xz - position.xz), to = normalize(cameraPosition.xz - p.xz);
+    vec2 dir = normalize(aB.xz - position.xz + vec2(1e-3, 0.0)), to = normalize(cameraPosition.xz - p.xz + vec2(1e-3, 0.0));
     col = mix(vec3(1.0, 0.07, 0.03) * 0.85, vec3(1.0, 0.9, 0.72) * 1.1, smoothstep(-0.25, 0.25, dot(dir, to)));
     k *= 0.2 + 0.8 * uNight;
   } else if (kind > 5.5) {

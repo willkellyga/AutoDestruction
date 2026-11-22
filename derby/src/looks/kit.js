@@ -71,9 +71,9 @@ export function noiseTile(seed, N = 256) {
 // middle of it), fading to its edges, toward its far end, and close to the camera.
 export const BEAM_FRAG = `uniform vec3 col; uniform float near; varying vec3 vN; varying vec3 vW; varying float vT;
   void main() {
-    vec3 v = cameraPosition - vW; float d = length(v);
-    float side = abs(dot(normalize(vN), v / d));
-    float a = side * side * pow(1.0 - vT, 1.4) * smoothstep(0.0, 0.05, vT) * smoothstep(near * 0.2, near, d);
+    vec3 v = cameraPosition - vW; float d = max(length(v), 1e-3);
+    float side = abs(dot(vN, v)) / (max(length(vN), 1e-4) * d);
+    float a = side * side * pow(max(1.0 - vT, 0.0), 1.4) * smoothstep(0.0, 0.05, vT) * smoothstep(near * 0.2, near, d);
     gl_FragColor = vec4(col * a, 1.0);
     ${TONE}
   }`;
@@ -93,7 +93,7 @@ export function glowSprites(max) {
     ...ADD, uniforms: { ppx: { value: 0.002 } },
     vertexShader: `attribute vec4 gp; attribute vec4 gc; attribute vec4 gd; uniform float ppx; varying vec2 vUv; varying vec3 vC; varying float vS;
       void main() {
-        vec3 to = cameraPosition - gp.xyz; float dist = length(to); vec3 v = to / dist;
+        vec3 to = cameraPosition - gp.xyz; float dist = max(length(to), 1e-3); vec3 v = to / dist;
         float face = mix(1.0, smoothstep(-0.2, 0.75, dot(gd.xyz, v)), gd.w);
         vec4 mv = viewMatrix * vec4(gp.xyz + v * min(gp.w * 0.8, dist * 0.5), 1.0);
         float s = clamp(gp.w * (0.4 + 0.6 * face), -mv.z * ppx * 3.0, -mv.z * 0.09);
@@ -127,7 +127,7 @@ export function lampPools(max) {
         vUv = position.xy; vC = pc.rgb * pa.w;
       }`,
     fragmentShader: `varying vec2 vUv; varying vec3 vC;
-      void main() { float a = smoothstep(0.0, 0.12, vUv.x) * pow(1.0 - vUv.x, 1.5) * (1.0 - vUv.y * vUv.y);
+      void main() { float a = smoothstep(0.0, 0.12, vUv.x) * pow(max(1.0 - vUv.x, 0.0), 1.5) * max(1.0 - vUv.y * vUv.y, 0.0);
         gl_FragColor = vec4(vC * a, 1.0); ${TONE} }`,
   });
   const mesh = new THREE.Mesh(g, m); mesh.frustumCulled = false; mesh.matrixAutoUpdate = false; mesh.renderOrder = 0;
@@ -151,7 +151,7 @@ export function groundSpots(max) {
         vUv = position.xy; vC = sc.rgb; vE = sb.z;
       }`,
     fragmentShader: `varying vec2 vUv; varying vec3 vC; varying float vE;
-      void main() { float r = length(vUv); float a = (1.0 - smoothstep(1.0 - 1.0 / vE, 1.0, r)) * (0.55 + 0.45 * (1.0 - r * r));
+      void main() { float r = length(vUv); float a = (1.0 - smoothstep(1.0 - 1.0 / max(vE, 1.01), 1.0, r)) * (0.55 + 0.45 * max(1.0 - r * r, 0.0));
         gl_FragColor = vec4(vC * a, 1.0); ${TONE} }`,
   });
   const mesh = new THREE.Mesh(g, m); mesh.frustumCulled = false; mesh.matrixAutoUpdate = false; mesh.renderOrder = 0;

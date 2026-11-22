@@ -287,7 +287,7 @@ vec3 bdGround(vec2 p, vec2 fw, float up, float wy, out vec3 light) {
   float dt = length(p - BD_TOWN.xy);
   if (dt < BD_TOWN.z * 1.6) {
     col = mix(col, vec3(0.05, 0.048, 0.045) * (0.8 + 0.4 * fine), smoothstep(BD_TOWN.z * 1.2, BD_TOWN.z * 0.9, dt));
-    light += ${V3(FIRE)} * 1.4 * exp(-pow(dt / BD_TOWN.z, 2.0) * 1.6) * (0.85 + 0.15 * sin(bdTime * 1.3));
+    light += ${V3(FIRE)} * 1.4 * exp(-(dt / BD_TOWN.z) * (dt / BD_TOWN.z) * 1.6) * (0.85 + 0.15 * sin(bdTime * 1.3));
   }
   return col;
 }

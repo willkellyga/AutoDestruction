@@ -100,7 +100,7 @@ function rain(n) {
         vec3 o = drop.xyz * box + vec3(mod(wind.x * time, box.x), -mod(sp * time, box.y), mod(wind.y * time, box.z));
         vec3 base = cameraPosition - box * 0.5, p0 = base + mod(o - base, box);
         vec3 v = normalize(vec3(wind.x, -sp, wind.y)), to = cameraPosition - p0; float dist = length(to);
-        vec3 side = normalize(cross(v, to));
+        vec3 side = cross(v, to); side = length(side) > 1e-4 ? normalize(side) : vec3(1.0, 0.0, 0.0);
         float w = max(0.05, dist * ppx * 0.7);
         vec3 p = p0 + v * (position.y - 1.0) * sp * 0.035 + side * position.x * w;
         gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
@@ -168,8 +168,8 @@ function towerBeams(n) {
       void main() {
         int i = int(which + 0.5); vec3 a = from[0], b = aim[0];
         if (i == 1) { a = from[1]; b = aim[1]; } else if (i == 2) { a = from[2]; b = aim[2]; } else if (i == 3) { a = from[3]; b = aim[3]; }
-        vec3 ax = b - a; float L = length(ax); ax /= L;
-        vec3 u = normalize(cross(ax, vec3(0.0, 1.0, 0.0))), w = cross(u, ax);
+        vec3 ax = b - a; float L = max(length(ax), 1e-3); ax /= L;
+        vec3 u = cross(ax, vec3(0.0, 1.0, 0.0)); u = length(u) > 1e-4 ? normalize(u) : vec3(1.0, 0.0, 0.0); vec3 w = cross(u, ax);
         float rad = mix(0.8, 7.0, position.y);
         vN = u * normal.x + w * normal.z; vT = position.y;
         vW = a + ax * L * position.y + (u * position.x + w * position.z) * rad;
@@ -245,7 +245,7 @@ function bolt() {
   const m = new THREE.ShaderMaterial({
     ...ADD, side: THREE.DoubleSide, uniforms: { k: { value: 0 } },
     vertexShader: 'attribute float u; varying float vU; void main(){ vU = u; gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0); }',
-    fragmentShader: `uniform float k; varying float vU; void main() { float e = 1.0 - abs(vU);
+    fragmentShader: `uniform float k; varying float vU; void main() { float e = max(1.0 - abs(vU), 0.0);
       gl_FragColor = vec4(vec3(1.6, 1.7, 2.2) * k * (pow(e, 6.0) * 2.0 + e * 0.35), 1.0); ${TONE} }`,
   });
   const mesh = new THREE.Mesh(g, m); mesh.frustumCulled = false; mesh.matrixAutoUpdate = false; mesh.renderOrder = -1.5; mesh.visible = false;

@@ -115,7 +115,7 @@ function stars(n) {
         float tw = 0.72 + 0.28 * sin(time * (1.1 + 2.0 * ph) + ph * 60.0);
         vC = col * tw * smoothstep(0.04, 0.22, normalize(position).y);
         gl_PointSize = px * (1.3 + 1.4 * max(col.g - 0.6, 0.0)); }`,
-    fragmentShader: `varying vec3 vC; void main() { float r = length(gl_PointCoord - 0.5) * 2.0; gl_FragColor = vec4(vC * (1.0 - r * r), 1.0); ${TONE} }`,
+    fragmentShader: `varying vec3 vC; void main() { float r = length(gl_PointCoord - 0.5) * 2.0; gl_FragColor = vec4(vC * max(1.0 - r * r, 0.0), 1.0); ${TONE} }`,
   });
   const p = new THREE.Points(g, m); p.frustumCulled = false; p.renderOrder = -2;
   return p;

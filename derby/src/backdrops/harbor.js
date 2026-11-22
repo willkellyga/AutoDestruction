@@ -320,7 +320,7 @@ vec3 bdGround(vec2 p, vec2 fw, out vec3 light) {
   vec3 lot = mix(vec3(0.16, 0.155, 0.145), vec3(0.06, 0.09, 0.05), step(0.62, big)) * (0.75 + 0.4 * mid) * (0.9 + 0.2 * grain);
   if (st < 18.0) {
     // a street: lamps along both kerbs every 60
-    float lamp = exp(-pow(mod(p.x + p.y, 60.0) - 30.0, 2.0) * 0.004);
+    float lq = mod(p.x + p.y, 60.0) - 30.0; float lamp = exp(-lq * lq * 0.004);
     light = ${V3(SODIUM)} * (0.25 + 0.45 * lamp) * smoothstep(18.0, 10.0, st);
     return tar;
   }
