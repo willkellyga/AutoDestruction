@@ -29,6 +29,7 @@ import { makePickups } from './pickups.js';
 import { makeHazards } from './hazards.js';
 import { makeQuality } from './quality.js';
 import { makeDrift } from './drift.js';
+import { makeBackdrop } from './backdrop.js';
 
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -87,9 +88,13 @@ MAP.build();
   g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array([0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0]), 3));
   g.setIndex([0, 2, 1, 0, 3, 2]);
   const ground = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ map: gTex })); ground.receiveShadow = true; scene.add(ground);
-  const outer = new THREE.Mesh(new THREE.PlaneGeometry(6400, 6400), new THREE.MeshLambertMaterial({ color: MAP.outer ?? 0x7fb069, depthWrite: false }));
-  outer.renderOrder = -1; outer.rotation.x = -Math.PI / 2; outer.position.set(WX / 2, -0.06, WZ / 2); scene.add(outer);
+  // the land past the edge of the map: one plain colour, or a map's own world round it (the arena's city: backdrop.js)
+  if (!MAP.backdrop) {
+    const outer = new THREE.Mesh(new THREE.PlaneGeometry(6400, 6400), new THREE.MeshLambertMaterial({ color: MAP.outer ?? 0x7fb069, depthWrite: false }));
+    outer.renderOrder = -1; outer.rotation.x = -Math.PI / 2; outer.position.set(WX / 2, -0.06, WZ / 2); scene.add(outer);
+  }
 }
+const backdrop = MAP.backdrop ? makeBackdrop({ scene, layout: MAP.backdrop, mobile: MOBILE, viewH: () => renderer.domElement.height }) : null;
 initSim(scene);
 const drifts = makeDrift({ scene, camera, mobile: MOBILE, el: $('drift') });   // skid marks, tyre smoke, the drift meter
 look.detail.value = 1; look.dusk.value = 0;
@@ -960,6 +965,7 @@ function step(dt) {
   pickups.step(dt, live); hazards.step(dt, live);
   for (const c of cars) if (!c.gone) { if (!c.dead) c.point(dt); c.pose(dt); }
   stepCamera(dt);
+  if (backdrop) backdrop.step(dt, quality.step);
   const fc = player || MAP.spawn;
   setFocus(fc.x, fc.z); followSun(fc.x, fc.z);
   stepSim(dt);
@@ -993,4 +999,4 @@ followSun(player.x, player.z);
 const loadEl = $('loading'); if (loadEl) loadEl.hidden = true;
 $('menu').hidden = false;
 requestAnimationFrame((t) => { last = t; frame(t); });
-window.__derby = { touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, sfx, mines, gadget, spawnPlayer, addCar, pickups, hazards };
+window.__derby = { touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, sfx, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop };
