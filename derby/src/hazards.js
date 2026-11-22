@@ -886,7 +886,8 @@ function scoreboard(api, h) {
   const body = new THREE.Mesh(new THREE.BoxGeometry(W, H, W), [screen, screen, dark, dark, screen, screen]);
   body.position.set(h.x, h.y + H / 2, h.z); api.scene.add(body);
   const bandM = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.15, 0.8, 0.22), toneMapped: false });
-  for (const y of [h.y - 0.4, h.y + H + 0.6]) { const b = new THREE.Mesh(new THREE.BoxGeometry(W + 0.8, y < h.y ? 0.8 : 1.2, W + 0.8), y < h.y ? bandM : dark); b.position.set(h.x, y, h.z); api.scene.add(b); }
+  // (the lit band is lit round its sides only: from below, a lit underside was a glaring slab over the pit)
+  for (const y of [h.y - 0.4, h.y + H + 0.6]) { const b = new THREE.Mesh(new THREE.BoxGeometry(W + 0.8, y < h.y ? 0.8 : 1.2, W + 0.8), y < h.y ? [bandM, bandM, dark, dark, bandM, bandM] : dark); b.position.set(h.x, y, h.z); api.scene.add(b); }
   // the cables, from each top corner out to its anchor
   const cableM = new THREE.MeshStandardMaterial({ color: 0x23272d, roughness: 0.6, metalness: 0.5 }), up = new THREE.Vector3(0, 1, 0);
   for (const [ax, ay, az] of h.anchors || []) {
