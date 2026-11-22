@@ -11,13 +11,16 @@ import { GLOW, hash } from '../../units/src/voxpart.js';
 import { PARTS } from './parts.js';
 import {
   SHAPES, bodyPart, clamp, ease, INNER, CHROME, CHROMEL, CHROMED, PLASTIC, HOLE, GUNMETAL, STEEL, BRIGHT, DARKS, ARMOUR, ARMOUR2, RIVET,
-  RUST, HAZ, HAZK, OLIVE, OLIVE2, TIP, RED_GLOW,
+  RUST, HAZ, HAZK, OLIVE, OLIVE2, TIP, RED_GLOW, RUBBER,
 } from './carshapes.js';
 
 export const H = 1 / 6;
 const PI = Math.PI, ab = Math.abs, fl = Math.floor, hyp = Math.hypot;
 
 const TYRE = 0x222326, TYRE2 = 0x2c2d31, WALL = 0x1b1c1f, RIM = 0xb4b9c1, RIMD = 0x3a3d43, HUB = 0xdfe3e8, DRUM = 0x2a2b2f, DISC = 0x5b5f66, CALIPER = 0xc23b2e, GOLD = 0xc9a23a;
+const FUEL = 0xb8321e, FUEL2 = 0xd24a2e, PILOT = 0x6fb8ff | GLOW, MISSILE = 0xe4e0d6, MISSILE2 = 0xf2efe8, LOCK = 0xff3a2a | GLOW;
+// the mortar's tube: how far it leans up from level, and its length in cubes (main.js fires its shells from the end)
+export const MORTAR_UP = 0.95, MORTAR_LEN = 13;
 const WHITE = 0xe6e3da, STEELW = 0xd4d2c8, COPPER = 0xc8763c, COPPER2 = 0x93502a, CERAMIC = 0xe4e0d6, CERAMIC2 = 0xb9b4a8, ARC = 0x9fe3ff | GLOW;
 
 // the wheels: radius (0 for the body's own, a little more, or a size of their own), width in cubes, depth of the tyre,
@@ -32,7 +35,7 @@ const WHEELS = {
 const FRONT_DEPTH = { bumper: 5, plow: 11, spikes: 20, saws: 17 };
 // street wheels suit their car: alloys on the hatch, whitewalls and covers on the wagon, slotted mags on the muscle
 // car, chrome-ringed steel on the pickup, plain steel with a small cap on the van
-const STREET = { hatch: 'alloy', wagon: 'cover', muscle: 'mag', pickup: 'rally', van: 'steel' };
+const STREET = { hatch: 'alloy', wagon: 'cover', muscle: 'mag', pickup: 'rally', van: 'steel', buggy: 'offroad', wedge: 'alloy', bus: 'steel' };
 
 // ---- wheels ----
 function wheelPart(name, s, z, S, wk, kind) {
@@ -120,6 +123,27 @@ function gunParts(o, ty, tz, ped) {
       v.box(-3, -6, -12, -1, -3, -9, HAZK); v.box(1, -6, -12, 3, -3, -9, HAZK);
       v.fill((x, y, z) => (z > 4 && z < 6 && ab(x) < 9 && y > -4.5 && y < 7.5 ? (y > 6.2 ? (((fl(x) >> 1) & 1) ? HAZ : HAZK) : (fl(x + 9) % 6 === 0 && (y < -3.5 || y > 5)) ? RIVET : ARMOUR) : -1));   // the shield
     } });
+  } else if (look === 'flamer') {
+    // the flamethrower: two big fuel tanks riding on top, a finned barrel under them, a flared nozzle with its pilot
+    // light, hoses from the tanks down to the valve
+    parts.push({ name: 'gun', parent: 'yaw', pivot: [0, 9, 0], box: [-8, -6, -12, 8, 10, 31], paint(v) {
+      v.box(-3, -3, -9, 3, 3, 8, GUNMETAL); v.box(-3, -3, -9, 3, -2, 8, DARKS); v.box(-3, 2, -9, 3, 3, 8, STEEL);   // the body and its valve block
+      v.box(-3, -5, -12, -1, -3, -8, HAZK); v.box(1, -5, -12, 3, -3, -8, HAZK);                                      // grips
+      v.fill((x, y, z) => {
+        for (const tx of [-3.1, 3.1]) {                                                                               // the tanks, banded, domed at the ends
+          const r = hyp(x - tx, y - 5.6), zc = clamp(z, -7.5, 2.5), d = hyp(x - tx, y - 5.6, z - zc);
+          if (d < 2.9) return ab(z - zc) > 0.8 ? (y > 6.6 ? FUEL2 : FUEL) : (fl(z + 9) % 5 === 0 ? DARKS : r > 2.2 && y > 6.4 ? FUEL2 : FUEL);
+        }
+        const rr = hyp(x, y);
+        if (z >= 8 && z < 25 && rr < 1.3) return BRIGHT;                                                                       // the barrel
+        if (z >= 9 && z < 21 && rr < 2.4 && fl(z) % 3 === 0) return DARKS;                                                     // its heat fins
+        if (z >= 25 && z < 29) { const fr = 1.5 + (z - 25) * 0.3; if (rr < fr) return rr < fr - 0.9 && z > 27 ? HOLE : DARKS; }   // the flared nozzle
+        if (z > 25.5 && z < 27.5 && ab(x) < 0.6 && y > -2.8 && y < -1.4) return PILOT;                                         // the pilot light under it
+        if (z > 3 && z < 7 && ab(ab(x) - 3.1) < 0.7 && y > 2.5 && y < 4) return RUBBER;                                       // hoses down to the valve
+        if (z > 2.5 && z < 4 && ab(x) < 6.5 && y > 3 && y < 8.5 && ab(ab(x) - 3.1) > 2.2) return GUNMETAL;                    // the straps
+        return -1;
+      });
+    } });
   } else {
     parts.push({ name: 'gun', parent: 'yaw', pivot: [0, 9, 0], box: [-10, -6, -14, 10, 11, 41], paint(v) {
       v.box(-3, -3, -10, 3, 3, 8, GUNMETAL); v.box(-3, 3, -9, 3, 4, 4, STEEL); v.box(-3, -3, -10, 3, -2, 8, DARKS); v.box(3, 0, -3, 4, 1, 0, DARKS);   // receiver, top cover, handle
@@ -147,6 +171,18 @@ function heavyParts(S, o, zT) {
     v.box(0, 3, -8, 11, 4, 16, OLIVE2); v.box(-2, 3, -3, 0, 6, 6, GUNMETAL); v.box(-1, 2, -2, 0, 7, 5, STEEL);   // a seam, the arm to the mount
     for (let k = -6; k < 15; k += 6) v.box(0, 1, k, 1, 2, k + 1, RIVET);
     for (const tx of [0.6, 5.6]) for (const ty of [0.6, 4.6]) v.fill((x, y, z) => { const d = hyp(x - tx - 2.4, y - ty - 2); if (z < 15 || z > 18 || d > 2.4) return -1; return d < 1.1 ? (z > 17 ? TIP : 0xe8e4da) : d < 1.7 && z > 16 ? HOLE : DARKS; });   // four tubes, a rocket in each
+  } }];
+  if (kind === 'seekers') return [{ name: 'pod', parent: 'yaw', pivot: [9, 6, -3], box: [-2, -2, -9, 12, 10, 19], paint(v) {
+    v.box(0, 0, -8, 11, 2, 13, GUNMETAL); v.box(0, 1, -8, 11, 2, 13, STEEL); v.box(-2, 1, -3, 0, 5, 6, GUNMETAL);   // the rails' bed, the arm to the mount
+    for (const x of [0, 5, 10]) v.box(x, 2, -6, x + 1, 4, 11, DARKS);                                              // the rails
+    v.box(4, 0, 10, 7, 3, 13, DARKS); v.box(5, 1, 12.5, 6, 2, 13, LOCK);                                           // the seeker's eye, glowing red
+    for (const cx of [2.8, 8.2]) v.fill((x, y, z) => {                                                              // two missiles on the rails
+      const r = hyp(x - cx, y - 4.6);
+      if (z > -7 && z < 12 && r < 1.8) return fl(z) === 4 ? DARKS : r < 1.8 && y > 5.6 ? MISSILE2 : MISSILE;
+      if (z >= 12 && z < 17 && r < 1.8 * (1 - (z - 12) / 5.5)) return TIP;                                            // the nose cone
+      if (z > -7 && z < -3 && ((ab(x - cx) < 0.5 && ab(y - 4.6) < 3) || (ab(y - 4.6) < 0.5 && ab(x - cx) < 3))) return DARKS;   // the fins
+      return -1;
+    });
   } }];
   if (kind === 'cannon') return [{ name: 'pod', parent: 'yaw', pivot: [9, 6, 0], box: [-2, -2, -11, 9, 9, 48], paint(v) {
     v.box(0, 0, -9, 8, 8, 8, GUNMETAL); v.box(0, 8, -8, 8, 9, 5, HAZ); v.box(-2, 3, -3, 0, 6, 5, GUNMETAL); v.box(0, 0, -9, 8, 1, 8, DARKS);   // the breech, its stripe, the arm
@@ -254,6 +290,25 @@ function roofParts(o, ry, rz) {
     v.box(-9, 5, -2, -8, 9, 3, GUNMETAL); v.box(8, 5, -2, 9, 9, 3, GUNMETAL);                                          // trunnions
     for (const tx of [-5, 0, 5]) for (const ty of [5, 9]) v.fill((x, y, z) => { const d = Math.max(ab(x - tx), ab(y - ty)); if (z < 7 || z > 10 || d > 2.2) return -1; return d < 1 ? (z > 9 ? TIP : 0xe8e4da) : z > 8 ? HOLE : DARKS; });   // six tubes, a rocket in each
   } }];
+  // the mortar: a fat tube leaning forward on a base plate and a bipod, two spare shells in a rack behind it
+  if (look === 'mortar') return [{ name: 'roof', parent: 'body', pivot: [0, ry, rz], box: [-8, 0, -8, 8, 17, 10], paint(v) {
+    base(v);
+    const ce = Math.cos(MORTAR_UP), se = Math.sin(MORTAR_UP);
+    v.fill((x, y, z) => {
+      if (y >= 2 && y < 3 && ab(x) < 6.5 && z > -7 && z < 6) return (fl(x + 7) % 4 === 0 && (z < -6 || z > 5)) ? RIVET : ARMOUR;   // the base plate
+      const ox = x, oy = y - 4, oz = z + 3, t = oy * se + oz * ce, r = hyp(ox, oy * ce - oz * se);   // along and round the tube
+      if (t > -1 && t < MORTAR_LEN && r < (t > MORTAR_LEN - 1.6 ? 3.1 : 2.7)) {
+        if (t > MORTAR_LEN - 1.6) return r < 1.6 ? HOLE : r > 2.5 ? STEEL : DARKS;                   // the muzzle and its ring
+        if (t > 6 && t < 7.4) return ((fl(Math.atan2(ox, oy) * 2) & 1) ? HAZ : HAZK);               // a hazard band
+        return t < 0.6 ? DARKS : y > 4 + t * se + 1.2 ? OLIVE2 : OLIVE;
+      }
+      if (hyp(x, y - 4, z + 3) < 3.2 && y >= 2.5) return GUNMETAL;                                     // the ball socket at its foot
+      const lt = clamp((y - 2) / 5.4), lz = -3 + 6 * ce + 3 * (1 - lt);                                // the bipod's two legs, splayed
+      if (y >= 2.5 && y < 7.4 && ab(ab(x) - (1.8 + 2.6 * (1 - lt))) < 0.6 && ab(z - lz) < 0.6) return GUNMETAL;
+      for (const sx of [-4.6, 4.6]) { const rs = hyp(x - sx, z + 5.6); if (y >= 3 && y < 8.5 && rs < 1.2) return y > 7.2 ? TIP : BRIGHT; }   // spare shells
+      return -1;
+    });
+  } }];
   // the arc coil: a ceramic foot, a copper coil, a steel ball that sparks
   return [{ name: 'roof', parent: 'body', pivot: [0, ry, rz], box: [-6, 0, -6, 6, 15, 6], paint(v) {
     v.fill((x, y, z) => {
@@ -343,15 +398,15 @@ const lo = (a) => Math.ceil(a - 0.5);   // how many whole cubes stand under a he
 // a roof weapon's height, and how far under the turret's ring the lowest part of its gun hangs where it passes over
 // the roof weapon (the minigun's barrels are fat; the cannon beside the gun swings over it when the turret turns)
 // gap: how far behind the roof weapon the turret stands (the mg's jacket and the scatter's pump hang lower near the gun)
-const ROOF_TOP = { twin: 9, rack: 12, arc: 14.5 };
-const UNDER = { mg: (gap) => (gap < 21 ? 6.1 : 7.6), scatter: (gap) => (gap < 20 ? 4 : 7.3), minigun: () => 3.8 };
+const ROOF_TOP = { twin: 9, rack: 12, arc: 14.5, mortar: 15 };
+const UNDER = { mg: (gap) => (gap < 21 ? 6.1 : 7.6), scatter: (gap) => (gap < 20 ? 4 : 7.3), minigun: () => 3.8, flamer: () => 3.2 };
 
 // The definition of a car for a build: the Unit def, plus its size for the driving code and where its guns fire from.
 export function carDef(load, seed = 0) {
   const P = (slot) => PARTS[slot][load[slot]] || Object.values(PARTS[slot])[0];
   const S = SHAPES[P('body').shape] || SHAPES.hatch, W0 = WHEELS[P('wheels').look] || WHEELS.street;
   const R = W0.R > 3 ? W0.R : S.R + W0.R, lift = W0.R > 3 ? Math.round(R - S.R - 1.5) : 0;
-  const wk = { ...W0, R, lift };
+  const wk = { ...W0, R, lift, out: W0.out + (S.wheelOut || 0) };
   const o = { ...load, seed };
   const zN = S.zN + S.bumpF, zT = S.zT - S.bumpR, look = P('armour').look, plate = look >= 2 ? 1 : 0;
   const roofLook = P('roof').look, doorLook = P('door').look;
@@ -359,16 +414,16 @@ export function carDef(load, seed = 0) {
   // falls away under it (the fastback) or the weapon in front is tall; the pickup's stands on a post in its bed
   // the turret: lifted on a post just far enough that its gun clears a roof weapon in front of it
   const tz = roofLook ? S.turret.zR : S.turret.z;
-  const rz = S.roofW.z, ry = lo(S.top(rz)) + plate;
+  const rz = S.roofW.z, ry = S.roofW.y ?? lo(S.top(rz)) + plate;
   const ty0 = S.turret.y || lo(S.roofY) + plate;
   const under = Math.min((UNDER[P('primary').look] || UNDER.mg)(rz - tz - 7), load.secondary === 'cannon' ? 6.2 : 99);
   const rise = roofLook ? Math.min(12, Math.max(0, Math.ceil(ry + ROOF_TOP[roofLook] + 0.5 - ty0 - under))) : 0;
   const ty = ty0 + rise;
   const ped = S.turret.y ? rise : Math.max(0, ty - lo(Math.min(S.top(tz - 8), S.top(tz + 8))) - plate) + (S.turret.pedR ? 1 : 0);
   // the door weapons hang off each front door under the mirror
-  const dz = S.door.z, dyy = Math.round(S.belt(dz)) - 3, dxx = S.W + 2.5;
+  const dz = S.door.z, dyy = S.door.y ?? Math.round(S.belt(dz)) - 3, dxx = S.W + 2.5;
   const body = bodyPart(S, o, wk);
-  const Sx = { ...S, aR: Math.min(wk.R + 1.8, S.belt(S.ax[0]) - (wk.R - wk.lift) - 1), bumpTop: { hatch: 12.6, wagon: 12, muscle: 9.2, pickup: 15.4, van: 14 }[S.kind] };
+  const Sx = { ...S, aR: Math.min(wk.R + 1.8, S.belt(S.ax[0]) - (wk.R - wk.lift) - 1), bumpTop: { hatch: 12.6, wagon: 12, muscle: 9.2, pickup: 15.4, van: 14, buggy: 12, wedge: 8.6, bus: 15 }[S.kind] };
   const parts = [
     body,
     wheelPart('wFL', 1, S.ax[0], S, wk, P('wheels').look), wheelPart('wFR', -1, S.ax[0], S, wk, P('wheels').look),
@@ -382,13 +437,14 @@ export function carDef(load, seed = 0) {
     half: (nose - tail) / 2, mid: (nose + tail) / 2, wide: outer * H, top: (ty + lift + 3) * H, roof: (lo(S.roofY) + plate + lift) * H,
     wheelR: R * H, lift: lift * H, length: nose - tail, blade: doorLook === 'blades' ? (S.W + 12) * H : 0,
   };
-  const M = { mg: [0, 0, 40], minigun: [0, 0, 40.5], scatter: [0, 0.75, 29] }[P('primary').look] || [0, 0, 40];
+  const M = { mg: [0, 0, 40], minigun: [0, 0, 40.5], scatter: [0, 0.75, 29], flamer: [0, 0, 29] }[P('primary').look] || [0, 0, 40];
   const v = (p) => p.map((c) => c * H);
-  const roofM = roofLook === 'twin' ? [[-3.5, 6, 16], [3.5, 6, 16]] : roofLook === 'rack' ? [-5, 0, 5].flatMap((x) => [[x, 9, 10], [x, 5, 10]]) : roofLook === 'arc' ? [[0, 11.6, 0]] : [];
+  const roofM = roofLook === 'twin' ? [[-3.5, 6, 16], [3.5, 6, 16]] : roofLook === 'rack' ? [-5, 0, 5].flatMap((x) => [[x, 9, 10], [x, 5, 10]]) : roofLook === 'arc' ? [[0, 11.6, 0]]
+    : roofLook === 'mortar' ? [[0, 4 + Math.sin(MORTAR_UP) * MORTAR_LEN, -3 + Math.cos(MORTAR_UP) * MORTAR_LEN]] : [];
   const doorM = doorLook === 'guns' ? [15, 0] : doorLook === 'rockets' ? [11, 0] : null;
   const muzzles = {
     gun: v(M),
-    pod: load.secondary === 'cannon' ? v([3.75, 3.75, 47]) : load.secondary === 'mines' ? v([0, 0, -11]) : v([5.5, 4.6, 18.5]),
+    pod: load.secondary === 'cannon' ? v([3.75, 3.75, 47]) : load.secondary === 'mines' ? v([0, 0, -11]) : load.secondary === 'seekers' ? v([5.5, 4.6, 17.5]) : v([5.5, 4.6, 18.5]),
     podBone: load.secondary === 'mines' ? 'mines' : 'pod',
     roof: roofM.map((p) => ({ bone: 'roof', p: v(p) })),
     door: doorM ? [{ bone: 'doorL', p: v([0, 0, doorM[0]]) }, { bone: 'doorR', p: v([0, 0, doorM[0]]) }] : [],

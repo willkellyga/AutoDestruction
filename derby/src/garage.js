@@ -43,7 +43,12 @@ function chips(slot, p) {
     if (p.range && p.range < 150) c.push('short range');
     if (p.group) c.push(p.group === 'heavy' ? 'right click' : 'left click');
     if (p.blade) c.push('cuts what you rub');
+    if (p.burn) c.push('sets alight');
+    if (p.seek) c.push('homing');
+    if (p.mortar) c.push('over walls');
   }
+  const gd = p.nitro || p.repair || p.shield || p.oil || p.jump;
+  if (slot === 'gadget' && gd) c.push(`every ${gd.every}s`);
   if (slot === 'front') { c.push(`ram ×${p.ram}`); if (p.guard < 0.7) c.push('you take less'); if (p.saw) c.push('grinds'); }
   if (p.hp) c.push(`${sign(p.hp)} armour`);
   if (p.gripK) c.push(`grip ${sign(Math.round((p.gripK - 1) * 100), '%')}`);
@@ -57,7 +62,7 @@ function chips(slot, p) {
 export function tryLabel(slot, p) {
   if ((slot === 'primary' || slot === 'roof' || slot === 'door' || slot === 'secondary') && (p.dmg || p.mine || p.arc)) return p.mine ? 'Drop' : 'Fire';
   if (slot === 'engine') return 'Rev';
-  if (slot === 'gadget' && p.nitro) return 'Boost';
+  if (slot === 'gadget') return p.nitro ? 'Boost' : p.shield ? 'Use' : p.oil ? 'Pour' : p.jump ? 'Jump' : null;
   return null;
 }
 // one number for a whole build, and a class letter for it

@@ -34,6 +34,7 @@ export class Vehicle {
     scene.add(this.unit.root);
     this.maxHp = this.spec.hp; this.hp = this.maxHp;
     this.x = at.x; this.z = at.z; this.yaw = at.yaw || 0; this.vx = 0; this.vz = 0; this.yawRate = 0;
+    this.y = 0; this.vy = 0; this.oilT = 0;   // up in the air off the jump jets; on an oil slick (specials.js)
     this.steer = 0; this.throttle = 0; this.brake = 0; this.boost = 1; this.accelK = 1;
     this.aimYaw = this.yaw; this.aimPitch = 0; this.gunYaw = this.yaw; this.gunPitch = 0; this.turretTurn = 9;
     this.aim = new THREE.Vector3(at.x, 3, at.z + 40);
@@ -74,8 +75,16 @@ export class Vehicle {
     let vf = this.vx * sy + this.vz * cy, vs = this.vx * cy - this.vz * sy;   // forwards, and sideways to the left
     if (this.dead) { this.throttle = 0; this.steer = 0; this.brake = 1; }
     const d = this.handbrake(dt, vf, vs, hooks);
+    // in the air (the jump jets): it falls, and the wheels can't drive or steer it much till it lands
+    const air = this.y > 0.3;
+    if (this.y > 0 || this.vy > 0) {
+      this.vy -= 70 * dt; this.y += this.vy * dt;
+      if (this.y <= 0) { const hit = -this.vy; this.y = 0; this.vy = 0; if (hooks && hooks.land) hooks.land(this, hit); }
+    }
+    // on oil the tyres hardly grip (it wears off as they come off it)
+    const oil = this.oilT > 0 ? Math.min(1, this.oilT / 0.4) : 0; this.oilT = Math.max(0, this.oilT - dt);
     // engine, brakes and drag
-    const t = this.throttle;
+    const t = this.throttle * (air ? 0.15 : 1 - 0.6 * oil);
     // rough ground (a map's grass and gravel: MAP.surface gives 0 on the road up to 1) holds a car back and makes it
     // slide; off-road and monster tyres hardly feel it (S.rough)
     const rough = MAP.surface ? MAP.surface(this.x, this.z) * S.rough : 0;
@@ -90,11 +99,11 @@ export class Vehicle {
     vf = clamp(vf, -S.back, rough > 0 && vf > top ? top + (vf - top) * Math.exp(-2.4 * dt) : top);   // ploughing onto grass slows a car over a moment
     // turning: none standing still, full at about a third of top speed, a little less flat out; faster with the back out
     const k = clamp(Math.abs(vf) / 26, 0, 1) * (1 - 0.25 * clamp(Math.abs(vf) / S.top, 0, 1));
-    const want = this.steer * S.turn * k * Math.sign(vf || 1) * (1 + (DRIFT.turn - 1) * d);
-    this.yawRate += (want - this.yawRate) * Math.min(1, dt * (10 + 8 * d));   // (the nose swings round quicker with the back out)
+    const want = this.steer * S.turn * k * Math.sign(vf || 1) * (1 + (DRIFT.turn - 1) * d) * (air ? 0.3 : 1);
+    this.yawRate += (want - this.yawRate) * Math.min(1, dt * (10 + 8 * d) * (oil ? 0.12 : 1));   // (the nose swings round quicker with the back out; on oil it spins on)
     const turned = this.yawRate * dt;
     this.yaw = wrap(this.yaw + turned);
-    let g = S.grip * (1 - 0.35 * rough);
+    let g = S.grip * (1 - 0.35 * rough) * (air ? 0.05 : 1 - 0.92 * oil);
     if (d > 0) {
       // the velocity follows only part of the turn: the rest swings the nose past the way the car is going
       const lag = -turned * d * (1 - DRIFT.follow), lc = Math.cos(lag), ls = Math.sin(lag);
@@ -297,7 +306,7 @@ export class Vehicle {
       this.barrelV = (this.barrelV || 0) + ((this.firing > 0 ? 30 : 0) - (this.barrelV || 0)) * Math.min(1, dt * 3);
       s.gunSpin += this.barrelV * dt; s.saw += 24 * dt;
     }
-    u.root.position.set(this.x, 0, this.z); u.root.rotation.y = this.yaw;
+    u.root.position.set(this.x, this.y || 0, this.z); u.root.rotation.y = this.yaw;
     const body = this.body || (this.body = u.parts.find((p) => p.name === 'body'));
     let held = false;
     this.rebuildT = (this.rebuildT || 0) - dt;
@@ -340,13 +349,14 @@ export class Vehicle {
   }
   // does a world point lie inside the car's box?
   inside(x, y, z, pad = 0) {
-    if (this.gone || y > this.top + 0.6 + pad) return false;
+    y -= this.y || 0;
+    if (this.gone || y > this.top + 0.6 + pad || (this.y > 1 && y < -0.6 - pad)) return false;
     const s = Math.sin(this.yaw), c = Math.cos(this.yaw), dx = x - this.x, dz = z - this.z;
     const lx = dx * c - dz * s, lz = dx * s + dz * c - this.mid;
     return Math.abs(lx) < this.wide + pad && Math.abs(lz) < this.half + pad;
   }
   // the middle of the car, as a world point
-  centre(out) { const s = Math.sin(this.yaw), c = Math.cos(this.yaw); return out.set(this.x + this.mid * s, 3, this.z + this.mid * c); }
+  centre(out) { const s = Math.sin(this.yaw), c = Math.cos(this.yaw); return out.set(this.x + this.mid * s, 3 + (this.y || 0), this.z + this.mid * c); }
   dust(n) { dust(this.x, 0.8, this.z, n, 5); }
-  dispose() { this.unit.dispose(); }
+  dispose() { this.unit.dispose(); if (this.bubble) { this.bubble.removeFromParent(); this.bubble = null; } }   // (the shield's bubble: specials.js)
 }

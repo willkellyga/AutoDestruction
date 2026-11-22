@@ -26,6 +26,7 @@ import { PARTS, PAINTS, loadSave, keepSave, rivalBuild, RIVAL_NAMES } from './pa
 import { makeGarage } from './garage.js';
 import { makeGarageRoom } from './garageroom.js';
 import { makePartArt } from './partart.js';
+import { makeSpecials } from './specials.js';
 import { makeSounds } from './audio.js';
 import { makePickups } from './pickups.js';
 import { makeHazards } from './hazards.js';
@@ -141,7 +142,7 @@ function initAudio() {
   audioMix.init();
   if (engine || !sfx.init()) return;
   // the player's engine and tyres, and the two nearest rivals' engines, on loops
-  engine = { me: sfx.loop('engine_loop'), skid: sfx.loop('skid_loop'), rivals: [sfx.loop('engine_loop'), sfx.loop('engine_loop')], spin: sfx.loop('mini_spin'), saw: sfx.loop('saw_loop'), hum: sfx.loop('arc_hum') };
+  engine = { me: sfx.loop('engine_loop'), skid: sfx.loop('skid_loop'), rivals: [sfx.loop('engine_loop'), sfx.loop('engine_loop')], spin: sfx.loop('mini_spin'), saw: sfx.loop('saw_loop'), hum: sfx.loop('arc_hum'), flame: sfx.loop('flame_loop') };
 }
 function sound(name, vol = 1, x, y, z) {
   audioMix.on = !muted;
@@ -179,6 +180,15 @@ const target = {
   scorch() {}, update() {}, scorched: 0,
 };
 const fx = makeFx(scene, { target, debris, audio: armySfx, shake: (a, p) => hooks.shake(a, p.x, p.y, p.z), world: { solid: (x, y, z) => solid(Math.floor(x), Math.floor(y), Math.floor(z)) !== 0 }, onLand, trail: 0.5 });
+// the flamethrower, seekers, mortar, shield, oil slick and jump jets (specials.js)
+const specials = makeSpecials({
+  scene, fx, sfx, cars, extras, player: () => player, damage, cube, chip, friendly: () => !!mode.friendly,
+  // a mortar shell landing: the town's blast, credited to the car that fired it
+  blast(who, g, x, y, z, wall) {
+    const was = by; by = who; splashK = g;
+    try { sfx.play('rocket_boom', 1, x, z, { gap: 0.05, rate: 0.8 }); boom(x, y, z, g.wall * (wall ? 1 : 0.7), 0.5, { maxDebris: 220, fire: Math.random() < 0.4 }, BUILDINGS.shell); } finally { by = was; splashK = null; }
+  },
+});
 
 // ---- hooks from the town's destruction -------------------------------------------------------------------------
 hooks.sound = sound;
@@ -241,6 +251,7 @@ function addCar(load, at, rival) {
 function damage(c, d, who) {
   if (!c || c.dead || d <= 0 || game.state === 'menu') return;
   if (c.shield > 0) return;   // just back in (the arena's free-for-all): nothing hurts it for a moment
+  if (c.shieldT > 0) { specials.shieldHit(c); return; }   // the shield gadget
   if (mode.friendly && who && who !== c && !c.dummy) return;   // a mode with no fighting between cars (survival): only the dead and the map hurt
   if (c === player && game.state === 'garage') return;   // nothing hurts the car on the turntable (a mine tried out behind it, say)
   if (c.dummy) c.popAcc = (c.popAcc || 0) + d;   // the target cars show what each hit does (stepDummies)
@@ -278,7 +289,7 @@ function wreck(c, who) {
 
 // ---- the weapons ------------------------------------------------------------------------------------------------
 // what each weapon sounds like (audio.js; clips named <base>_2, _3 are played as variations of <base>)
-const SHOT = { mg: 'mg_shot', chain: 'mini_shot', rifle: 'scatter_shot', cannon: 'cannon_shot', rocket: 'rocket_launch' };
+const SHOT = { mg: 'mg_shot', chain: 'mini_shot', rifle: 'scatter_shot', cannon: 'cannon_shot', rocket: 'rocket_launch', missile: 'rocket_launch' };
 // one round, or one salvo of pellets, from weapon G of car c (each door gun fires at once; the roof's barrels take turns)
 const _m = new THREE.Vector3(), _d = new THREE.Vector3(), _a = new THREE.Vector3(), _r = new THREE.Vector3(), _q = new THREE.Vector3(), _ap = new THREE.Vector3();
 function shoot(c, G) {
@@ -289,21 +300,25 @@ function shoot(c, G) {
   for (const i of barrels) {
     if (!c.muzzle(G, _m, _d, i)) continue;
     if (g.mine) { dropMine(c, g, _m); return; }
+    if (g.flame) { specials.flame(c, G, _m, coneAim(c, G, _ap)); return; }   // (its roar is a loop: see the sounds)
+    if (g.mortar) { specials.lob(c, G, _m, coneAim(c, G, _ap)); return; }
     // a round whose way out crosses its own car's box (a gun aimed down over the bonnet, a door gun aimed in across the
     // nose) starts just past the box
     const aim = coneAim(c, G, _ap);
     _r.subVectors(aim, _m).normalize(); let past = -1;
     for (let t = 0; t < c.half * 2 + 3; t += 0.5) if (c.inside(_m.x + _r.x * t, _m.y + _r.y * t, _m.z + _r.z * t, 0.2)) past = t;
-    if (past >= 0) _m.addScaledVector(g.fx === 'rocket' ? _d : _r, past + 0.5);
+    const rocket = g.fx === 'rocket' || g.fx === 'missile';
+    if (past >= 0) _m.addScaledVector(rocket ? _d : _r, past + 0.5);
     const dist = aim.distanceTo(_m), n = g.pellets || 1;
-    if (g.fx === 'rocket') _d.y += 0.12;
+    if (rocket) _d.y += 0.12;
     for (let k = 0; k < n; k++) {
       const sp = (g.spread || 0) * Math.max(dist, n > 1 ? 20 : 0) / 100;   // the pellets spread wider the further they go
       _a.copy(aim).add(_r.set((Math.random() - 0.5) * sp, (Math.random() - 0.5) * sp * (n > 1 ? 0.5 : 1), (Math.random() - 0.5) * sp));
       const s = fx.fire(n > 1 && k > 0 ? 'pellet' : g.fx, _m, _d, _a, c.unit);
       s.owner = c; s.gun = g;
+      if (g.seek) specials.seek(s, c, aim);
     }
-    if (c.rival && player && !player.dead && g.fx !== 'rocket' && g.fx !== 'cannon') nearMiss(_m, _a);
+    if (c.rival && player && !player.dead && !rocket && g.fx !== 'cannon') nearMiss(_m, _a);
   }
   // the bang: the light guns on the roof and doors have their own
   const me = c === player, light = G.slot === 'roof' || G.slot === 'door';
@@ -312,7 +327,7 @@ function shoot(c, G) {
   if (me && g.rate && !light && Math.random() < 0.18) sfx.play('brass', 0.5, c.x, c.z, { gap: 0.2 });
   if (g.pellets) c.pumpT = 0.3;
   if (g.spin) c.firing = 0.3;
-  if (g.fx === 'cannon' || g.fx === 'rocket' || g.pellets) { const kick = g.fx === 'cannon' ? 5 : light ? 1.5 : 3; c.vx -= Math.sin(c.gunYaw) * kick; c.vz -= Math.cos(c.gunYaw) * kick; }
+  if (g.fx === 'cannon' || g.fx === 'rocket' || g.fx === 'missile' || g.pellets) { const kick = g.fx === 'cannon' ? 5 : light ? 1.5 : 3; c.vx -= Math.sin(c.gunYaw) * kick; c.vz -= Math.cos(c.gunYaw) * kick; }
 }
 // where weapon G fires at: the car's aim point, or for a weapon on the roof or doors, as near to it as that weapon turns
 function coneAim(c, G, out) {
@@ -408,6 +423,7 @@ function onLand(s, hit, p) {
 // two cars meeting: each is two circles, front and back
 const _n = { x: 0, z: 0 };
 function bump(a, b) {
+  if (Math.abs((a.y || 0) - (b.y || 0)) > Math.min(a.top, b.top) * 0.6) return;   // one jumping over the other
   let best = 0, ax = 0, az = 0, bx = 0, bz = 0;
   const ra = a.wide + 0.6, rb = b.wide + 0.6;
   for (const fa of [-0.55, 0.55]) for (const fb of [-0.55, 0.55]) {
@@ -448,6 +464,7 @@ const crashHooks = {
     sfx.play(into > 30 ? 'crunch' : 'scrape', clamp(into / 40, 0.3, 1), H.x, H.z, { gap: 0.25 });
     if (c === player) game.shake = Math.min(1.2, game.shake + into / 90);
   },
+  land(c, speed) { specials.landed(c, speed); },   // down from a jump (vehicle.js)
   // a drift held long enough pays out a short burst as it ends (vehicle.js)
   drift(c, lvl) {
     sfx.play('nitro', c === player ? 0.35 + 0.15 * lvl : 0.25, c.x, c.z, { rate: 1.3, gap: 0.3 });
@@ -534,7 +551,7 @@ function stepMines(dt) {
     m.lamp.visible = m.t < 1.2 || (m.t * 3) % 1 < 0.5;
     if (m.t < 1.2) continue;
     if (!m.armed) { m.armed = true; sfx.play('mine_beep', 0.8, m.x, m.z); }
-    const hit = cars.find((o) => !o.gone && !o.dead && Math.hypot(o.x - m.x, o.z - m.z) < o.wide + 1.6 && (o !== m.owner || m.t > 3));
+    const hit = cars.find((o) => !o.gone && !o.dead && !((o.y || 0) > 1.5) && Math.hypot(o.x - m.x, o.z - m.z) < o.wide + 1.6 && (o !== m.owner || m.t > 3));
     const fused = m.fuse !== undefined && m.t >= m.fuse;   // (one dropped on the garage floor goes off by itself)
     if (!hit && !fused && m.t < 45) continue;
     mines.splice(i, 1); m.mesh.removeFromParent();
@@ -552,6 +569,9 @@ function gadget(c) {
     c.hp = Math.min(c.maxHp, c.hp + G.repair.hp); c.gadgetT = G.repair.every;
     sfx.play('ui_equip', 1); sfx.play('servo', 0.8); if (c === player) toast('Patched up', `+${G.repair.hp} armour`);
   }
+  else if (G.shield) { specials.shieldOn(c, G.shield.time); c.gadgetT = G.shield.every; }
+  else if (G.oil) { specials.oil(c, G.oil); c.gadgetT = G.oil.every; }
+  else if (G.jump) { if (specials.jump(c, G.jump)) c.gadgetT = G.jump.every; }
 }
 function stepGadget(c, dt) {
   c.gadgetT = Math.max(0, c.gadgetT - dt);
@@ -921,7 +941,13 @@ function onTry(slot, key) {
   if (game.state !== 'garage') return;
   const p = PARTS[slot][key];
   if (slot === 'engine') { game.revT = 1.4; sfx.play('start', 0.7); gcam.view = 'engine'; return; }
-  if (slot === 'gadget') { game.boostT = 1.6; sfx.play('nitro', 0.9); return; }
+  if (slot === 'gadget') {
+    if (p.shield) specials.shieldOn(player, 2.6);
+    else if (p.oil) specials.oil(player, p.oil);
+    else if (p.jump) specials.jump(player, { vy: 21 });
+    else { game.boostT = 1.6; sfx.play('nitro', 0.9); }
+    return;
+  }
   const mine = !!p.mine;
   tryer.slot = slot; tryer.key = key; tryer.t = 0; tryer.wait = 0.75; tryer.fired = 0;
   tryer.view = mine ? 'rear' : 'range';
@@ -966,6 +992,7 @@ function endTest() {
   if (document.exitPointerLock && cam.locked) document.exitPointerLock();
   clearDummies(); addDummy(room.target);
   for (let i = mines.length - 1; i >= 0; i--) if (mines[i].z < 0) { mines[i].mesh.removeFromParent(); mines.splice(i, 1); }
+  specials.clearOffMap();
   placePlayer(garage.shown(), { x: room.spot.x, z: room.spot.z, yaw: Math.PI + gcam.az });
   gcam.init = false; garage.show(); sfx.play('door', 0.6);
 }
@@ -1001,6 +1028,7 @@ function leaveGarage() {
   tryer.slot = null; bolt = null; game.revT = 0; game.boostT = 0;
   clearDummies(); garage.place([]);
   for (let i = mines.length - 1; i >= 0; i--) if (mines[i].z < 0) { mines[i].mesh.removeFromParent(); mines.splice(i, 1); }
+  specials.clearOffMap();
   garageLight(false);
   const from = game.garageFrom; game.garageFrom = null;
   if (game.ended) { chooseMap(MAP.id); return; }   // the round is over: a fresh map for the next one
@@ -1276,7 +1304,7 @@ function step(dt) {
     drivePlayer(dt);
     // (a test drive moves only the player and the target cars in the yard; the round waits)
     const on = (c) => !c.gone && (live || c === player || c.dummy);
-    if (live) for (const c of cars) if (c.driver) { c.driver.think(dt, cars, player); guns(c, dt, c.dead ? [] : c.fire || []); }
+    if (live) for (const c of cars) if (c.driver) { c.driver.think(dt, cars, player); guns(c, dt, c.dead ? [] : c.fire || []); if (c.useGadget) gadget(c); }
     for (const c of cars) if (on(c)) { c.hurtT -= dt; if (c.dead) c.deadT += dt; stepGadget(c, dt); c.step(dt, crashHooks); parked(c, dt); saws(c, dt); blades(c, dt); }
     stepMines(dt); stepBolts(dt); drifts.step(dt, cars, player);
     for (let i = 0; i < cars.length; i++) for (let j = i + 1; j < cars.length; j++) if (on(cars[i]) && on(cars[j])) bump(cars[i], cars[j]);
@@ -1295,7 +1323,9 @@ function step(dt) {
     if ((savedT += dt) > 15) { savedT = 0; keepSave(save); }
   }
   if (game.state === 'garage' || test) stepDummies(dt);
-  if (game.state === 'garage') stepTry(dt);
+  if (game.state === 'garage') { stepTry(dt); if (player) specials.hop(player, dt); }
+  specials.step(dt);
+  for (const c of cars) if (c.flameT > 0) c.flameT -= dt;
   if (!lightWas) { pickups.step(dt, live); hazards.step(dt, live); }   // (the map's pickups and hazards wait while the garage is open: their walls would shove the cars in the yard)
   for (const c of cars) if (!c.gone) { if (!c.dead) c.point(dt); c.pose(dt); }
   stepBolt(dt);   // (after the cars' poses: a part dropping on in the garage, the car settling on its springs)
@@ -1326,6 +1356,9 @@ function step(dt) {
     engine.spin.set(on && bv > 1 ? clamp(bv / 30, 0, 1) * 0.8 : 0, 0.45 + bv / 30 * 0.8, player.x, player.z);
     engine.saw.set(on && player.spec.saw ? 0.35 + clamp(player.speed / 80, 0, 0.3) : 0, 1, player.x, player.z);
     engine.hum.set(on && arcG ? (arcG.t <= 0 ? 0.35 : 0.12) : 0, arcG && arcG.t <= 0 ? 1 : 0.8, player.x, player.z);
+    // a flamethrower going: the player's, or else the nearest one
+    const fl = player.flameT > 0 && !player.dead ? player : cars.filter((c) => c.flameT > 0 && !c.dead).sort((a, b) => Math.hypot(a.x - player.x, a.z - player.z) - Math.hypot(b.x - player.x, b.z - player.z))[0];
+    engine.flame.set(!muted && fl ? (fl === player ? 0.8 : 0.6) : 0, fl === player ? 1 : 0.92, fl ? fl.x : player.x, fl ? fl.z : player.z);
     engine.rivals.forEach((L, i) => { const c = near[i]; if (!c) L.set(0); else L.set(0.45 + 0.3 * Math.abs(c.throttle), 0.68 + clamp(Math.abs(c.fwd) / c.spec.top, 0, 1.3) * 0.95, c.x, c.z); });
   }
   document.body.classList.toggle('in-garage', game.state === 'garage');
@@ -1339,4 +1372,4 @@ followSun(player.x, player.z);
 const loadEl = $('loading'); if (loadEl) loadEl.hidden = true;
 $('menu').hidden = false;
 requestAnimationFrame((t) => { last = t; frame(t); });
-window.__derby = { room, gcam, garageLight, startTest, endTest, tryPart: (s, k) => onTry(s, k), dummies, renderer, mapLook, touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, sfx, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop };
+window.__derby = { specials, room, gcam, garageLight, startTest, endTest, tryPart: (s, k) => onTry(s, k), dummies, renderer, mapLook, touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, sfx, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop };

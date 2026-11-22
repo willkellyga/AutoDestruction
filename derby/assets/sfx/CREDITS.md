@@ -46,5 +46,6 @@ The guns, the scattergun, the cannon and their mechanics are real recordings, on
 | `arc_zap.mp3` | the arc coil's bolt | IMA Arc: electric arc (0.12 to 0.62), electric buzz (2.0 to 2.5); ESM Elemental Mutation: Impact Electric Tonal (0.03 to 0.43); Dumais: WHIP Snap Crack (snap, 0.46 to 0.49) |
 | `arc_hum.wav` | the arc coil charged (loop) | IMA electric buzz (3.0 to 5.4); 344 Air Designed: Unidentified Encounter (28.0 to 30.4); IMA Arc: arc power-up (2.5 to 4.9) |
 | `crack.mp3` | a round passing close by | 2017 part 4, Gamemaster Audio, Bullet Impact Sounds: bullet_flyby_fast_05 (0.06 to 0.36) |
+| `flame_loop.wav` | the flamethrower burning (loop) | made in code, not recorded: shaped noise (a low roar and a hiss), a flutter, and crackle, filtered round the loop so it repeats without a seam |
 
 The buildings coming down, glass and fire are Monster Mayhem's own clips (`src/sfx-bank.js`, credited in `assets/sfx/CREDITS.md`). The 2026 bundle has no gunfire, so the gun recordings come from the older bundle parts named above.

@@ -124,6 +124,18 @@ export function makeDriver(car) {
     // a rocket rack on the roof or side rockets fire at whatever is ahead, mines or not
     if (!heavy && car.guns.some((G) => G.group === 1 && G.cone)) heavy = sees && b.seenT > AI.reaction + 0.6 && d < AI.shoot && d > 20 && Math.abs(wrap(Math.atan2(dx, dz) - car.yaw)) < 0.5 && Math.random() < dt * 1.2;
     car.fire = [(sees && b.seenT > AI.reaction && d < reach && car.onTarget(0.18)) || (arc && d < arc.g.range + 4), heavy];
+    // the gadget (main.js uses it when useGadget is set): nitro on a long straight run at the target, the repair kit when
+    // badly hurt, the shield while taking hits, oil when someone is on its tail, the jump jets to get out of a corner
+    // or to come down on the target from close in front
+    const Gd = car.gadget; car.useGadget = false;
+    if (Gd && !(car.gadgetT > 0)) {
+      const tail = () => all.some((o) => o !== car && !o.dead && Math.hypot(o.x - car.x, o.z - car.z) < 55 && Math.abs(wrap(Math.atan2(o.x - car.x, o.z - car.z) - car.yaw)) > 2.3);
+      if (Gd.nitro) car.useGadget = sees && d > 90 && Math.abs(off) < 0.2 && Math.random() < dt * 0.8;
+      else if (Gd.repair) car.useGadget = car.hp < car.maxHp * 0.45;
+      else if (Gd.shield) car.useGadget = car.hurtT > 0 && car.hp < car.maxHp * 0.65 && Math.random() < dt * 4;
+      else if (Gd.oil) car.useGadget = tail() && Math.random() < dt * 1.2;
+      else if (Gd.jump) car.useGadget = (b.backT > 0 && Math.random() < dt * 1.5) || (sees && d < 34 && d > 14 && Math.abs(off) < 0.2 && sp > 30 && Math.random() < dt * 1.5);
+    }
   }
   return { think, brain: b };
 }

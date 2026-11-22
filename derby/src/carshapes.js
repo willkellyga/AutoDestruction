@@ -129,6 +129,58 @@ export const SHAPES = {
     stripe: [1.5, 6], flame: { z0: 23, len: 64, bonnet: 36 },
   },
 };
+// a dune buggy: a low open tub between wheels that stand out on their own, a roll cage over it, the engine out in the
+// open at the back. noArch: the wheels stand clear of the body, so it has no arches. openTop: no roof to plate.
+SHAPES.buggy = {
+  W: 17, zN: 44, zT: -42, bumpF: 3, bumpR: 2, c0: 7, ax: [28, -27], R: 9, wheelOut: -8,
+  Wz: (z) => 17 - 1.5 * clamp((z - 12) / 8) - 0.22 * Math.max(0, z - 32),
+  top: line([[44, 12.5], [43.2, 13.8], [41, 14.6], [21, 19], [-19, 19], [-20.5, 16.5], [-42, 16.5]]),
+  bot: line([[44, 9.8], [40, 7.6], [-38, 7.6], [-42, 9.6]]),
+  belt: line([[44, 40], [-42, 40]]),
+  noseR: 4, tailR: 2, gIn: 0, tumble: 0, rr: 0, sr: 0.8, ssr: 0, br: 2,
+  roofY: 37, roofF: 12, roofR: -16, cowl: 21,
+  ws: { pil: 0, ylo: 99, yhi: 99 },
+  win: [],
+  frame: TRIM, drip: TRIM, sill: null, sillH: 2, lowTone: 0.86,
+  turret: { z: -6, zR: -6, y: 40 }, roofW: { z: 6, y: 39 }, mirror: { z: 18, style: 'small' }, door: { z: 1, y: 14 },
+  stripe: [1.5, 6], flame: { z0: 22, len: 44, bonnet: 21 },
+  noArch: true, openTop: true, plateTop: 17,
+  hwIn: (z, y, S) => (z < 17 && z > -19 && y >= 11 ? S.Wz(z) - 2 : 0),
+};
+// a late-70s wedge supercar: a knife-edge nose, a windscreen laid nearly flat, a short roof, louvres over the engine
+// behind it, big intakes in the flanks, a wing on posts
+SHAPES.wedge = {
+  W: 22.5, Wmax: 23.4, zN: 52, zT: -50, bumpF: 1, bumpR: 1, c0: 4, ax: [33, -32], R: 8.5,
+  Wz: (z) => 22.5 + 0.9 * bump(z, -31, 17),
+  top: line([[52, 9.5], [51, 10.8], [48, 11.6], [24, 16.6], [22.5, 17.4], [4, 24], [-12, 24], [-15, 23.6], [-40, 19.6], [-46.5, 19.4], [-48.4, 20.4], [-50, 18]]),
+  bot: line([[52, 5], [48, 3.8], [-45, 3.8], [-50, 6]]),
+  belt: line([[52, 16.6], [22, 17.2], [-15, 18.2], [-50, 18.6]]),
+  noseR: 4, tailR: 2.5, gIn: 2.5, tumble: 4, rr: 2, sr: 1.4, ssr: 1, br: 1.6,
+  roofY: 24, roofF: 4, roofR: -12, cowl: 22,
+  ws: { pil: 2.4, ylo: 18, yhi: 23 }, rw: { z0: -27, z1: -15.5, pil: 6, ylo: 19.6, yhi: 23.2 },
+  win: [[-12, 16, -9, 4.5, 18.8, 23]],
+  frame: TRIM, drip: TRIM, sill: PLASTIC, sillH: 3, lowTone: 0.84,
+  turret: { z: -4, zR: -9 }, roofW: { z: 1 }, mirror: { z: 12, style: 'small' }, door: { z: 14 },
+  stripe: [1.5, 6], flame: { z0: 26, len: 50, bonnet: 22 },
+};
+// a conventional school bus: a long tall box behind a bonnet narrower than its wings, a row of split windows, black
+// rub rails, warning lamps at the corners of the roof, the folding door on the right, an emergency door at the back
+const BUS_WIN = [[23.5, 37.5, 23.5, 37.5, 37, 49, 1]];
+for (let z = 20; z > -50; z -= 11) BUS_WIN.push([z - 8, z, z - 8, z, 37, 49]);
+SHAPES.bus = {
+  W: 24, zN: 66, zT: -66, bumpF: 2.5, bumpR: 2.5, c0: 8, ax: [48, -38], R: 11,
+  top: line([[66, 25], [65.2, 27], [63, 28.4], [44, 30.6], [42.4, 32], [40.6, 50.5], [39.4, 52.6], [37.4, 54], [-63.5, 54], [-65.4, 52.8], [-66, 51]]),
+  bot: line([[66, 13], [62, 9], [-60, 9], [-66, 12]]),
+  belt: line([[66, 31.5], [42, 32.6], [40, 35], [-66, 35]]),
+  noseR: 3.5, tailR: 2.5, gIn: 0, tumble: 0.8, rr: 3, sr: 2.6, ssr: 0, br: 2,
+  roofY: 54, roofF: 37.4, roofR: -63.5, cowl: 42.4,
+  ws: { pil: 2.6, ylo: 35.5, yhi: 51.6 },
+  win: BUS_WIN,
+  frame: TRIM, drip: TRIM, sill: TRIM, sillH: 3, lowTone: 0.92,
+  turret: { z: -14, zR: -26 }, roofW: { z: 16 }, mirror: { z: 39, style: 'big' }, door: { z: 36 },
+  stripe: [1.5, 6], flame: { z0: 34, len: 80, bonnet: 42 },
+  hood: { z: 41.5, x: 17.5 },
+};
 SHAPES.pickup.hwIn = (z, y, S, arch) => (z < S.bedZ[0] && z > S.bedZ[1] && y >= S.bedY ? (arch < S.aR + 2 ? S.cutX - 2.2 : S.W - 2) : 0);
 
 // ---- the grid and the stamps ----
@@ -202,7 +254,7 @@ function shell(B, S, wk, bars) {
   const G = [P(GLASS), P(GLASS2), P(SHINE)], FR = P(S.frame), BAR = P(GUNMETAL);
   const archD = (dz, dy) => (sq4 ? Math.pow(Math.pow(ab(dz), 4) + Math.pow(ab(dy), 4), 0.25) : hyp(dz, dy));
   S.archAt = (z, y) => { let d = 1e9; for (const a of S.ax) d = Math.min(d, archD(z - a, y - wy)); return d; };
-  const win = (z, y) => S.win.some((w) => inWin(w, z, y));
+  const win = (z, y, s) => S.win.some((w) => (!w[6] || w[6] === s) && inWin(w, z, y));
   const rows = (k) => (k - K0) * NY;
   for (let k = Math.max(K0, lo(S.zT)); k < Math.min(K1, lo(S.zN)); k++) {
     const z = k + 0.5, t = S.top(z), b = S.bot(z), bl = S.belt(z);
@@ -224,13 +276,15 @@ function shell(B, S, wk, bars) {
       HW[rows(k) + j] = w;
       const arch = y < bl + 0.5 ? S.archAt(z, y) : 1e9, inArch = arch < aR;
       const wIn = S.hwIn ? S.hwIn(z, y, S, arch) : 0;
-      let wn = 0;
-      if (y >= bl + 0.5 && y < t - 0.5) wn = win(z, y) ? 1 : (win(z + 1, y) || win(z - 1, y) || win(z, y + 1) || win(z, y - 1)) ? 2 : 0;
+      const wns = (s) => (win(z, y, s) ? 1 : (win(z + 1, y, s) || win(z - 1, y, s) || win(z, y + 1, s) || win(z, y - 1, s)) ? 2 : 0);
+      let wnL = 0, wnR = 0;
+      if (y >= bl + 0.5 && y < t - 0.5) { wnL = wns(1); wnR = wns(-1); }
       const gc = G[((k + j * 2) % 19 + 19) % 19 < 2 ? 2 : y > S.roofY - 6 ? 1 : 0];
       const row = (k - K0) * L + j * NX - I0, iw = Math.ceil(w);
       for (let i = -iw; i < iw; i++) {
         const x = i + 0.5, a = ab(x);
         if (a >= w || a < wIn) continue;
+        const wn = x > 0 ? wnL : wnR;
         let r = wIn > 0 && a < wIn + 1.5 ? BEDF : PAINT;
         if (inArch) { if (a > cutX) continue; if (a > cutX - 1.5) r = LINER; }
         else if (S.hwIn && wIn > 0 && a < cutX && arch < aR + 2) r = BEDF;
@@ -353,6 +407,19 @@ function cowl(B, S, zc) {
   for (const x0 of [-S.W * 0.62, -S.W * 0.05]) for (let t = 0; t <= 1; t += 0.04) {
     const x = x0 + S.W * 0.52 * t, y = S.ws.ylo + 0.6 + 2.6 * t * t;
     const i = fl(x), j = fl(y); let k = B.K1 - 1; while (k >= B.K0 && !B.get(i, j, k)) k--; if (k >= B.K0) B.put(i, j, k, T);
+  }
+}
+
+// a round bar from a to b ([x, y, z]), r thick, on both sides unless m is false
+function rod(B, a, b, r, col, m = true) {
+  const n = Math.max(2, Math.ceil(hyp(b[0] - a[0], b[1] - a[1], b[2] - a[2]) * 2));
+  for (let s = 0; s <= n; s++) {
+    const t = s / n, x = a[0] + (b[0] - a[0]) * t, y = a[1] + (b[1] - a[1]) * t, z = a[2] + (b[2] - a[2]) * t;
+    for (const sx of m ? [1, -1] : [1]) {
+      const px = x * sx;
+      for (let i = fl(px - r); i <= fl(px + r); i++) for (let j = fl(y - r); j <= fl(y + r); j++) for (let k = fl(z - r); k <= fl(z + r); k++)
+        if (hyp(i + 0.5 - px, j + 0.5 - y, k + 0.5 - z) < r + 0.25) B.put(i, j, k, col);
+    }
   }
 }
 
@@ -561,6 +628,168 @@ const DETAIL = {
     for (let y = 18; y < 52; y += 4) B.fill(lx[0], lx[1] + 1.2, y, y + 1, lz - 1.2, lz, () => ST, false);
     mirrors(B, S, 'big');
   },
+  // a dune buggy: an open fibreglass tub, a roll cage over it with lamps on top, a bull bar with driving lamps, nerf
+  // bars along the sides, a flat engine out in the open at the back
+  buggy(B, S, c) {
+    const { P } = B, zN = S.zN, zT = S.zT;
+    const T = P(TRIM), PL = P(PLASTIC), CH = P(CHROME), CL = P(CHROMEL), CD = P(CHROMED), GM = P(GUNMETAL), ST = P(STEEL), DK = P(DARKS), RB = P(RUBBER);
+    const LA = P(LAMP), LW = P(LAMPW), WH = P(PLATEW);
+    // a black edge along the cockpit's rim; the cockpit: a rubber floor, a dash with two dials, two bucket seats,
+    // the steering wheel on the left, a gear lever
+    B.top(13, 17, -19, 17, () => T);
+    B.fill(0, 13, 10, 11, -18.5, 16.5, () => RB);
+    B.fill(0, 15.5, 11, 19, 13.5, 17, () => PL, true, true);
+    B.fill(5, 10.5, 15, 18.5, 13, 14, (x, y) => (hyp(x - 6.2, y - 16.6) < 1.1 || hyp(x - 9.2, y - 16.6) < 1.1 ? WH : 0), false);
+    B.fill(3.2, 11.8, 11, 27, -16, 1, (x, y, z) => {
+      const a = ab(ab(x) - 7.5), zb = -10.5 - (y - 14) * 0.22;
+      if (y < 15) return z > -10.5 && z < 0.5 && a < 4 ? (a > 3 ? PL : T) : 0;
+      if (y < 26.5 && z < zb + 2.4 && z > zb - 0.5 && a < 4.2 - (y > 23 ? 1.2 : 0)) return a > 3 || y > 25.5 ? PL : T;
+      return 0;
+    }, true, true);
+    B.fill(3.5, 11.5, 17, 25, 6, 12, (x, y, z) => {
+      const r = hyp(x - 7.5, y - 21), zc = 9 + (y - 21) * 0.5;
+      return ab(z - zc) < 0.7 && ((r > 2.3 && r < 3.4) || (r < 2.3 && ab(y - 21) < 0.6)) ? T : 0;
+    }, false, true);
+    rod(B, [7.5, 20.5, 9.8], [7.5, 17, 14], 0.6, DK, false);
+    rod(B, [0, 11, 3], [0, 16, 2], 0.5, CH, false);
+    B.fill(-1, 1, 16, 18, 1, 3, () => T, false, true);
+    // the roll cage: a hoop at the front of the cockpit and one behind the seats, rails along the top, stays down to
+    // the back, a brace across; a plate on top for the gun's post, and one on the front hoop for a roof weapon
+    const cg = 1.05;
+    rod(B, [13.6, 18.6, 13.5], [11.5, 36.5, 5.5], cg, GM);
+    rod(B, [11.5, 36.5, 5.5], [-11.5, 36.5, 5.5], cg, GM, false);
+    rod(B, [14.6, 18.6, -17], [11.5, 36.5, -13], cg, GM);
+    rod(B, [11.5, 36.5, -13], [-11.5, 36.5, -13], cg, GM, false);
+    rod(B, [11.5, 36.5, 5.5], [11.5, 36.5, -13], cg, GM);
+    rod(B, [11.5, 36.5, -13], [11.5, 17, -37], cg, GM);
+    rod(B, [14.2, 19.5, -16.8], [-11.2, 36, -13], 0.8, GM, false);
+    if (c.look >= 2) B.fill(0, 11, 37, 38, -13, 5.5, () => PLATE, true, true);   // armour: a plate roof on the cage
+    B.fill(0, 12, 37, 38, -9.5, -2.5, () => GM, true, true);
+    B.fill(0, 3, 38, 40, -9, -3, (x, y, z) => (hyp(x, z + 6) < 2.8 ? (y > 39 ? ST : GM) : 0));
+    B.fill(0, 5.5, 37, 39, 2, 9.5, (x, y) => (y > 38 ? ST : GM), true, true);
+    if (c.look >= 3) for (const x of [-9, -4.5, 0, 4.5, 9]) rod(B, [x, 19.5, 13.3], [x, 35.6, 6], 0.6, GM, false);   // bars across the front hoop
+    // two spot lamps on the front hoop
+    B.fill(7, 11.5, 37.4, 41.4, 3.5, 7.6, (x, y, z) => { const d = hyp(ab(x) - 9.2, y - 39.3); return d < 2 ? (z > 6.6 ? (d < 0.9 ? LW : LA) : DK) : 0; });
+    // the bull bar, two round driving lamps on it
+    rod(B, [12.5, 10.5, zN + 1.8], [-12.5, 10.5, zN + 1.8], 0.9, GM, false);
+    rod(B, [9.5, 10.5, zN + 1.8], [8.5, 17.4, zN + 0.8], 0.9, GM);
+    rod(B, [8.5, 17.4, zN + 0.8], [-8.5, 17.4, zN + 0.8], 0.9, GM, false);
+    rod(B, [12.5, 10.5, zN + 1.8], [12, 10.5, zN - 3.5], 0.8, GM);
+    B.fill(3.4, 8.8, 17.2, 22.2, zN - 1.2, zN + 2.4, (x, y, z) => { const d = hyp(ab(x) - 6.1, y - 19.7); return d < 2.4 ? (z > zN + 1.4 ? (d < 1 ? LW : d < 1.7 ? LA : CH) : CH) : 0; });
+    // the nerf bars along the sides
+    rod(B, [19.5, 10, 14], [19.5, 10, -15], 0.9, GM);
+    for (const z of [10, -11]) rod(B, [19.5, 10, z], [15.5, 10, z], 0.8, GM);
+    // the bonnet's lid and a fuel cap on it, small amber lamps at the nose's corners
+    B.top(0, 11.5, 23, 40.5, (x, z) => (ab(x) > 10.5 || z < 24 || z > 39.5 ? SEAM : 0));
+    B.top(-2, 2, 30, 34, (x, z) => (hyp(x, z - 32) < 1.8 ? CH : 0), 1, false);
+    marker(B, 37, 39.5, 10.5, 12, AMBER);
+    // the engine at the back: a case, finned cylinders to each side, a black fan shroud on top, a big chrome air
+    // cleaner on that; two pipes out under it; round tail lamps and the plate on the tail
+    const ey = 16.5, ez0 = -39, ez1 = -23;
+    B.fill(0, 5, ey, ey + 6.5, ez0, ez1, () => GM, true, true);
+    B.fill(5, 10.5, ey + 0.5, ey + 5, ez0 + 2, ez1 - 2, (x, y, z) => (ab(x) > 9.5 ? DK : (fl(z) & 1) ? ST : GM), true, true);
+    B.fill(0, 6.5, ey + 6.5, ey + 10, ez0 + 1.5, ez1 - 1, (x, y) => (y > ey + 9 && ab(x) > 5.5 ? 0 : DK), true, true);
+    B.fill(-4, 4, ey + 10, ey + 13, -34, -26, (x, y, z) => { const d = hyp(x, z + 30); return d < 3.8 ? (y > ey + 12 ? (d < 1.2 ? CL : CH) : d > 3 ? CD : CH) : 0; }, false, true);
+    pipe(B, 6, 12.8, zT - 3, zT + 3, 1.5); pipe(B, -6, 12.8, zT - 3, zT + 3, 1.5);
+    B.back(9.5, 15.5, 9.4, 15.6, (x, y) => { const d = hyp(ab(x) - 12.6, y - 12.5); return d < 1.8 ? [P(TAIL), -1] : d < 2.7 ? [T, 0] : 0; });
+    numberPlate(B, -1, 10.6, 3.6, 3, c.seed);
+  },
+
+  // a late-70s wedge supercar: a grille slot under the knife-edge nose, pop-up lamps shut flush, a duct in the bonnet,
+  // big intakes in the flanks, louvres over the engine, a wing on posts, a lamp band across the tail, four pipes
+  wedge(B, S, c) {
+    const { P } = B, zN = S.zN, zT = S.zT, W = S.W;
+    const T = P(TRIM), PL = P(PLASTIC), G1 = P(GRILLE), G2 = P(GRILLE2), A = P(AMBER), DK = P(DARKS);
+    B.front(0, 14, 5, 8.6, (x, y) => [(fl(y) & 1) ? G1 : G2, -1]);
+    B.front(14.5, 19.5, 5.6, 8, () => A);
+    B.top(9.5, 19, 40, 47.5, (x, z) => (ab(x) < 10.5 || ab(x) > 18 || z < 41 || z > 46.5 ? SEAM : 0));
+    B.top(0, 3.5, 28, 37, (x, z) => [(fl(z) & 1) ? T : DK, -1]);
+    B.top(W - 4, W - 3, S.cowl + 2, zN - 3, () => SEAM);
+    cowl(B, S, S.cowl);
+    marker(B, 44, 47.5, 7.6, 9.2, AMBER);
+    // the flanks: the door's shut line, the intake behind it (its front edge leaning back), a black lip round the arches
+    seamV(B, 17, S.c0 + 3, S.belt(17) + 0.2);
+    B.side(-16, -2.5, 8.5, 17.8, (z, y) => { const zf = -3 - (17.8 - y) * 0.5; return z > zf ? 0 : z > zf - 1 || y > 16.8 || z < -15 ? [T, 0] : [(fl(y) & 1) ? G1 : DK, -2]; });
+    archLip(B, S, c.wk, PL, 1.4, 0);
+    // louvres across the engine cover, the wing on its posts with plates at its tips
+    B.top(0, W - 6, -40, -27.5, (x, z) => ((fl(z) & 1) ? [T, -1] : 0));
+    B.fill(10, 12, 19, 26.5, -45.5, -43, () => DK, true, true);
+    B.fill(0, 21.5, 26.5, 27.6, -49, -40.5, () => PAINT, true, true);
+    B.fill(21.5, 22.5, 24.5, 28.6, -49.5, -40, () => T, true, true);
+    // the tail: a band of lamps right across in black, the plate, a black diffuser with fins, four pipes
+    const TL = P(TAIL), T2 = P(TAIL2), RV = P(REV);
+    B.back(0, W - 0.5, 11, 17.4, (x, y) => { const a = ab(x); if (a >= W - 1.5 || y < 12 || y >= 16.4 || a < 4) return [T, 0]; if (a < 7) return [RV, -1]; if (a > W - 5) return [A, -1]; return [(fl(y) & 1) ? TL : T2, -1]; });
+    numberPlate(B, -1, 9.2, 6, 3.8, c.seed, -1);
+    B.back(0, W - 3, 3.8, 7, (x) => (fl(ab(x)) % 3 === 0 ? [DK, 1] : [T, 0]));
+    for (const px of [11.5, 15.5, -11.5, -15.5]) pipe(B, px, 8.4, zT - 2, zT + 3, 1.3);
+    mirrors(B, S, 'small', true);
+  },
+
+  // a conventional school bus: the bonnet narrower than the wings, a chrome grille and round lamps, a split
+  // windscreen, warning lamps at the roof's corners, black rub rails, the stop arm folded on the left, the folding door
+  // on the right, the emergency door at the back, hatches in the roof
+  bus(B, S, c) {
+    const { P } = B, zN = S.zN, zT = S.zT, hx = S.hood.x, hz = S.hood.z;
+    const T = P(TRIM), CH = P(CHROME), CD = P(CHROMED), G1 = P(GRILLE), A = P(AMBER), RD = P(TAIL), GM = P(GUNMETAL), WH = P(PLATEW), PL = P(PLASTIC);
+    const glass = (x, y) => (((fl(x * 1.3 + y) % 11) + 11) % 11 === 0 ? P(SHINE) : P(GLASS));
+    // cut the bonnet down between the wings, which rise over the front wheels
+    const wy = c.wk.R - c.wk.lift, wing = (z) => clamp(wy + sq(Math.max(0, 256 - (z - S.ax[0]) ** 2)), 22, 27.5);
+    for (let k = lo(hz); k < B.K1; k++) for (let j = 0; j < B.NY; j++) {
+      const z = k + 0.5, y = j + 0.5; if (y <= wing(z)) continue;
+      for (let i = B.I0; i < B.I1; i++) if (ab(i + 0.5) > hx) B.put(i, j, k, 0);
+      const h = (k - B.K0) * B.NY + j; if (B.HW[h] > hx) B.HW[h] = hx;
+    }
+    // the grille, round lamps either side of it, turn lamps on the wings, a black bumper with the plate on it
+    B.front(0, 11.5, 13.5, 24, (x, y) => { const a = ab(x); if (a >= 10.5 || y < 14.5 || y >= 23) return [CH, 0]; return (fl(y) % 2 === 0) ? [CH, 0, 2] : [(fl(a) % 3 === 0) ? CD : G1, -2]; });
+    lamp(B, 1, 11.5, 17.5, 15, 22.5, roundShape(14.4, 18.7, 2.9, 0.9), headLens(B, 14.4, 18.7), T);
+    B.front(19, 23, 16.5, 20, () => A);
+    bumper(B, S, 1, 9, 15, S.bumpF, 4, (x, y) => (y > 14 ? GM : T));
+    numberPlate(B, 1, 12, 5.5, 3.8, c.seed);
+    // the bonnet: a crease down the middle, its shut lines; round cross-view mirrors on posts at the wings' corners
+    B.top(0, 0.6, hz + 1, zN - 1, () => HI);
+    B.top(hx - 1.2, hx, hz + 0.5, zN - 1, () => SEAM);
+    rod(B, [21, 22, 62.5], [22.4, 30, 63.5], 0.55, T);
+    B.fill(20.3, 24.7, 29, 33.4, 61.8, 65.4, (x, y, z) => (hyp(ab(x) - 22.5, y - 31.2, (z - 63.6) * 1.4) < 2.1 ? T : 0));
+    // the windscreen split down the middle, big wipers on it
+    B.front(-1, 1, S.ws.ylo, S.ws.yhi, () => T, 0, false);
+    for (const x0 of [-18, 3]) for (let t = 0; t <= 1; t += 0.03) {
+      const x = x0 + 14 * t, y = S.ws.ylo + 0.8 + 4 * t * t;
+      const i = fl(x), j = fl(y); let k = B.K1 - 1; while (k >= B.K0 && !B.get(i, j, k)) k--; if (k >= B.K0) B.put(i, j, k, T);
+    }
+    // warning lamps at the top corners, front and back: red outboard, amber inboard
+    const warn = (x, y) => { const a = ab(x), d1 = hyp(a - 18.4, y - 51.6), d2 = hyp(a - 12, y - 51.6); return d1 < 1.9 ? [RD, 1] : d2 < 1.9 ? [A, 1] : d1 < 2.6 || d2 < 2.6 ? [T, 0] : 0; };
+    B.front(8, 22, 48.8, 54, warn);
+    B.back(8, 22, 48.8, 54, warn);
+    // three black rub rails along each side, broken by the arches and the door; clearance lamps along the roof edge
+    for (const ry of [15.5, 23, 30.6]) B.side(zT + 2, hz, ry - 0.8, ry + 0.8, (z, y, s) => (S.archAt(z, y) < S.aR + 1.5 || (s < 0 && z > 22.5 && z < 38) ? 0 : [T, 1]));
+    for (const z of [34, 4, -26, -56]) marker(B, z, z + 2, 50.4, 51.8, AMBER);
+    archLip(B, S, c.wk, T, 1.4, 0);
+    // the stop arm folded flat on the left under the driver's window
+    B.side(26.5, 35.5, 26.8, 35.6, (z, y) => { const dz = ab(z - 31), dy = ab(y - 31.2), o = Math.max(dz, dy, (dz + dy) / 1.414); return o < 3 ? [RD, 1] : o < 3.8 ? [WH, 1] : 0; }, 0, 1);
+    // the folding door on the right: two tall leaves, glass top and bottom, in a black frame
+    B.side(23, 37.5, 12.5, 50.5, (z, y) => {
+      if (z < 24 || z > 36.5 || y < 13.5 || y > 49.5 || ab(z - 30.25) < 0.6) return [T, 0];
+      const zl = z < 30.25 ? z - 24 : z - 30.85;
+      return ((y > 33 && y < 48.5) || (y > 15 && y < 31)) && zl > 0.8 && zl < 5.45 ? [glass(z, y), -1] : [T, 0];
+    }, 0, 2);
+    // the back: the emergency door with its windows and handle, a window either side, round tail lamps low at the
+    // corners, a black bumper; a pipe out under the back
+    B.back(0, 8.8, 12.5, 50.5, (x, y) => {
+      const a = ab(x); if (a > 7.8 || y < 13.5 || y > 49.5) return [T, 0];
+      if (y > 37 && y < 48.6) return a > 0.6 && a < 7 ? [glass(x, y), -1] : [T, 0];
+      if (y > 21 && y < 34) return a < 7 ? [glass(x, y), -1] : [T, 0];
+      return 0;
+    });
+    B.back(4, 7.5, 34.6, 36, () => [CH, 1], 0, false);
+    B.back(10.5, 20.5, 37, 49, (x, y) => { const a = ab(x); return a > 11.5 && a < 19.5 && y > 38 && y < 48 ? [glass(x, y), -1] : [T, 0]; });
+    B.back(15, 23, 15, 31, (x, y) => { const a = ab(x), d1 = hyp(a - 19, y - 26.5), d2 = hyp(a - 19, y - 19.5); return d1 < 2.3 ? [RD, -1] : d2 < 2.3 ? [A, -1] : d1 < 3.2 || d2 < 3.2 ? [T, 0] : 0; });
+    bumper(B, S, -1, 9, 15, S.bumpR, 4, (x, y) => (y > 14 ? GM : T));
+    numberPlate(B, -1, 16.8, 5, 3.4, c.seed);
+    pipe(B, -15, 7.4, zT - 2.5, -50, 1.5);
+    // hatches in the roof
+    for (const z of [-2, -44]) B.top(0, 7, z - 6, z + 6, (x, zz) => (ab(x) > 6 || ab(zz - z) > 5 ? T : PL), 1);
+    mirrors(B, S, 'big');
+  },
 };
 
 // ---- armour: plates on the doors (and the bonnet, roof and corners), bars over the glass ----
@@ -571,10 +800,11 @@ function armour(B, S, look, wk) {
   B.side(z0, z1, y0, y1, () => PLATE, t);
   if (look >= 2) {
     const nz = S.zN - 2.5, ny0 = S.c0 + 3;
-    B.side(S.ax[0] + aR + 1.5, nz, ny0, S.belt(nz) - 3, (z, y) => (S.archAt(z, y) > aR + 1 ? PLATE : 0), 1);
-    B.side(S.zT + 2.5, S.ax[1] - aR - 1.5, ny0, S.belt(S.zT) - 3, (z, y) => (S.archAt(z, y) > aR + 1 ? PLATE : 0), 1);
+    const pt = (z) => Math.min(S.belt(z) - 3, S.plateTop ?? 1e9);
+    B.side(S.ax[0] + aR + 1.5, nz, ny0, pt(nz), (z, y) => (S.archAt(z, y) > aR + 1 ? PLATE : 0), 1);
+    B.side(S.zT + 2.5, S.ax[1] - aR - 1.5, ny0, pt(S.zT), (z, y) => (S.archAt(z, y) > aR + 1 ? PLATE : 0), 1);
     B.top(0, S.W - 5, S.cowl + 4, S.zN - 6, (x, z) => (S.scoopX && ab(x) < S.scoopX && z > 25 && z < 47 ? 0 : PLATE), 1);
-    B.top(0, S.W - 8.5, S.roofR + 3, S.roofF - 2, () => PLATE, 1);
+    if (!S.openTop) B.top(0, S.W - 8.5, S.roofR + 3, S.roofF - 2, () => PLATE, 1);
   }
   if (look >= 3) {   // bars over the windscreen and the rear glass
     const BAR = B.P(GUNMETAL), mid = (S.ws.ylo + S.ws.yhi) / 2;
@@ -654,7 +884,7 @@ function colour(B, S, v, o, look, box) {
 export function bodyPart(S, o, wk) {
   const look = PARTS.armour[o.armour] ? PARTS.armour[o.armour].look : 0;
   const wy = wk.R - wk.lift;
-  S = { ...S, aR: Math.min(wk.R + 1.8, S.belt(S.ax[0]) - wy - 1), cutX: S.W - wk.out - wk.w - 1, scoopX: S.kind === 'muscle' ? 6.6 : 0 };
+  S = { ...S, aR: Math.min(wk.R + 1.8, S.belt(S.ax[0]) - wy - 1), cutX: S.noArch ? 1e9 : S.W - wk.out - wk.w - 1, scoopX: S.kind === 'muscle' ? 6.6 : 0 };
   // the windscreen's z at a height (for the bars over it)
   S.wsZ = (y) => { for (let z = S.zN; z > S.zT; z -= 0.5) if (S.top(z) > y) return z; return S.roofF; };
   // The cubes are laid out in a roomy grid first, and the part's box is then cut down to the cubes it holds: the kit
