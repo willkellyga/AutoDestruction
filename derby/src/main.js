@@ -21,7 +21,7 @@ import { makeDriver, clearLine } from './ai.js';
 import { MAP, MAPS, chooseMap } from './maps/index.js';
 import { MODES } from './modes/index.js';
 import { CRASH, ROUND, AI, DRIFT, BUILDINGS } from './tuning.js';
-import { toughen, boom, chipAt } from './sturdy.js';
+import { toughen, boom, chipAt, fuelBlast } from './sturdy.js';
 import { PAINTS, loadSave, keepSave, rivalBuild, RIVAL_NAMES } from './parts.js';
 import { makeGarage } from './garage.js';
 import { makeSounds } from './audio.js';
@@ -202,6 +202,7 @@ hooks.explosion = (x, y, z, r) => {
 const civBlast = hooks.blast;
 hooks.blast = (cx, cy, cz, r, o) => {
   civBlast(cx, cy, cz, r, o);
+  fuelBlast(cx, cy, cz, r, o);   // a fuel tank going up breaks less of the buildings round it (sturdy.js)
   if (o && o.push === 32 && o.core === 0.5) { splashK = { splash: 22, reach: r * 2 + 6 }; try { hooks.explosion(cx, cy, cz, r); } finally { splashK = null; } }
 };
 

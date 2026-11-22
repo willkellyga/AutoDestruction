@@ -49,8 +49,8 @@ export const DRIFT = {
 // How much punishment the buildings take, on every map. The destruction itself is Monster Mayhem's (src/sim.js, used as
 // it is); these scale what the derby's cars, guns, rockets and wrecks ask of it, and how its fire and its rules for
 // what still stands behave on these pages (sturdy.js). Lamp posts, bins, fences and rubble go down as easily as ever,
-// and the blasts on the cars and the zombies are the same size as before. The map's own set pieces (fuel tanks,
-// barrels, the Hammerdown strike, the horde breaking the base's wall) are left as they were.
+// and the blasts on the cars and the zombies are the same size as before. The maps' own set pieces (the barrels, the
+// Hammerdown strike, the horde breaking the base's wall) are left as they were.
 // [old] is the value before this block, or the town's own where the derby had none: setting every knob to it gives back
 // the old feel, apart from the glancing-hit and wall-easing rules in vehicle.js.
 export const BUILDINGS = {
@@ -66,6 +66,7 @@ export const BUILDINGS = {
   // explosions (sturdy.js boom): the flash, the fire, the scorch and the blast on cars and zombies are the full size;
   shell: 0.7,       // [1] rockets, shells and mines break buildings out to this share of their reach ...
   wreck: 0.5,       // [1] ... and a wrecked car's blast out to this share
+  fuel: 0.7,        // [1] ... and what goes up by itself (fuel tanks, propane, drums, the base's helicopters and tanks)
   tough: 1.5,       // [1] the blocks at the edge of that reach hold this many times as well as in the town's explosions
   glass: 0.7,       // [1] windows burst out to this share of the town's reach
   ignite: 0.5,      // [1] an explosion starts this share of the fires the town's would

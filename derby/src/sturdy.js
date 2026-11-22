@@ -6,6 +6,8 @@
 //   boom()      the town's explode(), with the part that breaks buildings smaller and tougher at its edge than the
 //               flash, the fire and the blast on the cars round it
 //   chipAt()    a round from a gun knocks out the one block it strikes
+//   fuelBlast() the same for what goes up by itself in the town's own step (fuel tanks, propane, drums, the base's
+//               helicopters and tanks): called from main.js's hooks.blast
 // Lamp posts, bins, fences and rubble go down as easily as ever, and what the cars and the zombies take is not touched.
 import { bodies, solid, CARRY, CHARP, FLAM } from '../../src/world.js';
 import { hooks, cfg, blast, pushDebris, fire, sparks, dust, smoke, flash, ring, blowGlass, igniteAt } from '../../src/sim.js';
@@ -13,6 +15,9 @@ import { BUILDINGS as K } from './tuning.js';
 
 // what any blast still takes in full
 export const EASY = { prop: true, rubble: true };
+// every kind of body (blast's `only`): a blast that names its kinds is one the town's parked cars, boats and trains
+// (src/civilians.js) leave alone, so they are not hit twice by the one explosion
+const ALL = new Proxy({}, { get: () => true });
 
 let done = false;
 export function toughen() {
@@ -52,8 +57,10 @@ function slacken(b) {
 // their blocks at the edge of that hold better), while lamps, bins and rubble take the whole of it. The flash, smoke,
 // scorch mark, shake and the blast on the cars and zombies round it (hooks.explosion) are the full size.
 export function boom(x, y, z, r, shake = 0.5, o = {}, k = K.shell) {
-  blast(x, y, z, r * k, { push: 40, core: 0.55, maxDebris: o.maxDebris ?? 460, tough: 0.4 * K.tough });
-  if (k < 1) blast(x, y, z, r, { only: EASY, push: 40, core: 0.55, maxDebris: 60, tough: 0.4, pushDebris: false });
+  const bo = { push: 40, core: 0.55, maxDebris: o.maxDebris ?? 460, tough: 0.4, sturdy: true };
+  if (hooks.blast) hooks.blast(x, y, z, r, bo);   // the parked cars in the street take the whole blow, as before
+  blast(x, y, z, r * k, { ...bo, tough: 0.4 * K.tough, only: ALL });
+  blast(x, y, z, r, { only: EASY, push: 40, core: 0.55, maxDebris: 60, tough: 0.4, pushDebris: false });
   pushDebris(x, y, z, r * 2.4, 48, 0.8);
   fire(x, y + 2, z, 60, r); sparks(x, y + 2, z, 36, 1, 0.8, 0.3);
   dust(x, y + 2, z, 18, r * 1.8, 0.25, 0.23, 0.22);
@@ -64,6 +71,18 @@ export function boom(x, y, z, r, shake = 0.5, o = {}, k = K.shell) {
   hooks.scorch(x, z, r * 1.5); hooks.shake(shake, x, y, z); hooks.sound('boom', 1, x, y, z);
   hooks.impact(o.impact ?? 0.7);
   hooks.explosion(x, y, z, r);
+}
+
+// The town's explode() for what goes up by itself (src/sim.js explQueue: a body with `explosive` set, once it is hit
+// hard enough or its fuel is) breaks buildings out to K.fuel of its reach. main.js's hooks.blast calls this for every
+// blast, before the blast itself: on one of those (the only blast that comes with exactly these options) it breaks the
+// buildings itself, smaller, and leaves the town's blast only the lamps, bins and rubble. The flash, the fire, the
+// windows and the blast on the cars round it stay the whole size. The maps' own set pieces (barrels, the Hammerdown
+// strike, the horde breaching the base's wall) ask for less debris, so they are left as they are.
+export function fuelBlast(x, y, z, r, o) {
+  if (K.fuel >= 1 || !o || o.only || o.sturdy || o.push !== 40 || o.core !== 0.55 || o.tough !== 0.4 || o.maxDebris !== 460) return;
+  o.only = EASY;
+  blast(x, y, z, r * K.fuel, { push: 40, core: 0.55, maxDebris: 460, tough: 0.4 * K.tough, only: ALL });
 }
 
 // A round from a gun has struck a wall at p, going along dir: some of the time, it knocks out the block it struck (and
