@@ -94,7 +94,7 @@ MAP.build();
     outer.renderOrder = -1; outer.rotation.x = -Math.PI / 2; outer.position.set(WX / 2, -0.06, WZ / 2); scene.add(outer);
   }
 }
-const backdrop = MAP.backdrop ? makeBackdrop({ scene, layout: MAP.backdrop, mobile: MOBILE, viewH: () => renderer.domElement.height }) : null;
+const backdrop = MAP.backdrop ? makeBackdrop({ scene, map: MAP, mobile: MOBILE, viewH: () => renderer.domElement.height, follow: () => player }) : null;
 initSim(scene);
 const drifts = makeDrift({ scene, camera, mobile: MOBILE, el: $('drift') });   // skid marks, tyre smoke, the drift meter
 look.detail.value = 1; look.dusk.value = 0;

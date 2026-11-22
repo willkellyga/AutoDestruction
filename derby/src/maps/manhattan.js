@@ -189,6 +189,45 @@ export default {
   blurb: 'Four laps through New York: river sweeps, two long U-turns round the towers, the downtown straight. Guns on.',
   loading: ['Closing the streets', 'Building New York and opening up the course'],
   outer: 0x4e8fa6,   // the water round the city
+  // The city past the edge of the map (../backdrops/harbor.js): more boroughs, the far banks, two bridges reaching off
+  // it, traffic on the far roads and the news helicopter over the race. x east, z south, in voxels.
+  backdrop: {
+    kind: 'harbor', seed: 7311,
+    world: [0, 0, WX, WZ],
+    view: { x: 480, z: 620 },                // the middle of the course
+    course: [193, 306, 769, 927],            // the box the course runs in: heights are set by how far from it a tower is
+    reach: 2300,                             // and nothing stands further than this from any corner of it
+    water: 0x4e8fa6,                         // the map's own painted water
+    // the streets past the edge: the map's own, then on at their spacing [first, every] north and south of the Harlem
+    // River, east and west of the map
+    streets: { x: STREET_X, w: 36, zN: [150, 122], zS: [860, 122], xE: [952, 174], xW: [262, 174] },
+    // the shores: the Harlem River (on east across the edge), the Bronx's on the Hudson, the far bank of the Hudson,
+    // Brooklyn's (the East River's far side, then sloping out to the Narrows, then its south shore on the sea), the
+    // island across the harbor (south of z and west of x) and the sound the Harlem River runs out into east of the map
+    // (east of x, between z0 and z1), at the end of the view down the start straight
+    shores: { harlem: [214, 262], bronx: -34, jersey: -240, brooklyn: { x: 880, slope: 0.19, south: 1540, fall: 0.45 }, island: { z: 1470, x: 560 }, sound: { x: 1320, z0: 140, z1: 540 } },
+    // where the towers stand taller (k), and the landmark in each (kit.js's towerKit)
+    downtowns: [
+      { x: -560, z: 880, r: 520, k: 1.55, mark: 1 },    // across the Hudson, facing the tip
+      { x: 1230, z: 700, r: 380, k: 1.4, mark: 3 },     // Brooklyn, across the East River
+      { x: 1250, z: -380, r: 420, k: 1.2 },             // up beyond the Bronx
+      { x: 1900, z: 400, r: 500, k: 1.3, mark: 5 },     // out in Queens
+    ],
+    // the bridges: a to b along the deck (y high, w wide); the suspension bridge's towers and the stayed one's pylon
+    // are distances along it from a
+    bridges: [
+      { kind: 'suspension', a: [430, 1525], b: [1110, 1525], towers: [175, 505], w: 46, y: 52, h: 150 },   // the Narrows, down the river drive
+      { kind: 'stayed', a: [1720, 40], b: [1720, 700], pylon: 332, w: 40, y: 44, h: 190 },               // the sound, down the start straight
+    ],
+    // an elevated road across the far end of the view north up the park
+    expressways: [{ a: [10, -340], b: [2080, -340], w: 70, y: 46 }],
+    port: { x0: -150, x1: 420, z: 1505, cranes: 6, stacks: 40 },   // cranes and containers on the island's shore
+    ships: [{ x: 380, z: 1180, len: 150, yaw: 0.3, hull: 0x3a2a26 }, { x: -110, z: 640, len: 120, yaw: 1.45, hull: 0x26313a }],
+    // traffic out along the streets that leave the map (east, north) this far, and along the far bank (z from, to)
+    traffic: { east: [150, 372, 494, 616, 738, 860, 982], north: STREET_X, length: 900, bank: [-700, 1400] },
+    skyline: [0.4, 0.75, 1.0, 0.85, 0.8, 0.75, 0.95, 0.6, 0.4],   // the far skyline's height round from the south, by east
+    heli: { ahead: 290, y: 86, size: 1.5, sway: 18 },              // the news helicopter: how far ahead, how high (it climbs over towers)
+  },
   build,
   ground: paint,
   get spawn() { return full().grid[4]; },   // the player starts fifth
