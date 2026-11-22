@@ -426,29 +426,39 @@ function roundRect(g, S, inset = 0) {
   g.lineTo(x0 + r, z1); g.arc(x0 + r, z1 - r, r, Math.PI / 2, Math.PI); g.lineTo(x0, z0 + r); g.arc(x0 + r, z0 + r, r, Math.PI, Math.PI * 1.5); g.closePath();
 }
 const stripes = (g, x, z, w, h, n, alongX) => { for (let k = 0; k * n < (alongX ? w : h); k++) { g.fillStyle = k & 1 ? '#1c1c1e' : '#e2b02a'; if (alongX) g.fillRect(x + k * n, z, Math.min(n, w - k * n), h); else g.fillRect(x, z + k * n, w, Math.min(n, h - k * n)); } };
+// The floor's shader lays fine grain, pebbles, clods and the ruts over this (ground.js: MAP.groundDetail), so the paint
+// is soft blotches at a few sizes rather than a fleck a voxel, and the paint's alpha says what the ground is: dirt (1),
+// wet (about 0.75: puddles, damp patches and oil shine) or hard (0.5: the steel decks, the boost plates, the concrete
+// outside the ring), which takes neither grain nor ruts.
 function paint() {
   const c = canvasFor('#6e6b64', 91), g = c.g;
   const V = () => g.setTransform(GK, 0, 0, GK, 0, 0), I = () => g.setTransform(1, 0, 0, 1, 0, 0);
-  c.speckle(0, 0, WX, WZ, 90000, ['rgba(40,38,34,0.25)', 'rgba(200,196,186,0.2)']);
-  // the floor: packed dirt, speckled, darker in a band along the foot of the ring
+  const wets = [];   // [x, z, rx, rz, angle, how wet] of each wet patch, puddle and oil stain, for the alpha at the end
+  c.mottle(0, 0, WX, WZ, 6, [[40, 38, 34, 0.16], [200, 196, 186, 0.12]]);
+  c.mottle(0, 0, WX, WZ, 2, [[40, 38, 34, 0.2], [200, 196, 186, 0.15]]);
+  // the floor: packed dirt, mottled, darker in a band along the foot of the ring
   g.save(); V(); roundRect(g, WALL); g.fillStyle = '#8a7152'; g.fill(); g.clip(); I();
-  c.speckle(176, 292, 848, 732, 260000, ['rgba(60,46,32,0.35)', 'rgba(170,146,112,0.3)', 'rgba(104,86,62,0.4)']);
+  const DIRT = [[60, 46, 32, 0.4], [170, 146, 112, 0.34], [104, 86, 62, 0.45]];
+  for (const [cell, k] of [[30, 0.8], [9, 0.85], [3, 0.9], [1.25, 0.75]]) c.mottle(176, 292, 848, 732, cell, DIRT.map(([r, gg, b, a]) => [r, gg, b, a * k]));
   V();
   for (let k = 0; k < 6; k++) { g.strokeStyle = `rgba(30,24,18,${0.08 + k * 0.03})`; g.lineWidth = 2; roundRect(g, WALL, 11 - k * 2); g.stroke(); }
   // the pit: churned mud, fading in from the dirt at its edge, with wet patches, puddles and ruts
   for (let k = 0; k < 8; k++) { g.fillStyle = 'rgba(78,58,40,0.16)'; roundRect(g, PIT, -14 + k * 3); g.fill(); }
   g.fillStyle = '#5c4532'; roundRect(g, PIT, 10); g.fill();
   g.save(); roundRect(g, PIT, -10); g.clip(); I();
-  c.speckle(264, 376, 760, 648, 140000, ['rgba(40,28,18,0.4)', 'rgba(120,96,70,0.3)', 'rgba(70,52,36,0.45)']);
+  const MUD = [[40, 28, 18, 0.45], [120, 96, 70, 0.34], [70, 52, 36, 0.5]];
+  for (const [cell, k] of [[14, 0.8], [4, 0.9], [1.5, 0.8]]) c.mottle(264, 376, 760, 648, cell, MUD.map(([r, gg, b, a]) => [r, gg, b, a * k]));
   V();
   for (let i = 0; i < 60; i++) {   // wet patches
-    const x = CX + (rand() - 0.5) * 2 * (PIT.hx - 20), z = CZ + (rand() - 0.5) * 2 * (PIT.hz - 16);
-    g.fillStyle = `rgba(36,26,18,${0.12 + rand() * 0.2})`; g.beginPath(); g.ellipse(x, z, 8 + rand() * 26, 5 + rand() * 14, rand() * 3, 0, TAU); g.fill();
+    const x = CX + (rand() - 0.5) * 2 * (PIT.hx - 20), z = CZ + (rand() - 0.5) * 2 * (PIT.hz - 16), rx = 8 + rand() * 26, rz = 5 + rand() * 14, a = rand() * 3;
+    g.fillStyle = `rgba(36,26,18,${0.12 + rand() * 0.2})`; g.beginPath(); g.ellipse(x, z, rx, rz, a, 0, TAU); g.fill();
+    wets.push([x, z, rx, rz, a, 0.12]);
   }
   for (let i = 0; i < 18; i++) {   // puddles, with the sky in them
     const x = CX + (rand() - 0.5) * 2 * (PIT.hx - 40), z = CZ + (rand() - 0.5) * 2 * (PIT.hz - 30), rx = 4 + rand() * 9, rz = 2.5 + rand() * 5, a = rand() * 3;
     g.fillStyle = 'rgba(96,104,108,0.6)'; g.beginPath(); g.ellipse(x, z, rx, rz, a, 0, TAU); g.fill();
     g.fillStyle = 'rgba(170,184,194,0.35)'; g.beginPath(); g.ellipse(x - rx * 0.2, z - rz * 0.2, rx * 0.55, rz * 0.4, a, 0, TAU); g.fill();
+    wets.push([x, z, rx, rz, a, 0.25]);
   }
   g.lineCap = 'round';
   for (let i = 0; i < 140; i++) {   // ruts: tyre tracks round and round the pit, and across it
@@ -504,7 +514,11 @@ function paint() {
   g.strokeStyle = 'rgba(80,160,255,0.8)'; g.lineWidth = 1.5; g.beginPath(); g.arc(MAGNET.x, MAGNET.z, 9, 0, TAU); g.stroke();
   g.save(); g.translate(MAGNET.x - 22, MAGNET.z); g.rotate(-Math.PI / 2); g.font = 'bold 7px "Arial Black", Impact, sans-serif'; g.fillStyle = 'rgba(120,190,255,0.7)'; g.fillText('MAGNET', 0, 0); g.restore();
   // oil on the depot's floor and the boneyard's, and a red and white ring round each barrel's spot
-  for (let i = 0; i < 40; i++) { g.fillStyle = `rgba(14,12,10,${0.12 + rand() * 0.2})`; g.beginPath(); g.ellipse(752 + rand() * 90, 430 + rand() * 300, 4 + rand() * 10, 3 + rand() * 7, rand() * 3, 0, TAU); g.fill(); }
+  for (let i = 0; i < 40; i++) {
+    const x = 752 + rand() * 90, z = 430 + rand() * 300, rx = 4 + rand() * 10, rz = 3 + rand() * 7, a = rand() * 3;
+    g.fillStyle = `rgba(14,12,10,${0.12 + rand() * 0.2})`; g.beginPath(); g.ellipse(x, z, rx, rz, a, 0, TAU); g.fill();
+    wets.push([x, z, rx, rz, a, 0.15]);
+  }
   for (const p of BARRELS.spots) { g.strokeStyle = '#c23b2e'; g.lineWidth = 0.8; g.setLineDash([1.5, 1.5]); g.beginPath(); g.arc(p.x, p.z, 3.4, 0, TAU); g.stroke(); g.setLineDash([]); }
   // the boost strips: blue, with chevrons pointing the way they push (into the pit)
   for (const b of BOOSTS) {
@@ -515,6 +529,14 @@ function paint() {
   }
   // a ring under each pickup, in its colour, so you can see where one comes back
   for (const p of PICKUP_SPOTS) { const k = PICKUPS[p.kind]; g.strokeStyle = k.css; g.lineWidth = 1.1; g.beginPath(); g.arc(p.x, p.z, 6, 0, TAU); g.stroke(); g.globalAlpha = 0.25; g.fillStyle = k.css; g.fill(); g.globalAlpha = 1; }
+  // what the ground is, in the alpha: taken down to 0.5 on the hard ground, and by each wet patch's wetness
+  g.save(); g.globalCompositeOperation = 'destination-out'; g.fillStyle = 'rgba(0,0,0,0.5)';
+  roundRect(g, WALL); g.rect(0, 0, WX, WZ); g.fill('evenodd');                 // outside the ring
+  g.beginPath(); g.arc(SX, SZ, 57.5, 0, TAU); g.fill();                         // the sweeper's deck
+  g.fillRect(176, 430, 50, 164);                                                 // the press's bay
+  for (const b of BOOSTS) g.fillRect(b.x0, b.z0, b.x1 - b.x0, b.z1 - b.z0);     // the boost plates
+  for (const [x, z, rx, rz, a, k] of wets) { g.fillStyle = `rgba(0,0,0,${k})`; g.beginPath(); g.ellipse(x, z, rx, rz, a, 0, TAU); g.fill(); }
+  g.restore();
   I();
   if (!PHONE) return c.cv;
   // Phones get the floor at half the pixels (two a voxel, still finer than the speckle), as New York's: about 50 MB less
@@ -623,6 +645,8 @@ export default {
     finish();
   },
   ground: () => { seed = 7654321; return paint(); },
+  groundDetail: 'dirt',          // the floor's grain, ruts and thrown dirt (ground.js, dirt.js), over the ring's inside
+  rutBox: [CX - WALL.hx, CZ - WALL.hz, CX + WALL.hx, CZ + WALL.hz],
   spawn: { x: 560, z: 668, yaw: Math.atan2(CX - 560, CZ - 668) },
   spots: SPOTS,      // (modes/brawl.js picks among them itself)
   pit: { x: CX, z: CZ },   // where the fighting is (ai.js)

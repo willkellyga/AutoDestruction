@@ -16,7 +16,26 @@ export function canvasFor(base = '#79aa62', seed = 77) {
   let s = seed; const r = () => { s = (s * 1664525 + 1013904223) | 0; return ((s >>> 8) & 0xffff) / 65536; };
   const speckle = (xa, za, xb, zb, n, cols) => { for (let i = 0; i < n; i++) { g.fillStyle = cols[(r() * cols.length) | 0]; const x = Math.floor(xa + r() * (xb - xa)), z = Math.floor(za + r() * (zb - za)); rect(x, z, x + 1, z + 1); } };
   g.fillStyle = base; g.fillRect(0, 0, cv.width, cv.height);
-  return { cv, g, rect, speckle, r, GK };
+  // mottle(...): soft blotches about `cell` voxels across instead of hard flecks, for a ground the floor's shader gives
+  // its own fine grain (ground.js): a little canvas of random colours, one texel a cell, drawn up smooth over the box.
+  // cols are [r, g, b, most alpha].
+  const mottle = (xa, za, xb, zb, cell, cols) => {
+    const w = Math.ceil((xb - xa) / cell) + 2, h = Math.ceil((zb - za) / cell) + 2;
+    const sm = document.createElement('canvas'); sm.width = w; sm.height = h;
+    const sg = sm.getContext('2d'), img = sg.createImageData(w, h), d = img.data;
+    for (let i = 0; i < w * h; i++) { const c = cols[(r() * cols.length) | 0]; d[i * 4] = c[0]; d[i * 4 + 1] = c[1]; d[i * 4 + 2] = c[2]; d[i * 4 + 3] = c[3] * r() * 255; }
+    sg.putImageData(img, 0, 0);
+    // a big stretch is drawn up in two goes (to f times, then the rest of the way), which smooths away the diamonds one
+    // big stretch leaves
+    const f = clamp(Math.round(cell * GK / 4), 1, 4);
+    const mid = f > 1 ? document.createElement('canvas') : sm;
+    if (f > 1) { mid.width = w * f; mid.height = h * f; const mg = mid.getContext('2d'); mg.imageSmoothingEnabled = true; mg.imageSmoothingQuality = 'high'; mg.drawImage(sm, 0, 0, mid.width, mid.height); }
+    g.save(); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+    g.drawImage(mid, f / 2, f / 2, mid.width - f, mid.height - f, (xa - cell / 2) * GK, (za - cell / 2) * GK, (w - 1) * cell * GK, (h - 1) * cell * GK);
+    g.restore();
+    sm.width = sm.height = mid.width = mid.height = 1;
+  };
+  return { cv, g, rect, speckle, mottle, r, GK };
 }
 
 // ---- closing the build ------------------------------------------------------------------------------------------
