@@ -107,6 +107,12 @@ button.alt:hover { background: rgba(255,255,255,0.16); }
 .maps button.on { border-color: var(--hot); background: rgba(255,179,58,0.16); }
 .maps button:hover { background: rgba(255,255,255,0.12); }
 .map-blurb { font-size: 14px; opacity: 0.85; min-height: 2.6em; max-width: 520px; margin: 4px auto 0; }
+.levels { display: flex; gap: 6px; justify-content: center; align-items: center; margin: 8px auto 0; }   /* the race's difficulty */
+.levels[hidden] { display: none; }
+.levels span { font-size: 13px; opacity: 0.75; margin-right: 4px; }
+.levels button { pointer-events: auto; padding: 5px 14px; border-radius: 6px; border: 2px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.06); color: var(--ink); cursor: pointer; font: 900 italic 14px 'Trebuchet MS', system-ui, sans-serif; text-transform: uppercase; }
+.levels button.on { border-color: var(--hot); background: rgba(255,179,58,0.16); }
+.levels button:hover { background: rgba(255,255,255,0.12); }
 @media (max-width: 560px) { .maps { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; } }
 #over b.t { display: block; font-size: clamp(44px, 9vw, 70px); color: var(--hot); font-weight: 900; font-style: italic; text-transform: uppercase; -webkit-text-stroke: 2px #2a1a0a; }
 #over-l { font-size: 17px; margin-top: 10px; line-height: 1.6; }
@@ -134,6 +140,7 @@ body.touch #banner { top: 40%; }
   .title { font-size: 38px; -webkit-text-stroke: 2px #2a1a0a; text-shadow: 0 3px 0 #2a1a0a; }
   .maps { margin: 8px auto 2px; gap: 6px; } .maps button { padding: 5px 8px; } .maps button b { font-size: 14px; }
   .map-blurb { font-size: 12px; min-height: 0; }
+  .levels { margin-top: 4px; } .levels button { padding: 3px 10px; font-size: 12px; }
   .keys { margin: 8px auto; font-size: 12px; gap: 2px 16px; }
   .note { display: none; }
   button.go { font-size: 20px; padding: 9px 30px; } button.alt { font-size: 15px; padding: 8px 18px; }
@@ -234,6 +241,7 @@ body.touch #banner { top: 40%; }
 <div class="card" id="menu" hidden><div>
   <div class="title">Auto<em>Destruction</em></div>
   <div class="maps" id="maps"></div><div class="map-blurb" id="map-blurb"></div>
+  <div class="levels" id="levels" hidden><span>Rivals</span></div>
   <div class="keys">
     <span class="desk-only"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive</span><span class="desk-only"><kbd>Space</kbd> handbrake / drift</span>
     <span class="desk-only"><b>Mouse</b> aim (it pulls onto rivals)</span><span class="desk-only"><b>Wheel</b> camera distance</span>
