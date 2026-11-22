@@ -41,7 +41,8 @@ export const SURVIVAL = {
   // scrap: each zombie the player kills pays as it goes (HORDE.scrap); at the end, the place and the time lasted
   place: [300, 160, 90, 50, 25, 0],
   perMinute: 40,
-  patch: 0.5,                 // Keep going (after the win): the car's armour back up to at least this share of its most
+  patch: 1,                   // Keep going (after the win): the car's armour back up to at least this share of its most
+                              // (all of it: alone against the whole horde the coached car lasted 32 s on full armour, 16 s on half)
   aimAt: 40,                  // the aim assist looks at this many of the nearest
 };
 
@@ -128,8 +129,8 @@ export function makeSurvival(G) {
     if (MAP.breach) gates = gates.concat(MAP.breach(G) || []);
     for (let i = 0; i < S.surge; i++) { const g = pick(gates); horde.spawn(g.out.x + (Math.random() - 0.5) * 20, g.out.z + (Math.random() - 0.5) * 20, { entry: g.entry, speed: Math.random() < S.runners[0] ? HORDE.runner : undefined }); }
   }
-  // how this round's time stands against the best before it
-  const bestLine = (beat) => (beat ? (best0 ? `New best time! (the old one was ${clockText(best0)})` : 'New best time!') : `Best: ${clockText(best0)} (${clockText(best0 - clock)} short)`);
+  // how this round's time stands against the best before it (the first round here sets one)
+  const bestLine = (beat) => (!best0 ? `Your best to beat: ${clockText(clock)}` : beat ? `New best time! (the old one was ${clockText(best0)})` : `Best: ${clockText(best0)} (${clockText(best0 - clock)} short)`);
   // the round is over: a card with how it went. A win holds the round (the clock stops, the dead stop clawing) and
   // offers to keep going
   function finish(won) {
@@ -171,10 +172,10 @@ export function makeSurvival(G) {
       `Survived ${clockText(clock)} in all`,
       `Zombies killed: ${horde.byPlayer}`,
       `Scrap this round: ${scrap}`,
-      beat ? `Old best: ${best0 ? clockText(best0) : 'none yet'}` : bestLine(false),
+      beat && best0 ? `Old best: ${clockText(best0)}` : bestLine(beat),
     ];
     out = { won: true, place: 1, time: clock, overtime: clock - wonAt, zombies: horde.byPlayer, scrap, best: beat, bestWas: best0 };
-    G.over(beat ? 'New best time!' : 'Overrun', lines, rest);
+    G.over(beat && best0 ? 'New best time!' : 'Overrun', lines, rest);
   }
 
   return {
