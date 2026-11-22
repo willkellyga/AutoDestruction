@@ -3,8 +3,11 @@
 //     places, where the moon behind it shows as a pale patch. Lightning lights it from inside.
 //   - The fog: the colour of the murk at the foot of the sky, closer in than by day; and a low mist over the ground,
 //     drifting, that thins out close to the camera so what is near stays clear.
-//   - The light: main.js's sun is the moon, high in the north-west, cold and dim, and still casts the shadows; a fainter
-//     fill from the other side and a dark sky light, so the dead and the cars read from every side. Lit windows and
+//   - The light: eight floodlight towers stand outside the wall, two a side, each a bank of lamps high up aimed well into
+//     the base (Will, 2026-11-22: the camp was too dark and the dead washed out). main.js's sun is their light, warm
+//     white, and casts the shadows; the ground under each bank's cone is brighter still (the arena's floor layer), and
+//     the country past the wall gets little of it. A cold fill from the other side and a dark sky light keep the night
+//     round the edges, so the dead read warm on one side and blue on the other. Lit windows and
 //     lamps glow (look.dusk), and so do the cars' lamps.
 //   - Lightning: every few seconds, out past the walls, a bolt down from the cloud, two or three flashes that light the
 //     sky round it and the whole base, and thunder after it (the game's big boom, slowed down: audio.js), later the
@@ -24,16 +27,18 @@
 import * as THREE from 'three';
 import { look } from '../../../src/mesh.js';
 import { solid } from '../../../src/world.js';
-import { TAU, ADD, TONE, rng, noiseTile, BEAM_FRAG, glowSprites, lampPools, groundSpots, carLamps, commit, pixelAt, outOfReach } from './kit.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { TAU, ADD, TONE, rng, noiseTile, BEAM_FRAG, glowSprites, lampPools, groundSpots, carLamps, commit, pixelAt, outOfReach, floorLayer, towerBeams as bankBeams } from './kit.js';
 
 // the look: the murk (the fog, and the sky at its foot), the fog's start and end, the exposure, the sky light (sky
-// colour, ground colour, strength), the moon (the way to it, colour, strength), the fill (colour, strength, the way to
-// it), how much of the moon the world past the walls gets (backdrop.js), and the lightning (seconds between strikes,
-// least and most; how far off, least and most)
+// colour, ground colour, strength), the floodlights (the way their light comes from, colour, strength; the moon's
+// pale patch in the cloud is that way too), the fill (colour, strength, the way to it), how much of the floodlights the
+// world past the walls gets (backdrop.js), the ground under the banks (unlit, and how much brighter in a cone: kit.js
+// floorLayer), and the lightning (seconds between strikes, least and most; how far off, least and most)
 export const STORM = {
-  murk: 0x1c2321, fog: [70, 880], exposure: 1.18, hemi: [0x5f707a, 0x2b2b22, 1.15],
-  moon: [new THREE.Vector3(-0.45, 0.72, -0.53).normalize(), 0xb4c6e0, 1.35], fill: [0x4a5c70, 0.55, [0.6, 0.35, 0.72]],
-  spill: 0.4, strikes: [5, 14], far: [650, 1250],
+  murk: 0x1c2321, fog: [150, 1000], exposure: 1.18, hemi: [0x5f707a, 0x2b2b22, 1.1],
+  moon: [new THREE.Vector3(-0.45, 0.72, -0.53).normalize(), 0xffe9d0, 2.25], fill: [0x5a7290, 1.05, [0.6, 0.35, 0.72]],
+  spill: 0.2, floor: { base: 0.92, gain: 0.8, FK: 1.8 }, strikes: [5, 14], far: [650, 1250],
 };
 
 export function setup(L, { scene, renderer, sky, hemi, sun }) {
@@ -133,7 +138,7 @@ function groundMist(noise, [cx, cz]) {
       void main() {
         vec2 p = vW.xz / 140.0;
         float n = texture2D(noise, p + time * vec2(0.010, 0.004)).r * 0.6 + texture2D(noise, p * 2.6 - time * vec2(0.006, 0.013)).g * 0.4;
-        float a = smoothstep(0.15, 0.75, n) * 0.62 * smoothstep(10.0, 80.0, vFogDepth);
+        float a = smoothstep(0.15, 0.75, n) * 0.42 * smoothstep(10.0, 80.0, vFogDepth);
         gl_FragColor = vec4(col * (1.0 + 2.5 * flash), a);
         #include <fog_fragment>
         ${TONE}
@@ -275,6 +280,50 @@ function boltAt(mesh, x, top, z, eye, r) {
   const g = mesh.geometry; g.attributes.position.needsUpdate = true; g.setDrawRange(0, q * 6);
 }
 
+// ---- the floodlight towers --------------------------------------------------------------------------------------------
+// Each a steel lattice mast outside the wall (four legs leaning in, rings and crossed braces), a platform at the top and
+// a head of lamps, four by three, turned down at where its bank is aimed. Two draws for all of them: the steel (lit,
+// fogged) and the lamps' faces (unlit, bright enough to bloom, not fogged, so they show through the murk). Nothing
+// casts a shadow. per bank (maps/base.js): x, y (the head's middle), z, aim [x, z]
+function floodTowers(banks) {
+  const steel = [], lamps = [], o = new THREE.Object3D(), up = new THREE.Vector3(0, 1, 0);
+  const a = new THREE.Vector3(), b = new THREE.Vector3();
+  // a bar of thickness t from p to q
+  const bar = (p, q, t) => {
+    const L = p.distanceTo(q), g = new THREE.BoxGeometry(t, t, L);
+    o.position.copy(p).add(q).multiplyScalar(0.5); o.up.copy(up); o.lookAt(q); o.updateMatrix();
+    steel.push(g.applyMatrix4(o.matrix));
+  };
+  for (const B of banks) {
+    const top = B.y - 7, sec = 6, R0 = 6.5, R1 = 2.4;
+    const corner = (y, k) => { const r = R0 + (R1 - R0) * (y / top), cx = k & 1 ? 1 : -1, cz = k & 2 ? 1 : -1; return new THREE.Vector3(B.x + cx * r, y, B.z + cz * r); };
+    const ring = [0, 1, 3, 2];
+    for (let k = 0; k < 4; k++) bar(corner(0, k), corner(top, k), 0.9);
+    for (let s = 1; s <= sec; s++) {
+      const y0 = top * (s - 1) / sec, y1 = top * s / sec;
+      for (let e = 0; e < 4; e++) {
+        const k0 = ring[e], k1 = ring[(e + 1) % 4];
+        bar(corner(y1, k0), corner(y1, k1), 0.5);
+        bar(corner(y0, k0), corner(y1, k1), 0.35); bar(corner(y0, k1), corner(y1, k0), 0.35);
+      }
+    }
+    // the platform, and the head on its yoke, facing down its beam
+    const plat = new THREE.BoxGeometry(9, 0.8, 9); plat.translate(B.x, top + 0.4, B.z); steel.push(plat);
+    a.set(B.x, B.y, B.z); b.set(B.aim[0], 0, B.aim[1]);
+    bar(new THREE.Vector3(B.x, top + 0.8, B.z), a.clone().setY(B.y - 3), 0.8);
+    o.position.copy(a); o.up.copy(up); o.lookAt(b); o.updateMatrix();
+    const head = new THREE.BoxGeometry(19, 12, 2.2); head.translate(0, 0, -0.6); steel.push(head.applyMatrix4(o.matrix));
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) {
+      const f = new THREE.PlaneGeometry(3.7, 3.0); f.translate(-6.6 + i * 4.4, -3.8 + j * 3.8, 0.56); lamps.push(f.applyMatrix4(o.matrix));
+    }
+  }
+  const strip = (gs) => gs.map((g) => { const n = g.index ? g.toNonIndexed() : g; for (const k of Object.keys(n.attributes)) if (k !== 'position' && k !== 'normal') n.deleteAttribute(k); return n; });
+  const mast = new THREE.Mesh(mergeGeometries(strip(steel)), new THREE.MeshLambertMaterial({ color: 0x34383b }));
+  const faces = new THREE.Mesh(mergeGeometries(strip(lamps)), new THREE.MeshBasicMaterial({ color: new THREE.Color(3.2, 3.05, 2.75), fog: false }));
+  for (const m of [mast, faces]) { m.matrixAutoUpdate = false; m.castShadow = m.receiveShadow = false; }
+  return [mast, faces];
+}
+
 // ---- it all, and its frame --------------------------------------------------------------------------------------------
 const CAR_GLOWS = 4 * 40;
 export function make(L, { scene, renderer, camera, sky, hemi, sun, mats, bloom, quality, backdrop, sfx, setup: S }) {
@@ -285,8 +334,18 @@ export function make(L, { scene, renderer, camera, sky, hemi, sun, mats, bloom, 
   const towers = L.towers, fires = L.fires, beacons = L.beacons, nt = towers.length, nf = fires.length, nbk = beacons.length;
   const noise = sky.material.uniforms.noise.value;
   const drops = rain(2800), mist = groundMist(noise, L.middle), beams = towerBeams(nt), smokes = smoke(fires, 8, noise), flashBolt = bolt();
-  const gmax = nt + 2 * nbk + nf + CAR_GLOWS, glows = glowSprites(gmax), pools = lampPools(2 * nbk + 2 * 40), spots = groundSpots(nt + nf);
+  const banks = L.banks || [], nfl = banks.length;
+  const gmax = nfl + nt + 2 * nbk + nf + CAR_GLOWS, glows = glowSprites(gmax), pools = lampPools(2 * nbk + 2 * 40), spots = groundSpots(nt + nf);
   for (const o of [drops, mist, beams, smokes, flashBolt, glows, pools, spots]) scene.add(o);
+  // the floodlights: the towers, their beams in the rain and the light they put on the ground inside the wall
+  const floodBeams = nfl ? bankBeams(banks) : null;
+  if (nfl) {
+    for (const m of floodTowers(banks)) scene.add(m);
+    scene.add(floorLayer(L, STORM.floor));
+    floodBeams.material.uniforms.col.value.setRGB(0.15, 0.145, 0.13); floodBeams.material.uniforms.near.value = 120;
+    scene.add(floodBeams);
+  }
+  const floodGlow = banks.map((B) => [B.x + B.nx * 1.6, B.y, B.z + B.nz * 1.6, ...new THREE.Vector3(B.aim[0] - B.x, -B.y, B.aim[1] - B.z).normalize().toArray()]);
   const T = [sky.material.uniforms.time, drops.material.uniforms.time, mist.material.uniforms.time, smokes.material.uniforms.time];
   const F = [sky.material.uniforms.flash, drops.material.uniforms.flash, mist.material.uniforms.flash, smokes.material.uniforms.flash];
   const G = glows.geometry.attributes, gp = G.gp.array, gc = G.gc.array, gd = G.gd.array;
@@ -311,6 +370,7 @@ export function make(L, { scene, renderer, camera, sky, hemi, sun, mats, bloom, 
     q = n;
     drops.geometry.instanceCount = Math.round(drops.userData.n * (n <= 1 ? 1 : n <= 3 ? 0.6 : n === 4 ? 0.4 : 0.25));
     mist.visible = n <= 3; beams.visible = n <= 3;
+    if (floodBeams) { floodBeams.visible = n <= 3; }
     smokeOn = n <= 3; smokes.visible = smokeOn; smokes.geometry.instanceCount = n <= 1 ? smokes.userData.n : smokes.userData.n / 2;
     pooled = n <= 4; pools.visible = pooled;
   }
@@ -346,6 +406,8 @@ export function make(L, { scene, renderer, camera, sky, hemi, sun, mats, bloom, 
     if ((lockT -= dt) <= 0 && time > lockNext) { hunter = Math.floor(r() * nt); lockT = 5 + r() * 3; lockNext = time + 16 + r() * 10; }
     lock += ((lockT > 0 && player ? 1 : 0) - lock) * Math.min(1, dt * 1.6);
     let n = 0, k = 0;
+    // the floodlights' glare, facing down their beams (brighter in a flash: the rain round them lights up)
+    for (const [x, y, z, dx, dy, dz] of floodGlow) { gp.set([x, y, z, 26], n * 4); gc.set([2.5 + f, 2.45 + f, 2.3 + f, 1], n * 4); gd.set([dx, dy, dz, 0.7], n * 4); n++; }
     towers.forEach(([x, y, z], i) => {
       const cx = mx + (x - mx) * 0.2, cz = mz + (z - mz) * 0.2;
       let ax = cx + Math.sin(time * (0.21 + 0.03 * i) + i * 1.7) * 150, az = cz + Math.sin(time * (0.27 + 0.02 * i) + i * 2.3) * 120;

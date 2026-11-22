@@ -27,7 +27,7 @@
 //   5-6   off            off           off       on                   off
 import * as THREE from 'three';
 import { look } from '../../../src/mesh.js';
-import { TAU, ADD, TONE, rng, cloudStrip, BEAM_FRAG, glowSprites, lampPools, carLamps, commit, pixelAt, outOfReach } from './kit.js';
+import { TAU, ADD, TONE, rng, cloudStrip, BEAM_FRAG, glowSprites, lampPools, carLamps, commit, pixelAt, outOfReach, floorLayer, towerBeams } from './kit.js';
 
 // the look: the haze (the fog, and the sky at the horizon), the fog's start and end, the exposure, the sky light (sky
 // colour, ground colour, strength), the floodlight bank (colour, strength), the fill from the far tower (colour,
@@ -121,99 +121,6 @@ function stars(n) {
   return p;
 }
 
-// ---- the floor ----------------------------------------------------------------------------------------------------
-// The layer over the ground. What it draws scales what is under it: by its colour, plus its alpha (a blend that does
-// dst * (src + alpha)), so it can brighten as well as darken, up to twice, on any screen. How much, at each point of
-// the pit, is worked out once here into a small picture over the ring (a pixel about 5 voxels by 3, smoothed between):
-// the light a bank of lamps puts on a point of the floor is inside its cone (soft at the edge), less the further off
-// (as the square), and less the flatter it meets the floor, made 1 at the spot it is aimed at; the towers' pools add
-// up, saturating, a little cooler where they are bright. The layer stops at the ring wall (past it is the city's
-// ground, which has lamps of its own), and the fog takes it off with distance, as it does the ground.
-const FIELD = 128, FK = 1.5;   // the picture's size, and the most it brightens (stored over FK)
-function floorField(night) {
-  const R = night.ring, x0 = R.x - R.hx, z0 = R.z - R.hz, SX = 2 * R.hx / FIELD, SZ = 2 * R.hz / FIELD, data = new Uint8Array(FIELD * FIELD * 4);
-  const B = night.banks.map((b) => { const ax = b.aim[0] - b.x, ay = -b.y, az = b.aim[1] - b.z, D = Math.hypot(ax, ay, az); return [b.x, b.y, b.z, ax / D, ay / D, az / D, D]; });
-  const sm = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
-  for (let j = 0; j < FIELD; j++) for (let i = 0; i < FIELD; i++) {
-    const x = x0 + (i + 0.5) * SX, z = z0 + (j + 0.5) * SZ;
-    let pool = 0;
-    for (const [bx, by, bz, ax, ay, az, D] of B) {
-      const lx = x - bx, ly = -by, lz = z - bz, d2 = lx * lx + ly * ly + lz * lz, d = Math.sqrt(d2);
-      pool += sm(0.9, 0.995, (lx * ax + ly * ay + lz * az) / d) * Math.min(1.5, D * D / d2) * ((-ly / d) / -ay);
-    }
-    const lit = 1 - Math.exp(-0.7 * pool), f = 0.72 + 0.55 * lit;
-    const o = (j * FIELD + i) * 4;
-    data[o] = Math.round(f * (1 - 0.05 * lit) / FK * 255); data[o + 1] = Math.round(f * (1 - 0.02 * lit) / FK * 255); data[o + 2] = Math.min(255, Math.round(f * (1 + 0.05 * lit) / FK * 255)); data[o + 3] = 255;
-  }
-  const t = new THREE.DataTexture(data, FIELD, FIELD); t.magFilter = t.minFilter = THREE.LinearFilter; t.needsUpdate = true;
-  return t;
-}
-function floorLayer(night) {
-  const R = night.ring;
-  const m = new THREE.ShaderMaterial({
-    transparent: true, depthWrite: false, fog: true, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2,
-    blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.DstColorFactor, blendDst: THREE.SrcAlphaFactor,
-    blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
-    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { field: { value: null }, mid: { value: new THREE.Vector2(R.x, R.z) }, ring: { value: new THREE.Vector3(R.hx, R.hz, R.r) } }]),
-    vertexShader: `varying vec3 vW;
-      #include <fog_pars_vertex>
-      void main() { vW = (modelMatrix * vec4(position, 1.0)).xyz; vec4 mvPosition = viewMatrix * vec4(vW, 1.0); gl_Position = projectionMatrix * mvPosition;
-        #include <fog_vertex>
-      }`,
-    fragmentShader: `uniform sampler2D field; uniform vec2 mid; uniform vec3 ring; varying vec3 vW;
-      #include <fog_pars_fragment>
-      void main() {
-        vec2 p = vW.xz - mid, q = abs(p) - (ring.xy - ring.z);
-        if (length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) > ring.z) discard;   // (past the ring wall's line)
-        vec3 f = texture2D(field, p / (2.0 * ring.xy) + 0.5).rgb * ${FK.toFixed(2)};
-        #ifdef USE_FOG
-          f = mix(f, vec3(1.0), smoothstep(fogNear, fogFar, vFogDepth));
-        #endif
-        f = linearToOutputTexel(vec4(f, 1.0)).rgb;   // (drawn straight to the screen, low on the ladder, what it scales is in the screen's colours)
-        float a = max(max(f.r, max(f.g, f.b)) - 1.0, 0.0);
-        gl_FragColor = vec4(max(f - a, 0.0), a);
-      }`,
-  });
-  m.uniforms.field.value = floorField(night);   // (set after the merge, which would copy it)
-  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2 * R.hx, 2 * R.hz), m);
-  mesh.rotation.x = -Math.PI / 2; mesh.position.set(R.x, 0.02, R.z); mesh.updateMatrix(); mesh.matrixAutoUpdate = false;
-  mesh.renderOrder = -1;   // first of what is drawn after the solid things: the skid marks and anything else on the ground go over it
-  return mesh;
-}
-
-// ---- beams --------------------------------------------------------------------------------------------------------
-// the floodlights' beams: one cone a bank, from its lamps to where it is aimed; the banks facing along the arena first,
-// then those across it (so the quality ladder can draw only the first four)
-function towerBeams(banks) {
-  const S = 20, list = [...banks.filter((b) => b.nx), ...banks.filter((b) => !b.nx)];
-  const P = [], Nn = [], T = [], I = [];
-  const from = new THREE.Vector3(), to = new THREE.Vector3(), ax = new THREE.Vector3(), u = new THREE.Vector3(), w = new THREE.Vector3();
-  for (const b of list) {
-    from.set(b.x + b.nx * 1.5, b.y, b.z + b.nz * 1.5); to.set(b.aim[0], 0, b.aim[1]);
-    ax.subVectors(to, from); const L = ax.length(); ax.normalize();
-    u.crossVectors(ax, new THREE.Vector3(0, 1, 0)).normalize(); w.crossVectors(u, ax);
-    const r0 = 5, r1 = L * 0.3, base = P.length / 3;
-    for (let k = 0; k <= S; k++) {
-      const a = k / S * TAU, cx = Math.cos(a), sx = Math.sin(a);
-      for (const [t, rad] of [[0, r0], [1, r1]]) {
-        P.push(from.x + ax.x * L * t + (u.x * cx + w.x * sx) * rad, from.y + ax.y * L * t + (u.y * cx + w.y * sx) * rad, from.z + ax.z * L * t + (u.z * cx + w.z * sx) * rad);
-        Nn.push(u.x * cx + w.x * sx, u.y * cx + w.y * sx, u.z * cx + w.z * sx); T.push(t);
-      }
-      if (k < S) { const i = base + k * 2; I.push(i, i + 1, i + 3, i, i + 3, i + 2); }
-    }
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(Nn, 3)); g.setAttribute('t', new THREE.Float32BufferAttribute(T, 1)); g.setIndex(I);
-  const m = new THREE.ShaderMaterial({
-    ...ADD, side: THREE.DoubleSide, uniforms: { col: { value: new THREE.Color(0.25, 0.26, 0.285) }, near: { value: 150 } },
-    vertexShader: `attribute float t; varying vec3 vN; varying vec3 vW; varying float vT;
-      void main() { vN = normal; vW = position; vT = t; gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0); }`,
-    fragmentShader: BEAM_FRAG,
-  });
-  const mesh = new THREE.Mesh(g, m); mesh.frustumCulled = false; mesh.matrixAutoUpdate = false;
-  mesh.userData.per = S * 6;   // indices a beam
-  return mesh;
-}
 // The searchlights: long thin cones from each lamp up into the sky, leaning out away from the arena and swinging slowly
 // to and fro, each at its own pace. The cones are laid out upright and turned in the shader, so they cost nothing to move.
 function searchBeams(spots, centre) {

@@ -37,6 +37,12 @@ const CORNERS = [[17, 17], [WX - 17, 17], [17, WZ - 17], [WX - 17, WZ - 17]];   
 // hangar's apron, and south of the barracks), all clear of the runway, the road and the places to line up
 const DRUMS = [[196, 64], [48, 120], [286, 108], [46, 300], [118, 372], [470, 246]];
 const WRECKS = [[60, 160, true], [200, 330, true]];
+// the floodlight towers outside the wall (looks/storm.js): two a side, either side of its gate, 32 out in the cleared
+// strip, each a bank of lamps 80 up aimed 200 in (and a little toward the middle), so the inside of the base is lit
+// and the dead stand out. Not part of the world: nothing can reach them.
+const FLOODS = [];
+for (const f of [0.25, 0.75]) FLOODS.push({ x: WX * f, z: -32, nx: 0, nz: 1 }, { x: WX * f, z: WZ + 32, nx: 0, nz: -1 }, { x: -32, z: WZ * f, nx: 1, nz: 0 }, { x: WX + 32, z: WZ * f, nx: -1, nz: 0 });
+for (const b of FLOODS) { b.y = 80; b.aim = [b.x + b.nx * 200 + (WX / 2 - b.x) * 0.15 * Math.abs(b.nz), b.z + b.nz * 200 + (WZ / 2 - b.z) * 0.15 * Math.abs(b.nx)]; }
 // the gate pillars whose lamps are red beacons: one at each gate (the middle of the pillar's top)
 const BEACONS = [[280, 7], [230, 408], [7, 182], [504, 232]];
 
@@ -510,6 +516,7 @@ export default {
     kind: 'storm', middle: [GX, GZ], towers: CORNERS.map(([x, z]) => [x + 0.5, 25.5, z + 0.5]),
     fires: [...DRUMS.map(([x, z]) => [x, 5, z, 1]), ...WRECKS.map(([x, z]) => [x + 0.5, 6, z + 0.5, 1.6])],
     beacons: BEACONS.map(([x, z]) => [x + 0.5, 15.5, z + 0.5]),
+    banks: FLOODS, ring: { x: (W1 + 1 + E0) / 2, z: (N1 + 1 + S0) / 2, hx: (E0 - W1 - 1) / 2, hz: (S0 - N1 - 1) / 2, r: 2 },
   },
   // The country past the wall (../backdrops/wilds.js): forest and hills, the road out with what was left on it, a radio
   // mast, a farm burning to the east and the town the road goes to burning on the horizon. x east, z south, in voxels.
