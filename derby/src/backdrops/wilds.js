@@ -98,7 +98,10 @@ export function wilds(kit) {
       const over = !burnt && type === 'car' && rand() < 0.12 ? Math.PI / 2 * side : 0;
       const top = vehicle(px, pz, dir + slew + (rand() < 0.5 ? Math.PI : 0), type, burnt, over);
       if (burnt && fires.length < 6 && rand() < 0.45) fires.push([px, height(px, pz) + top, pz, type === 'bus' ? 16 : 10]);
-      else if (!burnt && k % 5 === 2) for (const e of [-1, 1]) pt(pts.ave, px + Math.cos(dir) * 3.4 * e, height(px, pz) + 2.6, pz - Math.sin(dir) * 3.4 * e, 3.5, 7, [1, 0.55, 0.08], rand() * 0.2);
+      // (and near the gate every one still whole has them going, so the first of the road shows in the storm; those
+      // blink by their place, not by rand(), so the rest of the wilds come out where they were). The lamps stand just
+      // out from the car's sides (inside them, the body hid them from most ways round), big enough to read in the rain.
+      else if (!burnt && (k % 5 === 2 || s < L.wrecks.from + 300)) for (const e of [-1, 1]) pt(pts.ave, px + Math.cos(dir) * 4.2 * e, height(px, pz) + 2.6, pz - Math.sin(dir) * 4.2 * e, 5.5, 7, [1, 0.55, 0.08], k % 5 === 2 ? rand() * 0.2 : (k * 0.37) % 1);
       s += 26 + rand() * 50 * (s / L.wrecks.to + 0.4); k++;
     }
     // a few on the tracks too
