@@ -5,6 +5,9 @@
 // The marks are one mesh: a ring of quads, DRIFT.marks of them (half on phones), each the strip between where a back
 // wheel was and where it is. A new quad takes the oldest one's place, and the oldest fifth fade out in the shader as
 // they wait their turn, so it costs one draw and a few vertices sent a frame however much anyone drifts.
+//
+// On dirt (soft(x, z), from ground.js, says how much the ground there is) there are no black marks and no white smoke:
+// the wheels cut ruts and throw the dirt up instead (dirt.js).
 import * as THREE from 'three';
 import { dust, sparks } from '../../src/sim.js';
 import { DRIFT } from './tuning.js';
@@ -13,7 +16,7 @@ const SEG = 1.4;      // voxels a wheel travels between one piece of mark and th
 const Y = 0.05;       // just above the ground
 const SMOKE_FAR = 260;
 
-export function makeDrift({ scene, camera, mobile, el }) {
+export function makeDrift({ scene, camera, mobile, el, soft = null }) {
   const N = Math.round(DRIFT.marks * (mobile ? 0.5 : 1));
   const pos = new Float32Array(N * 6 * 3), aa = new Float32Array(N * 6 * 2);   // per vertex: alpha, and the piece's number
   const g = new THREE.BufferGeometry();
@@ -69,7 +72,7 @@ export function makeDrift({ scene, camera, mobile, el }) {
     for (let k = 0; k < 2; k++) {
       const T = tr[k], lx = k ? -R.x : R.x;
       const x = c.x + lx * co + R.z * s, z = c.z - lx * s + R.z * co;
-      if (!on) { T.on = false; continue; }
+      if (!on || (soft && soft(x, z) > 0.5)) { T.on = false; continue; }
       // the strip's edges lie across the way the wheel is going
       const dx = x - (T.x ?? x), dz = z - (T.z ?? z), d = Math.hypot(dx, dz);
       if (!T.on || d > 8) { T.on = true; T.x = x; T.z = z; T.a = 0; T.e = null; continue; }   // a new mark (or the car was moved)

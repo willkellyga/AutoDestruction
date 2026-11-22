@@ -30,6 +30,9 @@ import { makeHazards } from './hazards.js';
 import { makeQuality } from './quality.js';
 import { makeDrift } from './drift.js';
 import { makeBackdrop } from './backdrop.js';
+import { nightLook, makeNight } from './night.js';
+import { makeGround } from './ground.js';
+import { makeDirt } from './dirt.js';
 
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -62,12 +65,15 @@ sky.renderOrder = -2; scene.add(sky);
 // a dark slab on the horizon. The clear colour is the haze too, so a gap anywhere shows sky, not black.
 sky.scale.setScalar(camera.far * 0.95 / 2200);
 const placeSky = () => sky.position.copy(camera.position);
-scene.add(new THREE.HemisphereLight(0xcfe4ff, 0x9a8460, 1.25));
+const hemi = new THREE.HemisphereLight(0xcfe4ff, 0x9a8460, 1.25); scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff0d2, 2.7);
 sun.castShadow = true; sun.shadow.mapSize.set(MOBILE ? 2048 : 4096, MOBILE ? 2048 : 4096);
 const sc = sun.shadow.camera; sc.left = -220; sc.right = 220; sc.top = 200; sc.bottom = -200; sc.near = 20; sc.far = 1100;
 sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.8;
 scene.add(sun); scene.add(sun.target);
+// A map that runs at night (the arena) has its own sky, fog and light (night.js); the sun is then its floodlight bank,
+// which shines from the south-east tower, the way the sun already does
+if (MAP.night) nightLook({ scene, renderer, sky, hemi, sun });
 const SUN_DIR = new THREE.Vector3(0.55, 0.95, 0.35).normalize();
 const SUN_R = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), SUN_DIR).normalize(), SUN_U = new THREE.Vector3().crossVectors(SUN_DIR, SUN_R);
 const _sunC = new THREE.Vector3();
@@ -80,14 +86,8 @@ function followSun(x, z) {   // the shadow box follows the player, in whole texe
 
 // ---- the map: built once as the page loads (maps/index.js picks which) ------------------------------------------
 MAP.build();
+const floor = makeGround({ scene, renderer, MAP, mobile: MOBILE });   // the map's painted floor, and on dirt its detail and ruts (ground.js)
 {
-  const gTex = new THREE.CanvasTexture(MAP.ground()); gTex.colorSpace = THREE.SRGBColorSpace; gTex.anisotropy = 8;
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, 0, 0, WX, 0, 0, WX, 0, WZ, 0, 0, WZ]), 3));
-  g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([0, 1, 1, 1, 1, 0, 0, 0]), 2));
-  g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array([0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0]), 3));
-  g.setIndex([0, 2, 1, 0, 3, 2]);
-  const ground = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ map: gTex })); ground.receiveShadow = true; scene.add(ground);
   // the land past the edge of the map: one plain colour, or a map's own world round it (the arena's city: backdrop.js)
   if (!MAP.backdrop) {
     const outer = new THREE.Mesh(new THREE.PlaneGeometry(6400, 6400), new THREE.MeshLambertMaterial({ color: MAP.outer ?? 0x7fb069, depthWrite: false }));
@@ -96,7 +96,8 @@ MAP.build();
 }
 const backdrop = MAP.backdrop ? makeBackdrop({ scene, map: MAP, mobile: MOBILE, viewH: () => renderer.domElement.height, follow: () => player }) : null;
 initSim(scene);
-const drifts = makeDrift({ scene, camera, mobile: MOBILE, el: $('drift') });   // skid marks, tyre smoke, the drift meter
+const drifts = makeDrift({ scene, camera, mobile: MOBILE, el: $('drift'), soft: floor.dirtAt });   // skid marks, tyre smoke, the drift meter
+const dirt = makeDirt({ scene, camera, renderer, floor, MAP, mobile: MOBILE });   // ruts, rooster tails, dust and clods off the wheels
 look.detail.value = 1; look.dusk.value = 0;
 cfg.dust = 0.55; cfg.hang = 0.2;
 toughen();   // sturdier buildings than the town's own (sturdy.js, tuning.js BUILDINGS)
@@ -181,6 +182,7 @@ hooks.bodyDown = (b) => {
 };
 const scorches = []; let scorchN = 0, scorchMat = null;
 hooks.scorch = (x, z, r) => {
+  dirt.blast(x, z, r);   // on the dirt a blast digs a crater and throws clods
   if (!scorchMat) {
     const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
     gr.addColorStop(0, 'rgba(20,16,14,0.8)'); gr.addColorStop(0.55, 'rgba(30,24,20,0.45)'); gr.addColorStop(1, 'rgba(30,24,20,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
@@ -942,6 +944,9 @@ function resize() {
 }
 addEventListener('resize', resize); resize();
 const quality = makeQuality({ renderer, composer, bloom: composer.passes[1], scene, camera, sun, resize, playing: () => game.state === 'play', mobile: MOBILE });
+// the night show's beams, glows and lamps (night.js), on a map that runs at night (the city round it is out of the
+// floodlights' reach)
+const night = MAP.night ? makeNight({ scene, renderer, camera, sky, mats, bloom: composer.passes[1], quality, night: MAP.night, backdrop }) : null;
 let last = performance.now();
 function frame(now) {
   requestAnimationFrame(frame);
@@ -982,6 +987,8 @@ function step(dt) {
   stepSim(dt);
   civ.update(dt, false); civ.packFar && civ.packFar();
   fx.update(dt); debris.update(dt);
+  dirt.step(dt, cars, quality.step);
+  if (night) night.step(dt, cars);
   game.shake = Math.max(0, game.shake - dt * 2.4);
   game.hurt = Math.max(0, (game.hurt || 0) - dt * 1.4); grade.uniforms.hurt.value = game.hurt;
   if (toastT > 0 && (toastT -= dt) <= 0) $('toast').classList.remove('on');
@@ -1010,4 +1017,4 @@ followSun(player.x, player.z);
 const loadEl = $('loading'); if (loadEl) loadEl.hidden = true;
 $('menu').hidden = false;
 requestAnimationFrame((t) => { last = t; frame(t); });
-window.__derby = { touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, sfx, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop };
+window.__derby = { renderer, night, touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, sfx, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop };
