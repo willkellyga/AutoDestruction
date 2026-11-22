@@ -109,16 +109,19 @@ const MAKE = {
   factory: () => ({ wall: pick([M.BRICK, M.BRICK2]), name: pick(['MILL', 'WORKS', 'SUGAR', 'SOAP']), title: 'Warehouse', car: 0 }),
 };
 // what each district is made of: [kind, weight, options]
+// Will, 2026-11-22: more of the big buildings, so it reads as New York (and there is more city to wreck). Midtown and the
+// financial district are nearly all towers and taller; the apartment houses on the west and east sides and a few in
+// Harlem, the village and Brooklyn's river edge stand where brownstones were. Nothing goes above the King Tower.
 const DIST = {
-  X: [['tenement', 40, [4, 6]], ['brownstone', 20], ['rowhouse', 10], ['shop', 10], ['flats', 8, [5, 7]], ['church', 3], ['park', 3], ['cinema', 3], ['carpark', 3]],
-  U: [['brownstone', 50], ['tenement', 30, [4, 5]], ['shop', 6], ['church', 5], ['cinema', 5], ['park', 4]],
-  W: [['brownstone', 40], ['apts', 35, [8, 12]], ['tenement', 15, [5, 6]], ['shop', 5], ['church', 5]],
-  E: [['apts', 42, [8, 12]], ['brownstone', 36], ['flats', 10, [6, 8]], ['shop', 6], ['church', 6]],
-  M: [['deco', 56, [10, 16]], ['tower', 30, [9, 15]], ['loft', 6, [5, 6]], ['cinema', 5], ['shop', 3]],
+  X: [['tenement', 36, [5, 6]], ['flats', 18, [6, 8]], ['apts', 10, [8, 11]], ['brownstone', 14], ['rowhouse', 6], ['shop', 8], ['church', 3], ['park', 2], ['cinema', 2], ['carpark', 1]],
+  U: [['brownstone', 34], ['tenement', 26, [5, 6]], ['apts', 24, [9, 12]], ['shop', 5], ['church', 5], ['cinema', 4], ['park', 2]],
+  W: [['apts', 58, [11, 15]], ['brownstone', 18], ['tower', 10, [11, 14]], ['tenement', 8, [5, 6]], ['church', 3], ['shop', 3]],
+  E: [['apts', 56, [11, 15]], ['tower', 14, [11, 15]], ['brownstone', 16], ['flats', 8, [7, 8]], ['church', 3], ['shop', 3]],
+  M: [['deco', 54, [13, 17]], ['tower', 40, [12, 17]], ['cinema', 3], ['shop', 3]],
   T: [['billboard', 100]],
-  V: [['loft', 35, [4, 6]], ['tenement', 30, [4, 6]], ['brownstone', 20], ['shop', 8], ['cinema', 3], ['church', 2], ['park', 2]],
-  F: [['deco', 60, [11, 17]], ['tower', 28, [10, 16]], ['church', 4], ['loft', 4, [5, 6]], ['plaza', 4]],
-  B: [['brownstone', 40], ['rowhouse', 14], ['shop', 14], ['loft', 10, [3, 4]], ['factory', 6], ['park', 6], ['cottage', 4], ['carpark', 3], ['church', 3]],
+  V: [['loft', 32, [5, 7]], ['tenement', 24, [5, 6]], ['apts', 14, [9, 12]], ['brownstone', 14], ['tower', 6, [9, 12]], ['shop', 6], ['cinema', 2], ['church', 2]],
+  F: [['deco', 54, [13, 17]], ['tower', 40, [13, 17]], ['church', 3], ['plaza', 3]],
+  B: [['brownstone', 36], ['rowhouse', 12], ['shop', 12], ['loft', 12, [4, 6]], ['apts', 8, [8, 10]], ['factory', 6], ['park', 6], ['cottage', 3], ['carpark', 3], ['church', 2]],
 };
 const NAMES = { X: 'bronx', U: 'harlem', W: 'west', E: 'east', M: 'midtown', T: 'times', V: 'village', F: 'downtown', B: 'brooklyn' };
 const JOINS = new Set(['brownstone', 'tenement']);   // these stand wall to wall along a street
