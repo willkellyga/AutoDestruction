@@ -335,16 +335,20 @@ function wreck(x, z, alongX) {
 }
 
 // ---- the painted ground -----------------------------------------------------------------------------------------------
+// The open ground is dirt, and the floor's shader lays its fine grain, stones and the ruts over it (ground.js:
+// MAP.groundDetail), so the paint there is soft blotches at a few sizes rather than a fleck a voxel. The slabs, the road,
+// the runway and the helipad are hard (the paint's alpha is taken down to a half over them at the end), and keep theirs.
 function ground() {
-  const c = canvasFor('#a39874', 4242), { g, rect, speckle } = c;
+  const c = canvasFor('#a39874', 4242), { g, rect, speckle, mottle } = c;
   // (sandy browns, not greens: the dead are green, and should stand out on it)
-  speckle(0, 0, WX, WZ, 50000, ['rgba(120,104,72,0.3)', 'rgba(176,160,120,0.3)', 'rgba(190,178,140,0.3)', 'rgba(108,96,70,0.25)']);
+  const SAND = [[120, 104, 72, 0.4], [176, 160, 120, 0.36], [190, 178, 140, 0.34], [108, 96, 70, 0.36]];
+  for (const [cell, k] of [[24, 0.8], [7, 0.85], [2.5, 0.9], [1.25, 0.7]]) mottle(0, 0, WX, WZ, cell, SAND.map(([r, gg, b, a]) => [r, gg, b, a * k]));
   // a few patches of dead grass, gone straw-coloured
-  for (let i = 0; i < 10; i++) { const x = c.r() * WX, z = c.r() * WZ, w = 20 + c.r() * 50, d = 14 + c.r() * 34; g.fillStyle = 'rgba(176,160,96,0.3)'; rect(x, z, x + w, z + d); speckle(x, z, x + w, z + d, 500, ['rgba(150,132,80,0.4)', 'rgba(196,180,120,0.35)']); }
+  for (let i = 0; i < 10; i++) { const x = c.r() * WX, z = c.r() * WZ, w = 20 + c.r() * 50, d = 14 + c.r() * 34; g.fillStyle = 'rgba(176,160,96,0.3)'; rect(x, z, x + w, z + d); mottle(x, z, x + w, z + d, 1.5, [[150, 132, 80, 0.45], [196, 180, 120, 0.4]]); }
   // the ring road inside the wall: packed dirt with ruts
   g.fillStyle = '#8f7e5d';
   rect(W1, N1, WX - 7, RING); rect(W1, WZ - RING, WX - 7, S0); rect(W1, N1, RING, S0); rect(WX - RING, N1, E0, S0);
-  speckle(W1, N1, WX - 7, S0, 30000, ['rgba(70,58,40,0.3)', 'rgba(170,150,110,0.3)']);
+  for (const cell of [6, 2]) mottle(W1, N1, E0, S0, cell, [[70, 58, 40, 0.4], [170, 150, 110, 0.36]]);
   g.fillStyle = 'rgba(62,52,36,0.35)';
   for (const o of [16, 28]) { rect(o, o, WX - o, o + 1.2); rect(o, WZ - o - 1.2, WX - o, WZ - o); rect(o, o, o + 1.2, WZ - o); rect(WX - o - 1.2, o, WX - o, WZ - o); }
   // aprons: concrete slabs in front of the hangar, round headquarters and in the motor pool, with joints and oil
@@ -352,17 +356,16 @@ function ground() {
     g.fillStyle = col; rect(x0, z0, x1, z1); speckle(x0, z0, x1, z1, Math.round((x1 - x0) * (z1 - z0) / 4), ['rgba(255,250,235,0.18)', 'rgba(60,56,50,0.16)']);
     g.fillStyle = joint; for (let x = x0; x < x1; x += 16) rect(x, z0, x + 0.25, z1); for (let z = z0; z < z1; z += 16) rect(x0, z, x1, z + 0.25);
   };
-  slabs(HANGAR.x0 - 8, HANGAR.z0 - 4, HANGAR.x1 + 8, RUN[0], '#aaa69b');
-  slabs(HQ.x0 - 12, HQ.z0 - 8, HQ.x1 + 12, HQ.z1 + 52, '#b8b2a3');
-  slabs(POOL.x0, POOL.z0, POOL.x1, POOL.z1, '#8f8c84');
-  slabs(TANKS[0][0] - 16, POOL.z0, WX - RING, POOL.z1, '#9b978e');
+  const SLABS = [[HANGAR.x0 - 8, HANGAR.z0 - 4, HANGAR.x1 + 8, RUN[0], '#aaa69b'], [HQ.x0 - 12, HQ.z0 - 8, HQ.x1 + 12, HQ.z1 + 52, '#b8b2a3'],
+    [POOL.x0, POOL.z0, POOL.x1, POOL.z1, '#8f8c84'], [TANKS[0][0] - 16, POOL.z0, WX - RING, POOL.z1, '#9b978e']];
+  for (const s of SLABS) slabs(...s);
   for (let i = 0; i < 16; i++) { const x = POOL.x0 + c.r() * (POOL.x1 - POOL.x0), z = POOL.z0 + c.r() * (POOL.z1 - POOL.z0), r = 2 + c.r() * 5; g.fillStyle = 'rgba(30,28,26,0.3)'; g.beginPath(); g.ellipse(x * c.GK, z * c.GK, r * c.GK, r * 0.7 * c.GK, c.r() * 3, 0, 6.3); g.fill(); }
   // the parade square: white lines where the companies form up
   g.fillStyle = 'rgba(240,236,224,0.6)';
   for (let k = 0; k < 4; k++) rect(HQ.x0 + 6 + k * 18, HQ.z1 + 30, HQ.x0 + 18 + k * 18, HQ.z1 + 30.6);
   rect(HQ.x0 - 8, HQ.z1 + 4, HQ.x1 + 8, HQ.z1 + 4.6); rect(HQ.x0 - 8, HQ.z1 + 46, HQ.x1 + 8, HQ.z1 + 46.6);
   // gravel round the barracks, and paths to the doors
-  g.fillStyle = '#ab9f84'; rect(44, 250, 232, 290); speckle(44, 250, 232, 290, 3000, ['rgba(90,80,60,0.3)', 'rgba(220,210,190,0.3)']);
+  g.fillStyle = '#ab9f84'; rect(44, 250, 232, 290); mottle(44, 250, 232, 290, 1.25, [[90, 80, 60, 0.4], [220, 210, 190, 0.4]]);
   // the main road, north to south
   g.fillStyle = '#56585c'; rect(ROAD[0], N1, ROAD[1], S0);
   speckle(ROAD[0], N1, ROAD[1], S0, 14000, ['rgba(30,32,38,0.25)', 'rgba(120,124,130,0.18)']);
@@ -395,6 +398,15 @@ function ground() {
     g.fillStyle = blood ? 'rgba(96,24,18,0.35)' : 'rgba(28,24,20,0.3)';
     g.beginPath(); g.ellipse(x * c.GK, z * c.GK, r * c.GK, r * (0.5 + c.r() * 0.5) * c.GK, c.r() * 3, 0, 6.3); g.fill();
   }
+  // what the ground is, in the alpha: the concrete and the tarmac taken down to a half (no grain, no ruts, no dirt thrown)
+  g.save(); g.globalCompositeOperation = 'destination-out'; g.fillStyle = 'rgba(0,0,0,0.5)';
+  g.beginPath();
+  for (const [x0, z0, x1, z1] of SLABS) g.rect(x0 * c.GK, z0 * c.GK, (x1 - x0) * c.GK, (z1 - z0) * c.GK);
+  g.rect(ROAD[0] * c.GK, N1 * c.GK, (ROAD[1] - ROAD[0]) * c.GK, (S0 - N1) * c.GK);
+  g.rect(W1 * c.GK, RUN[0] * c.GK, (E0 - W1) * c.GK, (RUN[1] - RUN[0]) * c.GK);
+  g.moveTo((PAD.x + PAD.r) * c.GK, PAD.z * c.GK); g.arc(PAD.x * c.GK, PAD.z * c.GK, PAD.r * c.GK, 0, 6.3);
+  g.fill('nonzero');
+  g.restore();
   return c.cv;
 }
 
@@ -432,7 +444,30 @@ export default {
     fires: [...DRUMS.map(([x, z]) => [x, 5, z, 1]), ...WRECKS.map(([x, z]) => [x + 0.5, 6, z + 0.5, 1.6])],
     beacons: BEACONS.map(([x, z]) => [x + 0.5, 15.5, z + 0.5]),
   },
+  // The country past the wall (../backdrops/wilds.js): forest and hills, the road out with what was left on it, a radio
+  // mast, a farm burning to the east and the town the road goes to burning on the horizon. x east, z south, in voxels.
+  backdrop: {
+    kind: 'wilds', seed: 5151,
+    world: [0, 0, WX, WZ],
+    view: { x: WX / 2, z: WZ / 2 },
+    sand: 0xa39874,                           // the base's own ground, for the cleared strip outside the wall
+    clear: 100,                               // that strip: open ground, no trees or wrecks (the horde comes in over it)
+    far: 1950,                                // no pines further than this from the middle of the base
+    hills: { flat: 170, base: 30, amp: 260 }, // flat this far out, then rising to hills this high
+    // the road south out of the gate, down its valley to the town, and the dirt tracks out of the other three gates
+    road: [[GX, WZ - 2], [GX, 560], [236, 760], [150, 1000], [60, 1280], [-40, 1560], [-110, 1790]], roadW: 40,
+    tracks: [[[GX, 2], [GX, -160], [300, -420], [420, -760]], [[2, GZ], [-180, 214], [-460, 160]], [[WX - 2, GZ], [700, 236], [980, 380]]],
+    wrecks: { from: 110, to: 980, checkpoint: 150 },   // the cars left on the road from and to (along it), and the army's checkpoint
+    town: { x: -150, z: 1950, r: 250 },
+    farm: { x: 1000, z: 420 },
+    mast: { x: -560, z: -480, h: 120 },
+    pines: { count: 4200, mobile: 2400 },
+    smoke: 7,                                 // columns of smoke over the town
+    wind: [0.22, -0.06],                      // which way the smoke leans, a share of its height
+  },
   build, ground,
+  groundDetail: 'dirt',          // the open ground's grain, ruts and thrown dirt (ground.js, dirt.js)
+  rutBox: [W1, N1, E0, S0],      // (inside the wall)
   spawn: STARTS[0], starts: STARTS, gates: GATES, wallSpot, breach,
   waypoint: (c, tx, tz, out) => nav.waypoint(c, tx, tz, out),
   spawnPoint: (player, taken) => pickSpot(SPOTS, player, taken),
