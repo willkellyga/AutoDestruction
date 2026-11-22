@@ -29,6 +29,7 @@ import { makePickups } from './pickups.js';
 import { makeHazards } from './hazards.js';
 import { makeQuality } from './quality.js';
 import { makeDrift } from './drift.js';
+import { nightLook, makeNight } from './night.js';
 
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -61,12 +62,15 @@ sky.renderOrder = -2; scene.add(sky);
 // a dark slab on the horizon. The clear colour is the haze too, so a gap anywhere shows sky, not black.
 sky.scale.setScalar(camera.far * 0.95 / 2200);
 const placeSky = () => sky.position.copy(camera.position);
-scene.add(new THREE.HemisphereLight(0xcfe4ff, 0x9a8460, 1.25));
+const hemi = new THREE.HemisphereLight(0xcfe4ff, 0x9a8460, 1.25); scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff0d2, 2.7);
 sun.castShadow = true; sun.shadow.mapSize.set(MOBILE ? 2048 : 4096, MOBILE ? 2048 : 4096);
 const sc = sun.shadow.camera; sc.left = -220; sc.right = 220; sc.top = 200; sc.bottom = -200; sc.near = 20; sc.far = 1100;
 sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.8;
 scene.add(sun); scene.add(sun.target);
+// A map that runs at night (the arena) has its own sky, fog and light (night.js); the sun is then its floodlight bank,
+// which shines from the south-east tower, the way the sun already does
+if (MAP.night) nightLook({ scene, renderer, sky, hemi, sun });
 const SUN_DIR = new THREE.Vector3(0.55, 0.95, 0.35).normalize();
 const SUN_R = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), SUN_DIR).normalize(), SUN_U = new THREE.Vector3().crossVectors(SUN_DIR, SUN_R);
 const _sunC = new THREE.Vector3();
@@ -926,6 +930,8 @@ function resize() {
 }
 addEventListener('resize', resize); resize();
 const quality = makeQuality({ renderer, composer, bloom: composer.passes[1], scene, camera, sun, resize, playing: () => game.state === 'play', mobile: MOBILE });
+// the night show's beams, glows and lamps (night.js), on a map that runs at night
+const night = MAP.night ? makeNight({ scene, renderer, camera, sky, mats, bloom: composer.passes[1], quality, night: MAP.night }) : null;
 let last = performance.now();
 function frame(now) {
   requestAnimationFrame(frame);
@@ -965,6 +971,7 @@ function step(dt) {
   stepSim(dt);
   civ.update(dt, false); civ.packFar && civ.packFar();
   fx.update(dt); debris.update(dt);
+  if (night) night.step(dt, cars);
   game.shake = Math.max(0, game.shake - dt * 2.4);
   game.hurt = Math.max(0, (game.hurt || 0) - dt * 1.4); grade.uniforms.hurt.value = game.hurt;
   if (toastT > 0 && (toastT -= dt) <= 0) $('toast').classList.remove('on');
@@ -993,4 +1000,4 @@ followSun(player.x, player.z);
 const loadEl = $('loading'); if (loadEl) loadEl.hidden = true;
 $('menu').hidden = false;
 requestAnimationFrame((t) => { last = t; frame(t); });
-window.__derby = { touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, sfx, mines, gadget, spawnPlayer, addCar, pickups, hazards };
+window.__derby = { renderer, night, touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, sfx, mines, gadget, spawnPlayer, addCar, pickups, hazards };

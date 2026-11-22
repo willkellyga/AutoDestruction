@@ -416,7 +416,41 @@ function floodlights() {
     for (let y = TOWER_Y - 8; y <= TOWER_Y - 1; y += 2) for (let u = -6; u <= 7; u += 2) {
       set(fx > 0 ? hx + 9 : hx - 8, y, hz + u, M.LIT_W); set(hx + u, y, fz > 0 ? hz + 9 : hz - 8, M.LIT_W);
     }
+    // the crew's deck under the lamps, with a rail round it
+    box(hx - 9, TOWER_Y - 10, hz - 9, hx + 10, TOWER_Y - 10, hz + 10, M.STEEL);
+    walls(hx - 9, TOWER_Y - 9, hz - 9, hx + 10, TOWER_Y - 9, hz + 10, M.TAXI);
   }
+  // the searchlights out past the stands, for the show by night (night.js sweeps their beams): a drum on a trailer,
+  // its lens looking up
+  for (const [x, z] of SEARCH) {
+    begin('Searchlight', 'prop', true);
+    box(x - 4, 0, z - 3, x + 4, 2, z + 3, M.DARK); box(x - 3, 0, z - 4, x - 1, 1, z + 4, M.TYRE); box(x + 1, 0, z - 4, x + 3, 1, z + 4, M.TYRE);
+    for (let y = 3; y <= 7; y++) disc(x, z, y, 3, y === 7 ? M.LIT_W : M.STEEL, y === 7 ? -1 : 2);
+  }
+}
+// By night (night.js), the lamps on each tower's two faces are the banks that light the pit: where a bank's face is,
+// which way it looks, and the spot on the floor it is aimed at. A tower lights its own quarter of the pit, one bank
+// along the arena and one across it, so the four towers' pools overlap in the middle.
+const BANKS = TOWERS.flatMap(([px, pz]) => {
+  const hx = px + 2, hz = pz + 2, fx = Math.sign(CX - hx), fz = Math.sign(CZ - hz), y = TOWER_Y - 4.5;
+  const mx = hx + (CX - hx) * 0.5, mz = hz + (CZ - hz) * 0.5;
+  return [
+    { x: fx > 0 ? hx + 10 : hx - 8, y, z: hz + 0.5, nx: fx, nz: 0, w: 13, h: 7, aim: [mx + fx * 70, mz] },
+    { x: hx + 0.5, y, z: fz > 0 ? hz + 10 : hz - 8, nx: 0, nz: fz, w: 13, h: 7, aim: [mx, mz + fz * 45] },
+  ];
+});
+// where the searchlights stand: behind the middle of each grandstand and off each end
+const SEARCH = [[330, 196], [694, 196], [694, 827], [330, 827], [52, 512], [972, 512]];
+// Where cameras flash in the crowd: eight hundred seats, half in each stand, at the height of a head (stand() fills most seats)
+function crowdSpots() {
+  let s = 99991; const r = () => { s = (s * 1664525 + 1013904223) | 0; return ((s >>> 8) & 0xffff) / 65536; };
+  const out = [];
+  for (let n = 0; n < 800; n++) {
+    let x = STAND[0] + 1 + Math.floor(r() * (STAND[1] - STAND[0] - 1)); if (x % 23 === 0) x++;
+    const k = Math.floor(r() * 14), z = 285 - 3 * k - 1 + 0.5, y = 9 + 2 * k + 2.5;
+    if (n & 1) out.push(WX - x - 0.5, y, WZ - z); else out.push(x + 0.5, y, z);
+  }
+  return out;
 }
 
 // ---- the painted floor -------------------------------------------------------------------------------------------
@@ -630,6 +664,9 @@ export default {
   spawnPoint: (player, taken) => pickSpot(SPOTS, player, taken),
   step: routeStep,
   pickups: PICKUP_SPOTS,
+  // the show runs at night (night.js): the floodlights' banks of lamps, the ring (the light falls off toward its walls),
+  // the searchlights outside and the crowd's cameras
+  night: { banks: BANKS, ring: { x: CX, z: CZ, ...WALL }, searchlights: SEARCH, crowd: crowdSpots() },
   // the set pieces first (they move cars about), then the bounds (which hold cars inside the ring's line even where
   // rockets have blown it open) and the keepouts (nothing can shove a car into the steel of the frame's legs, which it
   // could not dig out of)
