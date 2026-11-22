@@ -5,7 +5,8 @@ import * as THREE from 'three';
 import { Unit } from '../../units/src/unit.js';
 import { solid, idx, ownerAt, bodies, WX, WZ } from '../../src/world.js';
 import { blast, dust } from '../../src/sim.js';
-import { CRASH } from './tuning.js';
+import { CRASH, BUILDINGS } from './tuning.js';
+import { EASY } from './sturdy.js';
 import { MAP } from './maps/index.js';
 import { carDef, LOOSE } from './carmodel.js';
 import { PARTS, statsOf } from './parts.js';
@@ -114,22 +115,60 @@ export class Vehicle {
     if (n) { out.x /= n; out.y /= n; out.z /= n; }
     return n;
   }
-  collide(dt, hooks) {
-    const ox = this.x, oz = this.z, nx = ox + this.vx * dt, nz = oz + this.vz * dt, H = this._h || (this._h = {});
-    // already in something (rubble came down on it, a wreck is in it): shove it aside
-    if (this.hits(ox, oz, this.yaw, H) && (this.smashT -= dt) <= 0) {
-      this.smashT = 0.12;
-      blast(H.x, H.y, H.z, 2.6, { push: 8, maxDebris: 30, core: 0.2, pushDebris: false });
+  // Which way the wall the probes found faces: a unit vector pointing into the wall, away from the car (out.x, out.z),
+  // or false when the blocks round where they touched it have no clear line to them (rubble all round, a car in a
+  // hole). The face runs the way those blocks spread furthest, so a thin wall works as well as a thick one.
+  wallNormal(H, out) {
+    const cx = Math.floor(H.x), cz = Math.floor(H.z);
+    let n = 0, sx = 0, sz = 0, sxx = 0, sxz = 0, szz = 0;
+    for (let dz = -3; dz <= 3; dz++) for (let dx = -3; dx <= 3; dx++) {
+      if (dx * dx + dz * dz > 10) continue;
+      if (solid(cx + dx, 2, cz + dz) || solid(cx + dx, 4, cz + dz)) { n++; sx += dx; sz += dz; sxx += dx * dx; sxz += dx * dz; szz += dz * dz; }
     }
+    if (n < 4) return false;
+    const mx = sx / n, mz = sz / n, a = sxx / n - mx * mx, b = sxz / n - mx * mz, c = szz / n - mz * mz;
+    const h = Math.hypot((a - c) / 2, b), l1 = (a + c) / 2 + h, l2 = (a + c) / 2 - h;
+    if (l1 < 1.6 * l2 + 0.2) return false;
+    const t = 0.5 * Math.atan2(2 * b, a - c);
+    let nx = -Math.sin(t), nz = Math.cos(t);
+    const s = Math.sin(this.yaw), co = Math.cos(this.yaw);
+    if (nx * (H.x - this.x - s * this.mid) + nz * (H.z - this.z - co * this.mid) < 0) { nx = -nx; nz = -nz; }
+    out.x = nx; out.z = nz;
+    return true;
+  }
+  collide(dt, hooks) {
+    const ox = this.x, oz = this.z, nx = ox + this.vx * dt, nz = oz + this.vz * dt, H = this._h || (this._h = {}), N = this._n || (this._n = { x: 0, z: 0 });
+    // already in something: rubble came down on it, it turned a corner into a wall, it is half way through the hole it
+    // just punched, a shove pushed it in. Rubble, lamps and bins are shoved aside, and so is a wall the car is still
+    // going into faster than BUILDINGS.smash. Out of any other wall it eases itself, away from where it is in it; only
+    // a car stuck fast for a while (BUILDINGS.stuck) digs itself out.
+    if (this.hits(ox, oz, this.yaw, H)) {
+      this.inWall = H.hard ? (this.inWall || 0) + dt : 0;
+      if (H.hard) {
+        const s = Math.sin(this.yaw), c = Math.cos(this.yaw), ex = ox + s * this.mid - H.x, ez = oz + c * this.mid - H.z, e = Math.hypot(ex, ez) || 1;
+        const vn = -(this.vx * ex + this.vz * ez) / e;   // speed towards where it is in the wall
+        if (vn <= BUILDINGS.smash && this.inWall < BUILDINGS.stuck) {
+          this.x += ex / e * 8 * dt; this.z += ez / e * 8 * dt;
+          if (vn > 0) { this.vx += ex / e * vn; this.vz += ez / e * vn; }
+          return;
+        }
+      }
+      if ((this.smashT -= dt) <= 0) {
+        this.smashT = 0.12;
+        blast(H.x, H.y, H.z, 2.6, { push: 8, maxDebris: 30, core: 0.2, pushDebris: false, only: H.hard ? null : EASY });
+      }
+    } else this.inWall = 0;
     if (!this.hits(nx, nz, this.yaw, H)) { this.x = nx; this.z = nz; return; }
     const sy = Math.sin(this.yaw), cy = Math.cos(this.yaw), vf = this.vx * sy + this.vz * cy, vs = this.vx * cy - this.vz * sy;
-    const into = H.front > H.back ? Math.max(0, vf) : H.back > H.front ? Math.max(0, -vf) : Math.abs(vs);
+    // how fast it meets the wall: the part of its speed square into the wall (a glancing hit counts for little)
+    const face = H.hard > 0 && this.wallNormal(H, N);
+    const into = face ? Math.max(0, this.vx * N.x + this.vz * N.z) : H.front > H.back ? Math.max(0, vf) : H.back > H.front ? Math.max(0, -vf) : Math.abs(vs);
     const sp = this.speed;
-    // what is only rubble, a lamp or a bin goes down at any speed; walls need some pace
-    if (!H.wall && ((H.hard === 0 && sp > 3) || into > CRASH.smash)) {
-      const r = H.hard === 0 ? 2.8 : (CRASH.hole + (into - CRASH.smash) * CRASH.holeK) * this.spec.ram;
+    // what is only rubble, a lamp or a bin goes down at any speed; walls need real pace
+    if (!H.wall && ((H.hard === 0 && sp > 3) || into > BUILDINGS.smash)) {
+      const r = H.hard === 0 ? 2.8 : (BUILDINGS.hole + (into - BUILDINGS.smash) * BUILDINGS.holeK) * this.spec.ram;
       const dx = this.vx / (sp || 1), dz = this.vz / (sp || 1);
-      const n = blast(H.x + dx * 1.5, 3.2, H.z + dz * 1.5, r, { ys: 0.9, dx: dx * 0.9, dz: dz * 0.9, dy: 0.25, push: 12 + into * 0.18, maxDebris: 160, core: 0.3, hard: 0.85 });
+      const n = blast(H.x + dx * 1.5, 3.2, H.z + dz * 1.5, r, { ys: 0.9, dx: dx * 0.9, dz: dz * 0.9, dy: 0.25, push: 12 + into * 0.18, maxDebris: 160, core: 0.3, hard: 0.85, only: H.hard === 0 ? EASY : null });
       if (n > 0) {
         const keep = Math.max(H.hard === 0 ? 0.85 : 0.4, 1 - n / CRASH.slow * (H.hard === 0 ? 0.3 : 1));
         this.vx *= keep; this.vz *= keep; this.x = nx; this.z = nz;
@@ -137,11 +176,12 @@ export class Vehicle {
         return;
       }
     }
-    // stopped: back off a touch and lose the speed going into it
-    if (H.front > H.back && vf > 0) { this.vx -= sy * vf * 1.3; this.vz -= cy * vf * 1.3; }
+    // stopped: back off a touch and lose the speed going into the wall; along it, the car slides on
+    if (face) { const vn = this.vx * N.x + this.vz * N.z; if (vn > 0) { this.vx -= N.x * vn * 1.3; this.vz -= N.z * vn * 1.3; } this.vx *= 0.97; this.vz *= 0.97; }
+    else if (H.front > H.back && vf > 0) { this.vx -= sy * vf * 1.3; this.vz -= cy * vf * 1.3; }
     else if (H.back > H.front && vf < 0) { this.vx -= sy * vf * 1.3; this.vz -= cy * vf * 1.3; }
     else { this.vx -= cy * vs * 1.4; this.vz += sy * vs * 1.4; }
-    if (into > CRASH.smash * 0.5) hooks.bump(this, into, H);
+    if (into > CRASH.bump) hooks.bump(this, into, H);
   }
 
   // ---- guns -------------------------------------------------------------------------------------------------

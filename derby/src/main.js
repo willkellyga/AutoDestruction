@@ -20,7 +20,8 @@ import { Vehicle, newFrame } from './vehicle.js';
 import { makeDriver, clearLine } from './ai.js';
 import { MAP, MAPS, chooseMap } from './maps/index.js';
 import { MODES } from './modes/index.js';
-import { CRASH, ROUND, AI } from './tuning.js';
+import { CRASH, ROUND, AI, BUILDINGS } from './tuning.js';
+import { toughen, boom, chipAt } from './sturdy.js';
 import { PAINTS, loadSave, keepSave, rivalBuild, RIVAL_NAMES } from './parts.js';
 import { makeGarage } from './garage.js';
 import { makeSounds } from './audio.js';
@@ -91,6 +92,7 @@ MAP.build();
 initSim(scene);
 look.detail.value = 1; look.dusk.value = 0;
 cfg.dust = 0.55; cfg.hang = 0.2;
+toughen();   // sturdier buildings than the town's own (sturdy.js, tuning.js BUILDINGS)
 
 // ---- the light pass: bloom, grade, vignette ---------------------------------------------------------------------
 const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: MOBILE ? 0 : 4 }));
@@ -156,11 +158,20 @@ const fx = makeFx(scene, { target, debris, audio: armySfx, shake: (a, p) => hook
 hooks.sound = sound;
 hooks.shake = (a, x, y, z) => { if (x !== undefined && player) a *= clamp(1.3 - Math.hypot(x - player.x, z - player.z) / 180, 0, 1); game.shake = Math.min(1.4, game.shake + a); };
 hooks.impact = () => {};
+// where the player has broken things lately (x, z, time): a building gives way later, in the town's own step, so the
+// credit for flattening it goes to whoever was knocking it about
+const myHits = [];
+const noteHit = (x, z) => { myHits.push(x, z, game.time); if (myHits.length > 192) myHits.splice(0, 3); };
 hooks.destroyed = (n, x, y, z, indirect) => {
-  if (by === player && player) game.scrap += n * (indirect ? 0.02 : 0.04);
+  if (by === player && player) { game.scrap += n * (indirect ? 0.02 : 0.04); if (!indirect) noteHit(x, z); }
   if (!indirect && n > 6) sound('crumble', clamp(n / 120, 0.25, 1), x, y, z);
 };
-hooks.bodyDown = (b) => { if (by === player && b.kind !== 'prop' && b.kind !== 'rubble' && b.count > 40) { game.scrap += 25; toast(`${b.name} flattened`, '+25 scrap'); } };
+hooks.bodyDown = (b) => {
+  if (b.kind === 'prop' || b.kind === 'rubble' || b.kind === 'tree' || b.init < 300) return;
+  let mine = by === player;
+  for (let i = 0; !mine && i < myHits.length; i += 3) mine = game.time - myHits[i + 2] < 20 && myHits[i] > b.x0 - 6 && myHits[i] < b.x1 + 7 && myHits[i + 1] > b.z0 - 6 && myHits[i + 1] < b.z1 + 7;
+  if (mine) { game.scrap += 25; toast(`${b.name} flattened`, '+25 scrap'); }
+};
 const scorches = []; let scorchN = 0, scorchMat = null;
 hooks.scorch = (x, z, r) => {
   if (!scorchMat) {
@@ -216,7 +227,7 @@ function wreck(c, who) {
   c.blowParts(cube, p, 16);
   sfx.play(c.maxHp > 200 ? 'bigboom' : 'carboom', 1, p.x, p.z);
   const was = by; by = who || (mode.friendly ? c : null); splashK = { splash: 18, reach: 18 };   // (friendly: the wreck's own blast spares the other cars)
-  try { explode(p.x, 2.5, p.z, 5.5, 0.6, { maxDebris: 260, fire: true }); } finally { by = was; splashK = null; }
+  try { boom(p.x, 2.5, p.z, 5.5, 0.6, { maxDebris: 260, fire: true }, BUILDINGS.wreck); } finally { by = was; splashK = null; }
   if (c === player) {
     game.deaths++; keepSave(save);
     const r = mode.playerDown();
@@ -350,12 +361,12 @@ function onLand(s, hit, p) {
         for (const e of extras) if (e.solid(p.x, p.y, p.z) && e.hit(p, d, s.owner, g, s.dir)) break;
       }
     } else if (hit === 3 && g.wall && !g.splash) {
-      if (Math.random() < 0.7) blast(p.x, p.y, p.z, g.wall, { push: 6, maxDebris: 5, core: 0.2, pushDebris: false });
+      chipAt(p, s.dir, g.wall);   // a round chips out the block it strikes (sturdy.js)
     }
     if (g.splash) {   // rockets and shells go off: the town's own explosion, which also does the splash
       splashK = g;
       sfx.play('rocket_boom', g.fx === 'cannon' ? 1 : 0.85, p.x, p.z, { gap: 0.05, rate: g.fx === 'cannon' ? 0.85 : 1 });
-      explode(p.x, Math.max(1, p.y), p.z, g.wall * (hit === 3 ? 1 : 0.6), 0.35, { maxDebris: 200, fire: Math.random() < 0.35 });
+      boom(p.x, Math.max(1, p.y), p.z, g.wall * (hit === 3 ? 1 : 0.6), 0.35, { maxDebris: 200, fire: Math.random() < 0.35 }, BUILDINGS.shell);
     }
   } finally { by = was; splashK = null; }
 }
@@ -394,11 +405,11 @@ function bump(a, b) {
 // what driving into the town feels like
 const crashHooks = {
   smash(c, into, H, n) {
-    if (c === player) game.shake = Math.min(1.2, game.shake + clamp(n / 160, 0.1, 0.7));
+    if (c === player) { game.shake = Math.min(1.2, game.shake + clamp(n / 160, 0.1, 0.7)); noteHit(H.x, H.z); }
     if (n > 30) { sound('crash', clamp(n / 140, 0.3, 1.1), H.x, H.y, H.z); sfx.play('crunch_heavy', clamp(n / 120, 0.3, 1), H.x, H.z, { gap: 0.15 }); }
   },
   bump(c, into, H) {
-    damage(c, (into - CRASH.smash * 0.5) * CRASH.wallHurt * 4, null);
+    damage(c, (into - CRASH.bump) * CRASH.wallHurt * 4, null);
     sound('thud', clamp(into / 50, 0.3, 1), H.x, H.y, H.z); sparks(H.x, 2.5, H.z, 6, 1, 0.8, 0.4, 14);
     sfx.play(into > 30 ? 'crunch' : 'scrape', clamp(into / 40, 0.3, 1), H.x, H.z, { gap: 0.25 });
     if (c === player) game.shake = Math.min(1.2, game.shake + into / 90);
@@ -489,7 +500,7 @@ function stepMines(dt) {
     mines.splice(i, 1); m.mesh.removeFromParent();
     if (!hit) continue;
     const was = by; by = m.owner; splashK = m.g;
-    try { explode(m.x, 1, m.z, m.g.wall, 0.5, { maxDebris: 160, fire: true }); hit.vx *= 0.3; hit.vz *= 0.3; } finally { by = was; splashK = null; }
+    try { boom(m.x, 1, m.z, m.g.wall, 0.5, { maxDebris: 160, fire: true }, BUILDINGS.shell); hit.vx *= 0.3; hit.vz *= 0.3; } finally { by = was; splashK = null; }
   }
 }
 // Shift: the gadget. Nitro is a burst of speed; the repair kit patches the car up.
