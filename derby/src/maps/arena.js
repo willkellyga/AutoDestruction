@@ -2,9 +2,10 @@
 // stands on the big world (1024 by 1024: see ../flags.js) so the floor can be twice what it was, 672 by 440.
 //   - The middle is the pit: a wide bowl of churned mud with nothing in it, for ramming. Over it hangs the scoreboard,
 //     on cables from the four floodlight towers, with the clock and the leaders on all four faces (hazards.js).
-//   - The ring round it is the derby's: concrete barriers along the straights (sponsor boards on them and a catch fence
-//     on top), walls of tyres round two corners with wrecked cars stacked three high behind them, and red and white
-//     concrete round the other two.
+//   - The ring round it is the derby's: concrete barriers along the straights (sponsor boards on them), walls of tyres
+//     round two corners with wrecked cars stacked three high behind them, and red and white concrete round the other
+//     two. (No catch fence on top: the chase camera of a car pinned to the wall sits behind the barrier, and a fence's
+//     thin rails slip between the points main.js tests for walls, so it would look through bars.)
 //   - The set pieces are round the edge, so the pit stays open: the sweeper in the north-west corner (three blades
 //     turning low over the floor under the big screen, the Hammerdown strike in its still eye, scrap among its blades);
 //     a hammer swinging out from the wall at the middle of each long side, from a gantry reaching out over the floor,
@@ -130,7 +131,7 @@ function section(x, z) {
 // The ring: tiles of it, so a hit only has to check its own piece. A car bounces off it however fast it goes, and the
 // bounds hazard holds cars in where rockets blow it open.
 //   - the concrete: a barrier eight high with a cap, red and white blocks round the flame corners, a strip of lights
-//     in the side's colour on the long straights, and a catch fence of posts and rails along them
+//     in the side's colour on the long straights
 //   - the tyres: stacks of them, five tyres high, the top one painted, two deep, with the wrecks piled up behind
 const BOARDS = ['KRANKO OIL', 'BOLTZ', 'GRIT TYRES', 'FIZZBANG', 'LUGNUT', 'AMPED', 'CH 6 LIVE', 'MEGAWATT', 'DENTS R US', 'SCRAPCO'];
 function ring() {
@@ -157,10 +158,6 @@ function ring() {
       if (e < 1 && sec === 'corner') for (let y = 1; y <= 6; y++) set(x, y, z, (arc >> 2) & 1 ? M.TRIM : M.CAR_A);
       const a = Math.atan2(z + 0.5 - CZ, x + 0.5 - CX), side = Math.sin(a) < 0 ? 0 : 1, long = sec === 'straight' && oz > 0;
       set(x, 8, z, e < 1 && long ? (x & 1 ? SIDE[side].led : M.DARK) : M.TRIM);
-      if (long && e >= 1.5 && e < 2.5) {   // the catch fence
-        set(x, 15, z, M.STEEL); set(x, 22, z, M.STEEL);
-        if (((arc % 6) + 6) % 6 === 0) for (let y = 9; y <= 22; y++) set(x, y, z, M.STEEL);
-      }
     }
   }
   // sponsor boards on the inside face of the four straights

@@ -43,6 +43,17 @@ export function makeDriver(car) {
     }
     return null;
   }
+  // (and in the free-for-all a car with nobody near goes by way of a pickup that is nearer than its target and that no
+  // other car is after, so the edges of the floor, where the pickups are, see some of the fighting too)
+  function forage(all, d) {
+    let best = null, bd = Math.min(320, d * 0.8);
+    for (const p of MAP.pickups || []) {
+      if (!p.up || p.rivals === false || (p.kind === 'repair' && car.hp > car.maxHp * 0.85)) continue;
+      const pd = Math.hypot(p.x - car.x, p.z - car.z);
+      if (pd < bd && !all.some((q) => q !== car && q.driver && q.driver.brain.pk === p)) { bd = pd; best = p; }
+    }
+    return best;
+  }
   function pick(all, player) {
     if (FFA) return pickAny(all);
     const foes = all.filter((o) => o !== car && !o.dead);
@@ -62,7 +73,7 @@ export function makeDriver(car) {
     // where to drive: to a pickup it wants (looked at again every half second), else straight at the target with a
     // clear run, else along the streets
     b.pkT = (b.pkT || 0) - dt;
-    if (b.pkT <= 0) { b.pkT = 0.5; b.pk = pickupFor(car, car.hp < car.maxHp * AI.mend); }
+    if (b.pkT <= 0) { b.pkT = 0.5; b.pk = pickupFor(car, car.hp < car.maxHp * AI.mend) || (FFA && !sees && d > 200 ? forage(all, d) : null); }
     if (b.pk && !b.pk.up) b.pk = null;
     let gx, gz;
     if (b.pk) { if (clearLine(car.x, car.z, b.pk.x, b.pk.z, 4)) { gx = b.pk.x; gz = b.pk.z; } else { MAP.waypoint(car, b.pk.x, b.pk.z, b.wp); gx = b.wp.x; gz = b.wp.z; } }
