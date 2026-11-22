@@ -489,10 +489,12 @@ function paint() {
     g.fillStyle = `rgba(36,26,18,${0.12 + rand() * 0.2})`; g.beginPath(); g.ellipse(x, z, rx, rz, a, 0, TAU); g.fill();
     wets.push([x, z, rx, rz, a, 0.12]);
   }
-  for (let i = 0; i < 18; i++) {   // puddles, with the sky in them
+  // puddles: dark water, a shade lighter in the middle (painted pale, with the sky in them, they glowed at night; the
+  // floor's shader gives them their shine under the lights)
+  for (let i = 0; i < 18; i++) {
     const x = CX + (rand() - 0.5) * 2 * (PIT.hx - 40), z = CZ + (rand() - 0.5) * 2 * (PIT.hz - 30), rx = 4 + rand() * 9, rz = 2.5 + rand() * 5, a = rand() * 3;
-    g.fillStyle = 'rgba(96,104,108,0.6)'; g.beginPath(); g.ellipse(x, z, rx, rz, a, 0, TAU); g.fill();
-    g.fillStyle = 'rgba(170,184,194,0.35)'; g.beginPath(); g.ellipse(x - rx * 0.2, z - rz * 0.2, rx * 0.55, rz * 0.4, a, 0, TAU); g.fill();
+    g.fillStyle = 'rgba(34,32,30,0.62)'; g.beginPath(); g.ellipse(x, z, rx, rz, a, 0, TAU); g.fill();
+    g.fillStyle = 'rgba(58,60,62,0.3)'; g.beginPath(); g.ellipse(x - rx * 0.2, z - rz * 0.2, rx * 0.55, rz * 0.4, a, 0, TAU); g.fill();
     wets.push([x, z, rx, rz, a, 0.25]);
   }
   g.lineCap = 'round';

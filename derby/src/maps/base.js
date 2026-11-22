@@ -309,9 +309,35 @@ function build() {
 // ---- the painted ground -----------------------------------------------------------------------------------------------
 // The open ground is dirt, and the floor's shader lays its fine grain, stones and the ruts over it (ground.js:
 // MAP.groundDetail), so the paint there is soft blotches at a few sizes rather than a fleck a voxel. The slabs, the road,
-// the runway and the helipad are hard (the paint's alpha is taken down to a half over them at the end), and keep theirs.
+// the runway and the helipad are hard (the paint's alpha is taken down to a half over them at the end): the shader gives
+// them a finer grain of their own, so they are soft blotches too, with what years of trucks and weather leave: cracks,
+// patches, oil, rubber. It has been raining: water stands in the low places, on the hard ground (alpha a quarter) and in
+// the dirt (three quarters, as the arena's puddles), and the shader makes all of it shine under the lights.
 function ground() {
-  const c = canvasFor('#a39874', 4242), { g, rect, speckle, mottle } = c;
+  const c = canvasFor('#a39874', 4242), { g, rect, mottle } = c, GK = c.GK;
+  // a crack: a line wandering from (x, z) at angle a for len voxels, now and then branching; `tar` sealed (wider, black)
+  const crack = (x, z, a, len, tar, depth = 0) => {
+    g.strokeStyle = tar ? 'rgba(14,14,16,0.32)' : 'rgba(40,38,34,0.36)'; g.lineWidth = (tar ? 0.3 : 0.13) * GK; g.lineCap = 'round'; g.lineJoin = 'round';
+    g.beginPath(); g.moveTo(x * GK, z * GK);
+    let da = 0;
+    for (let t = 0; t < len; t += 0.7) {
+      da = da * 0.75 + (c.r() - 0.5) * 0.3; a += da + (c.r() - 0.5) * 0.25; x += Math.cos(a) * 0.7; z += Math.sin(a) * 0.7; g.lineTo(x * GK, z * GK);
+      if (depth < 1 && c.r() < 0.06) { g.stroke(); crack(x, z, a + (c.r() < 0.5 ? 1 : -1) * (0.6 + c.r()), len * 0.4, tar, depth + 1); g.beginPath(); g.moveTo(x * GK, z * GK); }
+    }
+    g.stroke();
+  };
+  const cracks = (x0, z0, x1, z1, n, tar) => { for (let i = 0; i < n; i++) crack(x0 + c.r() * (x1 - x0), z0 + c.r() * (z1 - z0), c.r() * 6.3, 4 + c.r() * 14, c.r() < tar); };
+  const stain = (x, z, rx, rz, a, alpha) => { g.fillStyle = `rgba(14,13,12,${alpha.toFixed(3)})`; g.beginPath(); g.ellipse(x * GK, z * GK, rx * GK, rz * GK, a, 0, 6.3); g.fill(); };
+  // standing water: a few ovals run together, painted darker (the shader adds the shine); kept for the alpha at the end
+  const pools = { hard: [], dirt: [] };
+  const blobPath = (blob, k = 1) => { g.beginPath(); for (const [ex, ez, rx, rz, an] of blob) { g.moveTo((ex + rx * k * Math.cos(an)) * GK, (ez + rx * k * Math.sin(an)) * GK); g.ellipse(ex * GK, ez * GK, rx * k * GK, rz * k * GK, an, 0, 6.3); } };
+  const puddle = (x, z, r, hard) => {
+    const blob = [];
+    for (let k = 0, n = 2 + Math.floor(c.r() * 3); k < n; k++) blob.push([x + (c.r() - 0.5) * r * 1.4, z + (c.r() - 0.5) * r * 0.9, r * (0.45 + c.r() * 0.5), r * (0.3 + c.r() * 0.35), c.r() * 3]);
+    if (!hard) { g.fillStyle = 'rgba(52,42,30,0.22)'; blobPath(blob, 1.4); g.fill(); }   // the damp round it
+    g.fillStyle = hard ? 'rgba(20,22,26,0.3)' : 'rgba(50,46,40,0.5)'; blobPath(blob); g.fill();
+    (hard ? pools.hard : pools.dirt).push(blob);
+  };
   // (sandy browns, not greens: the dead are green, and should stand out on it)
   const SAND = [[120, 104, 72, 0.4], [176, 160, 120, 0.36], [190, 178, 140, 0.34], [108, 96, 70, 0.36]];
   for (const [cell, k] of [[24, 0.8], [7, 0.85], [2.5, 0.9], [1.25, 0.7]]) mottle(0, 0, WX, WZ, cell, SAND.map(([r, gg, b, a]) => [r, gg, b, a * k]));
@@ -325,8 +351,16 @@ function ground() {
   for (const o of [16, 28]) { rect(o, o, WX - o, o + 1.2); rect(o, WZ - o - 1.2, WX - o, WZ - o); rect(o, o, o + 1.2, WZ - o); rect(WX - o - 1.2, o, WX - o, WZ - o); }
   // aprons: concrete slabs in front of the hangar, round headquarters and in the motor pool, with joints and oil
   const slabs = (x0, z0, x1, z1, col, joint = 'rgba(60,58,52,0.35)') => {
-    g.fillStyle = col; rect(x0, z0, x1, z1); speckle(x0, z0, x1, z1, Math.round((x1 - x0) * (z1 - z0) / 4), ['rgba(255,250,235,0.18)', 'rgba(60,56,50,0.16)']);
+    g.fillStyle = col; rect(x0, z0, x1, z1);
+    // each slab poured on its own day: a shade lighter or darker than the next, and blotched within
+    for (let x = x0; x < x1; x += 16) for (let z = z0; z < z1; z += 16) {
+      const v = c.r(); g.fillStyle = v < 0.5 ? `rgba(255,250,235,${(v * 0.14).toFixed(3)})` : `rgba(40,38,34,${((v - 0.5) * 0.16).toFixed(3)})`; rect(x, z, Math.min(x1, x + 16), Math.min(z1, z + 16));
+    }
+    for (const [cell, k] of [[6, 1], [1.5, 0.8]]) mottle(x0, z0, x1, z1, cell, [[255, 250, 235, 0.16 * k], [60, 56, 50, 0.16 * k], [120, 112, 96, 0.1 * k]]);
     g.fillStyle = joint; for (let x = x0; x < x1; x += 16) rect(x, z0, x + 0.25, z1); for (let z = z0; z < z1; z += 16) rect(x0, z, x1, z + 0.25);
+    cracks(x0, z0, x1, z1, Math.round((x1 - x0) * (z1 - z0) / 420), 0.2);
+    for (let i = 0, n = Math.round((x1 - x0) * (z1 - z0) / 900); i < n; i++) { const r = 0.6 + c.r() * c.r() * 3.5; stain(x0 + c.r() * (x1 - x0), z0 + c.r() * (z1 - z0), r, r * (0.5 + c.r() * 0.4), c.r() * 3, 0.08 + c.r() * 0.2); }
+    for (let i = 0, n = Math.round((x1 - x0) * (z1 - z0) / 2600); i < n; i++) puddle(x0 + 4 + c.r() * (x1 - x0 - 8), z0 + 4 + c.r() * (z1 - z0 - 8), 2 + c.r() * 3.5, true);
   };
   const SLABS = [[HANGAR.x0 - 8, HANGAR.z0 - 4, HANGAR.x1 + 8, RUN[0], '#aaa69b'], [HQ.x0 - 12, HQ.z0 - 8, HQ.x1 + 12, HQ.z1 + 52, '#b8b2a3'],
     [POOL.x0, POOL.z0, POOL.x1, POOL.z1, '#8f8c84'], [TANKS[0][0] - 16, POOL.z0, WX - RING, POOL.z1, '#9b978e']];
@@ -338,13 +372,30 @@ function ground() {
   rect(HQ.x0 - 8, HQ.z1 + 4, HQ.x1 + 8, HQ.z1 + 4.6); rect(HQ.x0 - 8, HQ.z1 + 46, HQ.x1 + 8, HQ.z1 + 46.6);
   // gravel round the barracks, and paths to the doors
   g.fillStyle = '#ab9f84'; rect(44, 250, 232, 290); mottle(44, 250, 232, 290, 1.25, [[90, 80, 60, 0.4], [220, 210, 190, 0.4]]);
-  // the main road, north to south
+  // the main road, north to south: blotched tarmac, patched and cracked, darker where the wheels run, puddles at its sides
   g.fillStyle = '#56585c'; rect(ROAD[0], N1, ROAD[1], S0);
-  speckle(ROAD[0], N1, ROAD[1], S0, 14000, ['rgba(30,32,38,0.25)', 'rgba(120,124,130,0.18)']);
+  for (const [cell, k] of [[10, 1], [3, 0.9], [1.25, 0.7]]) mottle(ROAD[0], N1, ROAD[1], S0, cell, [[30, 32, 38, 0.18 * k], [120, 124, 130, 0.14 * k]]);
+  g.fillStyle = 'rgba(20,20,24,0.1)'; for (const x of [GX - 13, GX - 7, GX + 7, GX + 13]) rect(x - 1.3, N1, x + 1.3, S0);
+  for (let i = 0; i < 26; i++) {
+    const x = ROAD[0] + 2 + c.r() * 30, z = N1 + c.r() * (S0 - N1), w = Math.min(ROAD[1] - 1 - x, 3 + c.r() * 9), d = 3 + c.r() * 14;
+    g.fillStyle = c.r() < 0.5 ? 'rgba(38,40,45,0.65)' : 'rgba(110,112,116,0.22)'; rect(x, z, x + w, z + d);
+    g.strokeStyle = 'rgba(16,16,18,0.35)'; g.lineWidth = 0.2 * GK; g.strokeRect(x * GK, z * GK, w * GK, d * GK);
+  }
+  cracks(ROAD[0] + 1, N1, ROAD[1] - 1, S0, 40, 0.7);
+  for (let i = 0; i < 60; i++) { const r = 0.5 + c.r() * c.r() * 2.5; stain(GX + (c.r() < 0.5 ? -10 : 10) + (c.r() - 0.5) * 4, N1 + c.r() * (S0 - N1), r * 0.6, r, c.r() * 0.4 - 0.2 + Math.PI / 2, 0.08 + c.r() * 0.16); }
+  for (let i = 0; i < 14; i++) puddle(c.r() < 0.5 ? ROAD[0] + 2.5 + c.r() * 3 : ROAD[1] - 2.5 - c.r() * 3, N1 + 10 + c.r() * (S0 - N1 - 20), 1.8 + c.r() * 3, true);
   g.fillStyle = 'rgba(232,206,112,0.75)'; for (let z = 10; z < WZ - 10; z += 12) if (z + 6 < RUN[0] - 6 || z > RUN[1] + 6) rect(GX - 0.4, z, GX + 0.4, z + 6);
   // the runway: darker tarmac, edge lines, the centre line, the threshold bars and the numbers at each end
   g.fillStyle = '#45484e'; rect(W1, RUN[0], E0, RUN[1]);
-  speckle(W1, RUN[0], E0, RUN[1], 30000, ['rgba(26,28,32,0.3)', 'rgba(110,114,122,0.2)']);
+  for (const [cell, k] of [[16, 1], [4, 0.9], [1.25, 0.7]]) mottle(W1, RUN[0], E0, RUN[1], cell, [[26, 28, 32, 0.2 * k], [110, 114, 122, 0.14 * k]]);
+  // where the wheels came down at each end, years of rubber smeared along the middle
+  for (const [x0, s] of [[40, 1], [WX - 40, -1]]) for (let i = 0; i < 160; i++) {
+    const t = c.r(), x = x0 + s * t * 120, len = 3 + c.r() * 9, a = 0.06 + 0.16 * (1 - t) * c.r();
+    stain(x, GZ + (c.r() < 0.5 ? -1 : 1) * (2 + c.r() * 6), len, 0.35 + c.r() * 0.6, (c.r() - 0.5) * 0.06, a);
+  }
+  cracks(W1, RUN[0] + 1, E0, RUN[1] - 1, 55, 0.8);
+  for (let i = 0; i < 30; i++) { const r = 0.6 + c.r() * c.r() * 3; stain(W1 + c.r() * (E0 - W1), RUN[0] + 4 + c.r() * (RUN[1] - RUN[0] - 8), r, r * (0.4 + c.r() * 0.5), c.r() * 3, 0.08 + c.r() * 0.16); }
+  for (let i = 0; i < 22; i++) puddle(W1 + 10 + c.r() * (E0 - W1 - 20), c.r() < 0.5 ? RUN[0] + 3 + c.r() * 5 : RUN[1] - 3 - c.r() * 5, 2 + c.r() * 4, true);
   g.fillStyle = 'rgba(238,236,228,0.8)';
   rect(W1 + 20, RUN[0] + 2, E0 - 20, RUN[0] + 2.8); rect(W1 + 20, RUN[1] - 2.8, E0 - 20, RUN[1] - 2);
   for (let x = 90; x < WX - 90; x += 22) if (x + 12 < ROAD[0] - 4 || x > ROAD[1] + 4) rect(x, GZ - 0.6, x + 12, GZ + 0.6);
@@ -360,10 +411,23 @@ function ground() {
   for (const z of [RUN[0] - 4, RUN[1] + 3]) { rect(ROAD[0] + 2, z, ROAD[1] - 2, z + 0.7); rect(ROAD[0] + 2, z + 1.4, ROAD[1] - 2, z + 2.1); }
   // the helipad: a concrete disc, a yellow ring and an H
   g.fillStyle = '#9d9b95'; g.beginPath(); g.arc(PAD.x * c.GK, PAD.z * c.GK, PAD.r * c.GK, 0, 6.3); g.fill();
+  g.save(); g.clip(); for (const [cell, k] of [[6, 1], [1.5, 0.8]]) mottle(PAD.x - PAD.r, PAD.z - PAD.r, PAD.x + PAD.r, PAD.z + PAD.r, cell, [[255, 250, 235, 0.16 * k], [60, 56, 50, 0.16 * k]]);
+  cracks(PAD.x - PAD.r, PAD.z - PAD.r, PAD.x + PAD.r, PAD.z + PAD.r, 8, 0.2); g.restore();
   g.strokeStyle = 'rgba(232,196,70,0.9)'; g.lineWidth = 1.2 * c.GK; g.beginPath(); g.arc(PAD.x * c.GK, PAD.z * c.GK, (PAD.r - 3) * c.GK, 0, 6.3); g.stroke();
   g.fillStyle = 'rgba(240,238,230,0.85)'; rect(PAD.x - 9, PAD.z - 12, PAD.x - 5, PAD.z + 12); rect(PAD.x + 5, PAD.z - 12, PAD.x + 9, PAD.z + 12); rect(PAD.x - 5, PAD.z - 2, PAD.x + 5, PAD.z + 2);
   // hazard stripes round the fuel farm
   for (let z = POOL.z0; z < POOL.z1; z += 4) { g.fillStyle = (z / 4) & 1 ? 'rgba(230,190,50,0.8)' : 'rgba(40,40,40,0.8)'; rect(TANKS[0][0] - 16, z, TANKS[0][0] - 14, z + 4); }
+  // water in the ring road's ruts and the low places of the open ground
+  for (let i = 0; i < 26; i++) {
+    const side = i & 3, o = [16, 28][(i >> 2) & 1] + 0.6, t = 30 + c.r() * (WX - 60);
+    const [x, z] = side === 0 ? [t, o] : side === 1 ? [t, WZ - o] : side === 2 ? [o, t * WZ / WX] : [WX - o, t * WZ / WX];
+    puddle(x, z, 1.6 + c.r() * 2.4, false);
+  }
+  for (let i = 0; i < 30; i++) {
+    const x = 50 + c.r() * (WX - 100), z = 50 + c.r() * (WZ - 100);
+    if ((x > ROAD[0] - 6 && x < ROAD[1] + 6) || (z > RUN[0] - 6 && z < RUN[1] + 6)) continue;
+    puddle(x, z, 2 + c.r() * 5, false);
+  }
   // the base has seen a fight: scorch marks and old stains
   for (let i = 0; i < 24; i++) {
     const x = 20 + c.r() * (WX - 40), z = 20 + c.r() * (WZ - 40), r = 2 + c.r() * 6, blood = i % 3 === 0;
@@ -378,6 +442,9 @@ function ground() {
   g.rect(W1 * c.GK, RUN[0] * c.GK, (E0 - W1) * c.GK, (RUN[1] - RUN[0]) * c.GK);
   g.moveTo((PAD.x + PAD.r) * c.GK, PAD.z * c.GK); g.arc(PAD.x * c.GK, PAD.z * c.GK, PAD.r * c.GK, 0, 6.3);
   g.fill('nonzero');
+  // and the water: on the hard ground down to a quarter, in the dirt to three quarters
+  g.fillStyle = 'rgba(0,0,0,0.5)'; for (const blob of pools.hard) { blobPath(blob); g.fill(); }
+  g.fillStyle = 'rgba(0,0,0,0.25)'; for (const blob of pools.dirt) { blobPath(blob); g.fill(); }
   g.restore();
   return c.cv;
 }
@@ -410,7 +477,9 @@ export default {
   loading: ['Building the base', 'Raising the fences and the hangars'],
   outer: 0x8d8566,
   build, ground,
-  groundDetail: 'dirt',          // the open ground's grain, ruts and thrown dirt (ground.js, dirt.js)
+  // the open ground's grain, ruts and thrown dirt, the hard ground's grain and rubber, and all of it wet from the storm
+  // (ground.js, dirt.js)
+  groundDetail: { soft: 'dirt', hard: true, wet: 0.6 },
   rutBox: [W1, N1, E0, S0],      // (inside the wall)
   spawn: STARTS[0], starts: STARTS, gates: GATES, wallSpot, breach,
   waypoint: (c, tx, tz, out) => nav.waypoint(c, tx, tz, out),
