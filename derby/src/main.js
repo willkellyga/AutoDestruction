@@ -29,6 +29,7 @@ import { makePickups } from './pickups.js';
 import { makeHazards } from './hazards.js';
 import { makeQuality } from './quality.js';
 import { makeDrift } from './drift.js';
+import { makeBackdrop } from './backdrop.js';
 import { makeGround } from './ground.js';
 import { makeDirt } from './dirt.js';
 
@@ -83,9 +84,13 @@ function followSun(x, z) {   // the shadow box follows the player, in whole texe
 MAP.build();
 const floor = makeGround({ scene, renderer, MAP, mobile: MOBILE });   // the map's painted floor, and on dirt its detail and ruts (ground.js)
 {
-  const outer = new THREE.Mesh(new THREE.PlaneGeometry(6400, 6400), new THREE.MeshLambertMaterial({ color: MAP.outer ?? 0x7fb069, depthWrite: false }));
-  outer.renderOrder = -1; outer.rotation.x = -Math.PI / 2; outer.position.set(WX / 2, -0.06, WZ / 2); scene.add(outer);
+  // the land past the edge of the map: one plain colour, or a map's own world round it (the arena's city: backdrop.js)
+  if (!MAP.backdrop) {
+    const outer = new THREE.Mesh(new THREE.PlaneGeometry(6400, 6400), new THREE.MeshLambertMaterial({ color: MAP.outer ?? 0x7fb069, depthWrite: false }));
+    outer.renderOrder = -1; outer.rotation.x = -Math.PI / 2; outer.position.set(WX / 2, -0.06, WZ / 2); scene.add(outer);
+  }
 }
+const backdrop = MAP.backdrop ? makeBackdrop({ scene, layout: MAP.backdrop, mobile: MOBILE, viewH: () => renderer.domElement.height }) : null;
 initSim(scene);
 const drifts = makeDrift({ scene, camera, mobile: MOBILE, el: $('drift'), soft: floor.dirtAt });   // skid marks, tyre smoke, the drift meter
 const dirt = makeDirt({ scene, camera, renderer, floor, MAP, mobile: MOBILE });   // ruts, rooster tails, dust and clods off the wheels
@@ -527,7 +532,7 @@ function stepGadget(c, dt) {
     c.boostT -= dt; c.boost = N.topK; c.accelK = N.accelK;
     const bx = c.x - Math.sin(c.yaw) * (c.half - c.mid + 0.4), bz = c.z - Math.cos(c.yaw) * (c.half - c.mid + 0.4);
     sparks(bx, 1.2, bz, 3, 0.45, 0.75, 1, 10);
-  } else { c.boost = 1; c.accelK = 1; }
+  } else { c.boost = 1 + (c.lift || 0); c.accelK = 1 + (c.liftAccel || 0); }   // lift: a race's tow or catch-up (modes/race.js)
 }
 
 // ---- name tags and the HUD ---------------------------------------------------------------------------------------
@@ -598,8 +603,8 @@ function drawHud() {
 // ---- the round: the map's mode runs it (modes/) --------------------------------------------------------------------
 let rivalN = 0;
 // a rival with the build for wave n, coming in where the mode (or else the map) says
-function addRival(n, at) {
-  const load = { ...rivalBuild(n), name: RIVAL_NAMES[(rivalN++) % RIVAL_NAMES.length] };
+function addRival(n, at) {   // (n can be a build itself: the race's rivals are matched to the player's car)
+  const load = { ...(typeof n === 'object' ? n : rivalBuild(n)), name: RIVAL_NAMES[(rivalN++) % RIVAL_NAMES.length] };
   return addCar(load, at || (mode.rivalSpawn && mode.rivalSpawn()) || MAP.spawnPoint(player, cars.filter((c) => !c.gone)), true);
 }
 function hint(html) { if (html) { $('hint').innerHTML = html; $('hint').classList.add('on'); } else $('hint').classList.remove('on'); }
@@ -730,6 +735,17 @@ $('go').addEventListener('click', () => { if (game.ended) chooseMap(MAP.id); els
     box.appendChild(b);
   }
   $('map-blurb').textContent = MAP.blurb; $('go').textContent = mode.go; $('menu-note').textContent = mode.note;
+  // a mode with difficulty levels (the race) gets a row of buttons for them, kept in the save
+  if (mode.levels) {
+    const row = $('levels'); row.hidden = false;
+    const show = () => { for (const b of row.querySelectorAll('button')) b.className = b.dataset.id === mode.levels.get() ? 'on' : ''; $('menu-note').textContent = mode.note; };
+    for (const [id, name] of mode.levels.list) {
+      const b = document.createElement('button'); b.dataset.id = id; b.textContent = name;
+      b.addEventListener('click', () => { mode.levels.set(id); show(); });
+      row.appendChild(b);
+    }
+    show();
+  }
 }
 $('over-go').addEventListener('click', () => chooseMap(MAP.id));
 $('over-more').addEventListener('click', overGo);
@@ -958,6 +974,7 @@ function step(dt) {
   pickups.step(dt, live); hazards.step(dt, live);
   for (const c of cars) if (!c.gone) { if (!c.dead) c.point(dt); c.pose(dt); }
   stepCamera(dt);
+  if (backdrop) backdrop.step(dt, quality.step);
   const fc = player || MAP.spawn;
   setFocus(fc.x, fc.z); followSun(fc.x, fc.z);
   stepSim(dt);
@@ -992,4 +1009,4 @@ followSun(player.x, player.z);
 const loadEl = $('loading'); if (loadEl) loadEl.hidden = true;
 $('menu').hidden = false;
 requestAnimationFrame((t) => { last = t; frame(t); });
-window.__derby = { touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, sfx, mines, gadget, spawnPlayer, addCar, pickups, hazards };
+window.__derby = { touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, sfx, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop };

@@ -106,3 +106,27 @@ export const AI = {
   ramRange: 46,       // closer than this they floor it and ram
   mend: 0.45,         // below this share of their health they make for a repair kit, on maps that have them (pickups.js)
 };
+
+// ---- the race's difficulty (modes/race.js, picked on the start card) ---------------------------------------------
+// The rivals' cars are tuned to the player's own, the way the big racing games fill a race with cars of the player's
+// class: what the player bought changes how they win, not whether there is a race. Each rival gets the top speed and
+// pull of the player's car times `speed` (and its grid slot's share of `spread`, the front of the grid quickest), and
+// the same turning. How well they drive: `pace` is the share of top speed they hold down a straight (a range: each
+// rival draws its own), `grip` how near their car's limit they take a bend, `brake` how hard they count on braking
+// (voxels a second, a second: the cars can do about twice 150, so more is later braking). `ease` is the most a rival far
+// ahead of the player backs off, `push` the most one far behind finds (the catch-up: none on Hard). `aim` scales the
+// wobble in their aim, `prize` the scrap for the place.
+export const RACE = {
+  levels: {
+    easy: { name: 'Easy', speed: 0.92, pace: [0.92, 0.95], grip: [0.76, 0.81], brake: 135, ease: 0.12, push: 0.03, aim: 1.35, prize: 0.75,
+      note: 'The rivals\' cars are a bit slower than yours.' },
+    normal: { name: 'Normal', speed: 1.0, pace: [0.965, 0.995], grip: [0.83, 0.88], brake: 150, ease: 0.07, push: 0.05, aim: 1, prize: 1,
+      note: 'The rivals\' cars are tuned to about yours: some quicker, some slower.' },
+    hard: { name: 'Hard', speed: 1.05, pace: [0.99, 1.0], grip: [0.89, 0.93], brake: 165, ease: 0, push: 0, aim: 0.75, prize: 1.5,
+      note: 'The rivals\' cars are quicker than yours and driven hard. No catch-up. Pays 1.5x.' },
+  },
+  spread: [0.04, 0.02, 0, -0.02, -0.04],   // the rivals' grid slots, front to back
+  // slipstream, for every car: tucked in behind another within `reach` voxels and `width` across, above `min` speed,
+  // up to this much more top speed (`topK`) and pull (`accelK`), most when close behind
+  slip: { reach: 40, width: 7, min: 40, topK: 0.06, accelK: 0.3 },
+};
