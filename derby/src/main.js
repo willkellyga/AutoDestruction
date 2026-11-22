@@ -20,13 +20,14 @@ import { Vehicle, newFrame } from './vehicle.js';
 import { makeDriver, clearLine } from './ai.js';
 import { MAP, MAPS, chooseMap } from './maps/index.js';
 import { MODES } from './modes/index.js';
-import { CRASH, ROUND, AI } from './tuning.js';
+import { CRASH, ROUND, AI, DRIFT } from './tuning.js';
 import { PAINTS, loadSave, keepSave, rivalBuild, RIVAL_NAMES } from './parts.js';
 import { makeGarage } from './garage.js';
 import { makeSounds } from './audio.js';
 import { makePickups } from './pickups.js';
 import { makeHazards } from './hazards.js';
 import { makeQuality } from './quality.js';
+import { makeDrift } from './drift.js';
 
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -89,6 +90,7 @@ MAP.build();
   outer.renderOrder = -1; outer.rotation.x = -Math.PI / 2; outer.position.set(WX / 2, -0.06, WZ / 2); scene.add(outer);
 }
 initSim(scene);
+const drifts = makeDrift({ scene, camera, mobile: MOBILE, el: $('drift') });   // skid marks, tyre smoke, the drift meter
 look.detail.value = 1; look.dusk.value = 0;
 cfg.dust = 0.55; cfg.hang = 0.2;
 
@@ -402,6 +404,11 @@ const crashHooks = {
     sound('thud', clamp(into / 50, 0.3, 1), H.x, H.y, H.z); sparks(H.x, 2.5, H.z, 6, 1, 0.8, 0.4, 14);
     sfx.play(into > 30 ? 'crunch' : 'scrape', clamp(into / 40, 0.3, 1), H.x, H.z, { gap: 0.25 });
     if (c === player) game.shake = Math.min(1.2, game.shake + into / 90);
+  },
+  // a drift held long enough pays out a short burst as it ends (vehicle.js)
+  drift(c, lvl) {
+    sfx.play('nitro', c === player ? 0.35 + 0.15 * lvl : 0.25, c.x, c.z, { rate: 1.3, gap: 0.3 });
+    if (c === player) drifts.boost(c, lvl);
   },
 };
 // the parked cars stand in the way until they are smashed
@@ -764,7 +771,7 @@ function drivePlayer(dt) {
   const k = (a, b) => keys[a] || keys[b];
   c.throttle = (k('KeyW', 'ArrowUp') ? 1 : 0) - (k('KeyS', 'ArrowDown') ? 1 : 0);
   c.steer = (k('KeyA', 'ArrowLeft') ? 1 : 0) - (k('KeyD', 'ArrowRight') ? 1 : 0);
-  c.drift = !!keys.Space || touch.drift; c.brake = c.drift ? 0.35 : 0;
+  c.drift = !!keys.Space || touch.drift; c.brake = 0;   // the handbrake: a drift when steering, a brake when not (vehicle.js)
   // the stick: the car turns to the way it is pushed (up the screen is straight ahead) and goes; pulled back, it reverses
   const m = Math.hypot(touch.sx, touch.sy);
   if (touch.id !== null && m > 0.2) {
@@ -858,8 +865,9 @@ function stepCamera(dt) {
   const c = player; if (!c) return;
   if (game.state === 'garage') { garageCamera(dt); return; }
   if (!cam.locked) {   // follow the car round its turns
-    const want = Math.abs(c.fwd) > 8 && c.fwd < 0 ? c.yaw : c.yaw;
-    cam.yaw += wrap(want - cam.yaw) * Math.min(1, dt * 2.6);
+    // in a drift it swings round a little towards where the car is going, and keeps up with the car's quicker turn
+    const want = c.yaw + c.slipA * c.slide * DRIFT.camSwing;
+    cam.yaw += wrap(want - cam.yaw) * Math.min(1, dt * (2.6 + DRIFT.camFollow * c.slide));
     cam.pitch += ((tall ? 0.4 : 0.3) - cam.pitch) * Math.min(1, dt * 2);   // up behind the car, so the road ahead shows over its roof
   }
   cam.cx += (c.x - cam.cx) * Math.min(1, dt * 12); cam.cz += (c.z - cam.cz) * Math.min(1, dt * 12);
@@ -920,7 +928,7 @@ function step(dt) {
     drivePlayer(dt);
     for (const c of cars) if (c.driver) { c.driver.think(dt, cars, player); guns(c, dt, c.dead ? [] : c.fire || []); }
     for (const c of cars) if (!c.gone) { c.hurtT -= dt; if (c.dead) c.deadT += dt; stepGadget(c, dt); c.step(dt, crashHooks); parked(c, dt); saws(c, dt); blades(c, dt); }
-    stepMines(dt); stepBolts(dt);
+    stepMines(dt); stepBolts(dt); drifts.step(dt, cars, player);
     for (let i = 0; i < cars.length; i++) for (let j = i + 1; j < cars.length; j++) if (!cars[i].gone && !cars[j].gone) bump(cars[i], cars[j]);
     // wrecks lie a while, then crumble away
     for (let i = cars.length - 1; i >= 0; i--) {
@@ -952,7 +960,7 @@ function step(dt) {
     const sp = Math.abs(player.fwd), on = !muted && (live || game.state === 'garage') && !player.dead, k = clamp(sp / player.spec.top, 0, 1.4);
     sfx.listen(player.x, player.z, cam.yaw);
     engine.me.set(on ? 0.5 + 0.35 * Math.abs(player.throttle) : 0, 0.72 + k * 1.05 + (player.boostT > 0 ? 0.22 : 0), player.x, player.z);
-    engine.skid.set(on && sp > 18 && player.scrape > 9 ? clamp((player.scrape - 9) / 26, 0, 0.9) : 0, 0.9 + clamp(sp / 160, 0, 0.3), player.x, player.z);
+    engine.skid.set(on && player.speed > 14 ? clamp(player.skid, 0, 0.9) : 0, 0.85 + clamp(player.speed / 160, 0, 0.3) + 0.12 * player.skid, player.x, player.z);
     const near = live ? cars.filter((c) => c.rival && !c.dead).sort((a, b) => Math.hypot(a.x - player.x, a.z - player.z) - Math.hypot(b.x - player.x, b.z - player.z)) : [];
     // the minigun's barrels, the saws' motor and the arc coil's hum, on the player's car
     const bv = player.barrelV || 0, arcG = player.guns.find((G) => G.g.arc);
