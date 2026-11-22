@@ -476,6 +476,27 @@ export default {
   blurb: 'An army base overrun by the dead, and more of them every minute. No fighting the other cars: outlast them all.',
   loading: ['Building the base', 'Raising the fences and the hangars'],
   outer: 0x8d8566,
+  // The country past the wall (../backdrops/wilds.js): forest and hills, the road out with what was left on it, a radio
+  // mast, a farm burning to the east and the town the road goes to burning on the horizon. x east, z south, in voxels.
+  backdrop: {
+    kind: 'wilds', seed: 5151,
+    world: [0, 0, WX, WZ],
+    view: { x: WX / 2, z: WZ / 2 },
+    sand: 0xa39874,                           // the base's own ground, for the cleared strip outside the wall
+    clear: 100,                               // that strip: open ground, no trees or wrecks (the horde comes in over it)
+    far: 1950,                                // no pines further than this from the middle of the base
+    hills: { flat: 170, base: 30, amp: 260 }, // flat this far out, then rising to hills this high
+    // the road south out of the gate, down its valley to the town, and the dirt tracks out of the other three gates
+    road: [[GX, WZ - 2], [GX, 560], [236, 760], [150, 1000], [60, 1280], [-40, 1560], [-110, 1790]], roadW: 40,
+    tracks: [[[GX, 2], [GX, -160], [300, -420], [420, -760]], [[2, GZ], [-180, 214], [-460, 160]], [[WX - 2, GZ], [700, 236], [980, 380]]],
+    wrecks: { from: 110, to: 980, checkpoint: 150 },   // the cars left on the road from and to (along it), and the army's checkpoint
+    town: { x: -150, z: 1950, r: 250 },
+    farm: { x: 1000, z: 420 },
+    mast: { x: -560, z: -480, h: 120 },
+    pines: { count: 4200, mobile: 2400 },
+    smoke: 7,                                 // columns of smoke over the town
+    wind: [0.22, -0.06],                      // which way the smoke leans, a share of its height
+  },
   build, ground,
   // the open ground's grain, ruts and thrown dirt, the hard ground's grain and rubber, and all of it wet from the storm
   // (ground.js, dirt.js)

@@ -95,7 +95,7 @@ const floor = makeGround({ scene, renderer, MAP, mobile: MOBILE });   // the map
     outer.renderOrder = -1; outer.rotation.x = -Math.PI / 2; outer.position.set(WX / 2, -0.06, WZ / 2); scene.add(outer);
   }
 }
-const backdrop = MAP.backdrop ? makeBackdrop({ scene, layout: MAP.backdrop, mobile: MOBILE, viewH: () => renderer.domElement.height }) : null;
+const backdrop = MAP.backdrop ? makeBackdrop({ scene, map: MAP, mobile: MOBILE, viewH: () => renderer.domElement.height, follow: () => player }) : null;
 initSim(scene);
 const drifts = makeDrift({ scene, camera, mobile: MOBILE, el: $('drift'), soft: floor.dirtAt });   // skid marks, tyre smoke, the drift meter
 const dirt = makeDirt({ scene, camera, renderer, floor, MAP, mobile: MOBILE });   // ruts, rooster tails, dust and clods off the wheels

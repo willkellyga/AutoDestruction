@@ -7,6 +7,8 @@
 //   build()                       lays the voxels with src/world.js's kit; ends with finish() from ./common.js
 //   ground()                      the painted ground: a canvas WX*GK by WZ*GK (canvasFor() in ./common.js)
 //   outer                         the colour of the land past the edge of the map
+//   backdrop                      optional: the world round the map past its edge, drawn in place of `outer`; its `kind`
+//                                 says which (../backdrop.js: the arena's city, the harbor round the race, the wilds)
 //   spawn {x, z, yaw}             where the player starts
 //   spawnPoint(player, taken)     a place for a rival to come in, away from the cars in `taken`
 //   waypoint(car, tx, tz, out)    the next point for a rival to drive at on the way to (tx, tz)
