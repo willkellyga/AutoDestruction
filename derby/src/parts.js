@@ -26,10 +26,13 @@ export const PARTS = {
     bruiser: { name: 'Bruiser', desc: 'A long wood-sided station wagon. More armour, more Power.', cost: 400, shape: 'wagon', hp: 180, power: 14, mass: 1.25, top: 88, back: 32, accel: 62, turn: 2.25, grip: 7.0, ram: 1.2 },
     jackal: { name: 'Jackal', desc: 'An open dune buggy with a roll cage. Light, quick off the line, and thin-skinned.', cost: 550, shape: 'buggy', hp: 115, power: 11, mass: 0.8, top: 104, back: 36, accel: 84, turn: 2.7, grip: 7.2, ram: 0.85 },
     viper: { name: 'Viper', desc: 'A fastback muscle car. Brutal in a straight line.', cost: 700, shape: 'muscle', hp: 135, power: 14, mass: 1.1, top: 106, back: 36, accel: 78, turn: 2.4, grip: 6.6, ram: 1.05 },
+    duchess: { name: 'Duchess', desc: 'A finned fifties land yacht. Long, heavy and fast, with a lazy turn.', cost: 850, shape: 'yacht', hp: 175, power: 15, mass: 1.4, top: 100, back: 32, accel: 64, turn: 2.0, grip: 6.6, ram: 1.35 },
+    rhino: { name: 'Rhino', desc: 'A boxy 4x4 on big tyres. Tough, grippy, and it shrugs off a knock.', cost: 900, shape: 'offroad', hp: 210, power: 16, mass: 1.45, top: 86, back: 32, accel: 60, turn: 2.15, grip: 7.8, ram: 1.3 },
     hauler: { name: 'Hauler', desc: 'A square-body pickup truck. Huge armour, slow to turn.', cost: 1000, shape: 'pickup', hp: 230, power: 17, mass: 1.55, top: 82, back: 30, accel: 56, turn: 2.0, grip: 7.2, ram: 1.35 },
     stiletto: { name: 'Stiletto', desc: 'A low wedge supercar. The top speed of the lot, and it corners flat.', cost: 1200, shape: 'wedge', hp: 145, power: 15, mass: 1.05, top: 114, back: 36, accel: 82, turn: 2.55, grip: 8.4, ram: 0.95 },
     mule: { name: 'Mule', desc: 'A panel van. Lots of Power and armour, and slow.', cost: 1400, shape: 'van', hp: 265, power: 19, mass: 1.75, top: 78, back: 28, accel: 50, turn: 1.85, grip: 7.0, ram: 1.45 },
-    mammoth: { name: 'Mammoth', desc: 'A school bus. By far the most armour and Power, and it turns like a ship.', cost: 1800, shape: 'bus', hp: 320, power: 22, mass: 2.2, top: 74, back: 26, accel: 44, turn: 1.65, grip: 7.0, ram: 1.6 },
+    mammoth: { name: 'Mammoth', desc: 'A school bus. Huge armour and Power, and it turns like a ship.', cost: 1800, shape: 'bus', hp: 320, power: 22, mass: 2.2, top: 74, back: 26, accel: 44, turn: 1.65, grip: 7.0, ram: 1.6 },
+    kingpin: { name: 'Kingpin', desc: 'A semi truck with no trailer. The most armour and Power, and it hits like a train.', cost: 2200, shape: 'rig', hp: 360, power: 24, mass: 2.6, top: 76, back: 24, accel: 42, turn: 1.55, grip: 7.2, ram: 1.85 },
   },
   primary: {
     mg: { name: 'Machine gun', desc: 'Steady fire at any range.', cost: 0, power: 3, mass: 0.04, fx: 'mg', rate: 11, dmg: 2.6, wall: 0.85, carve: 0.6, spread: 0.6, range: 260, look: 'mg' },
@@ -50,7 +53,10 @@ export const PARTS = {
     none: { name: 'Nothing', desc: 'Plain doors.', cost: 0, power: 0, mass: 0 },
     guns: { name: 'Door guns', desc: 'A gun on each door, firing forward with your main gun.', cost: 300, power: 3, mass: 0.05, fx: 'mg', group: 'guns', rate: 8, dmg: 1.8, wall: 0.7, carve: 0.5, spread: 1.0, range: 210, cone: 0.3, look: 'guns' },
     rockets: { name: 'Side rockets', desc: 'A rocket tube on each door, fired with the heavy weapon.', cost: 450, power: 3, mass: 0.06, fx: 'rocket', group: 'heavy', reload: 1.8, salvo: 2, gap: 0.1, dmg: 15, splash: 13, reach: 13, wall: 4.5, carve: 2.2, range: 300, cone: 0.3, look: 'rockets' },
-    blades: { name: 'Side blades', desc: 'Blades out of the sills. Side-swipe a car to cut it up.', cost: 400, power: 2, mass: 0.06, blade: 28, look: 'blades' },
+    shotguns: { name: 'Door shotguns', desc: 'A shotgun on each door, both fired with your main gun. Brutal up close.', cost: 400, power: 3, mass: 0.05, fx: 'rifle', group: 'guns', reload: 0.85, salvo: 1, pellets: 6, dmg: 2.4, wall: 0.9, carve: 0.6, spread: 7, range: 100, cone: 0.3, look: 'shotguns' },
+    burners: { name: 'Side burners', desc: 'A flame jet on each door, lit with your main gun. Short reach, and it sets cars alight.', cost: 500, power: 3, mass: 0.05, flame: true, group: 'guns', rate: 12, dmg: 1.2, range: 34, burn: 4, cone: 0.3, look: 'burners' },
+    blades: { name: 'Side saws', desc: 'A buzz saw spinning out of each door. Side-swipe a car to cut it up.', cost: 450, power: 2, mass: 0.07, blade: 30, look: 'blades' },
+    hubs: { name: 'Hub spikes', desc: 'Spikes out of all four wheels. Rub alongside a car to shred it.', cost: 350, power: 2, mass: 0.05, blade: 22, look: 'hubs' },
   },
   secondary: {
     none: { name: 'Nothing', desc: 'Saves Power for something else.', cost: 0, power: 0, mass: 0 },
@@ -78,9 +84,12 @@ export const PARTS = {
     monster: { name: 'Monster tyres', desc: 'Huge. Ram harder and roll over rubble and grass.', cost: 600, power: 1, mass: 0.2, hp: 20, ramK: 1.4, topK: 0.94, roughK: 0.1, look: 'monster' },
   },
   engine: {
-    stock: { name: 'Stock', desc: 'It runs.', cost: 0, power: 0, mass: 0 },
-    turbo: { name: 'Turbo', desc: 'Faster off the line.', cost: 250, power: 1, mass: 0.02, accelK: 1.25 },
-    v8: { name: 'Big V8', desc: 'More top speed and more pull.', cost: 500, power: 2, mass: 0.06, accelK: 1.12, topK: 1.12 },
+    stock: { name: 'Stock', desc: 'A plain four. It runs.', cost: 0, power: 0, mass: 0, look: 'stock' },
+    turbo: { name: 'Turbo', desc: 'A four with a turbo on it. Faster off the line.', cost: 250, power: 1, mass: 0.02, accelK: 1.25, pitch: 1.06, look: 'turbo' },
+    diesel: { name: 'Big diesel', desc: 'A huge six. Slow to rev, but it shoves: rams harder, and black smoke when you floor it.', cost: 450, power: 2, mass: 0.12, accelK: 1.1, ramK: 1.25, pitch: 0.7, smoke: true, look: 'diesel' },
+    v8: { name: 'Big V8', desc: 'More top speed and more pull.', cost: 500, power: 2, mass: 0.06, accelK: 1.12, topK: 1.12, pitch: 0.9, look: 'v8' },
+    blower: { name: 'Supercharger', desc: 'A V8 with a blower sticking up through the bonnet. Huge pull and top speed.', cost: 850, power: 3, mass: 0.08, accelK: 1.28, topK: 1.16, pitch: 0.85, look: 'blower' },
+    jet: { name: 'Jet turbine', desc: 'A screaming turbine. The highest top speed of all, but slow to wind up.', cost: 1100, power: 4, mass: 0.05, accelK: 0.94, topK: 1.26, pitch: 1.45, whine: true, look: 'jet' },
   },
   gadget: {
     none: { name: 'Nothing', desc: '', cost: 0, power: 0, mass: 0 },
@@ -149,15 +158,15 @@ const pick = (a) => a[Math.floor(Math.random() * a.length)];
 export function rivalBuild(wave) {
   const t = Math.min(4, wave);
   const L = {
-    body: pick([['scrapper', 'bruiser', 'jackal'], ['scrapper', 'bruiser', 'jackal', 'viper'], ['bruiser', 'jackal', 'viper', 'hauler', 'stiletto', 'mammoth'], ['viper', 'hauler', 'stiletto', 'mule'], ['hauler', 'stiletto', 'mule', 'mammoth']][t]),
+    body: pick([['scrapper', 'bruiser', 'jackal'], ['scrapper', 'bruiser', 'jackal', 'viper', 'duchess'], ['bruiser', 'jackal', 'viper', 'duchess', 'rhino', 'hauler', 'stiletto', 'mammoth', 'kingpin'], ['viper', 'duchess', 'rhino', 'hauler', 'stiletto', 'mule', 'kingpin'], ['rhino', 'hauler', 'stiletto', 'mule', 'mammoth', 'kingpin']][t]),
     primary: pick(t < 1 ? ['mg'] : t < 3 ? ['mg', 'mg', 'scatter', 'minigun', 'flamer'] : ['mg', 'scatter', 'minigun', 'flamer']),
     roof: pick(t < 1 ? ['none'] : t < 2 ? ['none', 'none', 'twin', 'rack'] : t < 3 ? ['none', 'twin', 'rack', 'mortar'] : ['none', 'twin', 'rack', 'arc', 'mortar']),
-    door: pick(t < 2 ? ['none', 'none', 'guns'] : ['none', 'guns', 'rockets', 'blades']),
+    door: pick(t < 2 ? ['none', 'none', 'guns', 'shotguns', 'hubs'] : ['none', 'guns', 'rockets', 'blades', 'shotguns', 'burners', 'hubs']),
     secondary: pick(t < 1 ? ['none', 'none', 'rockets'] : t < 2 ? ['none', 'rockets', 'mines'] : t < 3 ? ['none', 'rockets', 'mines', 'seekers'] : ['rockets', 'cannon', 'mines', 'seekers']),
     front: pick(t < 2 ? ['bumper', 'plow'] : ['plow', 'spikes', 'saws']),
     armour: pick([['none'], ['none', 'light'], ['light', 'medium'], ['medium', 'heavy'], ['heavy']][t]),
     wheels: pick(t < 2 ? ['street', 'offroad'] : ['street', 'offroad', 'slicks', 'monster']),
-    engine: pick(t < 2 ? ['stock'] : ['stock', 'turbo', 'v8']),
+    engine: pick(t < 2 ? ['stock', 'stock', 'turbo'] : t < 3 ? ['stock', 'turbo', 'v8', 'diesel'] : ['turbo', 'v8', 'diesel', 'blower', 'jet']),
     gadget: pick(t < 1 ? ['none'] : t < 2 ? ['none', 'none', 'nitro', 'oil', 'jump'] : t < 3 ? ['none', 'nitro', 'oil', 'jump', 'shield'] : ['none', 'nitro', 'repair', 'shield', 'oil', 'jump']),
     paint: pick(Object.keys(PAINTS).filter((p) => p !== 'orange')), trim: pick(['black', 'white', 'silver', 'yellow', 'red']), pattern: pick(Object.keys(PATTERNS)),
   };
@@ -182,7 +191,7 @@ export function racerBuild(target, near) {
   const L = rivalBuild(2);
   L.body = pick(bodies.slice(0, 2));
   let best = null, bd = Infinity;
-  for (const engine of ['stock', 'turbo', 'v8']) for (const wheels of ['street', 'offroad', 'slicks']) {
+  for (const engine of ['stock', 'turbo', 'v8', 'diesel', 'blower', 'jet']) for (const wheels of ['street', 'offroad', 'slicks']) {
     const d = Math.abs(statsOf({ ...L, engine, wheels }).top - target) + Math.random() * 4;   // (a little luck in a near thing)
     if (d < bd) { bd = d; best = { engine, wheels }; }
   }

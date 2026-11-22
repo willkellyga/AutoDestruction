@@ -142,7 +142,7 @@ function initAudio() {
   audioMix.init();
   if (engine || !sfx.init()) return;
   // the player's engine and tyres, and the two nearest rivals' engines, on loops
-  engine = { me: sfx.loop('engine_loop'), skid: sfx.loop('skid_loop'), rivals: [sfx.loop('engine_loop'), sfx.loop('engine_loop')], spin: sfx.loop('mini_spin'), saw: sfx.loop('saw_loop'), hum: sfx.loop('arc_hum'), flame: sfx.loop('flame_loop') };
+  engine = { me: sfx.loop('engine_loop'), skid: sfx.loop('skid_loop'), rivals: [sfx.loop('engine_loop'), sfx.loop('engine_loop')], spin: sfx.loop('mini_spin'), saw: sfx.loop('saw_loop'), hum: sfx.loop('arc_hum'), flame: sfx.loop('flame_loop'), jet: sfx.loop('mini_spin') };
 }
 function sound(name, vol = 1, x, y, z) {
   audioMix.on = !muted;
@@ -300,7 +300,7 @@ function shoot(c, G) {
   for (const i of barrels) {
     if (!c.muzzle(G, _m, _d, i)) continue;
     if (g.mine) { dropMine(c, g, _m); return; }
-    if (g.flame) { specials.flame(c, G, _m, coneAim(c, G, _ap)); return; }   // (its roar is a loop: see the sounds)
+    if (g.flame) { specials.flame(c, G, _m, coneAim(c, G, _ap)); continue; }   // (its roar is a loop: see the sounds)
     if (g.mortar) { specials.lob(c, G, _m, coneAim(c, G, _ap)); return; }
     // a round whose way out crosses its own car's box (a gun aimed down over the bonnet, a door gun aimed in across the
     // nose) starts just past the box
@@ -378,7 +378,8 @@ function guns(c, dt, want, only) {
     const g = G.g, pull = !!want[G.group];
     G.t = Math.max(0, G.t - dt);
     // the rivals don't waste the roof and door weapons on cars that aren't in front of them
-    const ok = !G.cone || !c.rival || c.inCone(G, c.aim.x, c.aim.z, 0.25);
+    let ok = !G.cone || !c.rival || c.inCone(G, c.aim.x, c.aim.z, 0.25);
+    if (ok && g.flame && c.rival && G.slot !== 'primary' && Math.hypot(c.aim.x - c.x, c.aim.z - c.z) > g.range * 1.3) ok = false;   // (nor flame at cars out of reach)
     if (g.arc) { if (pull && G.t <= 0 && zap(c, G)) G.t = g.reload; continue; }
     if (g.rate) {   // automatic: keeps firing while held
       if (pull && ok && (G.cone || c.onTarget(0.5))) { while (G.t <= 0) { shoot(c, G); G.t += 1 / g.rate; } }
@@ -509,15 +510,15 @@ function saws(c, dt) {
     }
   }
 }
-// side blades cut whatever a car rubs along
+// the side saws and the hub spikes cut whatever a car rubs along
 const _bl = new THREE.Vector3();
 function blades(c, dt) {
-  if (!c.spec.blade || c.dead) return;
+  if (!c.spec.blade || c.dead || !c.def.dims.cut) return;
   const sy = Math.sin(c.yaw), cy = Math.cos(c.yaw);
   for (const o of cars) {
     if (o === c || o.gone || Math.hypot(o.x - c.x, o.z - c.z) > c.half + o.half + 6) continue;
-    for (const side of [1, -1]) for (const f of [-0.35, 0.1, 0.5]) {
-      const lx = side * ((c.def.dims.blade || c.wide + 1.5) - 0.3), lz = c.mid + c.half * f;
+    for (const side of [1, -1]) for (const [out, along] of c.def.dims.cut) {
+      const lx = side * (out - 0.3), lz = along;
       const x = c.x + lx * cy + lz * sy, z = c.z - lx * sy + lz * cy;
       if (!o.inside(x, 1.6, z, 0.5)) continue;
       const rel = Math.hypot(o.vx - c.vx, o.vz - c.vz);
@@ -777,7 +778,7 @@ function stepDummies(dt) {
 
 // ---- parts going on and coming off ----------------------------------------------------------------------------------
 // which bones of the car's model are each slot's part (null: the whole car)
-const SLOT_BONES = { primary: ['yaw'], roof: ['roof'], door: ['doorL', 'doorR', 'blades'], secondary: ['pod', 'mines'], front: ['front'], wheels: ['wFL', 'wFR', 'wRL', 'wRR'] };
+const SLOT_BONES = { primary: ['yaw'], roof: ['roof'], door: ['doorL', 'doorR', 'blades', 'hubFL', 'hubFR', 'hubRL', 'hubRR'], secondary: ['pod', 'mines'], front: ['front'], wheels: ['wFL', 'wFR', 'wRL', 'wRR'], engine: ['engine'] };
 const _w2 = new THREE.Vector3();
 function shedPart(c, slot) {
   const names = SLOT_BONES[slot]; if (!names) return;
@@ -802,12 +803,18 @@ function boltOn(slot, how, same) {
 }
 function stepBolt(dt) {
   const B = bolt, c = player;
+  if (c) {   // the bonnet lifts while the engines are being looked at; the engine rocks as it revs
+    const st = c.unit.state, want = game.state === 'garage' && gcam.view === 'engine' && c.def.dims.hood ? (c.def.dims.hoodDir > 0 ? 1.75 : 1.15) : 0;   // (a lid behind the cabin goes up past upright, out of the way)
+    st.hood = game.state === 'garage' ? st.hood + (want - st.hood) * Math.min(1, dt * 3.2) : 0;
+    st.shake = game.state === 'garage' && game.revT > 0 ? 0.045 * Math.sin(Math.min(1, game.revT / 1.4) * Math.PI) : 0;
+  }
   if (c && game.state === 'garage') {
     // the engine tried out: the car shakes as it revs, smoke from the back
     if (game.revT > 0) {
       game.revT -= dt;
       c.unit.root.position.y += (Math.random() - 0.5) * 0.05; c.unit.bones.body.rotation.z += (Math.random() - 0.5) * 0.012;
       if (Math.random() < dt * 14) { const s = Math.sin(c.yaw), co = Math.cos(c.yaw); dust(c.x + s * (c.mid - c.half), 1, c.z + co * (c.mid - c.half), 3, 2.5); }
+      specials.exhaust(c, dt, 1);
     }
     if (game.boostT > 0) {
       game.boostT -= dt;
@@ -855,7 +862,7 @@ const VIEWS = {
   front: { turn: 0.38, h: 5, d: 13, y: 1.9, f: 0.75, r: 0.8 },
   armour: { turn: 1.05, h: 7.5, d: 16, y: 2.4, f: 0, r: 1.15 },
   wheels: { turn: 1.3, h: 2.8, d: 11, y: 1.6, f: 0.55, r: 0.7 },
-  engine: { turn: 0.3, h: 9.5, d: 14, y: 2.5, f: 0.45, r: 0.9 },
+  engine: { turn: 0.45, h: 14, d: 13, y: 2.3, f: 0.5, r: 0.6 },   // (high, to look down into the bay with the bonnet up)
   gadget: { turn: 2.6, h: 6.5, d: 15, y: 2.4, f: -0.5, r: 1 },
   paint: { turn: 0.75, h: 7, d: 19, y: 2.4, f: 0, r: 1.2, spin: true },
   range: { turn: 0, h: 13, d: 30, y: 3.2, f: 0.55, r: 1.6, yaw: Math.PI, az: 0.16 },   // the firing range: nose to the door, looking out past the car
@@ -866,6 +873,7 @@ function turnTable(dx) { gcam.user += dx * 0.012; gcam.idle = 0; }
 function viewNow() {
   if (tryer.slot && tryer.view) return VIEWS[tryer.view];
   if (gcam.view === 'secondary' && player && player.load.secondary === 'mines') return VIEWS.rear;
+  if (gcam.view === 'engine' && player && player.def.dims.bayZ < player.mid) return { ...VIEWS.engine, turn: 2.05, h: 17, d: 11, f: (player.def.dims.bayZ - player.mid) / player.half };   // (from the side, past the wing)
   return VIEWS[gcam.view] || VIEWS.body;
 }
 function garageCamera(dt) {
@@ -921,7 +929,7 @@ function hotspots() {
     list.push({ slot, x: (_hc.x * 0.5 + 0.5) * canvas.clientWidth, y: (-_hc.y * 0.5 + 0.5) * canvas.clientHeight, on: facing && _hc.z < 1 });
   };
   local(0, 2, D.mid + D.half - 0.4, 0, 0.2, 1); add('front');
-  local(0, D.roof * 0.78, D.mid + D.half * 0.6, 0, 1, 0.5); add('engine');
+  if (gcam.view !== 'engine') { const bz = D.bayZ ?? D.mid + D.half * 0.6; local(0, D.roof * 0.78, bz, 0, 1, bz < D.mid ? -0.5 : 0.5); add('engine'); }   // (not over the open bay)
   if (!bone('yaw', 0, 1.6)) local(0, D.top, D.mid, 0, 1, 0); add('primary');
   if (!bone('roof', 0, 0.8)) local(0, D.roof + 0.4, D.mid + D.half * 0.25, 0, 1, 0.3); add('roof');
   local(side * (D.wide + 0.1), 2.3, D.mid + D.half * 0.25, side, 0, 0); add('door');
@@ -1305,7 +1313,7 @@ function step(dt) {
     // (a test drive moves only the player and the target cars in the yard; the round waits)
     const on = (c) => !c.gone && (live || c === player || c.dummy);
     if (live) for (const c of cars) if (c.driver) { c.driver.think(dt, cars, player); guns(c, dt, c.dead ? [] : c.fire || []); if (c.useGadget) gadget(c); }
-    for (const c of cars) if (on(c)) { c.hurtT -= dt; if (c.dead) c.deadT += dt; stepGadget(c, dt); c.step(dt, crashHooks); parked(c, dt); saws(c, dt); blades(c, dt); }
+    for (const c of cars) if (on(c)) { c.hurtT -= dt; if (c.dead) c.deadT += dt; stepGadget(c, dt); c.step(dt, crashHooks); parked(c, dt); saws(c, dt); blades(c, dt); specials.exhaust(c, dt); }
     stepMines(dt); stepBolts(dt); drifts.step(dt, cars, player);
     for (let i = 0; i < cars.length; i++) for (let j = i + 1; j < cars.length; j++) if (on(cars[i]) && on(cars[j])) bump(cars[i], cars[j]);
     // wrecks lie a while, then crumble away (the target cars come back on their own: stepDummies)
@@ -1348,18 +1356,20 @@ function step(dt) {
     const sp = Math.abs(player.fwd), on = !muted && (live || test || game.state === 'garage') && !player.dead, k = clamp(sp / player.spec.top, 0, 1.4);
     sfx.listen(player.x, player.z, cam.yaw);
     const rev = game.revT > 0 ? Math.sin(Math.min(1, game.revT / 1.4) * Math.PI) : 0;   // an engine tried in the garage: a rev
-    engine.me.set(on ? 0.5 + 0.35 * Math.max(Math.abs(player.throttle), rev) : 0, 0.72 + k * 1.05 + (player.boostT > 0 ? 0.22 : 0) + rev * 0.9, player.x, player.z);
+    const E = PARTS.engine[player.load.engine] || {}, pitch = E.pitch || 1;
+    engine.me.set(on ? 0.5 + 0.35 * Math.max(Math.abs(player.throttle), rev) : 0, (0.72 + k * 1.05 + (player.boostT > 0 ? 0.22 : 0) + rev * 0.9) * pitch, player.x, player.z);
+    engine.jet.set(on && E.whine ? 0.22 + 0.3 * Math.max(Math.abs(player.throttle), rev) : 0, 1.3 + k * 0.9 + rev * 0.8, player.x, player.z);
     engine.skid.set(on && player.speed > 14 ? clamp(player.skid, 0, 0.9) : 0, 0.85 + clamp(player.speed / 160, 0, 0.3) + 0.12 * player.skid, player.x, player.z);
     const near = live ? cars.filter((c) => c.rival && !c.dead).sort((a, b) => Math.hypot(a.x - player.x, a.z - player.z) - Math.hypot(b.x - player.x, b.z - player.z)) : [];
     // the minigun's barrels, the saws' motor and the arc coil's hum, on the player's car
     const bv = player.barrelV || 0, arcG = player.guns.find((G) => G.g.arc);
     engine.spin.set(on && bv > 1 ? clamp(bv / 30, 0, 1) * 0.8 : 0, 0.45 + bv / 30 * 0.8, player.x, player.z);
-    engine.saw.set(on && player.spec.saw ? 0.35 + clamp(player.speed / 80, 0, 0.3) : 0, 1, player.x, player.z);
+    engine.saw.set(on && (player.spec.saw || (player.spec.blade && player.load.door === 'blades')) ? 0.35 + clamp(player.speed / 80, 0, 0.3) : 0, 1, player.x, player.z);
     engine.hum.set(on && arcG ? (arcG.t <= 0 ? 0.35 : 0.12) : 0, arcG && arcG.t <= 0 ? 1 : 0.8, player.x, player.z);
     // a flamethrower going: the player's, or else the nearest one
     const fl = player.flameT > 0 && !player.dead ? player : cars.filter((c) => c.flameT > 0 && !c.dead).sort((a, b) => Math.hypot(a.x - player.x, a.z - player.z) - Math.hypot(b.x - player.x, b.z - player.z))[0];
     engine.flame.set(!muted && fl ? (fl === player ? 0.8 : 0.6) : 0, fl === player ? 1 : 0.92, fl ? fl.x : player.x, fl ? fl.z : player.z);
-    engine.rivals.forEach((L, i) => { const c = near[i]; if (!c) L.set(0); else L.set(0.45 + 0.3 * Math.abs(c.throttle), 0.68 + clamp(Math.abs(c.fwd) / c.spec.top, 0, 1.3) * 0.95, c.x, c.z); });
+    engine.rivals.forEach((L, i) => { const c = near[i]; if (!c) L.set(0); else L.set(0.45 + 0.3 * Math.abs(c.throttle), (0.68 + clamp(Math.abs(c.fwd) / c.spec.top, 0, 1.3) * 0.95) * ((PARTS.engine[c.load.engine] || {}).pitch || 1), c.x, c.z); });
   }
   document.body.classList.toggle('in-garage', game.state === 'garage');
   document.body.classList.toggle('in-test', game.state === 'test');

@@ -28,7 +28,7 @@ export class Vehicle {
     const seed = SEED++;
     this.def = carDef(load, seed);
     this.unit = new Unit(this.def, mats, { seed });
-    Object.assign(this.unit.state, { spin: 0, steer: 0, roll: 0, pitch: 0, bob: 0, yaw: 0, aim: 0, gunSpin: 0, saw: 0, coneYaw: 0, coneAim: 0, arc: 0 });
+    Object.assign(this.unit.state, { spin: 0, steer: 0, roll: 0, pitch: 0, bob: 0, yaw: 0, aim: 0, gunSpin: 0, saw: 0, coneYaw: 0, coneAim: 0, arc: 0, hood: 0, hoodDir: this.def.dims.hoodDir, shake: 0 });
     const D = this.def.dims;
     this.half = D.half; this.mid = D.mid; this.wide = D.wide; this.top = D.top; this.wheelR = D.wheelR;
     scene.add(this.unit.root);

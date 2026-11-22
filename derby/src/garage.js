@@ -155,7 +155,7 @@ export function makeGarage({ root, save, art, onChange, onDrive, onTest, onTry, 
     const url = art && art.get(slot, key, save.load, () => { const img = root.querySelector(`.g-card[data-slot="${slot}"][data-key="${key}"] .g-art`); if (img) img.innerHTML = artHtml(slot, key); });
     if (url) return `<img src="${url}" alt="">`;
     if (key === 'none') return '<i class="g-none"></i>';
-    return `<i class="g-glyph g-${esc(slot)}">${ICON[slot] || ''}</i>${slot === 'engine' ? `<em>${{ stock: '', turbo: 'T', v8: 'V8' }[key] || ''}</em>` : ''}`;
+    return `<i class="g-glyph g-${esc(slot)}">${ICON[slot] || ''}</i>${slot === 'engine' ? `<em>${{ stock: '', turbo: 'T', v8: 'V8', diesel: 'D', blower: 'SC', jet: 'J' }[key] || ''}</em>` : ''}`;
   }
   function card(slot, key, p) {
     const eq = save.load[slot] === key, own = owned(slot, key), trying = look && look[0] === slot && look[1] === key;

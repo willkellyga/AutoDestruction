@@ -28,8 +28,11 @@ export const GRILLE = 0x111215, GRILLE2 = 0x2b2d31, PLATEW = 0xeeeee6, INK = 0x2
 export const GUNMETAL = 0x3b3f45, STEEL = 0x8a9098, BRIGHT = 0xb9bfc7, DARKS = 0x202327, ARMOUR = 0x5f646b, ARMOUR2 = 0x50555b, RIVET = 0xaab0b8;
 export const RUST = [0x7a4a2a, 0x8f5a30, 0x5e3a22], HAZ = 0xe2b21e, HAZK = 0x1a1a1a, OLIVE = 0x4f5a36, OLIVE2 = 0x434d2d, TIP = 0xc0402c, BED = [0x34363a, 0x2b2d30, 0x3c3e42];
 export const FLAME = [0xffd23a, 0xf58a1f, 0xc8321e], CHECKW = 0xeeeae0, RED_GLOW = 0xff3a2a | GLOW;
+const CREAMR = 0xe9e2cf;   // the land yacht's cream roof
 const WOOD = [0x5a3218, 0x683b1d, 0x774522, 0x86512b, 0x965e35], WOODB = 0xd9ccaa, WOODD = 0x3b2414;
 export const INNER = [0x1c1d20, 0x26272a, 0x151618];
+// a supercharger's blower: how far it stands up out of the bonnet, and the hole cut in the bonnet for it (engines.js)
+export const BLOWER = { up: 5.5, hx: 4.6, hz: 5.6 };
 
 // smooth noise for camo, rust and wood: whole-cube lattice, eased between
 export function noise(x, y, z, s) {
@@ -50,7 +53,8 @@ const bump = (z, c, w) => (ab(z - c) < w ? 0.5 + 0.5 * Math.cos(PI * (z - c) / w
 const inWin = (w, z, y) => { const t = (y - w[4]) / (w[5] - w[4]); return t >= 0 && t <= 1 && z > w[0] + (w[2] - w[0]) * t && z < w[1] + (w[3] - w[1]) * t; };
 
 // ---- role codes in the build grid; 32 and up are colours from the car's own palette ----
-const PAINT = 1, SEAM = 2, LINER = 3, LO = 4, HI = 5, WOODR = 6, PLATE = 7, BEDF = 8, GAP = 9;
+const PAINT = 1, SEAM = 2, LINER = 3, LO = 4, HI = 5, WOODR = 6, PLATE = 7, BEDF = 8, GAP = 9, BAYL = 10, HOODIN = 11;
+const BAYW = 0x3d4046, BAYF = 0x2c2e33, HOODU = 0x4d5157, HOODU2 = 0x3f4247;   // the engine bay's walls and floor, the bonnet's underside
 
 // ---- the shapes ----
 // W: half the width. zN, zT: the shell's nose and tail (the bumpers stand out bumpF, bumpR past them). c0: the sills.
@@ -70,7 +74,8 @@ export const SHAPES = {
     ws: { pil: 2.6, ylo: 23.2, yhi: 33.4 }, rw: { z0: -46, z1: -35.8, pil: 3.4, ylo: 25.2, yhi: 33.2 },
     win: [[-12.5, 19.2, -12.5, 11.6, 23.6, 33], [-28, -15.6, -24.6, -15.6, 23.6, 33]],
     frame: TRIM, drip: TRIM, sill: PLASTIC, sillH: 3.4, lowTone: 0.86,
-    turret: { z: -12, zR: -18 }, roofW: { z: 5.5 }, mirror: { z: 19, style: 'small' }, door: { z: 21 },
+    bay: { hz: [25.2, 47], hx: 17.4, z: [27, 44.5], x: 15, y0: 9 },
+    turret: { z: -12, zR: -18 }, roofW: { z: 5.5 }, mirror: { z: 19, style: 'small' }, door: { z: 5 },
     stripe: [1.5, 6], flame: { z0: 26, len: 48, bonnet: 22 },
   },
   wagon: {
@@ -83,7 +88,8 @@ export const SHAPES = {
     ws: { pil: 2.6, ylo: 23.4, yhi: 34.3 },
     win: [[-7.5, 18.3, -7.5, 7.8, 24, 34.2], [-27, -10.5, -27, -10.5, 24, 34.2], [-54, -30, -53, -30, 24, 34.2]],
     frame: CHROME, drip: CHROME, sill: null, sillH: 2.4, lowTone: 0.88,
-    turret: { z: -18, zR: -24 }, roofW: { z: 1.5 }, mirror: { z: 18, style: 'chrome' }, door: { z: 20 },
+    bay: { hz: [24.6, 59.2], hx: 20, z: [27, 56], x: 17, y0: 9 },
+    turret: { z: -18, zR: -24 }, roofW: { z: 1.5 }, mirror: { z: 18, style: 'chrome' }, door: { z: 7 },
     stripe: [1.5, 6], flame: { z0: 30, len: 56, bonnet: 22 },
   },
   muscle: {
@@ -97,7 +103,8 @@ export const SHAPES = {
     ws: { pil: 2.8, ylo: 22.6, yhi: 29.6 }, rw: { z0: -36.5, z1: -11.2, pil: 6, ylo: 23.6, yhi: 30.2 },
     win: [[-6.5, 13.2, -4.5, 3.6, 23, 29.4], [-17.5, -9, -11.5, -9, 23, 28.6]],
     frame: CHROME, drip: CHROME, sill: null, sillH: 2.6, lowTone: 0.84,
-    turret: { z: -3, zR: -14, pedR: 4 }, roofW: { z: 2.5 }, mirror: { z: 14, style: 'chrome' }, door: { z: 16 },
+    bay: { hz: [21.2, 54], hx: 18.5, z: [23, 52], x: 16, y0: 8 },
+    turret: { z: -3, zR: -14, pedR: 4 }, roofW: { z: 2.5 }, mirror: { z: 14, style: 'chrome' }, door: { z: 5 },
     stripe: [1.5, 6], flame: { z0: 24, len: 50, bonnet: 18 },
   },
   pickup: {
@@ -112,7 +119,8 @@ export const SHAPES = {
     ws: { pil: 2.6, ylo: 31.6, yhi: 41.6 },
     win: [[-3, 15.4, -3, 10.4, 31.8, 41.4]],
     frame: CHROME, drip: CHROME, sill: null, sillH: 2.6, lowTone: 0.88,
-    turret: { z: -31, zR: -31, y: 45 }, roofW: { z: 5 }, mirror: { z: 15, style: 'big' }, door: { z: 15 },
+    bay: { hz: [20.2, 58.4], hx: 20.8, z: [22, 55], x: 18, y0: 14 },
+    turret: { z: -31, zR: -31, y: 45 }, roofW: { z: 5 }, mirror: { z: 15, style: 'big' }, door: { z: 7 },
     stripe: [1.5, 6], flame: { z0: 25, len: 60, bonnet: 18 },
   },
   van: {
@@ -125,7 +133,8 @@ export const SHAPES = {
     ws: { pil: 2.6, ylo: 34.2, yhi: 49.6 },
     win: [[11.5, 32.4, 11.5, 26.6, 34.8, 48.4]],
     frame: TRIM, drip: TRIM, sill: null, sillH: 2.6, lowTone: 0.88,
-    turret: { z: -14, zR: -20 }, roofW: { z: 18 }, mirror: { z: 30.5, style: 'big' }, door: { z: 29 },
+    bay: { hz: [37.8, 54], hx: 19, z: [39.5, 51.5], x: 16.5, y0: 13 },
+    turret: { z: -14, zR: -20 }, roofW: { z: 18 }, mirror: { z: 30.5, style: 'big' }, door: { z: 23 },
     stripe: [1.5, 6], flame: { z0: 23, len: 64, bonnet: 36 },
   },
 };
@@ -142,6 +151,7 @@ SHAPES.buggy = {
   ws: { pil: 0, ylo: 99, yhi: 99 },
   win: [],
   frame: TRIM, drip: TRIM, sill: null, sillH: 2, lowTone: 0.86,
+  bay: { open: true, z: [-39, -23], x: 10.5, y0: 16.5, h: 13 },
   turret: { z: -6, zR: -6, y: 40 }, roofW: { z: 6, y: 39 }, mirror: { z: 18, style: 'small' }, door: { z: 1, y: 14 },
   stripe: [1.5, 6], flame: { z0: 22, len: 44, bonnet: 21 },
   noArch: true, openTop: true, plateTop: 17,
@@ -160,7 +170,8 @@ SHAPES.wedge = {
   ws: { pil: 2.4, ylo: 18, yhi: 23 }, rw: { z0: -27, z1: -15.5, pil: 6, ylo: 19.6, yhi: 23.2 },
   win: [[-12, 16, -9, 4.5, 18.8, 23]],
   frame: TRIM, drip: TRIM, sill: PLASTIC, sillH: 3, lowTone: 0.84,
-  turret: { z: -4, zR: -9 }, roofW: { z: 1 }, mirror: { z: 12, style: 'small' }, door: { z: 14 },
+  bay: { hz: [-40, -27.6], hx: 16.5, z: [-38.5, -29], x: 15, y0: 7, back: true },
+  turret: { z: -4, zR: -9 }, roofW: { z: 1 }, mirror: { z: 12, style: 'small' }, door: { z: 6 },
   stripe: [1.5, 6], flame: { z0: 26, len: 50, bonnet: 22 },
 };
 // a conventional school bus: a long tall box behind a bonnet narrower than its wings, a row of split windows, black
@@ -177,9 +188,60 @@ SHAPES.bus = {
   ws: { pil: 2.6, ylo: 35.5, yhi: 51.6 },
   win: BUS_WIN,
   frame: TRIM, drip: TRIM, sill: TRIM, sillH: 3, lowTone: 0.92,
-  turret: { z: -14, zR: -26 }, roofW: { z: 16 }, mirror: { z: 39, style: 'big' }, door: { z: 36 },
+  bay: { hz: [42.6, 64.8], hx: 16.2, z: [44.5, 61.5], x: 14.5, y0: 13 },
+  turret: { z: -14, zR: -26 }, roofW: { z: 16 }, mirror: { z: 39, style: 'big' }, door: { z: 8 },
   stripe: [1.5, 6], flame: { z0: 34, len: 80, bonnet: 42 },
   hood: { z: 41.5, x: 17.5 },
+};
+// a boxy two-box 4x4: tall and square, flat glass, a flat roof with rails, high off the ground on big wheels in black
+// flares, a bull bar, a snorkel up the right pillar, the spare wheel on the tailgate
+SHAPES.offroad = {
+  W: 22, zN: 49, zT: -49, bumpF: 3, bumpR: 2.5, c0: 9, ax: [32, -31], R: 10.5,
+  top: line([[49, 27.6], [48.2, 29], [46.5, 29.6], [21.5, 30.4], [20, 31.2], [15.5, 47], [14, 47.8], [-47.5, 47.8], [-48.6, 47], [-49, 45.6]]),
+  bot: line([[49, 15.5], [46, 12], [-45, 12], [-49, 15]]),
+  belt: line([[49, 30.6], [-49, 31.2]]),
+  noseR: 1.6, tailR: 1.6, gIn: 0.6, tumble: 1.2, rr: 1.4, sr: 0.8, ssr: 0.4, br: 1.4,
+  roofY: 47.8, roofF: 14.5, roofR: -47.5, cowl: 20,
+  ws: { pil: 2.4, ylo: 32, yhi: 46 }, rw: { z0: -50, z1: -47.6, pil: 3.4, ylo: 34.5, yhi: 45.4 },
+  win: [[-5, 14.6, -5, 13, 32.6, 45.6], [-24.5, -7, -24.5, -7, 32.6, 45.6], [-45.6, -26.5, -45.6, -26.5, 32.6, 45.6]],
+  frame: TRIM, drip: TRIM, sill: PLASTIC, sillH: 3, lowTone: 0.86,
+  bay: { hz: [21, 47.6], hx: 18.5, z: [23, 45], x: 16, y0: 16 },
+  turret: { z: -16, zR: -22 }, roofW: { z: 3 }, mirror: { z: 16, style: 'big' }, door: { z: 3 },
+  stripe: [1.5, 6], flame: { z0: 24, len: 50, bonnet: 20 },
+  squareArch: true,
+};
+// a fifties land yacht: long, low and wide, a toothy chrome grille, a wrapround windscreen under a thin cream roof,
+// a chrome spear down the side, tall fins with rocket tail lamps
+SHAPES.yacht = {
+  W: 23.5, zN: 64, zT: -64, bumpF: 3, bumpR: 3, c0: 4.5, ax: [38, -37], R: 9,
+  top: line([[64, 19.2], [63.4, 20.4], [61, 21], [27, 22], [25, 22.8], [13, 31], [-13, 31], [-15, 30.4], [-27, 23.2], [-56, 22.6], [-62, 22], [-64, 20.6]]),
+  bot: line([[64, 8.5], [60, 5.5], [-57, 5.5], [-64, 9]]),
+  belt: line([[64, 21.6], [-64, 22.2]]),
+  noseR: 4.5, tailR: 3, gIn: 2.4, tumble: 3.2, rr: 2.2, sr: 1.6, ssr: 1, br: 2.2,
+  roofY: 31, roofF: 13, roofR: -14, cowl: 25,
+  ws: { pil: 2.2, ylo: 23.2, yhi: 29.8 }, rw: { z0: -27.5, z1: -14.6, pil: 3, ylo: 23.6, yhi: 30 },
+  win: [[1, 22, 1, 14.5, 23.4, 29.8], [-21, -1, -15.6, -1, 23.4, 29.6]],
+  frame: CHROME, drip: CHROME, sill: null, sillH: 2.4, lowTone: 0.86,
+  bay: { hz: [25.5, 62], hx: 19.5, z: [27.5, 59.5], x: 17, y0: 8 },
+  turret: { z: -1, zR: -8 }, roofW: { z: 7 }, mirror: { z: 23, style: 'chrome' }, door: { z: 6 },
+  stripe: [1.5, 6], flame: { z0: 28, len: 62, bonnet: 25 },
+};
+// a long-nose semi-truck tractor with no trailer: a long bonnet, a tall cab with a sleeper behind it, a tall chrome
+// grille, fuel tanks under the doors, twin stacks behind the cab, the bare frame behind with its coupling plate
+SHAPES.rig = {
+  W: 24, zN: 70, zT: -66, bumpF: 3.5, bumpR: 1, c0: 14, ax: [46, -44], R: 12,
+  Wz: (z) => (z < -27 ? 13 : 24),
+  top: line([[70, 31], [69, 33], [66.5, 34.2], [35, 36.6], [33, 38], [29, 58.6], [27.5, 60], [-24.5, 60], [-26, 59], [-26.5, 57.5], [-26.51, 20], [-66, 20]]),
+  bot: line([[70, 13.5], [67, 11], [-66, 11]]),
+  belt: line([[70, 37], [33, 38.2], [-26.5, 40], [-66, 40]]),
+  noseR: 3, tailR: 1, gIn: 0.6, tumble: 0.8, rr: 2, sr: 1.8, ssr: 0, br: 1.2,
+  roofY: 60, roofF: 27.5, roofR: -24.5, cowl: 33,
+  ws: { pil: 3, ylo: 40, yhi: 57.4 },
+  win: [[9, 27, 9, 24.4, 40.6, 56.4], [-21, -12, -21, -12, 45, 51]],
+  frame: TRIM, drip: CHROME, sill: null, sillH: 0, lowTone: 0.9,
+  bay: { hz: [34.5, 68], hx: 20, z: [36.5, 65.5], x: 18, y0: 16 },
+  turret: { z: -8, zR: -16 }, roofW: { z: 14 }, mirror: { z: 31, style: 'big' }, door: { z: 13, y: 33 },
+  stripe: [1.5, 6], flame: { z0: 36, len: 70, bonnet: 33 },
 };
 SHAPES.pickup.hwIn = (z, y, S, arch) => (z < S.bedZ[0] && z > S.bedZ[1] && y >= S.bedY ? (arch < S.aR + 2 ? S.cutX - 2.2 : S.W - 2) : 0);
 
@@ -683,13 +745,7 @@ const DETAIL = {
     B.top(0, 11.5, 23, 40.5, (x, z) => (ab(x) > 10.5 || z < 24 || z > 39.5 ? SEAM : 0));
     B.top(-2, 2, 30, 34, (x, z) => (hyp(x, z - 32) < 1.8 ? CH : 0), 1, false);
     marker(B, 37, 39.5, 10.5, 12, AMBER);
-    // the engine at the back: a case, finned cylinders to each side, a black fan shroud on top, a big chrome air
-    // cleaner on that; two pipes out under it; round tail lamps and the plate on the tail
-    const ey = 16.5, ez0 = -39, ez1 = -23;
-    B.fill(0, 5, ey, ey + 6.5, ez0, ez1, () => GM, true, true);
-    B.fill(5, 10.5, ey + 0.5, ey + 5, ez0 + 2, ez1 - 2, (x, y, z) => (ab(x) > 9.5 ? DK : (fl(z) & 1) ? ST : GM), true, true);
-    B.fill(0, 6.5, ey + 6.5, ey + 10, ez0 + 1.5, ez1 - 1, (x, y) => (y > ey + 9 && ab(x) > 5.5 ? 0 : DK), true, true);
-    B.fill(-4, 4, ey + 10, ey + 13, -34, -26, (x, y, z) => { const d = hyp(x, z + 30); return d < 3.8 ? (y > ey + 12 ? (d < 1.2 ? CL : CH) : d > 3 ? CD : CH) : 0; }, false, true);
+    // the engine sits out in the open at the back (engines.js); two pipes out under it; round tail lamps and the plate
     pipe(B, 6, 12.8, zT - 3, zT + 3, 1.5); pipe(B, -6, 12.8, zT - 3, zT + 3, 1.5);
     B.back(9.5, 15.5, 9.4, 15.6, (x, y) => { const d = hyp(ab(x) - 12.6, y - 12.5); return d < 1.8 ? [P(TAIL), -1] : d < 2.7 ? [T, 0] : 0; });
     numberPlate(B, -1, 10.6, 3.6, 3, c.seed);
@@ -790,6 +846,128 @@ const DETAIL = {
     for (const z of [-2, -44]) B.top(0, 7, z - 6, z + 6, (x, zz) => (ab(x) > 6 || ab(zz - z) > 5 ? T : PL), 1);
     mirrors(B, S, 'big');
   },
+
+  // a boxy 4x4: round lamps either side of a slotted black grille, a steel bumper and a tubular bull bar, black flares,
+  // tube sliders along the sills, a snorkel up the right pillar, rails on the roof, the spare wheel on the tailgate
+  offroad(B, S, c) {
+    const { P } = B, zN = S.zN, zT = S.zT, W = S.W;
+    const T = P(TRIM), PL = P(PLASTIC), G1 = P(GRILLE), A = P(AMBER), GM = P(GUNMETAL), ST = P(STEEL), DK = P(DARKS), CH = P(CHROME), RB = P(RUBBER);
+    B.front(0, W, 18, 28.6, (x, y) => { const a = ab(x); if (a >= W - 1) return 0; if (a < 11.5) return y < 19 || y >= 27.6 || a >= 10.5 ? [T, 0] : fl(a) % 3 === 0 ? [T, 0, 2] : [G1, -2]; return [T, 0]; });
+    lamp(B, 1, 12, 20.6, 18.6, 27.6, roundShape(16.2, 23.1, 3.9), headLens(B, 16.2, 23.1), T);
+    B.front(18.6, 20.6, 18.8, 20.4, () => A);
+    bumper(B, S, 1, 13, 18, S.bumpF, 3, (x, y) => (y >= 17 ? DK : GM));
+    // the bull bar: two hoops up from the bumper, bars across, guards over the lamps
+    const bz = zN + 2.6;
+    rod(B, [6.5, 17.5, bz], [6.5, 31, bz - 0.6], 0.8, ST); rod(B, [-6.5, 31, bz - 0.6], [6.5, 31, bz - 0.6], 0.8, ST, false);
+    rod(B, [-6.5, 24.5, bz - 0.3], [6.5, 24.5, bz - 0.3], 0.7, ST, false);
+    rod(B, [6.5, 28.5, bz - 0.5], [19.5, 27.5, bz - 1.6], 0.7, ST); rod(B, [19.5, 27.5, bz - 1.6], [19.5, 17.5, bz - 1.2], 0.7, ST);
+    B.top(W - 2.4, W - 1.4, S.cowl + 2, zN - 1, () => SEAM);
+    cowl(B, S, S.cowl);
+    archLip(B, S, c.wk, PL, 2.4, 1);
+    // the sides: shut lines, handles, a crease, the sliders, marker lamps
+    seamV(B, 15.4, S.c0 + 3, 31.4); seamV(B, -6.2, S.c0 + 3, 46.2); seamV(B, -25.6, S.c0 + 3, 46.2);
+    handle(B, -4.8, -1.6, 29, T); handle(B, -24.2, -21, 29, T);
+    B.side(zT + 1, zN - 1, 24.4, 25.4, () => LO);
+    rod(B, [W + 0.4, 13.4, 18.5], [W + 0.4, 13.4, -17.5], 0.9, GM);
+    for (const z of [12, -14]) rod(B, [W - 1, 13.4, z], [W + 0.4, 13.4, z], 0.7, GM);
+    marker(B, 44, 47, 21, 23, AMBER);
+    // the snorkel up the right pillar, its head facing forward
+    const sx = -(W + 0.6);
+    rod(B, [sx, 22, 27], [sx, 31.5, 24.5], 1.2, PL, false); rod(B, [sx, 31.5, 24.5], [sx - 0.2, 47.5, 16.4], 1.2, PL, false);
+    rod(B, [sx - 0.2, 48.6, 15.6], [sx - 0.2, 48.6, 19], 1.4, PL, false);
+    // rails along the roof
+    B.top(W - 4.2, W - 3, -44, 10, (x, z) => (fl(z + 200) % 9 === 0 ? [GM, 2] : [T, 1]));
+    // the back: tail lamps up the corners, the spare wheel on the tailgate, a steel bumper, the plate, a pipe
+    const TL = P(TAIL), T2 = P(TAIL2), RV = P(REV);
+    B.back(W - 4.6, W - 0.6, 21, 33, (x, y) => { const a = ab(x); if (y < 22 || y >= 32 || a < W - 3.6 || a >= W - 1.6) return T; if (y < 24.5) return RV; if (y < 27) return A; return (fl(y) & 1) ? TL : T2; });
+    const cx = 6.5, cy = 26, r = 7.6, z0 = zT - 3.6;
+    B.fill(cx - r, cx + r, cy - r, cy + r, z0, zT + 0.5, (x, y, z) => {
+      const d = hyp(x - cx, y - cy); if (d >= r) return 0;
+      if (z > zT - 1) return d < 2.2 ? GM : 0;                                       // (the bracket)
+      if (d > r - 2.6) return z < z0 + 0.6 && fl(Math.atan2(y - cy, x - cx) * 6) & 1 ? DK : RB;
+      if (z < z0 + 1.6) return d < 1.4 ? CH : d < 3 ? GM : Math.cos(5 * Math.atan2(y - cy, x - cx)) > 0.7 && d > 3.4 && d < 4.4 ? P(HOLE) : ST;
+      return 0;
+    }, false);
+    bumper(B, S, -1, 13, 17.5, S.bumpR, 3, (x, y) => (y >= 16.5 ? DK : GM));
+    numberPlate(B, -1, 15.25, 5.5, 3.8, c.seed);
+    pipe(B, -15, 12.6, zT - 3, zT + 4);
+    mirrors(B, S, 'big');
+  },
+
+  // a fifties land yacht: hooded round lamps over a toothy chrome grille, a chrome bumper with bullets, a chrome strip
+  // down the bonnet, a cream roof, the spear down the side, tall fins with rocket lamps on their ends, twin pipes
+  yacht(B, S, c) {
+    const { P } = B, zN = S.zN, zT = S.zT, W = S.W;
+    const CH = P(CHROME), CL = P(CHROMEL), CD = P(CHROMED), G1 = P(GRILLE), A = P(AMBER), T = P(TRIM), CR = P(CREAMR);
+    B.front(0, 15, 9, 16.6, (x, y) => { const a = ab(x); if (a >= 14 || y < 10 || y >= 15.6) return [CH, 0]; return fl(a) % 3 === 0 ? [CL, 1] : fl(y) % 3 === 0 ? [CH, -1] : [G1, -2]; });
+    lamp(B, 1, 14.4, 21.6, 13.6, 20.2, roundShape(18, 16.9, 2.9), headLens(B, 18, 16.9), CH);
+    B.front(14.6, 21.4, 19.2, 20.2, () => [CH, 1]);
+    bumper(B, S, 1, 5.6, 9.6, S.bumpF, 6, chromeBar(B, 5.6, 9.6, false));
+    for (let t = 0; t < 1; t += 0.2) rod(B, [9.5, 11, zN + 0.6 + t * 3.4], [9.5, 11, zN + 1.2 + t * 3.4], 1.9 * (1 - 0.6 * t), t > 0.5 ? CL : CH);
+    B.front(10.4, 13.6, 6.6, 8.6, () => A);
+    B.top(0, 1, 30, zN - 1, () => CH);
+    cowl(B, S, S.cowl);
+    B.fill(0, W + 1, S.roofY - 2.6, S.roofY + 1, S.roofR - 2, S.roofF + 2, (x, y, z) => (B.get(fl(x), fl(y), fl(z)) === PAINT ? CR : 0));
+    // the sides: the spear, a strip along the sill, shut lines, the handle
+    B.side(-44, 54, 15.4, 16.4, (z) => (z > 52 ? CL : CH));
+    B.side(-50, 50, 6.4, 7.2, () => CH);
+    seamV(B, 23, S.c0 + 3, 22); seamV(B, -21.5, S.c0 + 3, 22);
+    handle(B, -20, -17, 19.6, CH);
+    // the fins: up off the shoulders and swept back, a chrome edge along their tops
+    const fin = (z) => 21.6 + 8.6 * Math.pow(clamp((-30 - z) / 30), 1.4);
+    B.fill(W - 3.4, W - 0.6, 18, 31, zT, -29, (x, y, z) => { const h = fin(z); return y < h - 0.8 ? PAINT : y < h ? CH : 0; }, true, true);
+    // the back: the rocket lamps on the fins' ends, lamps across the back panel, the plate, a chrome bumper, two pipes
+    const TL = P(TAIL), T2 = P(TAIL2), RV = P(REV), fc = W - 2;
+    B.back(W - 4.4, W + 0.4, 25.6, 31, (x, y) => { const d = hyp(ab(x) - fc, y - 28.2); return d < 1.3 ? [TL, 2] : d < 2.3 ? [CH, 1] : 0; });
+    B.back(9, W - 3.4, 13, 17.6, (x, y) => { const a = ab(x); if (y < 14 || y >= 16.6 || a < 10 || a >= W - 4.4) return [CH, 0]; if (a < 12.5) return [RV, -1]; return [(fl(y) & 1) ? TL : T2, -1]; });
+    numberPlate(B, -1, 14.8, 6, 3.8, c.seed, -1);
+    bumper(B, S, -1, 6, 10.4, S.bumpR, 6, chromeBar(B, 6, 10.4, false));
+    for (const px of [12, -12]) pipe(B, px, 6.8, zT - 4, zT + 3, 1.3);
+    mirrors(B, S, 'chrome');
+  },
+
+  // a long-nose semi tractor: a tall chrome grille, square lamps in the wings, a deep chrome bumper, a sun visor over
+  // the glass, amber lamps along the cab's roof, chrome fuel tanks under the doors with a step, twin stacks behind
+  // the cab, quarter fenders and mud flaps over the back wheels, the coupling plate on the bare frame
+  rig(B, S, c) {
+    const { P } = B, zN = S.zN, zT = S.zT, W = S.W;
+    const CH = P(CHROME), CL = P(CHROMEL), CD = P(CHROMED), G1 = P(GRILLE), A = P(AMBER), T = P(TRIM), GM = P(GUNMETAL), ST = P(STEEL), DK = P(DARKS), PL = P(PLASTIC);
+    B.front(0, 14.5, 14, 33.6, (x, y) => { const a = ab(x); if (a >= 13.5 || y < 15 || y >= 32.6) return [CH, 0]; return fl(y) % 2 === 0 ? [a < 1 ? CL : CH, 0, 2] : [G1, -2]; });
+    lamp(B, 1, 15.5, 23, 19.6, 26, rectShape(15.5, 23, 19.6, 26, 1), headLens(B, 19.2, 22.8), P(HOUSING));
+    B.front(15.5, 23, 26.4, 28, () => A);
+    bumper(B, S, 1, 8.6, 14.8, S.bumpF, 6, chromeBar(B, 8.6, 14.8, false));
+    B.top(W - 2.4, W - 1.4, S.cowl + 2, zN - 2, () => SEAM);
+    B.side(52, 64, 28, 34, (z, y) => (fl(y) % 2 === 0 && z > 53 && z < 63 ? [T, -1] : 0));
+    cowl(B, S, S.cowl);
+    B.fill(0, W - 1.6, 59.4, 60.6, 27, 31.6, () => T, true, true);
+    B.front(0, 13, 59.2, 60.6, (x) => (fl(ab(x)) % 4 === 1 ? [A, 1] : 0));
+    archLip(B, S, c.wk, T, 1.4, 0);
+    // the cab's doors and sleeper: shut lines, a long chrome grab bar, the fuel tanks and the step
+    seamV(B, 31.6, S.c0 + 1, 39); seamV(B, 7.6, S.c0 + 1, 57);
+    B.side(28.5, 29.5, 30, 50, () => [CH, 1]);
+    B.side(-26, 7, 38.2, 39, () => LO);
+    marker(B, -24, -21.5, 55, 57, AMBER);
+    B.fill(W - 2, W + 4.6, 11.5, 22.5, 5.5, 29.5, (x, y, z) => {
+      const d = hyp(ab(x) - (W + 0.4), y - 17); if (d >= 5) return 0;
+      return ab(z - 7.5) < 0.7 || ab(z - 27.5) < 0.7 ? GM : d > 4.2 && fl(z) % 4 === 0 ? CD : y > 19.5 ? CL : CH;
+    });
+    B.fill(W + 4.6, W + 6, 11.2, 12.4, 29.6, 33.6, () => ST, true, true);
+    // twin stacks behind the sleeper, held off its back wall
+    const sz = -29;
+    rod(B, [W - 3, 20, sz], [W - 3, 63, sz], 1.5, CH);
+    for (const y of [36, 52]) rod(B, [W - 3, y, sz], [W - 3, y, -26.4], 0.7, GM);
+    B.fill(W - 5, W - 1, 61.5, 63, sz - 2, sz + 2, (x, y, z) => (hyp(x - (W - 3), z - sz) < 1.2 ? P(HOLE) : 0), true, false);
+    // the coupling plate on the frame, quarter fenders and mud flaps over the back wheels
+    B.fill(0, 9, 20, 22, -55, -37, (x, y, z) => { const d = hyp(x, z + 46); if (d > 8.6) return 0; if (ab(x) < 1.2 && z < -46) return 0; return y > 21 ? (d > 7.4 ? ST : GM) : DK; }, true, true);
+    const wy = c.wk.R - c.wk.lift, R = c.wk.R, az = S.ax[1];
+    B.fill(W - 7.8, W + 0.6, wy, wy + R + 3.4, az - R - 3, az + R + 3, (x, y, z) => { const d = hyp(z - az, y - wy); return d > R + 1.2 && d < R + 2.4 && y > wy + 1 ? PL : 0; }, true, true);
+    B.fill(W - 7.8, W - 0.4, 4, wy + 3, az - R - 3.4, az - R - 2.2, (x, y) => (y < 5 ? CH : T), true, true);
+    // the frame's end: lamps, the plate
+    const TL = P(TAIL), T2 = P(TAIL2);
+    B.back(4, 12.6, 13.6, 18.6, (x, y) => { const a = ab(x); if (y < 14.4 || y >= 17.8 || a < 4.8 || a >= 11.8) return T; return a > 9 ? A : (fl(a) & 1) ? TL : T2; });
+    numberPlate(B, -1, 16, 3.4, 2.8, c.seed, -1);
+    mirrors(B, S, 'big');
+  },
 };
 
 // ---- armour: plates on the doors (and the bonnet, roof and corners), bars over the glass ----
@@ -816,12 +994,12 @@ function armour(B, S, look, wk) {
 
 // ---- the colour of every cube ----
 // box: the part's own box, a tight fit round the grid's cubes
-function colour(B, S, v, o, look, box) {
+function colour(B, S, v, o, look, box, kr) {
   const { I0, K0, NX, NY, NZ, L, g, HW, PAL } = B, col = v.col, paint = painter(S, o), seed = o.seed || 0;
   const vnx = box[3] - box[0], vny = box[4] - box[1], vL = vnx * vny, di = I0 - box[0], dj = -box[1], dk = K0 - box[2];
   const glass = [GLASS, GLASS2, SHINE];
   let count = 0;
-  for (let k = 0; k < NZ; k++) {
+  for (let k = kr ? kr[0] : 0; k < (kr ? kr[1] : NZ); k++) {
     const z = K0 + k + 0.5; if (z < S.zT - 8 || z > S.zN + 8) continue;
     const bl = S.belt(z), t = S.top(z), b = S.bot(z);
     for (let j = 0; j < NY; j++) {
@@ -839,6 +1017,8 @@ function colour(B, S, v, o, look, box) {
             c = shellColour(x, y, z, ax, i, j, k, up, dn, fw, bk, sd, w, bl, t, b);
             if (r === SEAM) c = tone(c, 0.6); else if (r === LO) c = tone(c, 0.8); else if (r === HI) c = tone(c, 1.14);
           } else if (r === LINER) c = ARCH;
+          else if (r === BAYL) c = up ? BAYF : BAYW;
+          else if (r === HOODIN) c = fl(z + 200) % 4 === 0 || fl(ab(x)) % 6 === 0 ? HOODU2 : HOODU;
           else if (r === WOODR) c = wood(x, y, z);
           else if (r === BEDF) c = up && !sd ? BED[(fl(ab(x) + 0.5) % 5 === 0 ? 2 : 0) + (fl(z / 3) & 1 ? 0 : 0)] : sd && ax > S.W - 1.2 ? paint(I0 + i, j, K0 + k, x, y, z, ax, up, sd, bl) : BED[1];
           else if (r === PLATE) {
@@ -893,24 +1073,72 @@ export function bodyPart(S, o, wk) {
   // more, so that a hit rebuilds a slice of the car instead of all of it. The empty layers cost nothing to draw.
   const Wm = S.Wmax || S.W, I0 = -Math.ceil(Wm) - 6, J1 = Math.ceil(Math.max(S.roofY + 4, S.turret.y ? S.turret.y + 1 : 0));
   const K0 = fl(S.zT - S.bumpR) - 2, K1 = Math.ceil(S.zN + S.bumpF) + 2;
-  let B = null, box = null;
+  // The engine bay (S.bay): carved out under the bonnet and lined dark, and the bonnet over it made a part of its own,
+  // hinged at its back edge (or, over an engine behind the cabin, at its front edge), so the garage can lift it and
+  // show the engine (engines.js) sitting in the bay. bay: the bay's size for the engine; a blower gets a hole.
+  const BY = S.bay, top = (z) => S.top(z) - 2.2;
+  let bay = null;
+  if (BY) {
+    let hmin = 1e9; for (let z = BY.z[0]; z <= BY.z[1]; z += 0.5) hmin = Math.min(hmin, top(z));
+    bay = { y0: BY.y0, zc: Math.round((BY.z[0] + BY.z[1]) / 2), L: BY.z[1] - BY.z[0], w: Math.min(BY.x, S.cutX - 1.5) - 0.6, h: BY.open ? BY.h : Math.floor(hmin - BY.y0 - 0.3),
+      front: !BY.open && !BY.back, open: !!BY.open, dir: BY.back ? 1 : -1 };
+  }
+  const hole = bay && !bay.open && o.engine === 'blower';
+  let B = null, box = null, gh = null, hbox = null, hkr = null, left = 0;
+  const hzI = BY && !BY.open ? Math.round(BY.back ? BY.hz[1] : BY.hz[0]) : 0, hyI = BY && !BY.open ? Math.round(top(hzI) + 1) : 0;
   const make = () => {
     B = grid(S, [I0, 0, K0, -I0, J1, K1]);
     shell(B, S, wk, look >= 3);
     DETAIL[S.kind](B, S, { seed: o.seed || 0, wk, look });
     armour(B, S, look, wk);
-    let ia = 1e9, ib = -1e9, ja = 1e9, jb = -1e9, ka = 1e9, kb = -1e9;
     const { g, NX, NY, NZ, L } = B;
+    if (BY && !BY.open) {
+      const carve = (x, y, z) => z > BY.z[0] && z < BY.z[1] && y > BY.y0 && y < top(z) && ab(x) < BY.x && !(ab(x) > S.cutX - 1.5 && S.archAt(z, y) < S.aR + 1.5);
+      const k0 = lo(BY.z[0]) - 1, k1 = lo(BY.z[1]) + 1, i1 = Math.ceil(BY.x) + 1;
+      for (let k = k0; k <= k1; k++) for (let j = 0; j < NY; j++) for (let i = -i1; i < i1; i++) if (carve(i + 0.5, j + 0.5, k + 0.5)) B.put(i, j, k, 0);
+      // line it: what is left round the hole goes dark
+      const at = (i, j, k) => carve(i + 0.5, j + 0.5, k + 0.5);
+      for (let k = k0; k <= k1; k++) for (let j = 0; j < NY; j++) for (let i = -i1 - 1; i <= i1; i++) {
+        const c = B.get(i, j, k); if (!c || c >= 32) continue;
+        if (at(i + 1, j, k) || at(i - 1, j, k) || at(i, j + 1, k) || at(i, j - 1, k) || at(i, j, k + 1) || at(i, j, k - 1)) B.put(i, j, k, BAYL);
+      }
+      // the bonnet: every cube over its panel from just under the skin up, moved to a grid of its own
+      gh = new Uint8Array(g.length);
+      let ia = 1e9, ib = -1e9, ja = 1e9, jb = -1e9, ka = 1e9, kb = -1e9;
+      for (let k = lo(BY.hz[0]); k < lo(BY.hz[1]); k++) for (let j = 0; j < NY; j++) for (let i = -Math.ceil(BY.hx); i < Math.ceil(BY.hx); i++) {
+        const x = i + 0.5, y = j + 0.5, z = k + 0.5;
+        if (ab(x) >= BY.hx || y < top(z)) continue;
+        const n = B.n(i, j, k), c = g[n]; if (!c) continue;
+        g[n] = 0;
+        if (hole && ab(x) < BLOWER.hx && ab(z - bay.zc) < BLOWER.hz) continue;   // (the blower's hole)
+        gh[n] = c;
+        const ii = i - B.I0, kk = k - B.K0;
+        if (ii < ia) ia = ii; if (ii > ib) ib = ii; if (j < ja) ja = j; if (j > jb) jb = j; if (kk < ka) ka = kk; if (kk > kb) kb = kk;
+      }
+      if (ib >= ia) { hbox = [B.I0 + ia, ja, B.K0 + ka, B.I0 + ib + 1, jb + 1, B.K0 + kb + 1]; hkr = [ka, kb + 1]; }
+      // its underside, seen when it lifts: a grey panel with ribs (the skin on top keeps its paint)
+      for (let k = ka; k <= kb; k++) for (let j = Math.max(1, ja); j < jb; j++) for (let i = ia, n = k * L + j * NX + ia; i <= ib; i++, n++) if (gh[n] && gh[n] < 32 && !gh[n - NX] && gh[n + NX]) gh[n] = HOODIN;
+    }
+    let ia = 1e9, ib = -1e9, ja = 1e9, jb = -1e9, ka = 1e9, kb = -1e9;
     for (let k = 0; k < NZ; k++) for (let j = 0; j < NY; j++) for (let i = 0, n = k * L + j * NX; i < NX; i++, n++) if (g[n]) {
       if (i < ia) ia = i; if (i > ib) ib = i; if (j < ja) ja = j; if (j > jb) jb = j; if (k < ka) ka = k; if (k > kb) kb = k;
     }
     const nx = ib - ia + 1, ny = jb - ja + 1, nz = Math.max(kb - ka + 1, Math.ceil(200000 / (nx * ny)) + 1, 32);
     box = [I0 + ia, ja, K0 + ka, I0 + ib + 1, jb + 1, K0 + ka + nz];
+    left = gh ? 2 : 1;
   };
-  return { name: 'body', parent: null, pivot: [0, wk.lift, 0], get box() { if (!box) make(); return box; }, paint(v) {
+  const done = () => { if (--left <= 0) { B = null; gh = null; } };   // (the grids are done with once both parts are painted)
+  const body = { name: 'body', parent: null, pivot: [0, wk.lift, 0], get box() { if (!box) make(); return box; }, paint(v) {
     if (!B) make();
     colour(B, S, v, o, look, box);
-    B = null;   // the grid is done with
+    done();
   } };
+  if (BY && !BY.open) {
+    body.hood = { name: 'hood', parent: 'body', pivot: [0, hyI, hzI],
+      get box() { if (!box) make(); return hbox ? [hbox[0], hbox[1] - hyI, hbox[2] - hzI, hbox[3], hbox[4] - hyI, hbox[5] - hzI] : [0, 0, 0, 1, 1, 1]; },
+      paint(v) { if (!B) make(); if (hbox) colour({ ...B, g: gh }, S, v, o, look, hbox, hkr); done(); } };
+  }
+  body.bay = bay;
+  return body;
 }
 for (const [k, S] of Object.entries(SHAPES)) S.kind = k;

@@ -302,5 +302,13 @@ export function makeSpecials({ scene, fx, sfx, cars, extras, player, damage, bla
     for (let i = slicks.length - 1; i >= 0; i--) if (slicks[i].z < 0) { slicks[i].mesh.removeFromParent(); slicks.splice(i, 1); }
     for (let i = shells.length - 1; i >= 0; i--) if (shells[i].z < 0) { shells[i].mesh.removeFromParent(); if (shells[i].mark) shells[i].mark.removeFromParent(); shells.splice(i, 1); }
   }
-  return { flame, seek, lockFor, lob, shieldOn, shieldHit, oil, jump, landed, hop, step, clear, clearOffMap, slicks, shells };
+  // a big diesel floored: black smoke out of the back
+  function exhaust(c, dt, rev) {
+    if (c.dead || c.load.engine !== 'diesel') return;
+    const k = Math.max(Math.abs(c.throttle || 0) * (1 - Math.min(1, Math.abs(c.fwd || 0) / c.spec.top) * 0.7), rev || 0);
+    if (k < 0.35 || Math.random() > dt * 9 * k) return;
+    const s = Math.sin(c.yaw), co = Math.cos(c.yaw), b = c.mid - c.half - 0.3;
+    smoke(c.x + s * b - co * 1.2, 0.8 + c.y, c.z + co * b + s * 1.2, 1, 0.3, 0.05);
+  }
+  return { exhaust, flame, seek, lockFor, lob, shieldOn, shieldHit, oil, jump, landed, hop, step, clear, clearOffMap, slicks, shells };
 }

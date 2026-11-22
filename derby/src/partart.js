@@ -9,12 +9,12 @@ import { carDef } from './carmodel.js';
 
 // which of the car model's parts make up each slot's picture ('body' is the shell; the gun hangs off the turret ring)
 const SHOW = {
-  body: ['body', 'wFL', 'wFR', 'wRL', 'wRR'], armour: ['body', 'wFL', 'wFR', 'wRL', 'wRR'],
-  primary: ['yaw', 'gun', 'spin'], roof: ['roof'], door: ['doorL', 'blades'], secondary: ['pod', 'mines'],
+  body: ['body', 'hood', 'engine', 'wFL', 'wFR', 'wRL', 'wRR'], armour: ['body', 'hood', 'engine', 'wFL', 'wFR', 'wRL', 'wRR'], engine: ['engine'],
+  primary: ['yaw', 'gun', 'spin'], roof: ['roof'], door: ['doorL'], secondary: ['pod', 'mines'],
   front: ['front', 'sawL', 'sawR'], wheels: ['wFL'],
 };
 // the way each picture is looked at: from the front left and a little above, or from the side for a wheel
-const VIEW = { wheels: [1, 0.25, 0.25], door: [1, 0.35, 0.55], body: [1, 0.55, 1.2], armour: [1, 0.55, 1.2], secondary: [1, 0.6, 0.9] };
+const VIEW = { engine: [1, 0.75, 0.9], wheels: [1, 0.25, 0.25], door: [1, 0.35, 0.55], body: [1, 0.55, 1.2], armour: [1, 0.55, 1.2], secondary: [1, 0.6, 0.9] };
 export const ART_SLOTS = new Set(Object.keys(SHOW));
 
 export function makePartArt({ mats }) {
@@ -37,7 +37,7 @@ export function makePartArt({ mats }) {
     if (!gl) setup();
     const { slot, key, load } = job;
     const L = { ...load, [slot]: key };
-    const def = carDef(L, 3), keep = new Set(SHOW[slot]);
+    const def = carDef(L, 3), keep = new Set(slot === 'door' && key === 'hubs' ? ['wFL', 'hubFL'] : slot === 'door' && key === 'blades' ? ['bsawL'] : SHOW[slot]);
     // every part of the car is kept as a bone (the turret ring, the body) so the part sits where it would, but only
     // the slot's own parts get their cubes
     const parts = def.parts().map((p) => (keep.has(p.name) ? p : { ...p, box: null }));
