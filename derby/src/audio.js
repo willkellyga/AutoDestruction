@@ -5,6 +5,7 @@
 // They play on Monster Mayhem's audio context (src/sfx.js), beside its own clips (buildings coming down), through
 // a bus and compressor of their own. Sounds in the street are placed: quieter with distance and panned left or right
 // of the camera. A clip named <base>_<n> is another take of <base>: play('<base>') picks one of them at random.
+import { bytes } from './sfxfiles.js';
 import crunch from '../assets/sfx/crunch.mp3';
 import crunch_heavy from '../assets/sfx/crunch_heavy.mp3';
 import tink from '../assets/sfx/tink.mp3';
@@ -75,10 +76,10 @@ export function makeSounds(getCtx) {
     bus = ctx.createGain(); bus.gain.value = 0.9;
     const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 4; comp.attack.value = 0.003; comp.release.value = 0.15;
     bus.connect(comp); comp.connect(ctx.destination);
-    for (const [k, bytes] of Object.entries(CLIPS)) {
-      const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    for (const [k, clip] of Object.entries(CLIPS)) bytes(clip).then((u8) => {   // (in the served build it may still be on its way: sfxfiles.js)
+      const ab = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
       try { const p = ctx.decodeAudioData(ab, (b) => { buf[k] = b; }, () => {}); if (p && p.catch) p.catch(() => {}); } catch (e) { /* this browser can't decode it: that sound stays quiet */ }
-    }
+    });
     return true;
   }
   // where the listener is: the car (x, z) and the camera's heading
@@ -127,5 +128,5 @@ export function makeSounds(getCtx) {
       stop() { if (src) { try { g.gain.setTargetAtTime(0, ctx.currentTime, 0.05); src.stop(ctx.currentTime + 0.3); } catch (e) { /* already stopped */ } src = null; } },
     };
   }
-  return { init, play, loop, listen, get on() { return on; }, set on(v) { on = v; } };
+  return { init, play, loop, listen, get clips() { return Object.keys(buf).length; }, get on() { return on; }, set on(v) { on = v; } };
 }

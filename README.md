@@ -5,7 +5,8 @@ fight a free-for-all in the arena. Every mode plays online, with bots in the sea
 
 - **Play it:** `npm install`, then `npm run build`, and open `derby/dist/auto-destruction.html`. It is one
   self-contained file.
-- **Online:** `npm start` serves the game and the lobby at http://localhost:8080. `FLY.md` puts it on Fly.io.
+- **Online:** `npm start` serves the game and the lobby at http://localhost:8080 (the copy in `derby/dist/web`: the
+  page, with its sounds as separate files that browsers keep for a year). `FLY.md` puts it on Fly.io.
 - **How it works:** `derby/README.md` covers the controls, modes, garage, parts, online play and every file.
 
 ## Where things are
