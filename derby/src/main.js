@@ -156,6 +156,7 @@ const armySfx = audioMix.module('a.', 'army');
 
 // ---- effects: the army's guns and the town's cars -------------------------------------------------------------
 const mats = [new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.1, color: new THREE.Color(1.2, 1.2, 1.2) }), new THREE.MeshBasicMaterial({ vertexColors: true })];
+room.parkOnLift(mats);   // (a car up on the lift in the workshop)
 const game = { state: 'menu', time: 0, wave: 0, kills: 0, deaths: 0, shake: 0, slow: 1, banner: 0, nextWave: 0, killTimes: [] };
 // scrap, the parts bought and the build are kept in this browser (parts.js)
 const save = loadSave();
@@ -1387,6 +1388,7 @@ function step(dt) {
   }
   if (game.state === 'garage' || test) stepDummies(dt);
   if (game.state === 'garage') { stepTry(dt); if (player) specials.hop(player, dt); }
+  if (lightWas) room.step(dt);   // (the workshop at work: sparks, fans, the hoist)
   specials.step(dt);
   crumple.step(dt, cars);
   for (const c of cars) if (c.flameT > 0) c.flameT -= dt;
