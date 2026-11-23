@@ -21,6 +21,16 @@ Both are bundled into every build and the lobby page as woff2 files in `src/ui/`
 | Lilita One (400) | Titles, numbers and buttons: `src/ui/lilita-one-400.woff2` | https://fonts.google.com/specimen/Lilita+One, files from the `@fontsource/lilita-one` package | Juan Montoreano, copyright 2011 | SIL Open Font License 1.1 |
 | Fredoka (500, 600, 700) | Small text: `src/ui/fredoka-500.woff2`, `fredoka-600.woff2`, `fredoka-700.woff2` | https://fonts.google.com/specimen/Fredoka, files from the `@fontsource/fredoka` package | The Fredoka Project Authors (Milena Brandao, Hafontia) | SIL Open Font License 1.1 |
 
+### Auto Destruction's own fonts
+
+Inlined into the game page by `derby/build.mjs` from the woff2 files in `derby/src/fonts/` (Latin set only, downloaded from Google Fonts). Nothing loads from Google Fonts at play time.
+
+| What | Where it is used | Source | Author | Licence |
+|---|---|---|---|---|
+| Black Ops One (400) | The logo and big words (round titles, Wrecked!, Garage): `derby/src/fonts/black-ops-one-400.woff2` | https://fonts.google.com/specimen/Black+Ops+One | James Grieshaber, Eben Sorkin (Sorkin Type) | SIL Open Font License 1.1 |
+| Barlow Condensed (600, 700, 800) | Buttons, headings, numbers: `derby/src/fonts/barlow-condensed-*.woff2` | https://fonts.google.com/specimen/Barlow+Condensed | Jeremy Tribby | SIL Open Font License 1.1 |
+| Barlow (500, 600, 700, 800) | Small text: `derby/src/fonts/barlow-*.woff2` | https://fonts.google.com/specimen/Barlow | Jeremy Tribby | SIL Open Font License 1.1 |
+
 The OFL lets the fonts be bundled and sold with a game. It asks that the copyright and licence notice stay with copies of the font files, which this table is, and that the fonts are not sold on their own.
 
 ## Art and models

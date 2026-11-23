@@ -1,0 +1,9 @@
+/* the game's fonts, Latin set only, from Google Fonts (SIL Open Font License 1.1, see LICENSES.md); build.mjs inlines them */
+@font-face { font-family: 'Barlow'; font-style: normal; font-weight: 500; font-display: block; src: url('barlow-500.woff2'); }
+@font-face { font-family: 'Barlow'; font-style: normal; font-weight: 600; font-display: block; src: url('barlow-600.woff2'); }
+@font-face { font-family: 'Barlow'; font-style: normal; font-weight: 700; font-display: block; src: url('barlow-700.woff2'); }
+@font-face { font-family: 'Barlow'; font-style: normal; font-weight: 800; font-display: block; src: url('barlow-800.woff2'); }
+@font-face { font-family: 'Barlow Condensed'; font-style: normal; font-weight: 600; font-display: block; src: url('barlow-condensed-600.woff2'); }
+@font-face { font-family: 'Barlow Condensed'; font-style: normal; font-weight: 700; font-display: block; src: url('barlow-condensed-700.woff2'); }
+@font-face { font-family: 'Barlow Condensed'; font-style: normal; font-weight: 800; font-display: block; src: url('barlow-condensed-800.woff2'); }
+@font-face { font-family: 'Black Ops One'; font-style: normal; font-weight: 400; font-display: block; src: url('black-ops-one-400.woff2'); }
