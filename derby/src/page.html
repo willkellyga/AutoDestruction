@@ -5,7 +5,7 @@
 /* the Scrapyard look: hazard yellow on riveted steel, a stencil face for the big words, Barlow Condensed for buttons and headings, Barlow for the rest */
 :root { --ink: #f2efe6; --hot: #ffc21a; --red: #ff4a3a; --rust: #c2541b; --tar: #15120a; --panel: rgba(18, 20, 24, 0.62); --edge: rgba(255, 255, 255, 0.14);
   --steel: linear-gradient(180deg, #3a3f44, #24282c); --stripes: repeating-linear-gradient(-45deg, #ffc21a 0 12px, #15120a 12px 22px);
-  --f-logo: 'Black Ops One', 'Impact', sans-serif; --f-head: 'Barlow Condensed', 'Arial Narrow', sans-serif; --f-ui: 'Barlow', system-ui, sans-serif;
+  --f-logo: 'Anton', 'Impact', sans-serif; --f-head: 'Barlow Condensed', 'Arial Narrow', sans-serif; --f-ui: 'Barlow', system-ui, sans-serif;
   --head-w: 800; --head-st: normal; --head-k: 1.12; }
 html, body { margin: 0; height: 100%; overflow: hidden; background: #1a1c20; font-family: var(--f-ui); color: var(--ink); user-select: none; -webkit-user-select: none; }
 #view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; touch-action: none; }
@@ -366,7 +366,7 @@ button.alt:hover { background: linear-gradient(180deg, #4a5056, #2e3237); }
 .keys kbd, #hint kbd, .card kbd { border-radius: 2px; background: #2b2f33; font-family: var(--f-head); font-weight: 700; font-size: 14px; }
 .keys b { color: var(--hot); font-weight: 700; }
 #lobby { background: rgba(20,22,25,0.85); border: 0; box-shadow: inset 0 0 0 2px rgba(255,255,255,0.1); }
-#lb-title .code { font-family: var(--f-logo); font-weight: 400; }
+#lb-title .code { font-family: var(--f-logo); font-weight: 400; letter-spacing: 0.14em; }
 #online .on-l { font: 700 14px var(--f-head); letter-spacing: 0.2em; }
 #online input { border-radius: 0; background: rgba(0,0,0,0.45); }
 #loading { font-family: var(--f-logo); font-weight: 400; color: var(--hot); }
@@ -409,6 +409,49 @@ button.alt:hover { background: linear-gradient(180deg, #4a5056, #2e3237); }
 #testbar { border: 0; background: rgba(22,24,27,0.92); box-shadow: inset 0 0 0 2px rgba(255,255,255,0.12); }
 #testbar b { letter-spacing: 0.06em; } #test-t { font: 700 26px var(--f-head); }
 .tag b { font-weight: 700; }
+/* ---- the home screen: the car on the turntable, the logo, and a card for each way to play and the garage ---- */
+#home { position: fixed; inset: 0; z-index: 6; pointer-events: none; }
+#home .title { position: absolute; left: 22px; top: 16px; font-size: clamp(26px, 4.6vw, 54px); }
+.h-scrap { position: absolute; right: 22px; top: 18px; font: 700 18px var(--f-head); letter-spacing: 0.12em; text-transform: uppercase; padding: 6px 16px 5px; background: rgba(22,24,27,0.88); box-shadow: inset 0 0 0 2px rgba(255,255,255,0.12); --c: 8px; clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c)); }
+.h-scrap b { font: 700 28px var(--f-head); color: var(--hot); margin-left: 8px; vertical-align: -2px; }
+.h-car { position: absolute; left: 22px; bottom: 20px; text-shadow: 0 2px 0 rgba(0,0,0,0.6); }
+.h-car > b { display: block; font: 400 clamp(30px, 4.4vw, 50px)/1 var(--f-logo); color: var(--hot); text-transform: uppercase; text-shadow: 0 4px 0 var(--tar); }
+.h-car .g-rate { position: static; display: inline-flex; margin-top: 8px; } .h-car .g-class { width: 38px; height: 38px; font-size: 26px; text-shadow: none; } .h-car .g-num { font-size: 28px; }
+.h-car > i { display: block; font-style: normal; font-size: 13px; font-weight: 600; opacity: 0.75; margin-top: 6px; }
+.h-cards { position: absolute; right: 22px; top: 50%; transform: translateY(-46%); width: min(440px, 38vw); display: grid; gap: 12px; pointer-events: auto; }
+.h-card { --a: var(--hot); --c: 14px; position: relative; text-align: left; border: 0; cursor: pointer; color: var(--ink); padding: 14px 92px 14px 20px; font-family: var(--f-ui);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--a) 26%, #24282c), #24282c 70%); box-shadow: inset 6px 0 0 var(--a), inset 0 0 0 2px rgba(255,255,255,0.1);
+  clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c)); transition: transform 0.12s, filter 0.12s; }
+.h-card:hover { transform: translateX(-6px); filter: brightness(1.18); } .h-card:active { transform: translateX(-2px) scale(0.99); }
+.h-card small { display: block; font: 700 13px var(--f-head); letter-spacing: 0.2em; text-transform: uppercase; color: var(--a); }
+.h-card b { display: block; font: 800 clamp(30px, 3.4vw, 42px)/1 var(--f-head); letter-spacing: 0.04em; text-transform: uppercase; margin: 2px 0 4px; }
+.h-card span { display: block; font-size: 14px; font-weight: 500; opacity: 0.85; }
+.h-card svg { position: absolute; right: 22px; top: 50%; width: 52px; height: 52px; margin-top: -26px; fill: var(--a); opacity: 0.9; }
+.h-card.race { background: repeating-linear-gradient(-45deg, transparent 0 14px, rgba(0,0,0,0.1) 14px 20px), var(--hot); color: var(--tar); box-shadow: inset 0 -6px 0 #b37d00; padding-top: 18px; padding-bottom: 22px; }
+.h-card.race small, .h-card.race svg { color: var(--tar); fill: var(--tar); } .h-card.race span { opacity: 1; font-weight: 600; }
+.h-card.base { --a: #8fe04a; } .h-card.arena { --a: #ff6a3a; } .h-card.garage { --a: #c9ced6; }
+body.at-home #tags, body.at-home #touch { display: none; }
+/* the mode's card: its name where the logo was */
+.brief-k { font: 700 16px var(--f-head); letter-spacing: 0.3em; text-transform: uppercase; color: var(--hot); }
+.brief-t { font: 400 clamp(34px, 7.4vw, 64px)/1 var(--f-logo); text-transform: uppercase; color: var(--ink); text-shadow: 0 4px 0 var(--tar), 0 8px 18px rgba(0,0,0,0.5); margin: 4px 0 14px; }
+/* phones held sideways: two cards across, on the right half */
+@media (max-height: 520px) and (min-width: 561px) {
+  #home .title { font-size: 26px; left: 14px; top: 10px; } .h-scrap { top: 8px; right: 12px; font-size: 14px; padding: 3px 12px 2px; } .h-scrap b { font-size: 20px; }
+  .h-car { left: 14px; bottom: 10px; } .h-car > b { font-size: 26px; } .h-car .g-rate { margin-top: 4px; } .h-car .g-class { width: 28px; height: 28px; font-size: 19px; } .h-car .g-num { font-size: 20px; }
+  .h-cards { right: 12px; width: 52vw; grid-template-columns: 1fr 1fr; gap: 8px; transform: translateY(-40%); }
+  .h-card, .h-card.race { padding: 10px 12px 12px 16px; --c: 10px; } .h-card b { font-size: 24px; } .h-card span { font-size: 12px; } .h-card small { font-size: 11px; letter-spacing: 0.14em; }
+  .h-card svg { width: 26px; height: 26px; right: 10px; top: 10px; margin: 0; }
+  .brief-t { font-size: 30px; margin-bottom: 4px; } .brief-k { font-size: 12px; }
+}
+/* phones held upright: the car above, the cards in a block of four below */
+@media (max-width: 560px) {
+  #home .title { font-size: 25px; left: 12px; top: 12px; } .h-scrap { top: 12px; right: 10px; font-size: 14px; padding: 4px 12px 3px; } .h-scrap b { font-size: 21px; }
+  .h-cards { left: 10px; right: 10px; top: auto; bottom: max(12px, env(safe-area-inset-bottom)); width: auto; transform: none; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .h-card, .h-card.race { padding: 12px 10px 14px 16px; --c: 10px; min-height: 104px; } .h-card b { font-size: min(27px, 7vw); } .h-card span { font-size: 12px; } .h-card small { font-size: 11px; letter-spacing: 0.12em; padding-right: 30px; }
+  .h-card svg { width: 26px; height: 26px; right: 10px; top: 10px; margin: 0; }
+  .h-card:hover { transform: none; }
+  .h-car { left: 12px; bottom: auto; top: 96px; } .h-car > b { font-size: 26px; } .h-car .g-rate { margin-top: 4px; } .h-car .g-class { width: 28px; height: 28px; font-size: 19px; } .h-car .g-num { font-size: 20px; }
+}
 </style>
 <canvas id="view"></canvas>
 <canvas id="radar" width="150" height="150"></canvas>
@@ -423,10 +466,10 @@ button.alt:hover { background: linear-gradient(180deg, #4a5056, #2e3237); }
 <div class="hud" id="banner"><b></b><span></span></div>
 <div class="hud" id="hint">Press <kbd>G</kbd> for the garage</div>
 <div class="card" id="dead" hidden><div><b>Wrecked!</b>New car in <span id="dead-t">3</span><div class="row"><button class="alt" id="dead-garage">Garage</button><button class="go" id="dead-go">Drive now</button></div></div></div>
-<div class="card" id="over" hidden><div><b class="t" id="over-t">Round over</b><div id="over-l"></div><div class="row more-only"><button class="go" id="over-more">Keep going</button></div><div class="note desk-only more-only"><kbd>Enter</kbd> or <kbd>C</kbd> to keep going: the same round, on your own</div><div class="row"><button class="alt" id="over-maps">Maps</button><button class="alt" id="over-garage">Garage</button><button class="go" id="over-go">Again</button></div></div></div>
+<div class="card" id="over" hidden><div><b class="t" id="over-t">Round over</b><div id="over-l"></div><div class="row more-only"><button class="go" id="over-more">Keep going</button></div><div class="note desk-only more-only"><kbd>Enter</kbd> or <kbd>C</kbd> to keep going: the same round, on your own</div><div class="row"><button class="alt" id="over-maps">Home</button><button class="alt" id="over-garage">Garage</button><button class="go" id="over-go">Again</button></div></div></div>
 <div class="card" id="menu" hidden><div>
-  <div class="title logo" role="img" aria-label="AutoDestruction.io"><div class="lg-auto"><div class="lg-l"><span>A</span><span>U</span><span>T</span><span>O</span></div></div><div class="lg-bar"><div class="lg-l"><span>D</span><span>E</span><span>S</span><span>T</span><span>R</span><span>U</span><span>C</span><span>T</span><span>I</span><span>O</span><span>N</span></div></div><b class="lg-io">.io</b></div>
-  <div class="maps" id="maps"></div><div class="map-blurb" id="map-blurb"></div>
+  <div class="brief-k" id="brief-k"></div><div class="brief-t" id="brief-t"></div>
+  <div class="map-blurb" id="map-blurb"></div>
   <div class="levels" id="levels" hidden><span>Rivals</span></div>
   <div class="keys">
     <span class="desk-only"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive</span><span class="desk-only"><kbd>Space</kbd> handbrake / drift</span>
@@ -438,7 +481,7 @@ button.alt:hover { background: linear-gradient(180deg, #4a5056, #2e3237); }
     <span class="touch-only"><b>Rockets</b> heavy weapons</span><span class="touch-only"><b>Drift</b> handbrake turn</span>
     <span class="touch-only">Ram walls to smash through</span><span class="touch-only">Garage from the start and results cards</span>
   </div>
-  <div class="row"><button class="alt" id="menu-garage">Garage</button><button class="go" id="go">Start the brawl</button></div>
+  <div class="row"><button class="alt" id="menu-home">Back</button><button class="go" id="go">Start the brawl</button></div>
   <div class="note" id="menu-note"></div>
   <div id="online" hidden>
     <div class="on-l">Play online</div>
@@ -452,6 +495,12 @@ button.alt:hover { background: linear-gradient(180deg, #4a5056, #2e3237); }
   </div>
   <div class="note rotate">Turn your phone sideways for the widest view</div>
 </div></div>
+<div id="home" hidden>
+  <div class="title logo" role="img" aria-label="AutoDestruction.io"><div class="lg-auto"><div class="lg-l"><span>A</span><span>U</span><span>T</span><span>O</span></div></div><div class="lg-bar"><div class="lg-l"><span>D</span><span>E</span><span>S</span><span>T</span><span>R</span><span>U</span><span>C</span><span>T</span><span>I</span><span>O</span><span>N</span></div></div><b class="lg-io">.io</b></div>
+  <div class="h-scrap">Scrap<b id="home-scrap">0</b></div>
+  <div class="h-car"><b id="home-car"></b><span class="g-rate" id="home-rate" data-c="C"><b class="g-class" id="home-class">C</b><em class="g-num" id="home-num">0</em></span><i class="desk-only">Drag to turn the car</i></div>
+  <div class="h-cards" id="home-cards"></div>
+</div>
 <div id="garage" hidden>
   <div class="g-name"><b>Garage</b><span>Drag to turn the car · tap a glowing spot to change that part</span></div>
   <div class="g-rate" data-c="C"><span>Build</span><b class="g-class">C</b><em class="g-num">0</em><em class="g-delta"></em></div>
