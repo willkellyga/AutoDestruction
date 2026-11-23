@@ -431,6 +431,24 @@ button.alt:hover { background: linear-gradient(180deg, #4a5056, #2e3237); }
 .h-card.race small, .h-card.race svg { color: var(--tar); fill: var(--tar); } .h-card.race span { opacity: 1; font-weight: 600; }
 .h-card.base { --a: #8fe04a; } .h-card.arena { --a: #ff6a3a; } .h-card.garage { --a: #c9ced6; }
 body.at-home #tags, body.at-home #touch { display: none; }
+/* Solo or Online, over the cards */
+.h-play { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 0; padding: 4px; background: rgba(12,13,15,0.9); box-shadow: inset 0 0 0 2px rgba(255,255,255,0.14); --c: 10px; clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c)); }
+.h-play[hidden] { display: none; }
+.h-play button { border: 0; cursor: pointer; padding: 9px 8px 7px; background: transparent; color: var(--ink); opacity: 0.7; font: 800 20px var(--f-head); letter-spacing: 0.14em; text-transform: uppercase; }
+.h-play button.on { opacity: 1; color: var(--tar); background: repeating-linear-gradient(-45deg, transparent 0 10px, rgba(0,0,0,0.11) 10px 14px), var(--hot); }
+body.as-solo #online, body.as-online #go, body.as-online #levels, body.as-online #menu-note { display: none; }
+body.as-online #online .on-l { display: none; } body.as-online #online { margin-top: 14px; }
+body.as-online #online button.go { font-size: 20px; padding: 9px 22px; }
+/* the round's menu */
+#pause { z-index: 7; } #pause .t { display: block; font: 400 clamp(40px, 8vw, 64px)/1 var(--f-logo); color: var(--hot); text-transform: uppercase; text-shadow: 0 4px 0 var(--tar); margin-bottom: 8px; }
+#pause .note { max-width: 320px; margin: 0 auto 6px; }
+.p-col { display: grid; gap: 10px; width: min(300px, 80vw); margin: 14px auto 12px; } .p-col button { width: 100%; } .p-col button[hidden] { display: none; }
+#dead.under { visibility: hidden; }
+#pause-b { display: none; position: fixed; right: 18px; top: 88px; z-index: 5; width: 40px; height: 40px; border: 0; cursor: pointer; background: rgba(22,24,27,0.82); box-shadow: inset 0 0 0 2px rgba(255,255,255,0.2); align-items: center; justify-content: center; gap: 6px; --c: 8px; clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c)); }
+#pause-b i { width: 5px; height: 16px; background: var(--hot); }
+body.in-round #pause-b { display: flex; } body.touch #pause-b { right: 12px; top: 84px; width: 44px; height: 44px; }
+@media (max-width: 560px) { body.touch #pause-b { top: 64px; } }
+#pause { background: rgba(8,7,5,0.84); } body.paused #banner, body.paused #toast, body.paused #hint, body.paused #cross { visibility: hidden; }
 /* the mode's card: its name where the logo was */
 .brief-k { font: 700 16px var(--f-head); letter-spacing: 0.3em; text-transform: uppercase; color: var(--hot); }
 .brief-t { font: 400 clamp(34px, 7.4vw, 64px)/1 var(--f-logo); text-transform: uppercase; color: var(--ink); text-shadow: 0 4px 0 var(--tar), 0 8px 18px rgba(0,0,0,0.5); margin: 4px 0 14px; }
@@ -449,7 +467,7 @@ body.at-home #tags, body.at-home #touch { display: none; }
   .h-cards { left: 10px; right: 10px; top: auto; bottom: max(12px, env(safe-area-inset-bottom)); width: auto; transform: none; grid-template-columns: 1fr 1fr; gap: 8px; }
   .h-card, .h-card.race { padding: 12px 10px 14px 16px; --c: 10px; min-height: 104px; } .h-card b { font-size: min(27px, 7vw); } .h-card span { font-size: 12px; } .h-card small { font-size: 11px; letter-spacing: 0.12em; padding-right: 30px; }
   .h-card svg { width: 26px; height: 26px; right: 10px; top: 10px; margin: 0; }
-  .h-card:hover { transform: none; }
+  .h-card:hover { transform: none; } .h-play button { font-size: 18px; padding: 8px 8px 6px; }
   .h-car { left: 12px; bottom: auto; top: 96px; } .h-car > b { font-size: 26px; } .h-car .g-rate { margin-top: 4px; } .h-car .g-class { width: 28px; height: 28px; font-size: 19px; } .h-car .g-num { font-size: 20px; }
 }
 </style>
@@ -464,8 +482,10 @@ body.at-home #tags, body.at-home #touch { display: none; }
 <div class="hud" id="toast"></div>
 <div class="hud" id="drift"><b>Drift</b><i><s></s></i></div>
 <div class="hud" id="banner"><b></b><span></span></div>
+<button id="pause-b" aria-label="Pause"><i></i><i></i></button>
 <div class="hud" id="hint">Press <kbd>G</kbd> for the garage</div>
 <div class="card" id="dead" hidden><div><b>Wrecked!</b>New car in <span id="dead-t">3</span><div class="row"><button class="alt" id="dead-garage">Garage</button><button class="go" id="dead-go">Drive now</button></div></div></div>
+<div class="card" id="pause" hidden><div><b class="t" id="pause-t">Paused</b><div class="note" id="pause-note"></div><div class="p-col"><button class="go" id="pause-go">Resume</button><button class="alt" id="pause-again">Restart</button><button class="alt" id="pause-sound">Sound: on</button><button class="alt" id="pause-home">Main menu</button></div><div class="note desk-only"><kbd>Esc</kbd> or <kbd>P</kbd> to go back to the round</div></div></div>
 <div class="card" id="over" hidden><div><b class="t" id="over-t">Round over</b><div id="over-l"></div><div class="row more-only"><button class="go" id="over-more">Keep going</button></div><div class="note desk-only more-only"><kbd>Enter</kbd> or <kbd>C</kbd> to keep going: the same round, on your own</div><div class="row"><button class="alt" id="over-maps">Home</button><button class="alt" id="over-garage">Garage</button><button class="go" id="over-go">Again</button></div></div></div>
 <div class="card" id="menu" hidden><div>
   <div class="brief-k" id="brief-k"></div><div class="brief-t" id="brief-t"></div>
@@ -476,7 +496,7 @@ body.at-home #tags, body.at-home #touch { display: none; }
     <span class="desk-only"><b>Mouse</b> aim (it pulls onto rivals)</span><span class="desk-only"><b>Wheel</b> camera distance</span>
     <span class="desk-only"><b>Left click</b> guns</span><span class="desk-only"><b>Right click</b> or <kbd>F</kbd> heavy weapons</span>
     <span class="desk-only"><kbd>Shift</kbd> gadget (nitro, repair)</span><span class="desk-only"><kbd>G</kbd> garage (start and results)</span>
-    <span class="desk-only">Ram walls to smash through</span><span class="desk-only"><kbd>M</kbd> sound &nbsp; <kbd>Esc</kbd> free the mouse</span>
+    <span class="desk-only">Ram walls to smash through</span><span class="desk-only"><kbd>M</kbd> sound &nbsp; <kbd>Esc</kbd> pause, main menu</span>
     <span class="touch-only"><b>Left thumb</b> push the way to drive</span><span class="touch-only"><b>Fire</b> the guns aim for you</span>
     <span class="touch-only"><b>Rockets</b> heavy weapons</span><span class="touch-only"><b>Drift</b> handbrake turn</span>
     <span class="touch-only">Ram walls to smash through</span><span class="touch-only">Garage from the start and results cards</span>
@@ -499,7 +519,7 @@ body.at-home #tags, body.at-home #touch { display: none; }
   <div class="title logo" role="img" aria-label="AutoDestruction.io"><div class="lg-auto"><div class="lg-l"><span>A</span><span>U</span><span>T</span><span>O</span></div></div><div class="lg-bar"><div class="lg-l"><span>D</span><span>E</span><span>S</span><span>T</span><span>R</span><span>U</span><span>C</span><span>T</span><span>I</span><span>O</span><span>N</span></div></div><b class="lg-io">.io</b></div>
   <div class="h-scrap">Scrap<b id="home-scrap">0</b></div>
   <div class="h-car"><b id="home-car"></b><span class="g-rate" id="home-rate" data-c="C"><b class="g-class" id="home-class">C</b><em class="g-num" id="home-num">0</em></span><i class="desk-only">Drag to turn the car</i></div>
-  <div class="h-cards" id="home-cards"></div>
+  <div class="h-cards" id="home-cards"><div class="h-play" id="home-play" role="group" aria-label="Solo or online"><button data-p="solo">Solo</button><button data-p="online">Online</button></div></div>
 </div>
 <div id="garage" hidden>
   <div class="g-name"><b>Garage</b><span>Drag to turn the car · tap a glowing spot to change that part</span></div>

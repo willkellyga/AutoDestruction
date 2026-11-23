@@ -38,7 +38,7 @@ import { lookSetup, makeLook } from './looks/index.js';
 import { makeGround } from './ground.js';
 import { makeDirt } from './dirt.js';
 import { makeStreaks } from './streaks.js';
-import { makeNet, makeLobby } from './net.js';
+import { makeNet, makeLobby, serverUrl } from './net.js';
 
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -1060,12 +1060,32 @@ const HOME_CARDS = [
   { map: 'arena', k: 'Hammerdown Arena', t: 'Arena', d: 'Eight cars, three minutes, most wrecks wins', icon: 'M12 1l2.2 5.6L19 3.5l-1.6 5.6L23 10l-4.6 3.2L21 18.5l-5.6-1.3L14 23l-2-5-2 5-1.4-5.8L3 18.5l2.6-5.3L1 10l5.6-.9L5 3.5l4.8 3.1z' },
   { garage: true, k: 'Your car', t: 'Garage', d: 'Build it, arm it, paint it', icon: 'M21.7 6.3l-3.6 3.6-2.8-.7-.7-2.8 3.6-3.6a6 6 0 0 0-7.7 7.7L2.3 18.7a2.1 2.1 0 0 0 3 3l8.2-8.2a6 6 0 0 0 8.2-7.2z' },
 ];
+// Solo or Online, picked on the home screen and kept: a mode's card then has only that way in (Start, or the lobby)
+const PLAY = 'ad-play', CAN_ONLINE = !!serverUrl();
+let playAs = 'solo'; try { if (CAN_ONLINE && localStorage.getItem(PLAY) === 'online') playAs = 'online'; } catch (e) { /* solo */ }
+const ONLINE_D = { race: 'Up to 6 drivers. Bots take the empty seats', base: 'Up to 6 cars against the horde, together', arena: 'Up to 8 cars. Bots take the empty seats' };
+function setPlay(p) {
+  playAs = p === 'online' && CAN_ONLINE ? 'online' : 'solo';
+  try { localStorage.setItem(PLAY, playAs); } catch (e) { /* this visit only */ }
+  drawHome();
+}
+// which way in the mode's card shows: 'solo', 'online', or both (a link straight to a map, as before)
+function cardAs(a) {
+  if (a === 'online' && !lobby) a = 'solo';
+  document.body.classList.toggle('as-solo', a === 'solo'); document.body.classList.toggle('as-online', a === 'online');
+  const kind = { waves: 'Waves', race: 'Race', survival: 'Zombie Survival', brawl: 'Arena' }[MAP.mode] || MAP.mode;
+  $('brief-k').textContent = a === 'online' ? kind + ' · Online' : a === 'solo' ? kind + ' · Solo' : kind;
+  $('on-quick').className = a === 'online' ? 'go' : 'alt'; $('on-quick').textContent = a === 'online' ? 'Quick match' : 'Play online';
+}
 {
   const box = $('home-cards');
+  $('home-play').hidden = !CAN_ONLINE;
+  for (const b of $('home-play').querySelectorAll('button')) b.addEventListener('click', () => { sfx.play('ui_open', 0.5); setPlay(b.dataset.p); });
   for (const c of HOME_CARDS) {
     const b = document.createElement('button'); b.className = 'h-card ' + (c.garage ? 'garage' : c.map);
     b.innerHTML = `<small></small><b></b><span></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${c.icon}"/></svg>`;
     b.querySelector('small').textContent = c.k; b.querySelector('b').textContent = c.t; b.querySelector('span').textContent = c.d;
+    if (c.map) b.dataset.map = c.map;
     b.addEventListener('click', () => { if (!game.home) return; if (c.garage) openGarage('home'); else pickMode(c.map); });
     box.appendChild(b);
   }
@@ -1073,6 +1093,8 @@ const HOME_CARDS = [
 function drawHome() {
   const st = statsOf(save.load), r = rating(st), body = PARTS.body[save.load.body] || {};
   $('home-scrap').textContent = Math.round(save.scrap);
+  for (const b of $('home-play').querySelectorAll('button')) b.classList.toggle('on', b.dataset.p === playAs);
+  for (const c of HOME_CARDS) if (c.map) document.querySelector(`.h-card[data-map="${c.map}"] span`).textContent = playAs === 'online' ? ONLINE_D[c.map] : c.d;
   $('home-car').textContent = body.name || 'Your car';
   $('home-class').textContent = classOf(r); $('home-rate').dataset.c = classOf(r); $('home-num').textContent = r;
 }
@@ -1092,12 +1114,41 @@ function showHome() {
 function pickMode(id) {
   initAudio(); sfx.play('ui_open', 0.7);
   if (id !== MAP.id || game.ended) {
-    try { sessionStorage.setItem(BRIEF, '1'); } catch (e) { /* it lands on the home screen again */ }
+    try { sessionStorage.setItem(BRIEF, playAs); } catch (e) { /* it lands on the home screen again */ }
     $('home').hidden = true; const l = $('loading'); if (l) l.hidden = false;
     chooseMap(id); return;
   }
   outOfRoom();
-  game.home = false; $('home').hidden = true; game.state = 'menu'; $('menu').hidden = false;
+  game.home = false; $('home').hidden = true; game.state = 'menu'; $('menu').hidden = false; cardAs(playAs);
+}
+
+// ---- the round's menu: Esc, P, or the button under the score ------------------------------------------------------------
+// Alone, the round stops while it is up. Online it cannot (the others play on), so it says so and the car coasts.
+function stopInput() { for (const k in keys) keys[k] = false; mouse.b0 = mouse.b2 = false; touch.id = null; touch.sx = touch.sy = 0; touch.fire = touch.heavy = touch.drift = false; $('knob').style.transform = ''; for (const b of document.querySelectorAll('.tbtn.down')) b.classList.remove('down'); }
+function drawPause() {
+  $('pause-t').textContent = net ? 'Round menu' : 'Paused';
+  $('pause-note').textContent = net ? 'An online round cannot pause: the others play on, and your car is still out there.' : '';
+  $('pause-again').hidden = !!net; $('pause-home').textContent = net ? 'Leave the round' : 'Main menu';
+  $('pause-sound').textContent = muted ? 'Sound: off' : 'Sound: on';
+}
+function pauseOn() {
+  if (game.paused || (game.state !== 'play' && game.state !== 'dead')) return;
+  game.paused = true; game.pausedAt = performance.now(); stopInput(); drawPause();
+  $('pause').hidden = false; $('dead').classList.add('under'); document.body.classList.add('paused');
+  if (!net && audioMix.ctx && audioMix.ctx.suspend) audioMix.ctx.suspend();
+  if (document.exitPointerLock) document.exitPointerLock();
+}
+function pauseOff() {
+  if (!game.paused) return;
+  game.paused = false; $('pause').hidden = true; $('dead').classList.remove('under'); document.body.classList.remove('paused'); stopInput();
+  if (audioMix.ctx && audioMix.ctx.resume) audioMix.ctx.resume();
+  if (game.state === 'play') lockMouse(true);
+}
+// out of a round to the home screen (online: off the round first, and the page loads again without it)
+function toHome() {
+  pauseOff(); if (document.exitPointerLock) document.exitPointerLock();
+  if (net) { net.bye(); const u = new URL(location.href), q = u.searchParams; u.search = ''; for (const k of ['server', 'as', 'touch']) if (q.get(k)) u.searchParams.set(k, q.get(k)); location.href = u.toString(); return; }
+  keepSave(save); game.ended = true; showHome();
 }
 
 function openGarage(from) {
@@ -1131,13 +1182,16 @@ function startGame() {
   lockMouse();
   mode.start();
 }
-function lockMouse() { if (canvas.requestPointerLock && !MOBILE) { try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => { cam.noLock = true; }); } catch (err) { cam.noLock = true; } } }
+// (soft: straight after Esc the browser may refuse the mouse for a second; that is not "this browser cannot", and the next click on the game takes it)
+function lockMouse(soft) { if (soft) cam.softAt = performance.now(); if (canvas.requestPointerLock && !MOBILE) { try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => { if (!soft) cam.noLock = true; }); } catch (err) { if (!soft) cam.noLock = true; } } }
 
 // ---- controls ------------------------------------------------------------------------------------------------------
 const keys = {};
 const cam = { yaw: Math.PI, pitch: 0.3, dist: 36, locked: false, mx: 0, my: 0, cx: 0, cz: 0 };
 const mouse = { b0: false, b2: false };
 addEventListener('keydown', (e) => {
+  if (game.paused) { if ((e.code === 'Escape' || e.code === 'KeyP') && performance.now() - game.pausedAt > 350) pauseOff(); return; }
+  if ((e.code === 'Escape' || e.code === 'KeyP') && (game.state === 'play' || game.state === 'dead')) { pauseOn(); return; }
   keys[e.code] = true; initAudio();
   if (e.code === 'KeyM') { muted = !muted; sfx.on = !muted; }
   if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight') && game.state === 'play' && player) gadget(player);
@@ -1161,8 +1215,12 @@ canvas.addEventListener('mousedown', (e) => {
   if (e.button === 0) mouse.b0 = true; if (e.button === 2) mouse.b2 = true;
 });
 addEventListener('mouseup', (e) => { cam.drag = false; if (e.button === 0) mouse.b0 = false; if (e.button === 2) mouse.b2 = false; });
-document.addEventListener('pointerlockchange', () => { cam.locked = document.pointerLockElement === canvas; document.body.classList.toggle('locked', cam.locked); });
-document.addEventListener('pointerlockerror', () => { cam.noLock = true; });
+document.addEventListener('pointerlockchange', () => {
+  const was = cam.locked; cam.locked = document.pointerLockElement === canvas; document.body.classList.toggle('locked', cam.locked);
+  if (was && !cam.locked && game.state === 'play') pauseOn();   // Esc with the mouse held by the game: the browser lets go of it, and the round's menu comes up
+});
+document.addEventListener('pointerlockerror', () => { if (performance.now() - (cam.softAt || -1e9) > 1500) cam.noLock = true; });
+document.addEventListener('visibilitychange', () => { if (document.hidden && !net && game.state === 'play' && !window.__hold) pauseOn(); });
 addEventListener('mousemove', (e) => {
   if (cam.drag && game.state === 'garage') turnTable(e.clientX - cam.mx);
   cam.mx = e.clientX; cam.my = e.clientY;
@@ -1172,11 +1230,11 @@ addEventListener('mousemove', (e) => {
 addEventListener('wheel', (e) => { cam.dist = clamp(cam.dist + Math.sign(e.deltaY) * 3, 20, 60); }, { passive: true });
 $('go').addEventListener('click', () => {
   if (net) { initAudio(); if (game.state !== 'menu') return; if (net.begun) startGame(); else { net.ready_(); $('go').disabled = true; $('go').textContent = 'Waiting for the others...'; } return; }
-  if (game.ended) { try { sessionStorage.setItem(BRIEF, '1'); } catch (e) { /* home */ } chooseMap(MAP.id); } else startGame();
+  if (game.ended) { try { sessionStorage.setItem(BRIEF, 'solo'); } catch (e) { /* home */ } chooseMap(MAP.id); } else startGame();
 });
 // the mode's card: its name and map, what it is, and the race's difficulty
 {
-  $('brief-k').textContent = { waves: 'Waves', race: 'Race', survival: 'Zombie Survival', brawl: 'Arena' }[MAP.mode] || MAP.mode; $('brief-t').textContent = MAP.name;
+  $('brief-t').textContent = MAP.name;
   $('map-blurb').textContent = MAP.blurb; $('go').textContent = mode.go; $('menu-note').textContent = mode.note;
   // a mode with difficulty levels (the race) gets a row of buttons for them, kept in the save
   if (mode.levels) {
@@ -1190,19 +1248,26 @@ $('go').addEventListener('click', () => {
     show();
   }
 }
+let lobby = null;
 $('over-go').addEventListener('click', () => { if (net) { net.bye(); location.href = net.lobby(); } else chooseMap(MAP.id); });
 $('over-more').addEventListener('click', overGo);
-$('over-maps').addEventListener('click', () => { game.ended = true; showHome(); });
+$('over-maps').addEventListener('click', () => { if (net) toHome(); else { game.ended = true; showHome(); } });
+$('pause-b').addEventListener('click', pauseOn);
+$('pause-go').addEventListener('click', pauseOff);
+$('pause-again').addEventListener('click', () => { pauseOff(); try { sessionStorage.setItem(BRIEF, 'solo'); } catch (e) { /* home */ } chooseMap(MAP.id); });
+$('pause-sound').addEventListener('click', () => { muted = !muted; sfx.on = !muted; audioMix.on = !muted; drawPause(); });
+$('pause-home').addEventListener('click', toHome);
 $('over-garage').addEventListener('click', () => { $('over').hidden = true; game.ended = true; openGarage('over'); });
 $('menu-home').addEventListener('click', () => { if (game.state === 'menu') showHome(); });
 // online (net.js): in a round, the start card is a Ready button for it; otherwise it has the lobby (Play online, With friends)
 if (net) {
   document.body.classList.add('online');
-  for (const id of ['levels', 'menu-home', 'map-blurb', 'over-maps', 'over-garage']) $(id).hidden = true;
+  $('brief-k').textContent = ({ waves: 'Waves', race: 'Race', survival: 'Zombie Survival', brawl: 'Arena' }[MAP.mode] || MAP.mode) + ' · Online';
+  for (const id of ['levels', 'menu-home', 'map-blurb', 'over-garage']) $(id).hidden = true;
   $('go').textContent = "I'm ready"; $('menu-note').textContent = 'Joining the round...';
   $('over-go').textContent = 'Back to the lobby';
 } else {
-  const lobby = makeLobby({ $, MAP, onOpen: () => { $('menu').classList.add('lobby-on'); }, onShut: () => { $('menu').classList.remove('lobby-on'); } });
+  lobby = makeLobby({ $, MAP, onOpen: () => { $('menu').classList.add('lobby-on'); }, onShut: () => { $('menu').classList.remove('lobby-on'); } });
   window.__lobby = lobby;
 }
 $('dead-garage').addEventListener('click', () => openGarage('dead'));
@@ -1398,6 +1463,9 @@ if (net) {
   } catch (e) { /* no workers: a hidden host just waits */ }
 }
 function step(dt) {
+  if (game.paused && (game.state !== 'play' && game.state !== 'dead')) pauseOff();   // (the round ended under the menu)
+  document.body.classList.toggle('in-round', game.state === 'play' || game.state === 'dead');
+  if (game.paused && !net) { if (TOUCH) $('touch').hidden = true; return; }   // alone, the round waits
   game.time += dt; newFrame();
   const live = game.state === 'play' || game.state === 'dead' || game.state === 'over', test = game.state === 'test';
   if (MAP.step) MAP.step(dt);
@@ -1471,7 +1539,7 @@ function step(dt) {
   document.body.classList.toggle('in-garage', game.state === 'garage');
   document.body.classList.toggle('at-home', !!game.home);
   document.body.classList.toggle('in-test', game.state === 'test');
-  if (TOUCH) $('touch').hidden = game.state !== 'play' && game.state !== 'test';
+  if (TOUCH) $('touch').hidden = (game.state !== 'play' && game.state !== 'test') || !!game.paused;
   drawHud(); drawTags(); drawRadar();
 }
 $('hint').addEventListener('click', () => { if (game.state === 'play' && mode.garageOK()) openGarage('break'); else if (game.state === 'play' && mode.resetPlayer) mode.resetPlayer(); });
@@ -1480,8 +1548,9 @@ followSun(player.x, player.z);
 const loadEl = $('loading'); if (loadEl) loadEl.hidden = true;
 // the home screen first; a mode's card instead when one was just picked, in an online round, or on a link into a room
 {
-  let brief = false; try { brief = sessionStorage.getItem(BRIEF) === '1'; sessionStorage.removeItem(BRIEF); } catch (e) { /* home */ }
+  let brief = ''; try { brief = sessionStorage.getItem(BRIEF) || ''; sessionStorage.removeItem(BRIEF); } catch (e) { /* home */ }
+  if (!net) cardAs(/[?&](room|online)=/.test(location.search) ? 'online' : brief === 'online' ? 'online' : brief ? 'solo' : 'both');
   if (net || brief || /[?&](room|online|map)=/.test(location.search)) $('menu').hidden = false; else showHome();
 }
 requestAnimationFrame((t) => { last = t; frame(t); });
-window.__derby = { net, specials, crumple, cube, room, gcam, garageLight, startTest, endTest, tryPart: (s, k) => onTry(s, k), dummies, renderer, mapLook, touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, sfx, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop };
+window.__derby = { net, specials, crumple, cube, room, gcam, garageLight, startTest, endTest, tryPart: (s, k) => onTry(s, k), dummies, renderer, mapLook, touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, pauseOn, pauseOff, toHome, setPlay, sfx, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop };
