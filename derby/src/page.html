@@ -414,6 +414,9 @@ button.alt:hover { background: linear-gradient(180deg, #4a5056, #2e3237); }
 #home .title { position: absolute; left: 22px; top: 16px; font-size: clamp(26px, 4.6vw, 54px); }
 .h-scrap { position: absolute; right: 22px; top: 18px; font: 700 18px var(--f-head); letter-spacing: 0.12em; text-transform: uppercase; padding: 6px 16px 5px; background: rgba(22,24,27,0.88); box-shadow: inset 0 0 0 2px rgba(255,255,255,0.12); --c: 8px; clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c)); }
 .h-scrap b { font: 700 28px var(--f-head); color: var(--hot); margin-left: 8px; vertical-align: -2px; }
+/* playtesting: own every car and part */
+.h-unlock { position: absolute; right: 22px; top: 70px; pointer-events: auto; cursor: pointer; border: 0; padding: 7px 14px 5px; font: 700 15px var(--f-head); letter-spacing: 0.14em; text-transform: uppercase; color: var(--tar); background: repeating-linear-gradient(-45deg, transparent 0 10px, rgba(0,0,0,0.13) 10px 14px), var(--hot); --c: 7px; clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c)); }
+.h-unlock:disabled { cursor: default; color: var(--ink); opacity: 0.6; background: rgba(22,24,27,0.88); box-shadow: inset 0 0 0 2px rgba(255,255,255,0.12); }
 .h-car { position: absolute; left: 22px; bottom: 20px; text-shadow: 0 2px 0 rgba(0,0,0,0.6); }
 .h-car > b { display: block; font: 400 clamp(30px, 4.4vw, 50px)/1 var(--f-logo); color: var(--hot); text-transform: uppercase; text-shadow: 0 4px 0 var(--tar); }
 .h-car .g-rate { position: static; display: inline-flex; margin-top: 8px; } .h-car .g-class { width: 38px; height: 38px; font-size: 26px; text-shadow: none; } .h-car .g-num { font-size: 28px; }
@@ -455,6 +458,7 @@ body.in-round #pause-b { display: flex; } body.touch #pause-b { right: 12px; top
 /* phones held sideways: two cards across, on the right half */
 @media (max-height: 520px) and (min-width: 561px) {
   #home .title { font-size: 26px; left: 14px; top: 10px; } .h-scrap { top: 8px; right: 12px; font-size: 14px; padding: 3px 12px 2px; } .h-scrap b { font-size: 20px; }
+  .h-unlock { top: 46px; right: 12px; font-size: 12px; padding: 5px 10px 3px; }
   .h-car { left: 14px; bottom: 10px; } .h-car > b { font-size: 26px; } .h-car .g-rate { margin-top: 4px; } .h-car .g-class { width: 28px; height: 28px; font-size: 19px; } .h-car .g-num { font-size: 20px; }
   .h-cards { right: 12px; width: 52vw; grid-template-columns: 1fr 1fr; gap: 8px; transform: translateY(-40%); }
   .h-card, .h-card.race { padding: 10px 12px 12px 16px; --c: 10px; } .h-card b { font-size: 24px; } .h-card span { font-size: 12px; } .h-card small { font-size: 11px; letter-spacing: 0.14em; }
@@ -464,6 +468,7 @@ body.in-round #pause-b { display: flex; } body.touch #pause-b { right: 12px; top
 /* phones held upright: the car above, the cards in a block of four below */
 @media (max-width: 560px) {
   #home .title { font-size: 25px; left: 12px; top: 12px; } .h-scrap { top: 12px; right: 10px; font-size: 14px; padding: 4px 12px 3px; } .h-scrap b { font-size: 21px; }
+  .h-unlock { top: 52px; right: 10px; font-size: 12px; padding: 5px 10px 3px; }
   .h-cards { left: 10px; right: 10px; top: auto; bottom: max(12px, env(safe-area-inset-bottom)); width: auto; transform: none; grid-template-columns: 1fr 1fr; gap: 8px; }
   .h-card, .h-card.race { padding: 12px 10px 14px 16px; --c: 10px; min-height: 104px; } .h-card b { font-size: min(27px, 7vw); } .h-card span { font-size: 12px; } .h-card small { font-size: 11px; letter-spacing: 0.12em; padding-right: 30px; }
   .h-card svg { width: 26px; height: 26px; right: 10px; top: 10px; margin: 0; }
@@ -518,6 +523,7 @@ body.in-round #pause-b { display: flex; } body.touch #pause-b { right: 12px; top
 <div id="home" hidden>
   <div class="title logo" role="img" aria-label="AutoDestruction.io"><div class="lg-auto"><div class="lg-l"><span>A</span><span>U</span><span>T</span><span>O</span></div></div><div class="lg-bar"><div class="lg-l"><span>D</span><span>E</span><span>S</span><span>T</span><span>R</span><span>U</span><span>C</span><span>T</span><span>I</span><span>O</span><span>N</span></div></div><b class="lg-io">.io</b></div>
   <div class="h-scrap">Scrap<b id="home-scrap">0</b></div>
+  <button class="h-unlock" id="home-unlock" title="Own every car and part, for playtesting">Unlock all</button>
   <div class="h-car"><b id="home-car"></b><span class="g-rate" id="home-rate" data-c="C"><b class="g-class" id="home-class">C</b><em class="g-num" id="home-num">0</em></span><i class="desk-only">Drag to turn the car</i></div>
   <div class="h-cards" id="home-cards"><div class="h-play" id="home-play" role="group" aria-label="Solo or online"><button data-p="solo">Solo</button><button data-p="online">Online</button></div></div>
 </div>
