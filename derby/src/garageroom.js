@@ -6,6 +6,10 @@
 // The workshop's middle is at O. The turntable is there; the door is in the wall on the -z side, and the yard runs on
 // from it to -z. Everything is plain three.js boxes and cylinders, built once and shown only while the garage is open.
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { dressShop, LIFT } from './shoplife.js';
+import { Unit } from '../../units/src/unit.js';
+import { carDef } from './carmodel.js';
 
 // where the workshop stands, relative to the map (it is behind the map's z = 0 edge, facing away from it)
 export const ROOM = { w: 80, back: 34, front: 30, h: 24, door: 30, doorH: 15 };
@@ -77,7 +81,7 @@ export function makeGarageRoom({ scene, WX, mobile }) {
     const ring = new THREE.Mesh(new THREE.PlaneGeometry(23, 23), new THREE.MeshStandardMaterial({ map: t, transparent: true, roughness: 0.8 }));
     ring.rotation.x = -Math.PI / 2; ring.position.y = 0.015; ring.receiveShadow = true; root.add(ring);
   }
-  const lift = new THREE.Group(); lift.position.set(0, 0.07, 0); root.add(lift);
+  const lift = new THREE.Group(); lift.position.set(0, 0.07, 0); lift.userData.live = true; root.add(lift);
   cyl(10, 0.14, 0, 0, 0, std(0x7b8088, { metalness: 0.55, roughness: 0.4 }), { seg: 48, to: lift });
   for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; box(19, 0.03, 0.3, 0, 0.08, 0, M.dark, { ry: a, to: lift }); }
   box(1.2, 0.03, 1.2, 0, 0.09, 8.6, M.yellow, { to: lift });   // a mark at the nose, so the turn shows
@@ -141,12 +145,12 @@ export function makeGarageRoom({ scene, WX, mobile }) {
   // tyre stacks and oil drums in the corners
   const tyreStack = (x, z, n, to = root) => { for (let i = 0; i < n; i++) cyl(2.1, 1.3, x + (i % 2) * 0.2, 0.65 + i * 1.3, z, M.tyre, { r2: 2.1, seg: 18, to }); };
   tyreStack(-hw + 4, R.back - 4, 5); tyreStack(-hw + 8.6, R.back - 4.5, 3); tyreStack(hw - 4, -R.front + 4, 4);
-  for (const [x, z, m] of [[-hw + 3.5, -R.front + 3.5, M.blue], [-hw + 7, -R.front + 3.2, M.red], [-hw + 3.6, -R.front + 7, M.green]]) cyl(1.5, 4, x, 2, z, m, { seg: 16 });
+  for (const [x, z, m] of [[-hw + 3, 1.5, M.blue], [-hw + 3.4, 5, M.red], [-hw + 6.2, 2.6, M.green]]) cyl(1.5, 4, x, 2, z, m, { seg: 16 });
   // a two-post lift at the back, for show
   for (const x of [-16, 16]) { box(1.4, 15, 1.4, x, 7.5, R.back - 8, M.yellow); box(5, 0.6, 1, x - Math.sign(x) * 2.6, 4, R.back - 8, M.yellow); }
   box(33.4, 1, 1.6, 0, 15.2, R.back - 8, M.yellow);
   // the scrap pile in the back corner: it grows with the scrap you have (setScrap)
-  const pile = new THREE.Group(); pile.position.set(hw - 10, 0, R.back - 9); root.add(pile);
+  const pile = new THREE.Group(); pile.position.set(hw - 10, 0, R.back - 9); pile.userData.live = true; root.add(pile);
   const pileMats = [M.rust, M.steel, M.dark, M.rib, M.rust];
   const pieces = [];
   {
@@ -194,10 +198,45 @@ export function makeGarageRoom({ scene, WX, mobile }) {
   }
   tyreStack(bx - 6, bz1 + 6, 4); tyreStack(-bx + 6, bz1 + 6, 4); tyreStack(-bx + 6, bz0 - 8, 3);
 
+  // ---- the shop's fittings and the people at work in it (shoplife.js) ------------------------------------------------
+  const life = dressShop({ root, box, cyl, M, std, R, mobile });
+
+  // ---- everything that stands still is joined up, a mesh to each material: a few dozen draws in place of several
+  // hundred. Whatever moves or is switched on and off is marked live (userData.live, on it or a group above it) and
+  // is left as it is, and so is anything see-through.
+  {
+    const at = root.position.clone(); root.position.set(0, 0, 0); root.updateMatrixWorld(true);
+    const sets = new Map(), gone = [];
+    const isLive = (o) => { for (let p = o; p && p !== root; p = p.parent) if (p.userData.live) return true; return false; };
+    root.traverse((m) => {
+      if (!m.isMesh || isLive(m) || m.material.transparent) return;
+      const key = m.material.uuid + (m.castShadow ? 'c' : '') + (m.receiveShadow ? 'r' : '');
+      if (!sets.has(key)) sets.set(key, { mat: m.material, cast: m.castShadow, receive: m.receiveShadow, list: [] });
+      const g = m.geometry.clone().applyMatrix4(m.matrixWorld); sets.get(key).list.push(g); gone.push(m);
+    });
+    for (const m of gone) { m.removeFromParent(); if (m.geometry !== boxG) m.geometry.dispose(); }
+    for (const s of sets.values()) {
+      const g = mergeGeometries(s.list); for (const o of s.list) o.dispose();
+      const m = new THREE.Mesh(g, s.mat); m.castShadow = s.cast; m.receiveShadow = s.receive; root.add(m);
+    }
+    root.position.copy(at); root.updateMatrixWorld(true);
+  }
+
+  // the car up on the lift in the welding bay: one of the game's own cars, in for work (main.js calls this once the
+  // cars' materials are made)
+  function parkOnLift(mats) {
+    const def = carDef({ body: 'viper', primary: 'mg', roof: 'none', door: 'none', secondary: 'none', front: 'none', armour: 'none', wheels: 'street', engine: 'stock', gadget: 'none', paint: 'teal', trim: 'white', pattern: 'rust' }, 11);
+    const unit = new Unit(def, mats, { seed: 11 });
+    Object.assign(unit.state, { spin: 0, steer: 0.3, roll: 0, pitch: 0, bob: 0, yaw: 0.6, aim: 0, gunSpin: 0, saw: 0, coneYaw: 0, coneAim: 0, arc: 0, hood: 0, hoodDir: def.dims.hoodDir, shake: 0 });
+    unit.update(0);
+    unit.root.position.set(LIFT.x, LIFT.y, LIFT.z - def.dims.mid); unit.root.userData.live = true; root.add(unit.root);
+    unit.root.updateMatrixWorld(true);
+  }
+
   // ---- where things go (world space) --------------------------------------------------------------------------------
   const W = (x, z) => ({ x: O.x + x, z: O.z + z });
   return {
-    root, lift, O, setScrap,
+    root, lift, O, setScrap, step: life.step, parkOnLift,
     spot: W(0, 0),                         // the turntable
     target: { ...W(0, -38), yaw: Math.PI / 2 },   // the firing range's target car, broadside on, through the door
     start: { ...W(0, -R.front - 75), yaw: Math.PI },   // where a test drive starts: out in the lot, heading away from the door
