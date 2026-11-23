@@ -1082,6 +1082,12 @@ function cardAs(a) {
   const box = $('home-cards');
   $('home-play').hidden = !CAN_ONLINE;
   for (const b of $('home-play').querySelectorAll('button')) b.addEventListener('click', () => { sfx.play('ui_open', 0.5); setPlay(b.dataset.p); });
+  // playtesting: own every car, weapon and part (kept in the save, so it holds for solo and online)
+  $('home-unlock').addEventListener('click', () => {
+    if (!game.home) return;
+    for (const slot of Object.keys(PARTS)) save.owned[slot] = Object.keys(PARTS[slot]);
+    keepSave(save); sfx.play('ui_coin', 0.7); toast('Everything unlocked', 'Every car and part is yours in the garage'); drawHome();
+  });
   for (const c of HOME_CARDS) {
     const b = document.createElement('button'); b.className = 'h-card ' + (c.garage ? 'garage' : c.map);
     b.innerHTML = `<small></small><b></b><span></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${c.icon}"/></svg>`;
@@ -1094,6 +1100,8 @@ function cardAs(a) {
 function drawHome() {
   const st = statsOf(save.load), r = rating(st), body = PARTS.body[save.load.body] || {};
   $('home-scrap').textContent = Math.round(save.scrap);
+  const all = Object.keys(PARTS).every((s) => Object.keys(PARTS[s]).every((k) => (save.owned[s] || []).includes(k)));
+  $('home-unlock').disabled = all; $('home-unlock').textContent = all ? 'All unlocked' : 'Unlock all';
   for (const b of $('home-play').querySelectorAll('button')) b.classList.toggle('on', b.dataset.p === playAs);
   for (const c of HOME_CARDS) if (c.map) document.querySelector(`.h-card[data-map="${c.map}"] span`).textContent = playAs === 'online' ? ONLINE_D[c.map] : c.d;
   $('home-car').textContent = body.name || 'Your car';
