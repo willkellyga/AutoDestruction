@@ -27,7 +27,7 @@ Inlined into the game page by `derby/build.mjs` from the woff2 files in `derby/s
 
 | What | Where it is used | Source | Author | Licence |
 |---|---|---|---|---|
-| Big Shoulders Display (900) | The AutoDestruction.io logo: `derby/src/fonts/big-shoulders-display-900.woff2` | https://fonts.google.com/specimen/Big+Shoulders+Display | Patric King | SIL Open Font License 1.1 |
+| Anton (400) | The AutoDestruction.io logo: `derby/src/fonts/anton-400.woff2` | https://fonts.google.com/specimen/Anton | Vernon Adams | SIL Open Font License 1.1 |
 | Black Ops One (400) | Big words (round titles, Wrecked!, Garage): `derby/src/fonts/black-ops-one-400.woff2` | https://fonts.google.com/specimen/Black+Ops+One | James Grieshaber, Eben Sorkin (Sorkin Type) | SIL Open Font License 1.1 |
 | Barlow Condensed (600, 700, 800) | Buttons, headings, numbers: `derby/src/fonts/barlow-condensed-*.woff2` | https://fonts.google.com/specimen/Barlow+Condensed | Jeremy Tribby | SIL Open Font License 1.1 |
 | Barlow (500, 600, 700, 800) | Small text: `derby/src/fonts/barlow-*.woff2` | https://fonts.google.com/specimen/Barlow | Jeremy Tribby | SIL Open Font License 1.1 |
