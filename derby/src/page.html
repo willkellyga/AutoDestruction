@@ -1,4 +1,4 @@
-<title>Auto Destruction</title>
+<title>AutoDestruction.io</title>
 <style>
 [hidden] { display: none !important; }
 /*@fonts*/
@@ -82,8 +82,21 @@ body.in-garage #touch, body.in-garage #cross { display: none; }
 #banner span { font-size: 20px; }
 .card { position: fixed; inset: 0; display: flex; overflow-y: auto; background: radial-gradient(ellipse at center, rgba(20,16,12,0.35), rgba(10,8,6,0.82)); z-index: 5; }
 .card > div { text-align: center; max-width: min(560px, 100%); padding: 24px; margin: auto; box-sizing: border-box; }
-.title { font-size: clamp(44px, 9vw, 88px); line-height: 0.9; color: var(--hot); font-weight: 900; font-style: italic; text-transform: uppercase; letter-spacing: 0.02em; -webkit-text-stroke: 3px #2a1a0a; text-shadow: 0 6px 0 #2a1a0a, 0 10px 30px rgba(0,0,0,0.5); }
-.title em { display: block; color: #fff7ea; font-size: 0.62em; }
+.title { display: inline-block; text-align: center; font-size: clamp(30px, 10.5vw, 76px); line-height: 1; filter: drop-shadow(0 0.12em 0.16em rgba(0,0,0,0.55)); }
+/* the logo: AUTO on a hazard-yellow plate, bolted over DESTRUCTION on a striped bar, and the .io tag hung off the end */
+.lg-l { display: flex; justify-content: center; font: 900 1em/0.86 'Big Shoulders Display', var(--f-logo); text-transform: uppercase; }
+.lg-l span { display: inline-block; margin: 0 0.005em; -webkit-background-clip: text; background-clip: text; color: transparent; }
+.lg-auto { position: relative; z-index: 1; display: inline-block; font-size: 1.43em; padding: 0.12em 0.3em 0.05em; margin-bottom: -0.11em; transform: rotate(-3deg); --c: 0.11em; clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c));
+  background: radial-gradient(circle at 85% 30%, rgba(150,60,20,0.35), transparent 0.5em), repeating-linear-gradient(95deg, rgba(255,255,255,0.03) 0 2px, transparent 2px 7px), linear-gradient(180deg, #4a5056, #2c3035 60%, #24272b); box-shadow: inset 0 0 0 0.025em rgba(255,255,255,0.1); }
+.lg-auto::before { content: ''; position: absolute; inset: 0.08em; pointer-events: none;   /* four rivets */
+  background: radial-gradient(circle at 0.04em 0.04em, #d9dde1 0, #5a6066 0.035em, transparent 0.045em) left top / 0.09em 0.09em no-repeat, radial-gradient(circle at 0.04em 0.04em, #d9dde1 0, #5a6066 0.035em, transparent 0.045em) right top / 0.09em 0.09em no-repeat, radial-gradient(circle at 0.04em 0.04em, #d9dde1 0, #5a6066 0.035em, transparent 0.045em) left bottom / 0.09em 0.09em no-repeat, radial-gradient(circle at 0.04em 0.04em, #d9dde1 0, #5a6066 0.035em, transparent 0.045em) right bottom / 0.09em 0.09em no-repeat; }
+.lg-auto span { background-image: linear-gradient(180deg, #ffe07a, #ffc21a 45%, #e2771a 60%, #a8380f); filter: drop-shadow(0 0.03em 0 var(--tar)); }
+.lg-bar { position: relative; background: var(--tar); padding: 0.12em 0.34em 0.07em; }
+.lg-bar::before, .lg-bar::after { content: ''; position: absolute; top: 0; bottom: 0; width: 0.26em; background: repeating-linear-gradient(-45deg, var(--hot) 0 0.1em, var(--tar) 0.1em 0.17em); }
+.lg-bar::before { left: 0; } .lg-bar::after { right: 0; }
+.lg-bar .lg-l { letter-spacing: 0.05em; }
+.lg-bar span { background-image: linear-gradient(180deg, #fff, #d6dade 40%, #8a9097 58%, #4a5056); }
+.lg-io { display: block; width: max-content; margin: -0.12em 0 0 auto; position: relative; font: 800 0.55em/1 var(--f-head); color: var(--tar); background: var(--hot); padding: 0.02em 0.3em 0.04em; transform: rotate(4deg); --c: 0.2em; clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c)); box-shadow: inset 0 -0.1em 0 #b37d00; }
 .keys { margin: 22px auto; display: grid; grid-template-columns: auto auto; gap: 6px 18px; text-align: left; font-size: 15px; width: max-content; }
 .keys kbd { display: inline-block; min-width: 18px; padding: 1px 6px; margin-right: 3px; border: 1px solid rgba(255,255,255,0.4); border-bottom-width: 3px; border-radius: 4px; font: 600 13px var(--f-ui); text-align: center; background: rgba(255,255,255,0.08); }
 button.go { pointer-events: auto; font: var(--head-w) var(--head-st) calc(26px * var(--head-k)) var(--f-head); text-transform: uppercase; color: #2a1a0a; background: linear-gradient(#ffd067, #ff9a2a); border: 0; border-radius: 8px; padding: 14px 40px; cursor: pointer; box-shadow: 0 5px 0 #8a4a10, 0 10px 24px rgba(0,0,0,0.4); transform: skewX(-8deg); }
@@ -170,7 +183,7 @@ body.touch #banner { top: 40%; }
 /* short screens (a phone held sideways): everything on the cards smaller, so the buttons always show */
 @media (max-height: 500px) {
   .card > div { padding: 10px 18px; }
-  .title { font-size: 38px; -webkit-text-stroke: 2px #2a1a0a; text-shadow: 0 3px 0 #2a1a0a; }
+  .title { font-size: 30px; }
   .maps { margin: 8px auto 2px; gap: 6px; } .maps button { padding: 5px 8px; } .maps button b { font-size: 14px; }
   .map-blurb { font-size: 12px; min-height: 0; }
   .levels { margin-top: 4px; } .levels button { padding: 3px 10px; font-size: 12px; }
@@ -257,7 +270,7 @@ body.touch #banner { top: 40%; }
 .g-card.dear .g-price { color: #ff8a6a; }
 .g-card.nofit:not(.try) .g-art, .g-card.nofit:not(.try) .g-info { opacity: 0.55; }
 .g-art { display: grid; place-items: center; height: 60px; border-radius: 6px; background: radial-gradient(ellipse at 50% 60%, rgba(255,255,255,0.12), rgba(255,255,255,0.02) 70%); position: relative; }
-.g-art img { width: 100%; height: 100%; object-fit: contain; }
+.g-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }   /* absolute: a grid cell's 100% height didn't hold on phones, so the car spilled over its name */
 .g-glyph { opacity: 0.6; } .g-glyph svg { width: 30px; height: 30px; }
 .g-art em { position: absolute; right: 6px; bottom: 4px; font: var(--head-w) var(--head-st) calc(14px * var(--head-k)) var(--f-head); color: var(--hot); }
 .g-none { width: 26px; height: 26px; border: 2px dashed rgba(255,255,255,0.3); border-radius: 50%; }
@@ -412,7 +425,7 @@ button.alt:hover { background: linear-gradient(180deg, #4a5056, #2e3237); }
 <div class="card" id="dead" hidden><div><b>Wrecked!</b>New car in <span id="dead-t">3</span><div class="row"><button class="alt" id="dead-garage">Garage</button><button class="go" id="dead-go">Drive now</button></div></div></div>
 <div class="card" id="over" hidden><div><b class="t" id="over-t">Round over</b><div id="over-l"></div><div class="row more-only"><button class="go" id="over-more">Keep going</button></div><div class="note desk-only more-only"><kbd>Enter</kbd> or <kbd>C</kbd> to keep going: the same round, on your own</div><div class="row"><button class="alt" id="over-maps">Maps</button><button class="alt" id="over-garage">Garage</button><button class="go" id="over-go">Again</button></div></div></div>
 <div class="card" id="menu" hidden><div>
-  <div class="title">Auto<em>Destruction</em></div>
+  <div class="title logo" role="img" aria-label="AutoDestruction.io"><div class="lg-auto"><div class="lg-l"><span>A</span><span>U</span><span>T</span><span>O</span></div></div><div class="lg-bar"><div class="lg-l"><span>D</span><span>E</span><span>S</span><span>T</span><span>R</span><span>U</span><span>C</span><span>T</span><span>I</span><span>O</span><span>N</span></div></div><b class="lg-io">.io</b></div>
   <div class="maps" id="maps"></div><div class="map-blurb" id="map-blurb"></div>
   <div class="levels" id="levels" hidden><span>Rivals</span></div>
   <div class="keys">
