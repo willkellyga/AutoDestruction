@@ -1440,14 +1440,19 @@ function stepCamera(dt) {
 
 // ---- the frame -----------------------------------------------------------------------------------------------------
 let tall = false;   // a phone held upright: a wider view, from further back and higher up, so the road ahead still shows
+let sizeW = 0, sizeH = 0;
 function resize() {
-  const w = innerWidth, h = innerHeight;
+  const w = innerWidth, h = innerHeight; sizeW = w; sizeH = h;
   renderer.setSize(w, h, false); composer.setSize(w, h);
   tall = w / h < 0.9; camera.fov = tall ? 76 : 64;
   camera.aspect = w / h; camera.updateProjectionMatrix();
   const ph = h * renderer.getPixelRatio(); setParticleScale(ph, camera.fov); fx.setScale(ph, camera.fov);
 }
 addEventListener('resize', resize); resize();
+// iPads and iPhones can fire 'resize' on a turn before the new size is in, leaving the view at the old shape:
+// check again after a turn, and on any frame where the window's size no longer matches the view's
+addEventListener('orientationchange', () => { for (const t of [100, 300, 700]) setTimeout(resize, t); });
+if (window.visualViewport) visualViewport.addEventListener('resize', resize);
 const quality = makeQuality({ renderer, composer, bloom: bloomPass, scene, camera, sun, resize, playing: () => game.state === 'play' || game.state === 'test', mobile: MOBILE });
 // the rest of a map's look (looks/): its beams, glows, lamps, weather and the rest
 const lookFrom = scene.children.length;
@@ -1456,6 +1461,7 @@ const lookObjs = scene.children.slice(lookFrom);   // the look's own draws (the 
 let last = performance.now();
 function frame(now) {
   requestAnimationFrame(frame);
+  if (innerWidth !== sizeW || innerHeight !== sizeH) resize();
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   if (window.__hold) return;   // tests step the game by hand (window.__derby.step)
   step(dt);
