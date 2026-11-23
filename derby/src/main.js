@@ -22,8 +22,8 @@ import { MAP, MAPS, chooseMap } from './maps/index.js';
 import { MODES } from './modes/index.js';
 import { CRASH, ROUND, AI, DRIFT, BUILDINGS } from './tuning.js';
 import { toughen, boom, chipAt, fuelBlast } from './sturdy.js';
-import { PARTS, PAINTS, loadSave, keepSave, rivalBuild, RIVAL_NAMES } from './parts.js';
-import { makeGarage } from './garage.js';
+import { PARTS, PAINTS, loadSave, keepSave, rivalBuild, RIVAL_NAMES, statsOf } from './parts.js';
+import { makeGarage, rating, classOf } from './garage.js';
 import { makeGarageRoom } from './garageroom.js';
 import { makePartArt } from './partart.js';
 import { makeSpecials } from './specials.js';
@@ -817,7 +817,7 @@ function boltOn(slot, how, same) {
 function stepBolt(dt) {
   const B = bolt, c = player;
   if (c) {   // the bonnet lifts while the engines are being looked at; the engine rocks as it revs
-    const st = c.unit.state, want = game.state === 'garage' && gcam.view === 'engine' && c.def.dims.hood ? (c.def.dims.hoodDir > 0 ? 1.75 : 1.15) : 0;   // (a lid behind the cabin goes up past upright, out of the way)
+    const st = c.unit.state, want = game.state === 'garage' && !game.home && gcam.view === 'engine' && c.def.dims.hood ? (c.def.dims.hoodDir > 0 ? 1.75 : 1.15) : 0;   // (a lid behind the cabin goes up past upright, out of the way)
     st.hood = game.state === 'garage' ? st.hood + (want - st.hood) * Math.min(1, dt * 3.2) : (c.hoodUp || 0);   // (out of the garage: popped by a crash, crumple.js)
     st.shake = game.state === 'garage' && game.revT > 0 ? 0.045 * Math.sin(Math.min(1, game.revT / 1.4) * Math.PI) : 0;
   }
@@ -878,12 +878,14 @@ const VIEWS = {
   engine: { turn: 0.45, h: 14, d: 13, y: 2.3, f: 0.5, r: 0.6 },   // (high, to look down into the bay with the bonnet up)
   gadget: { turn: 2.6, h: 6.5, d: 15, y: 2.4, f: -0.5, r: 1 },
   paint: { turn: 0.75, h: 7, d: 19, y: 2.4, f: 0, r: 1.2, spin: true },
+  home: { turn: 0.75, h: 6.5, d: 22, y: 2.6, f: 0, r: 1.3, spin: true },   // the home screen: the whole car, turning
   range: { turn: 0, h: 13, d: 30, y: 3.2, f: 0.55, r: 1.6, yaw: Math.PI, az: 0.16 },   // the firing range: nose to the door, looking out past the car
 };
 const gcam = { view: 'body', user: 0, pos: new THREE.Vector3(), look: new THREE.Vector3(), init: false, az: 0.35, idle: 0 };
 const _gl = new THREE.Vector3(), _gp = new THREE.Vector3(), _gr = new THREE.Vector3(), _gu = new THREE.Vector3();
 function turnTable(dx) { gcam.user += dx * 0.012; gcam.idle = 0; }
 function viewNow() {
+  if (game.home) return VIEWS.home;
   if (tryer.slot && tryer.view) return VIEWS[tryer.view];
   if (gcam.view === 'secondary' && player && player.load.secondary === 'mines') return VIEWS.rear;
   if (gcam.view === 'engine' && player && player.def.dims.bayZ < player.mid) return { ...VIEWS.engine, turn: 2.05, h: 17, d: 11, f: (player.def.dims.bayZ - player.mid) / player.half };   // (from the side, past the wing)
@@ -902,7 +904,7 @@ function garageCamera(dt) {
   const sy = Math.sin(c.yaw), cy = Math.cos(c.yaw);
   _gl.set(c.x + sy * (c.mid + c.half * V.f), V.y, c.z + cy * (c.mid + c.half * V.f));
   // how far off: the view's distance, or further if the part of the screen the panel leaves is small
-  const fr = garage.free(), W = innerWidth, H = innerHeight, tanV = Math.tan(camera.fov * Math.PI / 360);
+  const fr = game.home ? homeFree() : garage.free(), W = innerWidth, H = innerHeight, tanV = Math.tan(camera.fov * Math.PI / 360);
   const fw = Math.max(0.2, (fr.x1 - fr.x0) / W), fh = Math.max(0.2, (fr.y1 - fr.y0) / H);
   const need = (c.half + 1) * V.r / (tanV * Math.min(fh, camera.aspect * fw * 0.9));
   const d = clamp(Math.max(V.d, need), 7, 30), h = V.y + (V.h - V.y) * d / V.d;
@@ -1023,39 +1025,98 @@ function stepTest(dt) {
 }
 $('test-back').addEventListener('click', endTest);
 
-function openGarage(from) {
-  if (game.state === 'garage' || game.state === 'test') return;
-  if (net) return;   // (an online round: the garage is open from the start card before and after it)
-  initAudio();
-  game.garageFrom = from; game.stateWas = game.state; game.state = 'garage';
-  $('menu').hidden = true; $('dead').hidden = true; $('hint').classList.remove('on');
-  if (document.exitPointerLock && cam.locked) document.exitPointerLock();
-  // where the car goes back to when the garage closes: where it stood, or a spawn point if it was wrecked
-  if (player && !player.dead) game.garageBack = { x: player.x, z: player.z, yaw: player.yaw };
-  else {
-    const o = (mode.respawnAt && mode.respawnAt(player)) || MAP.spawnPoint(null, cars.filter((c) => !c.gone && c !== player));
-    game.garageBack = { x: o.x, z: o.z, yaw: o.yaw ?? Math.random() * 6.28 };
-    player = null;   // (the wreck stays where it is)
+// The workshop, with the car fixed up on the turntable: the home screen and the garage both stand in it.
+function intoRoom() {
+  if (!lightWas) {
+    if (document.exitPointerLock && cam.locked) document.exitPointerLock();
+    // where the car goes back to when it drives out: where it stood, or a spawn point if it was wrecked
+    if (player && !player.dead) game.garageBack = { x: player.x, z: player.z, yaw: player.yaw };
+    else {
+      const o = (mode.respawnAt && mode.respawnAt(player)) || MAP.spawnPoint(null, cars.filter((c) => !c.gone && c !== player));
+      game.garageBack = { x: o.x, z: o.z, yaw: o.yaw ?? Math.random() * 6.28 };
+      player = null;   // (the wreck stays where it is)
+    }
+    garageLight(true);
   }
-  // in the garage the car is fixed up: a fresh one on the turntable
-  garageLight(true); room.setScrap(save.scrap);
+  room.setScrap(save.scrap);
   placePlayer(save.load, { x: room.spot.x, z: room.spot.z, yaw: Math.PI + gcam.az });
   player.vx = player.vz = 0;
   clearDummies(); addDummy(room.target);
   gcam.init = false; gcam.user = 0; tryer.slot = null;
+}
+function outOfRoom() {
+  clearDummies(); garage.place([]);
+  for (let i = mines.length - 1; i >= 0; i--) if (mines[i].z < 0) { mines[i].mesh.removeFromParent(); mines.splice(i, 1); }
+  specials.clearOffMap();
+  garageLight(false);
+  spawnPlayer(game.garageBack || null);
+  cam.yaw = player.yaw; cam.d = undefined; cam.p = undefined;
+}
+// The home screen: the car turning on the turntable, and a card for each way to play and for the garage.
+const BRIEF = 'ad-brief';   // (kept across the page loading again on another map: straight to that mode's card)
+const HOME_CARDS = [
+  { map: 'race', k: 'Manhattan Circuit', t: 'Race', d: 'Laps of New York with the guns on', icon: 'M5 3h2v18H5zm3 1h4l1 1h6v9h-6l-1-1H8zm2 2v2h2V6zm4 1v2h2V7zm-2 1v2h2V8zm-2 2v2h2v-2zm4 1v2h2v-2z' },
+  { map: 'base', k: 'Camp Deadfall', t: 'Zombie Survival', d: 'Outlast the horde. Last car running wins', icon: 'M12 2a8 8 0 0 1 8 8c0 3-1.5 5-3 6v3h-2v-2h-2v2h-2v-2H9v2H7v-3c-1.5-1-3-3-3-6a8 8 0 0 1 8-8zM8.5 9a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm7 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM12 13l-1.2 2.5h2.4z' },
+  { map: 'arena', k: 'Hammerdown Arena', t: 'Arena', d: 'Eight cars, three minutes, most wrecks wins', icon: 'M12 1l2.2 5.6L19 3.5l-1.6 5.6L23 10l-4.6 3.2L21 18.5l-5.6-1.3L14 23l-2-5-2 5-1.4-5.8L3 18.5l2.6-5.3L1 10l5.6-.9L5 3.5l4.8 3.1z' },
+  { garage: true, k: 'Your car', t: 'Garage', d: 'Build it, arm it, paint it', icon: 'M21.7 6.3l-3.6 3.6-2.8-.7-.7-2.8 3.6-3.6a6 6 0 0 0-7.7 7.7L2.3 18.7a2.1 2.1 0 0 0 3 3l8.2-8.2a6 6 0 0 0 8.2-7.2z' },
+];
+{
+  const box = $('home-cards');
+  for (const c of HOME_CARDS) {
+    const b = document.createElement('button'); b.className = 'h-card ' + (c.garage ? 'garage' : c.map);
+    b.innerHTML = `<small></small><b></b><span></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${c.icon}"/></svg>`;
+    b.querySelector('small').textContent = c.k; b.querySelector('b').textContent = c.t; b.querySelector('span').textContent = c.d;
+    b.addEventListener('click', () => { if (!game.home) return; if (c.garage) openGarage('home'); else pickMode(c.map); });
+    box.appendChild(b);
+  }
+}
+function drawHome() {
+  const st = statsOf(save.load), r = rating(st), body = PARTS.body[save.load.body] || {};
+  $('home-scrap').textContent = Math.round(save.scrap);
+  $('home-car').textContent = body.name || 'Your car';
+  $('home-class').textContent = classOf(r); $('home-rate').dataset.c = classOf(r); $('home-num').textContent = r;
+}
+// the part of the screen the cards leave free, for the camera to frame the car in
+function homeFree() {
+  const p = $('home-cards').getBoundingClientRect(), W = innerWidth, H = innerHeight;
+  if (p.top > H * 0.2 && p.width > W * 0.8) return { x0: 0, y0: 0, x1: W, y1: p.top };
+  return { x0: 0, y0: 0, x1: p.left, y1: H };
+}
+function showHome() {
+  intoRoom();
+  game.state = 'garage'; game.home = true; game.garageFrom = null;
+  $('menu').hidden = true; $('over').hidden = true; $('dead').hidden = true; $('hint').classList.remove('on');
+  drawHome(); $('home').hidden = false;
+}
+// a way to play, picked on the home screen: its card (what it is, the controls, Start), on its own map
+function pickMode(id) {
+  initAudio(); sfx.play('ui_open', 0.7);
+  if (id !== MAP.id || game.ended) {
+    try { sessionStorage.setItem(BRIEF, '1'); } catch (e) { /* it lands on the home screen again */ }
+    $('home').hidden = true; const l = $('loading'); if (l) l.hidden = false;
+    chooseMap(id); return;
+  }
+  outOfRoom();
+  game.home = false; $('home').hidden = true; game.state = 'menu'; $('menu').hidden = false;
+}
+
+function openGarage(from) {
+  if (game.state === 'test' || (game.state === 'garage' && !game.home)) return;
+  if (net) return;   // (an online round: the garage is open from the start card before and after it)
+  initAudio();
+  if (game.home) { game.home = false; $('home').hidden = true; gcam.user = 0; }   // (already in the workshop)
+  else { game.stateWas = game.state; game.state = 'garage'; intoRoom(); }
+  game.garageFrom = from;
+  $('menu').hidden = true; $('dead').hidden = true; $('hint').classList.remove('on');
+  document.querySelector('#garage .g-drive').textContent = from === 'home' || game.ended ? 'Done' : 'Drive';
   garage.open();
 }
 function leaveGarage() {
   garage.close(); keepSave(save);
   tryer.slot = null; bolt = null; game.revT = 0; game.boostT = 0;
-  clearDummies(); garage.place([]);
-  for (let i = mines.length - 1; i >= 0; i--) if (mines[i].z < 0) { mines[i].mesh.removeFromParent(); mines.splice(i, 1); }
-  specials.clearOffMap();
-  garageLight(false);
   const from = game.garageFrom; game.garageFrom = null;
-  if (game.ended) { chooseMap(MAP.id); return; }   // the round is over: a fresh map for the next one
-  spawnPlayer(game.garageBack || null);
-  cam.yaw = player.yaw; cam.d = undefined; cam.p = undefined;
+  if (from === 'home' || game.ended) { showHome(); return; }   // back to the home screen (after a round too: the next one starts from there)
+  outOfRoom();
   if (from === 'menu') { game.state = 'menu'; startGame(); return; }
   game.state = 'play';
   if (from === 'break' && mode.afterGarage) mode.afterGarage();
@@ -1080,8 +1141,9 @@ addEventListener('keydown', (e) => {
   keys[e.code] = true; initAudio();
   if (e.code === 'KeyM') { muted = !muted; sfx.on = !muted; }
   if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight') && game.state === 'play' && player) gadget(player);
-  if (e.code === 'KeyG' && (game.state === 'menu' || (game.state === 'dead' && !game.noGarage) || (game.state === 'play' && mode.garageOK()))) openGarage(game.state === 'play' ? 'break' : game.state);
-  else if ((e.code === 'KeyG' || e.code === 'Escape') && game.state === 'garage') leaveGarage();
+  if (e.code === 'KeyG' && game.home) openGarage('home');
+  else if (e.code === 'KeyG' && (game.state === 'menu' || (game.state === 'dead' && !game.noGarage) || (game.state === 'play' && mode.garageOK()))) openGarage(game.state === 'play' ? 'break' : game.state);
+  else if ((e.code === 'KeyG' || e.code === 'Escape') && game.state === 'garage' && !game.home) leaveGarage();
   else if ((e.code === 'KeyG' || e.code === 'Escape' || e.code === 'KeyT') && game.state === 'test') endTest();
   if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight') && game.state === 'test' && player) gadget(player);
   if (e.code === 'KeyR' && game.state === 'play' && mode.resetPlayer) mode.resetPlayer();   // back on the track (the race)
@@ -1110,17 +1172,11 @@ addEventListener('mousemove', (e) => {
 addEventListener('wheel', (e) => { cam.dist = clamp(cam.dist + Math.sign(e.deltaY) * 3, 20, 60); }, { passive: true });
 $('go').addEventListener('click', () => {
   if (net) { initAudio(); if (game.state !== 'menu') return; if (net.begun) startGame(); else { net.ready_(); $('go').disabled = true; $('go').textContent = 'Waiting for the others...'; } return; }
-  if (game.ended) chooseMap(MAP.id); else startGame();
+  if (game.ended) { try { sessionStorage.setItem(BRIEF, '1'); } catch (e) { /* home */ } chooseMap(MAP.id); } else startGame();
 });
-// the map picker on the start card: another map loads the page again on it
+// the mode's card: its name and map, what it is, and the race's difficulty
 {
-  const box = $('maps');
-  for (const m of MAPS) {
-    const b = document.createElement('button'); b.className = m.id === MAP.id ? 'on' : '';
-    b.innerHTML = '<b></b><i></i>'; b.querySelector('b').textContent = m.name; b.querySelector('i').textContent = { waves: 'Waves', race: 'Race', survival: 'Zombie Survival', brawl: 'Arena · free-for-all' }[m.mode] || m.mode;
-    b.addEventListener('click', () => { if (m.id !== MAP.id || game.ended) chooseMap(m.id); });
-    box.appendChild(b);
-  }
+  $('brief-k').textContent = { waves: 'Waves', race: 'Race', survival: 'Zombie Survival', brawl: 'Arena' }[MAP.mode] || MAP.mode; $('brief-t').textContent = MAP.name;
   $('map-blurb').textContent = MAP.blurb; $('go').textContent = mode.go; $('menu-note').textContent = mode.note;
   // a mode with difficulty levels (the race) gets a row of buttons for them, kept in the save
   if (mode.levels) {
@@ -1136,13 +1192,13 @@ $('go').addEventListener('click', () => {
 }
 $('over-go').addEventListener('click', () => { if (net) { net.bye(); location.href = net.lobby(); } else chooseMap(MAP.id); });
 $('over-more').addEventListener('click', overGo);
-$('over-maps').addEventListener('click', () => { $('over').hidden = true; game.ended = true; $('go').textContent = 'Play again'; $('menu').hidden = false; });
-$('over-garage').addEventListener('click', () => { $('over').hidden = true; game.ended = true; $('go').textContent = 'Play again'; openGarage('over'); });
-$('menu-garage').addEventListener('click', () => openGarage('menu'));
+$('over-maps').addEventListener('click', () => { game.ended = true; showHome(); });
+$('over-garage').addEventListener('click', () => { $('over').hidden = true; game.ended = true; openGarage('over'); });
+$('menu-home').addEventListener('click', () => { if (game.state === 'menu') showHome(); });
 // online (net.js): in a round, the start card is a Ready button for it; otherwise it has the lobby (Play online, With friends)
 if (net) {
   document.body.classList.add('online');
-  for (const id of ['maps', 'levels', 'menu-garage', 'map-blurb', 'over-maps', 'over-garage']) $(id).hidden = true;
+  for (const id of ['levels', 'menu-home', 'map-blurb', 'over-maps', 'over-garage']) $(id).hidden = true;
   $('go').textContent = "I'm ready"; $('menu-note').textContent = 'Joining the round...';
   $('over-go').textContent = 'Back to the lobby';
 } else {
@@ -1413,6 +1469,7 @@ function step(dt) {
     engine.rivals.forEach((L, i) => { const c = near[i]; if (!c) L.set(0); else L.set(0.45 + 0.3 * Math.abs(c.throttle), (0.68 + clamp(Math.abs(c.fwd) / c.spec.top, 0, 1.3) * 0.95) * ((PARTS.engine[c.load.engine] || {}).pitch || 1), c.x, c.z); });
   }
   document.body.classList.toggle('in-garage', game.state === 'garage');
+  document.body.classList.toggle('at-home', !!game.home);
   document.body.classList.toggle('in-test', game.state === 'test');
   if (TOUCH) $('touch').hidden = game.state !== 'play' && game.state !== 'test';
   drawHud(); drawTags(); drawRadar();
@@ -1421,6 +1478,10 @@ $('hint').addEventListener('click', () => { if (game.state === 'play' && mode.ga
 spawnPlayer();
 followSun(player.x, player.z);
 const loadEl = $('loading'); if (loadEl) loadEl.hidden = true;
-$('menu').hidden = false;
+// the home screen first; a mode's card instead when one was just picked, in an online round, or on a link into a room
+{
+  let brief = false; try { brief = sessionStorage.getItem(BRIEF) === '1'; sessionStorage.removeItem(BRIEF); } catch (e) { /* home */ }
+  if (net || brief || /[?&](room|online|map)=/.test(location.search)) $('menu').hidden = false; else showHome();
+}
 requestAnimationFrame((t) => { last = t; frame(t); });
 window.__derby = { net, specials, crumple, cube, room, gcam, garageLight, startTest, endTest, tryPart: (s, k) => onTry(s, k), dummies, renderer, mapLook, touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, sfx, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop };
