@@ -422,7 +422,8 @@ const CLIPS = {
       body: [s.pitch || 0, 0, s.roll || 0, 0, s.bob || 0, 0],
       yaw: [0, s.yaw || 0, 0], gun: [-(s.aim || 0), 0, 0], pod: [-(s.aim || 0) * 0.85 - 0.04, 0, 0],
       spin: [0, 0, s.gunSpin || 0], sawL: [s.saw || 0, 0, 0], sawR: [s.saw || 0, 0, 0], bsawL: [s.saw || 0, 0, 0], bsawR: [-(s.saw || 0), 0, 0],
-      roof: cone, doorL: cone, doorR: cone,
+      // the door weapons only tip up and down: they always point straight ahead along the car, never out to the side
+      roof: cone, doorL: [cone[0], 0, 0], doorR: [cone[0], 0, 0],
       hood: [(s.hood || 0) * (s.hoodDir || -1), 0, 0], engine: [0, 0, s.shake ? Math.sin(t * 97) * s.shake : 0],
     };
   } },
