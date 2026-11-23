@@ -29,6 +29,7 @@ import { makePartArt } from './partart.js';
 import { makeSpecials } from './specials.js';
 import { makeCrumple } from './crumple.js';
 import { makeSounds } from './audio.js';
+import { bank as sfxBank } from './sfxfiles.js';
 import { makePickups } from './pickups.js';
 import { makeHazards } from './hazards.js';
 import { makeQuality } from './quality.js';
@@ -136,7 +137,7 @@ const bloomPass = composer.passes[2], grade = composer.passes[3];
 composer.addPass(new OutputPass());
 
 // ---- sound: Monster Mayhem's mixer and recorded clips ------------------------------------------------------------
-const audioMix = makeMixer({ camera }); audioMix.load(SFX_BANK, SFX_NORM);
+const audioMix = makeMixer({ camera }); sfxBank(SFX_BANK).then((b) => audioMix.load(b, SFX_NORM));   // (the served build fetches them: sfxfiles.js)
 for (const [k, v] of Object.entries(DEFAULT_TRIMS)) audioMix.setTrim(k, v);
 let muted = false, engine = null;
 const sfx = makeSounds(() => audioMix.ctx);
@@ -1553,4 +1554,4 @@ const loadEl = $('loading'); if (loadEl) loadEl.hidden = true;
   if (net || brief || /[?&](room|online|map)=/.test(location.search)) $('menu').hidden = false; else showHome();
 }
 requestAnimationFrame((t) => { last = t; frame(t); });
-window.__derby = { net, specials, crumple, cube, room, gcam, garageLight, startTest, endTest, tryPart: (s, k) => onTry(s, k), dummies, renderer, mapLook, touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, pauseOn, pauseOff, toHome, setPlay, sfx, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop };
+window.__derby = { net, specials, crumple, cube, room, gcam, garageLight, startTest, endTest, tryPart: (s, k) => onTry(s, k), dummies, renderer, mapLook, touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, pauseOn, pauseOff, toHome, setPlay, sfx, audioMix, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop };
