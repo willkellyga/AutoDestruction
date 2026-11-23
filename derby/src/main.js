@@ -156,6 +156,7 @@ const armySfx = audioMix.module('a.', 'army');
 
 // ---- effects: the army's guns and the town's cars -------------------------------------------------------------
 const mats = [new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.1, color: new THREE.Color(1.2, 1.2, 1.2) }), new THREE.MeshBasicMaterial({ vertexColors: true })];
+room.parkOnLift(mats);   // (a car up on the lift in the workshop)
 const game = { state: 'menu', time: 0, wave: 0, kills: 0, deaths: 0, shake: 0, slow: 1, banner: 0, nextWave: 0, killTimes: [] };
 // scrap, the parts bought and the build are kept in this browser (parts.js)
 const save = loadSave();
@@ -736,7 +737,6 @@ const garage = makeGarage({
   root: $('garage'), save, art,
   onChange: (load, how, slot) => {
     const old = player, same = old.load[slot] === load[slot];
-    if ((how === 'fit' || how === 'look') && !same) shedPart(old, slot);   // the old part comes off in a shower of bits
     const at = { x: old.x, z: old.z, yaw: old.yaw };
     old.dispose(); cars.splice(cars.indexOf(old), 1); player = null;
     player = addCar({ ...load, name: 'You' }, at, false); cars.splice(cars.indexOf(player), 1); cars.unshift(player);
@@ -808,22 +808,6 @@ function stepDummies(dt) {
 // ---- parts going on and coming off ----------------------------------------------------------------------------------
 // which bones of the car's model are each slot's part (null: the whole car)
 const SLOT_BONES = { primary: ['yaw'], roof: ['roof'], door: ['doorL', 'doorR', 'blades', 'hubFL', 'hubFR', 'hubRL', 'hubRR'], secondary: ['pod', 'mines'], front: ['front'], wheels: ['wFL', 'wFR', 'wRL', 'wRR'], engine: ['engine'] };
-const _w2 = new THREE.Vector3();
-function shedPart(c, slot) {
-  const names = SLOT_BONES[slot]; if (!names) return;
-  c.unit.root.updateWorldMatrix(true, true);
-  const out = [];
-  for (const p of c.unit.parts) {
-    if (!names.includes(p.name) || !p.count) continue;
-    out.length = 0; p.all(out, 0.16);
-    for (const [x, y, z, col] of out) {
-      _w2.set(x, y, z); p.bone.localToWorld(_w2);
-      const dx = _w2.x - c.x, dz = _w2.z - c.z, d = Math.hypot(dx, dz) || 1;
-      cube(_w2.x, _w2.y, _w2.z, dx / d * (3 + Math.random() * 5), 7 + Math.random() * 9, dz / d * (3 + Math.random() * 5), col, H3);
-    }
-  }
-}
-const H3 = 0.5;   // the size of a bit coming off a part
 let bolt = null;
 function boltOn(slot, how, same) {
   const names = SLOT_BONES[slot] || null;
@@ -1387,6 +1371,7 @@ function step(dt) {
   }
   if (game.state === 'garage' || test) stepDummies(dt);
   if (game.state === 'garage') { stepTry(dt); if (player) specials.hop(player, dt); }
+  if (lightWas) room.step(dt);   // (the workshop at work: sparks, fans, the hoist)
   specials.step(dt);
   crumple.step(dt, cars);
   for (const c of cars) if (c.flameT > 0) c.flameT -= dt;
