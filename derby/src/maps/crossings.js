@@ -71,9 +71,9 @@ const WALLS = [
   [418, 474, 456, 475, 'c', ['b', 'ZAPP OIL']], [418, 513, 456, 514, 'c', ['f', 'DENT KINGS']],
   // the west side: the street on west of the corner, the avenue on north, the cross street, the avenue on south and
   // Times Square's street on west
-  [193, 476, 194, 512, 'c', ['r', '>']], [195, 474, 282, 475, 'c', ['b', 'HOT SPARK']],
+  [193, 476, 194, 512, 'c', ['r', '<']], [195, 474, 282, 475, 'c', ['b', 'HOT SPARK']],
   [193, 598, 194, 634, 'c', ['r', 'BOLTZ TYRES']], [284, 598, 285, 634, 'c', ['l', 'SCRAP CITY']],
-  [195, 757, 282, 758, 'c', ['f', 'RUST RACING']], [193, 720, 194, 756, 'c', ['r', '>']],
+  [195, 757, 282, 758, 'c', ['f', 'RUST RACING']], [193, 720, 194, 756, 'c', ['r', '<']],
 ];
 // temporary stands: [x, z, length, rows, the way the crowd looks, seat colour, sponsor]
 const STANDS = [
