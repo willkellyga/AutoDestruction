@@ -1,6 +1,6 @@
 // What a drift looks like (vehicle.js drives it, tuning.js DRIFT tunes it): dark skid marks laid on the ground behind
-// the back wheels, tyre smoke off them, and on the HUD a meter that fills while a slide is held at an angle and
-// flashes when it pays out a burst.
+// the back wheels, tyre smoke off them, sparks off them while a slide charges a boost (their colour shows its level),
+// and on the HUD a meter that fills while a slide is held at an angle and flashes when it pays out a burst.
 //
 // The marks are one mesh: a ring of quads, DRIFT.marks of them (half on phones), each the strip between where a back
 // wheel was and where it is. A new quad takes the oldest one's place, and the oldest fifth fade out in the shader as
@@ -88,25 +88,40 @@ export function makeDrift({ scene, camera, mobile, el, soft = null }) {
       const n = (mobile ? 16 : 30) * c.skid * dt;
       for (let k = 0; k < 2; k++) { const T = tr[k]; if (T.on) dust(T.x, 0.9, T.z, n, 1.4, 0.9, 0.9, 0.92); }
     }
-    // a drift's burst: sparks out of the back
-    if (near && c.miniT > 0 && Math.random() < 0.6) {
+    // a slide charging a boost: sparks off the back wheels, more and hotter as it climbs the levels (yellow, orange,
+    // blue: DRIFT.boost.rgb), so you can see when to let go
+    const B = DRIFT.boost;
+    if (near && c.driftLvl > 0 && c.slide > 0.4) {
+      const [r, g, b] = B.rgb[c.driftLvl - 1], n = (mobile ? 0.6 : 1) * (14 + 10 * c.driftLvl) * dt;
+      for (let k = 0; k < 2; k++) {
+        const m = Math.floor(n) + (Math.random() < n % 1 ? 1 : 0); if (!m) continue;
+        const lx = k ? -R.x : R.x;
+        sparks(c.x + lx * co + R.z * s, 0.7, c.z - lx * s + R.z * co, m, r, g, b, 8 + 3 * c.driftLvl);
+      }
+    }
+    // a drift's burst: sparks out of the back in its level's colour
+    if (near && c.miniT > 0 && c.miniLvl > 0 && Math.random() < 0.8) {
+      const [r, g, b] = B.rgb[c.miniLvl - 1];
       const bx = c.x - s * (c.half - c.mid + 0.4), bz = c.z - co * (c.half - c.mid + 0.4);
-      sparks(bx, 1.2, bz, 2, 1, 0.65, 0.25, 10);
+      sparks(bx, 1.2, bz, 1 + c.miniLvl, r, g, b, 10 + 2 * c.miniLvl);
     }
   }
 
-  // the meter: shown while the player holds a slide, filling towards the first burst (half way) and the second
+  // the meter: shown while the player holds a slide, filling towards the top level, with a notch at each level
   let shown = false, flashT = 0, lvlShown = -1;
   const bar = el && el.querySelector('s'), label = el && el.querySelector('b');
+  const NAMES = ['Drift', 'Boost', 'Big boost', 'Mega boost'];   // (charging; with a ! when it fires)
+  const LV = ['lv1', 'lv2', 'lv3'];
+  if (el) { const i = el.querySelector('i'); for (const t of DRIFT.boost.at.slice(0, 2)) { const u = document.createElement('u'); u.style.left = `${t / DRIFT.boost.at[2] * 100}%`; i.appendChild(u); } }
   function meter(p, dt) {
     if (!el) return;
     if (flashT > 0 && (flashT -= dt) <= 0) el.classList.remove('boost');
-    const B = DRIFT.boost, on = flashT > 0 || (p && !p.dead && p.slide > 0.6 && p.driftT > 0.15);
+    const B = DRIFT.boost, on = flashT > 0 || (p && !p.dead && p.slide > 0.5 && p.driftT > 0.12);
     if (on !== shown) { shown = on; el.classList.toggle('on', on); }
     if (!on || flashT > 0) return;
-    const lvl = p.driftT >= B.after2 ? 2 : p.driftT >= B.after ? 1 : 0;
-    bar.style.width = `${Math.min(1, p.driftT / B.after2) * 100}%`;
-    if (lvl !== lvlShown) { lvlShown = lvl; el.classList.toggle('lv1', lvl === 1); el.classList.toggle('lv2', lvl === 2); label.textContent = lvl === 2 ? 'Drift!!' : lvl ? 'Drift!' : 'Drift'; }
+    const lvl = p.driftLvl || 0;
+    bar.style.width = `${Math.min(1, p.driftT / B.at[2]) * 100}%`;
+    if (lvl !== lvlShown) { lvlShown = lvl; LV.forEach((c, k) => el.classList.toggle(c, lvl === k + 1)); label.textContent = NAMES[lvl]; }
   }
 
   return {
@@ -122,9 +137,12 @@ export function makeDrift({ scene, camera, mobile, el, soft = null }) {
     // a drift paid out a burst (vehicle.js, through main.js's hooks)
     boost(c, lvl) {
       if (!el) return;
-      flashT = 0.9; lvlShown = -1; shown = true;
-      el.classList.add('on'); el.classList.remove('lv1', 'lv2'); el.classList.add('boost');
-      label.textContent = lvl > 1 ? 'Big drift boost!' : 'Drift boost!'; bar.style.width = '100%';
+      flashT = 1.1; lvlShown = -1; shown = true;
+      el.classList.add('on'); LV.forEach((k, i) => el.classList.toggle(k, lvl === i + 1)); el.classList.remove('boost'); void el.offsetWidth; el.classList.add('boost');
+      label.textContent = `${NAMES[lvl]}!`; bar.style.width = '100%';
+      // a ring of sparks round the car as it fires
+      const [r, g, b] = DRIFT.boost.rgb[lvl - 1];
+      sparks(c.x, 1.5, c.z, (mobile ? 8 : 14) * lvl, r, g, b, 18 + 6 * lvl);
     },
   };
 }

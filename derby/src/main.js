@@ -486,10 +486,15 @@ const crashHooks = {
   },
   land(c, speed) { specials.landed(c, speed); },   // down from a jump (vehicle.js)
   // a drift held long enough pays out a short burst as it ends (vehicle.js)
+  // (bigger the longer it was held: a whoosh, the nitro's roar, the view widening and a jolt, DRIFT.boost)
   drift(c, lvl) {
-    sfx.play('nitro', c === player ? 0.35 + 0.15 * lvl : 0.25, c.x, c.z, { rate: 1.3, gap: 0.3 });
-    if (c === player) drifts.boost(c, lvl);
+    const me = c === player;
+    sfx.play('nitro', me ? 0.45 + 0.2 * lvl : 0.25, c.x, c.z, { rate: 1.45 - 0.1 * lvl, gap: 0.2 });
+    sound('charge', me ? 0.55 + 0.2 * lvl : 0.3, c.x, 1, c.z);   // the whoosh
+    if (me) { drifts.boost(c, lvl); cam.fovKick = DRIFT.boost.fov[lvl - 1]; game.shake = Math.min(1.2, game.shake + 0.12 * lvl); }
   },
+  // a slide held long enough to reach the next boost level: a click, higher each level
+  driftUp(c, lvl) { if (c === player) sfx.play('ui_tab', 0.5 + 0.15 * lvl, undefined, undefined, { rate: 0.9 + 0.3 * lvl }); },
 };
 // the parked cars stand in the way until they are smashed
 const _body = { x: 0, z: 0, vx: 0, vz: 0 };
@@ -1400,6 +1405,10 @@ function drivePlayer(dt) {
     const want = cam.yaw - Math.atan2(touch.sx, touch.sy), off = wrap(want - c.yaw);
     if (Math.abs(off) < 2.3) { c.throttle = clamp(m * 1.3, 0, 1); c.steer = clamp(off * 2.2, -1, 1); }
     else { c.throttle = -clamp(m * 1.3, 0, 1); c.steer = 0; }
+    // drifting (Drift held and the back out): the stick steers left and right, the way it is pushed across the screen,
+    // rather than pointing the car. Pointing it, the car would swing round to the stick, straighten up and end the
+    // slide, so a long drift (and its bigger boost, DRIFT.boost) meant winding the stick round with the car.
+    if (touch.drift && c.slide > 0.3 && touch.sy > -0.5) { c.throttle = clamp(m * 1.3, 0, 1); c.steer = clamp(-touch.sx / 0.45, -1, 1); }
   }
   // a brake, not reverse, while still rolling forwards fast
   if (c.throttle < 0 && c.fwd > 12) { c.brake = 1; c.throttle = -0.2; }
@@ -1497,6 +1506,11 @@ function stepCamera(dt) {
   camera.position.set(_tgt.x + bx * cam.d, Math.max(2.5, _tgt.y + by_ * cam.d), _tgt.z + bz * cam.d);
   const sh = game.shake; if (sh > 0) camera.position.add(_o.set((Math.random() - 0.5) * sh * 1.6, (Math.random() - 0.5) * sh * 1.2, (Math.random() - 0.5) * sh * 1.6));
   camera.lookAt(_tgt.x + Math.sin(cam.yaw) * 16, _tgt.y - 0.5, _tgt.z + Math.cos(cam.yaw) * 16);
+  // a drift boost widens the view for a moment (it springs out, then eases back as the burst runs out)
+  const fk = c.miniT > 0 ? (cam.fovKick || 0) * Math.min(1, c.miniT / 0.6) : 0;
+  cam.fov = (cam.fov || 0) + (fk - (cam.fov || 0)) * Math.min(1, dt * (fk > (cam.fov || 0) ? 14 : 3));
+  const fov = baseFov + cam.fov;
+  if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
   camera.updateMatrixWorld();
   if (!c.dead) aimFor(c, dt);
   const ch = $('cross');
@@ -1506,12 +1520,12 @@ function stepCamera(dt) {
 }
 
 // ---- the frame -----------------------------------------------------------------------------------------------------
-let tall = false;   // a phone held upright: a wider view, from further back and higher up, so the road ahead still shows
+let tall = false, baseFov = 64;   // a phone held upright: a wider view, from further back and higher up, so the road ahead still shows
 let sizeW = 0, sizeH = 0;
 function resize() {
   const w = innerWidth, h = innerHeight; sizeW = w; sizeH = h;
   renderer.setSize(w, h, false); composer.setSize(w, h);
-  tall = w / h < 0.9; camera.fov = tall ? 76 : 64;
+  tall = w / h < 0.9; baseFov = camera.fov = tall ? 76 : 64;
   camera.aspect = w / h; camera.updateProjectionMatrix();
   const ph = h * renderer.getPixelRatio(); setParticleScale(ph, camera.fov); fx.setScale(ph, camera.fov);
 }
