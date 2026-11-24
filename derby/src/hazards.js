@@ -55,7 +55,7 @@
 // Rivals keep clear of them through steerClear (for ai.js): each kind that can hurt says where it is dangerous and
 // when, and a rival bound through it is sent round (by the map's route grid, which the map blocks while it is on).
 import * as THREE from 'three';
-import { fire, sparks, ring, dust } from '../../src/sim.js';
+import { fire, sparks, ring, dust, puff } from '../../src/sim.js';
 import { Unit } from '../../units/src/unit.js';
 import { TANK, HELI } from '../../units/src/vehicles.js';
 
@@ -1076,18 +1076,22 @@ function ramp(api, h) {
 // The deck: two steel girders with a lattice of cross beams under a slab, the rails on top, and a lamp now and then
 // underneath. One mesh a kind (merged), however long. The train: four silver cars with a lit band of windows and a
 // headlamp at each end, built of boxes, running the length of the deck one way and then the other.
+// With `ground`, the same train is a subway train in a station: no deck, its rails on the floor, and each car shown
+// only between z0 and z1 (it comes and goes through the tunnel mouths the map builds at the station's ends).
 function el(api, h) {
-  const len = h.z1 - h.z0, y = h.y ?? 32, W = 14, zc = (h.z0 + h.z1) / 2;
+  const len = h.z1 - h.z0, ground = !!h.ground, y = ground ? -5.2 : h.y ?? 32, W = 14, zc = (h.z0 + h.z1) / 2;
   const steel = new THREE.MeshStandardMaterial({ color: 0x3e5a4c, roughness: 0.6, metalness: 0.5 });
   const dark = new THREE.MeshStandardMaterial({ color: 0x2a2c30, roughness: 0.8 });
   const root = new THREE.Group(); root.position.set(h.x, 0, zc); api.scene.add(root);
   const add = (geo, mat, x, yy, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, yy, z); m.castShadow = false; m.receiveShadow = false; root.add(m); return m; };
-  for (const sx of [-W / 2 + 1, W / 2 - 1]) add(new THREE.BoxGeometry(2, 4, len), steel, sx, y + 2, 0);       // the girders
-  add(new THREE.BoxGeometry(W, 1, len), dark, 0, y + 4.5, 0);                                                  // the slab
+  if (!ground) {
+    for (const sx of [-W / 2 + 1, W / 2 - 1]) add(new THREE.BoxGeometry(2, 4, len), steel, sx, y + 2, 0);       // the girders
+    add(new THREE.BoxGeometry(W, 1, len), dark, 0, y + 4.5, 0);                                                  // the slab
+  }
   for (const rx of [-3.2, -1.8, 1.8, 3.2]) add(new THREE.BoxGeometry(0.4, 0.4, len), steel, rx, y + 5.2, 0);  // the rails
-  // cross beams under it, every 6, as one instanced mesh
-  const n = Math.floor(len / 6), beams = new THREE.InstancedMesh(new THREE.BoxGeometry(W, 1, 1), steel, n), M4 = new THREE.Matrix4();
-  for (let i = 0; i < n; i++) { M4.makeTranslation(0, y + 0.5, -len / 2 + 3 + i * 6); beams.setMatrixAt(i, M4); }
+  // cross beams under it (sleepers, in a station), every 6, as one instanced mesh
+  const n = Math.floor(len / (ground ? 3 : 6)), beams = new THREE.InstancedMesh(new THREE.BoxGeometry(ground ? 9 : W, ground ? 0.3 : 1, 1), ground ? dark : steel, n), M4 = new THREE.Matrix4();
+  for (let i = 0; i < n; i++) { M4.makeTranslation(0, ground ? 0.1 : y + 0.5, -len / 2 + 1.5 + i * (ground ? 3 : 6)); beams.setMatrixAt(i, M4); }
   root.add(beams);
   // the train
   const CAR = 22, GAP = 1.5, CARS = 4, TL = CARS * CAR + (CARS - 1) * GAP;
@@ -1102,7 +1106,7 @@ function el(api, h) {
     const r = new THREE.Mesh(new THREE.BoxGeometry(7, 0.6, CAR - 1), dark); r.position.y = 8.9; c.add(r);
     for (const ez of [-1, 1]) if ((k === 0 && ez < 0) || (k === CARS - 1 && ez > 0)) { const l = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1, 0.3), lamp); l.position.set(0, 6.8, ez * (CAR / 2 + 0.1)); c.add(l); }
   }
-  const EVERY = h.every ?? 16, RUN = len + TL + 120, SPEED = 55;
+  const EVERY = h.every ?? 16, RUN = len + TL + 120, SPEED = ground ? 70 : 55;
   let t = EVERY * 0.4, dir = 1;
   train.visible = false;
   return {
@@ -1113,6 +1117,7 @@ function el(api, h) {
       if (run > RUN) { t = EVERY; dir = -dir; train.visible = false; return; }
       train.visible = true;
       const z = (-len / 2 - TL / 2 - 60 + run) * dir; train.position.z = z; train.rotation.y = dir > 0 ? 0 : Math.PI;
+      if (ground) for (const c of train.children) { const cz = z + c.position.z * dir; c.visible = Math.abs(cz) < len / 2 - CAR / 2 + 2; }
       // the rumble, now and then, from where the train is (it carries when the player is anywhere near)
       const p = api.player;
       if (live && p && Math.abs(p.x - h.x) < 160 && Math.random() < dt * 3) api.sound && api.sound('rumble', clamp(1 - Math.abs(zc + z - p.z) / 240, 0.1, 0.7), h.x, y, zc + z);
@@ -1120,6 +1125,22 @@ function el(api, h) {
   };
 }
 
+
+// ---- steam ------------------------------------------------------------------------------------------------------------
+// Steam from the street: a slow column of white puffs out of a manhole or a vent, now and then. { pts: [[x, z], ...] }
+function steam(api, h) {
+  const pts = h.pts || [];
+  return {
+    step(dt, live) {
+      if (!live) return;
+      const p = api.player; if (!p) return;
+      for (const [x, z] of pts) {
+        if (Math.abs(p.x - x) > 260 || Math.abs(p.z - z) > 260 || Math.random() > dt * 9) continue;
+        puff(x + (Math.random() - 0.5) * 3, 0.6, z + (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 1.2, 4 + Math.random() * 3, (Math.random() - 0.5) * 1.2, 3 + Math.random() * 2, 2.6, 0.32, 1.4, 0.4);
+      }
+    },
+  };
+}
 
 // ---- covered stretches ---------------------------------------------------------------------------------------------
 // The renderer's exposure eases down as the camera goes in under the roof and back up as it comes out. All the covered
@@ -1138,4 +1159,4 @@ function covered(api, h) {
   };
 }
 
-const KINDS = { ramp, el, covered, army, grates, press, barrels, boost, conveyor, bounds, keepout, sweeper, hammer, jets, magnet, show, scoreboard };
+const KINDS = { ramp, el, steam, covered, army, grates, press, barrels, boost, conveyor, bounds, keepout, sweeper, hammer, jets, magnet, show, scoreboard };
