@@ -125,16 +125,17 @@ button.go:active { transform: skewX(-8deg) translateY(3px); box-shadow: 0 2px 0 
 .ld-sky svg, .ld-road svg { width: 100%; height: 100%; display: block; }
 .ld-road { left: 0; bottom: 0; width: 200%; height: 22%; animation: ld-slide 0.9s linear infinite; }
 @keyframes ld-slide { to { transform: translateX(-50%); } }
-.ld-car { bottom: 12%; width: 32%; aspect-ratio: 5 / 2; }
+.ld-car { bottom: 12%; width: 38%; aspect-ratio: 5 / 2; }
 .ld-car svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .ld-me { left: 4%; animation: ld-me 6s linear infinite; }
-.ld-foe { left: 62%; animation: ld-foe 6s linear infinite; }
+.ld-foe { left: 58%; animation: ld-foe 6s linear infinite; }
 .ld-me .ld-body, .ld-foe .ld-body { position: absolute; inset: 0; animation: ld-bob 0.22s ease-in-out infinite alternate; }
 .ld-foe .ld-body { animation-duration: 0.26s; }
 @keyframes ld-bob { to { transform: translateY(-2.5%) rotate(-0.6deg); } }
-.ld-wheel { position: absolute; top: 61%; width: 15%; aspect-ratio: 1; border-radius: 50%; animation: ld-spin 0.32s linear infinite;
-  background: radial-gradient(circle, #c9ced3 0 16%, #3a3f44 17% 40%, transparent 41%), conic-gradient(#15120a 0 10%, #2b2f33 10% 25%, #15120a 25% 35%, #2b2f33 35% 50%, #15120a 50% 60%, #2b2f33 60% 75%, #15120a 75% 85%, #2b2f33 85%);
-  box-shadow: inset 0 0 0 2px #0b0a08; }
+.ld-pic { position: absolute; inset: 0; width: 100%; height: 100%; display: block; image-rendering: auto; }
+.ld-foe .ld-pic { transform: scaleX(-1); }
+/* the near wheels: the car's own wheel, drawn on its own and spun (page script: left, top and width from the picture) */
+.ld-wheel { position: absolute; aspect-ratio: 1; margin: 0; background: center / 100% 100% no-repeat; animation: ld-spin 0.32s linear infinite; }
 @keyframes ld-spin { to { transform: rotate(360deg); } }
 /* your car eases back and forth behind the rival; the rival drives in, swerves under fire, blows up and flips away */
 @keyframes ld-me { 0%, 100% { transform: translateX(0); } 30% { transform: translateX(6%); } 55% { transform: translateX(-3%); } 80% { transform: translateX(10%) translateY(-4%); } 84% { transform: translateX(8%); } }
@@ -146,8 +147,7 @@ button.go:active { transform: skewX(-8deg) translateY(3px); box-shadow: 0 2px 0 
 @keyframes ld-gate-me { 0%, 11.9% { opacity: 0; } 12%, 20% { opacity: 1; } 20.1%, 27.9% { opacity: 0; } 28%, 36% { opacity: 1; } 36.1%, 45.9% { opacity: 0; } 46%, 54% { opacity: 1; } 54.1%, 61.9% { opacity: 0; } 62%, 76% { opacity: 1; } 76.1%, 100% { opacity: 0; } }
 @keyframes ld-gate-foe { 0%, 20.9% { opacity: 0; } 21%, 26.5% { opacity: 1; } 26.6%, 37.9% { opacity: 0; } 38%, 44% { opacity: 1; } 44.1%, 55.9% { opacity: 0; } 56%, 60.5% { opacity: 1; } 60.6%, 100% { opacity: 0; } }
 .ld-lane { position: absolute; top: 52.3%; height: 2.2%; }
-.ld-gm .ld-lane { left: 29%; width: 33%; }
-.ld-gf .ld-lane { left: 36%; width: 27%; transform: scaleX(-1); }
+.ld-gf .ld-lane { transform: scaleX(-1); }
 .ld-lane i { position: absolute; inset: 0; animation: ld-shot 0.24s linear infinite; }
 .ld-lane i:nth-child(2) { animation-delay: -0.12s; }
 .ld-lane i::before { content: ''; position: absolute; left: 0; top: 0; width: 16%; height: 100%; border-radius: 2px; background: linear-gradient(90deg, rgba(255,220,120,0), #fff2b0 70%, #fff); box-shadow: 0 0 6px #ffc21a; }
@@ -155,8 +155,6 @@ button.go:active { transform: skewX(-8deg) translateY(3px); box-shadow: 0 2px 0 
 .ld-flash, .ld-spark { position: absolute; width: 24%; aspect-ratio: 1; margin: -12% 0 0 -12%; border-radius: 50%; animation: ld-flash 0.12s steps(2) infinite;
   background: radial-gradient(circle, #fff 0 18%, #ffe07a 30%, #ff9a2a 50%, rgba(255,120,20,0) 70%); }
 .ld-spark { width: 16%; margin: -8% 0 0 -8%; background: radial-gradient(circle, #fff 0 12%, #ffd067 26%, rgba(255,160,40,0) 62%); animation-duration: 0.16s; }
-.ld-me .ld-flash { left: 77%; top: 18.75%; } .ld-me .ld-spark { left: 95%; top: 45%; }
-.ld-foe .ld-flash { left: 6%; top: 18.75%; } .ld-foe .ld-spark { left: 4%; top: 48%; }
 @keyframes ld-flash { 0% { transform: scale(1) rotate(0deg); opacity: 1; } 100% { transform: scale(0.45) rotate(45deg); opacity: 0.35; } }
 /* the rival smokes more and more, then the blast */
 .ld-smoke { position: absolute; left: 4%; top: 6%; width: 22%; aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle, rgba(40,36,34,0.9), rgba(40,36,34,0) 68%); animation: ld-puff 0.7s linear infinite; }
@@ -752,20 +750,8 @@ body.racing.touch #hint { top: 128px; }
   <div class="ld-stage" aria-hidden="true">
     <div class="ld-sky"><svg viewBox="0 0 2000 180" preserveAspectRatio="none"><path d="M0 180V111h60V180zM63 180V124h81V180zM144 180V62h92V180zM236 180V56h63V180zM299 180V103h72V180zM371 180V75h45V180zM419 180V100h44V180zM463 180V76h75V180zM538 180V58h92V180zM630 180V50h54V180zM689 180V123h77V180zM770 180V80h77V180zM847 180V125h54V180zM905 180V113h94V180zM1000 180V111h60V180zM1063 180V124h81V180zM1144 180V62h92V180zM1236 180V56h63V180zM1299 180V103h72V180zM1371 180V75h45V180zM1419 180V100h44V180zM1463 180V76h75V180zM1538 180V58h92V180zM1630 180V50h54V180zM1689 180V123h77V180zM1770 180V80h77V180zM1847 180V125h54V180zM1905 180V113h94V180z" fill="#2a1d1c" opacity="0.85"/><path d="M14 136h5v6h-5zM12 134h5v6h-5zM24 135h5v6h-5zM81 134h5v6h-5zM196 158h5v6h-5zM391 102h5v6h-5zM448 150h5v6h-5zM438 133h5v6h-5zM438 147h5v6h-5zM483 147h5v6h-5zM512 139h5v6h-5zM668 107h5v6h-5zM656 77h5v6h-5zM712 166h5v6h-5zM701 138h5v6h-5zM720 160h5v6h-5zM784 108h5v6h-5zM801 165h5v6h-5zM953 126h5v6h-5zM954 132h5v6h-5zM1042 141h5v6h-5zM1009 165h5v6h-5zM1022 140h5v6h-5zM1282 97h5v6h-5zM1284 113h5v6h-5zM1349 146h5v6h-5zM1346 148h5v6h-5zM1435 160h5v6h-5zM1443 163h5v6h-5zM1439 167h5v6h-5zM1517 134h5v6h-5zM1574 120h5v6h-5zM1666 160h5v6h-5zM1645 113h5v6h-5zM1660 100h5v6h-5zM1750 162h5v6h-5zM1746 143h5v6h-5zM1820 117h5v6h-5zM1797 122h5v6h-5zM1861 165h5v6h-5zM1929 156h5v6h-5z" fill="#ffc21a" opacity="0.55"/></svg></div>
     <div class="ld-road"><svg viewBox="0 0 2000 66" preserveAspectRatio="none"><rect width="2000" height="66" fill="#2b2a28"/><rect width="2000" height="4" fill="#4a4540"/><path d="M0 30h50v5h-50zM100 30h50v5h-50zM200 30h50v5h-50zM300 30h50v5h-50zM400 30h50v5h-50zM500 30h50v5h-50zM600 30h50v5h-50zM700 30h50v5h-50zM800 30h50v5h-50zM900 30h50v5h-50zM1000 30h50v5h-50zM1100 30h50v5h-50zM1200 30h50v5h-50zM1300 30h50v5h-50zM1400 30h50v5h-50zM1500 30h50v5h-50zM1600 30h50v5h-50zM1700 30h50v5h-50zM1800 30h50v5h-50zM1900 30h50v5h-50z" fill="#ffc21a" opacity="0.8"/><path d="M674 49h4v2h-4zM1674 49h4v2h-4zM496 60h6v2h-6zM1496 60h6v2h-6zM269 51h4v2h-4zM1269 51h4v2h-4zM149 55h12v2h-12zM1149 55h12v2h-12zM378 61h13v2h-13zM1378 61h13v2h-13zM326 46h12v2h-12zM1326 46h12v2h-12zM973 61h14v2h-14zM1973 61h14v2h-14zM692 43h11v2h-11zM1692 43h11v2h-11zM921 59h10v2h-10zM1921 59h10v2h-10zM407 54h10v2h-10zM1407 54h10v2h-10zM106 57h14v2h-14zM1106 57h14v2h-14zM410 43h7v2h-7zM1410 43h7v2h-7zM68 48h11v2h-11zM1068 48h11v2h-11zM166 45h9v2h-9zM1166 45h9v2h-9zM615 43h5v2h-5zM1615 43h5v2h-5zM0 60h6v2h-6zM1000 60h6v2h-6zM549 45h9v2h-9zM1549 45h9v2h-9zM628 42h5v2h-5zM1628 42h5v2h-5z" fill="#3e3a36"/></svg></div>
-    <div class="ld-car ld-foe"><div class="ld-body"><svg viewBox="0 0 200 80"><path d="M10 62 L8 40 L40 34 L170 34 L192 44 L192 62 Z" fill="var(--foe)" stroke="#15120a" stroke-width="2.5" stroke-linejoin="round"/>
-<path d="M14 40 l6 -10 l6 10 M150 34 l6 -10 l6 10" fill="#c9ced3" stroke="#15120a" stroke-width="1.5"/>
-<path d="M90 34 L104 18 L156 18 L170 34 Z" fill="var(--foe)" stroke="#15120a" stroke-width="2.5" stroke-linejoin="round" style="filter:brightness(0.75)"/>
-<path d="M106 22 L152 22 L162 32 L100 32 Z" fill="#1c2a33"/>
-<path d="M8 48 H192" stroke="#15120a" stroke-width="3" stroke-dasharray="10 6"/>
-<rect x="44" y="10" width="28" height="12" rx="2" fill="#3a3f44" stroke="#15120a" stroke-width="2"/><rect x="12" y="12.5" width="36" height="5" fill="#2b2f33" stroke="#15120a" stroke-width="1.5"/>
-<path d="M192 42 L198 46 L198 62 L192 62 Z" fill="#4a5056" stroke="#15120a" stroke-width="2"/></svg><div class="ld-hurt"><i class="ld-smoke"></i><i class="ld-smoke"></i></div></div><i class="ld-wheel" style="left:10%"></i><i class="ld-wheel" style="left:73%"></i><div class="ld-gf"><i class="ld-flash"></i></div><div class="ld-gm"><i class="ld-spark"></i></div></div>
-    <div class="ld-car ld-me"><div class="ld-body"><svg viewBox="0 0 200 80"><path d="M12 62 L10 44 L22 38 L150 38 L184 46 L190 62 Z" fill="var(--paint)" stroke="#15120a" stroke-width="2.5" stroke-linejoin="round"/>
-<path d="M10 50 H186" stroke="var(--trim)" stroke-width="5"/>
-<path d="M48 38 L62 20 L118 20 L138 38 Z" fill="var(--paint)" stroke="#15120a" stroke-width="2.5" stroke-linejoin="round" style="filter:brightness(0.78)"/>
-<path d="M67 24 L115 24 L129 36 L60 36 Z" fill="#1c2a33"/><path d="M72 24 L86 24 L78 36 L66 36 Z" fill="#fff" opacity="0.18"/>
-<rect x="78" y="10" width="28" height="11" rx="2" fill="#3a3f44" stroke="#15120a" stroke-width="2"/><rect x="100" y="12.5" width="52" height="5" fill="#2b2f33" stroke="#15120a" stroke-width="1.5"/>
-<path d="M184 44 L198 50 L198 66 L184 66 Z" fill="#8a9097" stroke="#15120a" stroke-width="2"/><path d="M188 52 H198 M188 58 H198" stroke="#4a5056" stroke-width="2"/>
-<path d="M10 40 L4 30 L22 30 L22 38" fill="#2b2f33" stroke="#15120a" stroke-width="2"/></svg></div><i class="ld-wheel" style="left:15%"></i><i class="ld-wheel" style="left:70%"></i><div class="ld-gm"><i class="ld-flash"></i></div><div class="ld-gf"><i class="ld-spark"></i></div></div>
+    <div class="ld-car ld-foe"><div class="ld-body"><img class="ld-pic" alt=""><div class="ld-hurt"><i class="ld-smoke"></i><i class="ld-smoke"></i></div></div><i class="ld-wheel"></i><i class="ld-wheel"></i><div class="ld-gf"><i class="ld-flash"></i></div><div class="ld-gm"><i class="ld-spark"></i></div></div>
+    <div class="ld-car ld-me"><div class="ld-body"><img class="ld-pic" alt=""></div><i class="ld-wheel"></i><i class="ld-wheel"></i><div class="ld-gm"><i class="ld-flash"></i></div><div class="ld-gf"><i class="ld-spark"></i></div></div>
     <div class="ld-gm"><div class="ld-lane"><i></i><i></i></div></div>
     <div class="ld-gf"><div class="ld-lane"><i></i><i></i></div></div>
     <i class="ld-boom"></i>
@@ -782,12 +768,40 @@ body.racing.touch #hint { top: 128px; }
 (function () {
   var L = document.getElementById('loading'), F = document.getElementById('ld-fill'), W = document.getElementById('ld-what'), P = document.getElementById('ld-pct');
   if (!L || !F) return;
-  // your car in your paint (the saved build: src/parts.js), the rival in another
-  var PAINT = { orange: '#e0782a', red: '#c23b2e', blue: '#2f62a8', teal: '#2c8f8c', green: '#3d7d55', yellow: '#e8b82a', purple: '#6a3f9a', white: '#e6e4dc', silver: '#a4a9b0', black: '#2b2e35', maroon: '#7c2734', lime: '#8cc63a', pink: '#e06a9a', sand: '#c9a66b' };
-  var load = {}; try { load = (JSON.parse(localStorage.getItem('auto-destruction-save-1') || '{}') || {}).load || {}; } catch (e) { /* the starter's */ }
-  var mine = PAINT[load.paint] || PAINT.orange, others = Object.keys(PAINT).filter(function (k) { return PAINT[k] !== mine && k !== 'black'; });
-  L.style.setProperty('--paint', mine); L.style.setProperty('--trim', PAINT[load.trim] || PAINT.black);
-  L.style.setProperty('--foe', PAINT[others[Math.floor(Math.random() * others.length)]]);
+  // the cars: yours as main.js last drew it on this device (keepLoadCar), or the starter car; the rival one of a few.
+  // Each is the game's own model seen from the side (partart.js side(), tools/loading-cars.mjs): the car without its
+  // near wheels, one wheel to spin, and where the wheels and the gun are on the picture. Placed here on the stage:
+  // the car boxes are 38% of its width (5:2, like the pictures; yours at 4%, the rival's at 58%) with their bottoms 12%
+  // up, so a box is 50.67% of the stage's height and its top is at 37.33%.
+  var CARS = /*@loadcars*/null;
+  if (CARS) {
+    var mine = null; try { mine = JSON.parse(localStorage.getItem('ad-load-car') || 'null'); } catch (e) { /* the starter */ }
+    if (!mine || !mine.body || !mine.meta) mine = CARS.me;
+    var foe = CARS.foes[Math.floor(Math.random() * CARS.foes.length)];
+    var pc = function (n) { return (n * 100).toFixed(2) + '%'; };
+    var place = function (el, car, flip) {
+      var m = car.meta, X = function (x) { return flip ? 1 - x : x; };
+      el.querySelector('.ld-pic').src = car.body;
+      var ws = el.querySelectorAll('.ld-wheel');
+      for (var i = 0; i < ws.length; i++) { var w = m.wheels[i]; ws[i].style.cssText = 'left:' + pc(X(w.x) - m.d / 2) + ';top:' + pc(w.y - m.d * 1.25) + ';width:' + pc(m.d) + ';background-image:url(' + car.wheel + ')'; }
+      var g = m.gun || { x: 0.8, y: 0.3 }, fl = el.querySelector(flip ? '.ld-gf .ld-flash' : '.ld-gm .ld-flash');
+      fl.style.left = pc(X(g.x)); fl.style.top = pc(g.y);
+    };
+    // where a shot at height y (of the box) meets the car's front, as a fraction across its picture
+    var hitAt = function (car, y) { var f = car.meta.front || [], i = Math.max(0, Math.min(15, Math.floor(y * 16))); for (var j = i; j < 16; j++) if (f[j] > 0) return f[j]; return 0.85; };
+    var meEl = L.querySelector('.ld-me'), foeEl = L.querySelector('.ld-foe');
+    place(meEl, mine, false); place(foeEl, foe, true);
+    var gm = mine.meta.gun || { x: 0.8, y: 0.3 }, gf = foe.meta.gun || { x: 0.8, y: 0.3 };
+    var hitFoe = hitAt(foe, gm.y), hitMe = hitAt(mine, gf.y);
+    var sf = foeEl.querySelector('.ld-gm .ld-spark'); sf.style.left = pc(1 - hitFoe); sf.style.top = pc(gm.y);
+    var sm = meEl.querySelector('.ld-gf .ld-spark'); sm.style.left = pc(hitMe); sm.style.top = pc(gf.y);
+    // the tracers' lanes on the stage, from each muzzle to the other car's front
+    var lanes = L.querySelectorAll('.ld-stage > .ld-gm .ld-lane, .ld-stage > .ld-gf .ld-lane');
+    var a = 4 + 38 * gm.x, b = 58 + 38 * (1 - hitFoe);
+    lanes[0].style.cssText = 'left:' + a.toFixed(2) + '%;width:' + Math.max(4, b - a).toFixed(2) + '%;top:' + (37.33 + 50.67 * gm.y - 1.1).toFixed(2) + '%';
+    a = 4 + 38 * hitMe; b = 58 + 38 * (1 - gf.x);
+    lanes[1].style.cssText = 'left:' + a.toFixed(2) + '%;width:' + Math.max(4, b - a).toFixed(2) + '%;top:' + (37.33 + 50.67 * gf.y - 1.1).toFixed(2) + '%';
+  }
   // how long each step took last time on this device (a first visit guesses)
   var took = { page: 2500, build: 3000 }; try { var t = JSON.parse(localStorage.getItem('ad-load-ms') || '{}'); if (t.page > 0) took.page = t.page; if (t.build > 0) took.build = t.build; } catch (e) { /* guesses */ }
   var t0 = performance.now(), tBuild = 0, at = 0, anim = null, poll = 0;

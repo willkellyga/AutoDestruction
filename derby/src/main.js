@@ -22,7 +22,7 @@ import { MAP, MAPS, chooseMap } from './maps/index.js';
 import { MODES } from './modes/index.js';
 import { CRASH, ROUND, AI, DRIFT, BUILDINGS } from './tuning.js';
 import { toughen, boom, chipAt, fuelBlast } from './sturdy.js';
-import { PARTS, PAINTS, loadSave, keepSave, rivalBuild, RIVAL_NAMES, statsOf } from './parts.js';
+import { PARTS, PAINTS, STARTER, loadSave, keepSave, rivalBuild, RIVAL_NAMES, statsOf } from './parts.js';
 import { makeGarage, rating, classOf, GADGET, gadgetIcon } from './garage.js';
 import { makeGarageRoom } from './garageroom.js';
 import { makePartArt } from './partart.js';
@@ -1190,7 +1190,26 @@ function playAgain() { if (net) net.bye(); goOnline(MAP.id); }
     box.appendChild(b);
   }
 }
+// the loading screen (page.html) shows your own car: it is drawn from the side (partart.js side()) while the home screen
+// or the garage is up, a moment after the build changes, and kept in localStorage 'ad-load-car' with the build it shows
+// (LOADCAR_V: change it when the drawing changes, so every device draws its car again)
+const LOADCAR_V = 1;
+let loadCarT = 0;
+function keepLoadCar() {
+  clearTimeout(loadCarT);
+  loadCarT = setTimeout(() => {
+    if ($('home').hidden && game.state !== 'garage' && game.state !== 'menu') return;   // (not in the middle of a round: the next home screen does it)
+    const L = save.load, k = JSON.stringify([LOADCAR_V, ...['body', 'primary', 'roof', 'door', 'secondary', 'front', 'armour', 'wheels', 'engine', 'paint', 'trim', 'pattern'].map((s) => L[s])]);
+    try {
+      const had = JSON.parse(localStorage.getItem('ad-load-car') || 'null');
+      if (had && had.k === k) return;
+      const pic = art.side({ ...L, webp: true });
+      localStorage.setItem('ad-load-car', JSON.stringify({ k, ...pic }));
+    } catch (e) { /* the starter car shows instead */ }
+  }, 1500);
+}
 function drawHome() {
+  keepLoadCar();
   const st = statsOf(save.load), r = rating(st), body = PARTS.body[save.load.body] || {};
   $('home-scrap').textContent = Math.round(save.scrap);
   const all = Object.keys(PARTS).every((s) => Object.keys(PARTS[s]).every((k) => (save.owned[s] || []).includes(k)));
@@ -1267,7 +1286,7 @@ function openGarage(from) {
   garage.open();
 }
 function leaveGarage() {
-  garage.close(); keepSave(save);
+  garage.close(); keepSave(save); keepLoadCar();
   tryer.slot = null; bolt = null; game.revT = 0; game.boostT = 0;
   const from = game.garageFrom; game.garageFrom = null;
   if (from === 'home' || game.ended) { showHome(); return; }   // back to the home screen (after a round too: the next one starts from there)
@@ -1726,4 +1745,4 @@ if (net) net.ready_();
   else if (net || brief || /[?&](room|online|map)=/.test(location.search)) $('menu').hidden = false; else showHome();
 }
 requestAnimationFrame((t) => { last = t; frame(t); });
-window.__derby = { net, specials, crumple, cube, room, gcam, garageLight, startTest, endTest, tryPart: (s, k) => onTry(s, k), dummies, renderer, mapLook, touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH, picked }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, pauseOn, pauseOff, toHome, setPlay, sfx, audioMix, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop };
+window.__derby = { art, STARTER, net, specials, crumple, cube, room, gcam, garageLight, startTest, endTest, tryPart: (s, k) => onTry(s, k), dummies, renderer, mapLook, touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH, picked }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, pauseOn, pauseOff, toHome, setPlay, sfx, audioMix, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop };
