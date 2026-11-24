@@ -798,7 +798,7 @@ const pickups = makePickups(api, MAP.pickups), hazards = makeHazards(api, MAP.ha
 function spawnPlayer(at) {
   if (!at) {
     at = { ...MAP.spawn };
-    if (player) { const o = (mode.respawnAt && mode.respawnAt(player)) || MAP.spawnPoint(null, cars.filter((c) => !c.gone && c !== player)); at.x = o.x; at.z = o.z; at.yaw = o.yaw ?? Math.random() * 6.28; }
+    if (player) { const o = (mode.respawnAt && mode.respawnAt(player)) || MAP.spawnPoint(null, cars.filter((c) => !c.gone && c !== player)); at.x = o.x; at.z = o.z; at.yaw = o.yaw ?? Math.random() * 6.28; at.y = o.y; }   // (y: the road's height there, so it comes back on a bridge and not under it)
   }
   if (player && !player.dead) { player.dispose(); cars.splice(cars.indexOf(player), 1); }   // a fresh build in place of the old one
   player = addCar({ ...save.load, name: 'You' }, at, false);
@@ -1111,10 +1111,10 @@ function intoRoom() {
   if (!lightWas) {
     if (document.exitPointerLock && cam.locked) document.exitPointerLock();
     // where the car goes back to when it drives out: where it stood, or a spawn point if it was wrecked
-    if (player && !player.dead) game.garageBack = { x: player.x, z: player.z, yaw: player.yaw };
+    if (player && !player.dead) game.garageBack = { x: player.x, z: player.z, yaw: player.yaw, y: player.fy };
     else {
       const o = (mode.respawnAt && mode.respawnAt(player)) || MAP.spawnPoint(null, cars.filter((c) => !c.gone && c !== player));
-      game.garageBack = { x: o.x, z: o.z, yaw: o.yaw ?? Math.random() * 6.28 };
+      game.garageBack = { x: o.x, z: o.z, yaw: o.yaw ?? Math.random() * 6.28, y: o.y };
       player = null;   // (the wreck stays where it is)
     }
     garageLight(true);

@@ -16,16 +16,23 @@
 // The road goes up and down (maps/heights.js says how high it is anywhere; maps/roads.js draws the decks and the cut,
 // which are not voxels). The course is shut in the whole way round: concrete barriers on the streets, a stone wall in
 // the park, parapets on the decks, the cut's own walls. So only what stands beside the course is voxels (the barriers,
-// the rows of buildings that face it, the park's trees, the statue): the rest of the city is drawn the cheap way the
-// far city is, as boxes with lit windows that nothing can hit (backdrop.fill, below).
-import { WX, WZ, M, place, ctx, setSeed, bodies, put, set, begin, LOC, ri } from '../../../src/world.js';
-import { tree, lampPost } from '../../../src/kit.js';
+// the rows of buildings that face it, the first row of the park's trees, the statue): the rest of the city is drawn
+// the cheap way, and nothing can hit it. Every block off the course is boxes with a drawn front on each side
+// (maps/blocks.js), the trees behind the first row are models (maps/trees.js), and the rivers and the harbour move
+// under one flat sheet (maps/water.js).
+import { WX, WZ, M, place, ctx, setSeed, bodies, put, set, begin, LOC, ri, rnd, vehicles } from '../../../src/world.js';
+import { lampPost } from '../../../src/kit.js';
 import { tenement, brownstone, deco, billboard } from '../../../src/nyc_kit.js';
 import { LIBERTY } from '../../../src/nyc_landmarks.js';
 import { grabStatue, statueMesh } from './statue.js';
 import { dressBridges } from './bridges.js';
 import { makeStation } from './station.js';
 import { makeScreens } from './screens.js';
+import { makeBlocks } from './blocks.js';
+import { plantTree, makeGrove } from './trees.js';
+import { makeWater } from './water.js';
+import { DUSK } from '../looks/dusk.js';
+import { harborLand } from '../backdrops/harbor.js';
 import { tower, church } from '../../../src/buildings_b.js';
 import { shop } from '../../../src/buildings_a.js';
 import { canvasFor, finish, pickSpot, GK } from './common.js';
@@ -33,7 +40,6 @@ import { makeTrack, streetLoop, racingLine } from './racetrack.js';
 import { gantry, gatesFor, gridFor, paintCourse, grassOf, surfaceAt, radarCourse } from './circuit.js';
 import { makeHeights } from './heights.js';
 import { makeRoads } from './roads.js';
-import { lin } from '../backdrops/kit.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 // ---- the land ------------------------------------------------------------------------------------------------------
@@ -43,7 +49,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const SH = { W: 60, E: 645, N: 34, S: 735, BK: 795, BAT_X: 456, BAT_Z: 900, SH_X: 372, SH_Z: 792 };   // (SH_: the shoulder of land west of the Battery, behind the alley)
 const ISLE = { x: 185, z: 895, half: 119, r: 56 };
 const NECK = { x0: 174, x1: 236, z0: 728, z1: 784 };
-const PARK = { x0: 236, z0: 106, x1: 566, z1: 420 };
+const PARK = { x0: 236, z0: 106, x1: 542, z1: 420 };
 const BATTERY = { x0: 458, z0: 742, x1: 566, z1: 898 };
 const POND = { x: 352, z: 236, rx: 15, rz: 62 };
 const rbox = (x, z, cx, cz, h, r) => { const dx = Math.max(Math.abs(x - cx) - (h - r), 0), dz = Math.max(Math.abs(z - cz) - (h - r), 0); return dx * dx + dz * dz <= r * r; };
@@ -97,7 +103,7 @@ function widthAt(leg, x, z) {
     case 13: return z < 668 && z > 300 ? 16 : 24;      // the subway
     case 15: return 36;                                // the park
     case 16: case 17: return 32;
-    case 18: case 19: return 30;
+    case 18: case 19: return 28;
     case 21: return 22;                                // the River Drive
     case 22: return x < 548 && x > 392 ? 12 : 26;      // the alley
     default: return 27;
@@ -310,12 +316,25 @@ function plan() {
       lots.push({ x: x0, z: z0, f, kit, o, seed: 4000 + lots.length * 37 });
     }
   }
-  // the cheap city: the blocks between a grid of streets, four to a block, wherever there is land that is not taken
-  const boxes = [];
-  for (let bz = 8; bz < WZ - 60; bz += 104) for (let bx = 8; bx < WX - 60; bx += 104) for (const [qx, qz] of [[10, 10], [56, 10], [10, 56], [56, 56]]) {
-    const x0 = bx + qx, z0 = bz + qz, x1 = x0 + 38, z1 = z0 + 38;
-    if (!free(x0 - 3, z0 - 3, x1 + 3, z1 + 3) || onIsle(x0 + 19, z0 + 19) || (x1 > BATTERY.x0 && x0 < BATTERY.x1 && z1 > BATTERY.z0 && z0 < BATTERY.z1)) continue;   // (and nothing on the Battery's lawn)
-    boxes.push({ x: x0 + 19, z: z0 + 19, d: district(x0 + 19, z0 + 19), r: R(), r2: R(), r3: R() });
+  // the city off the course: between a grid of streets (every 104, as the ground is painted), every block filled with
+  // buildings wherever there is land that nothing else has taken: one big one, two slabs or four, and smaller ones
+  // fitted into what the course leaves of a block
+  const boxes = [], open = (x0, z0, w, d) => free(x0 - 2, z0 - 2, x0 + w + 2, z0 + d + 2) && !onIsle(x0 + w / 2, z0 + d / 2) && !(x0 + w > BATTERY.x0 && x0 < BATTERY.x1 && z0 + d > BATTERY.z0 && z0 < BATTERY.z1);
+  const add = (x0, z0, w, d) => {
+    take(x0 - 2, z0 - 2, x0 + w + 2, z0 + d + 2);
+    const dd = district(x0 + w / 2, z0 + d / 2), tall = dd === 'M' || dd === 'F' || dd === 'T', mid = dd === 'W' || dd === 'E' || dd === 'V', r = R(), small = Math.min(w, d);
+    const h = Math.min(small < 24 ? 60 : small < 32 ? 110 : small < 40 ? 200 : 999, (tall ? 230 + r * 250 : mid ? 150 + r * 170 : 84 + r * 110) * (w * d >= 6000 ? 1.15 : 1));
+    const q = R(), style = tall ? (q < 0.5 ? 'lime' : q < 0.8 ? 'glass' : 'tan') : mid ? (q < 0.4 ? 'brick' : q < 0.75 ? 'tan' : q < 0.9 ? 'lime' : 'brown') : (q < 0.45 ? 'brick' : q < 0.75 ? 'brown' : 'tan');
+    boxes.push({ x0, z0, w, d, h, style, seed: 1 + boxes.length });
+  };
+  for (let bz = 17; bz < WZ - 40; bz += 104) for (let bx = 17; bx < WX - 40; bx += 104) {
+    const k = R();
+    if (k < 0.16 && open(bx, bz, 80, 80)) { add(bx, bz, 80, 80); continue; }
+    if (k < 0.4) { const ns = R() < 0.5; let got = 0; for (const o of [0, 46]) { const [x, z, w, d] = ns ? [bx + o, bz, 40, 80] : [bx, bz + o, 80, 40]; if (open(x, z, w, d)) { add(x, z, w, d); got++; } } if (got === 2) continue; }
+    for (const [qx, qz] of [[0, 0], [46, 0], [0, 46], [46, 46]]) {
+      if (open(bx + qx, bz + qz, 40, 40)) { add(bx + qx, bz + qz, 40, 40); continue; }
+      for (const sz of [32, 24, 16]) for (let oz = 0; oz + sz <= 40; oz += 8) for (let ox = 0; ox + sz <= 40; ox += 8) if (open(bx + qx + ox, bz + qz + oz, sz, sz)) add(bx + qx + ox, bz + qz + oz, sz, sz);
+    }
   }
   return (PLAN = { lots, boxes });
 }
@@ -352,24 +371,25 @@ function rows() {
 // The park: trees either side of the road through it, thick enough to feel like woods, clear of the road and the pond.
 // And the island's.
 function trees() {
-  const { used } = masks();
+  const { used, taken } = masks();
   setSeed(7711);
-  const grow = (x0, z0, x1, z1, tries, ok) => {
+  // is the course within r of here?
+  const by = (x, z, r) => { for (let dz = -r; dz <= r; dz += r / 2) for (let dx = -r; dx <= r; dx += r / 2) { const X = Math.round(x + dx), Z = Math.round(z + dz); if (X > 0 && Z > 0 && X < WX && Z < WZ && used[Z * WX + X]) return true; } return false; };
+  // Beside the road they are voxel trees (maps/trees.js), the first row; behind them, where nothing reaches, the same
+  // trees drawn as models (GROVE, made with the hazards), as far back as is seen from the road (`far`).
+  const grow = (x0, z0, x1, z1, tries, ok, far = 64) => {
     const got = [];
     for (let t = 0; t < tries; t++) {
-      const x = ri(x0, x1), z = ri(z0, z1);
-      if (!ok(x, z) || got.some((g) => Math.abs(g[0] - x) < 9 && Math.abs(g[1] - z) < 9)) continue;
-      let clear = true; for (let dz = -5; dz <= 6 && clear; dz += 3) for (let dx = -5; dx <= 6; dx += 3) if (used[(z + dz) * WX + x + dx]) { clear = false; break; }
-      if (!clear) continue;
-      got.push([x, z]); tree(x, z, ri(11, 17), ri(5, 7));
+      const x = ri(x0, x1), z = ri(z0, z1), near = by(x, z, 22);
+      if (!ok(x, z) || (!near && !by(x, z, far)) || got.some((g) => Math.abs(g[0] - x) < 13 && Math.abs(g[1] - z) < 13) || by(x, z, 8)) continue;
+      got.push([x, z]);
+      if (near) plantTree(x, z, 100 + got.length * 7 + x, 0.9 + rnd() * 0.25); else GROVE.push([x + 0.5, z + 0.5, 0.95 + rnd() * 0.4, rnd() * 6.28]);
     }
   };
-  // (only within sight of the road: a wood two or three trees deep either side of it, lawn beyond)
-  const byRoad = (x, z) => { for (let dz = -48; dz <= 48; dz += 24) for (let dx = -48; dx <= 48; dx += 24) { const X = x + dx, Z = z + dz; if (X > 0 && Z > 0 && X < WX && Z < WZ && used[Z * WX + X]) return true; } return false; };
-  grow(PARK.x0 + 6, PARK.z0 + 6, PARK.x1 - 8, PARK.z1 - 8, 1500, (x, z) => ((x - POND.x) / (POND.rx + 6)) ** 2 + ((z - POND.z) / (POND.rz + 6)) ** 2 > 1 && byRoad(x, z));
+  grow(PARK.x0 + 8, PARK.z0 + 8, PARK.x1 - 10, PARK.z1 - 10, 2600, (x, z) => ((x - POND.x) / (POND.rx + 8)) ** 2 + ((z - POND.z) / (POND.rz + 8)) ** 2 > 1);
   // the Battery: a little park where the road swings out to the causeway, the statue ahead over the trees
-  { const { taken } = masks(); grow(BATTERY.x0 + 5, BATTERY.z0 + 5, BATTERY.x1 - 6, BATTERY.z1 - 6, 260, (x, z) => land(x - 6, z + 6) && land(x + 6, z + 6) && !taken[z * WX + x] && !taken[(z - 6) * WX + x] && !taken[(z + 6) * WX + x - 6] && !taken[(z + 6) * WX + x + 6]); }
-  grow(ISLE.x - ISLE.half, ISLE.z - ISLE.half, ISLE.x + ISLE.half, ISLE.z + ISLE.half, 260, (x, z) => rbox(x, z, ISLE.x, ISLE.z, ISLE.half - 6, ISLE.r) && Math.hypot(x - ISLE.x, z - ISLE.z) > 96);
+  grow(BATTERY.x0 + 7, BATTERY.z0 + 7, BATTERY.x1 - 8, BATTERY.z1 - 8, 500, (x, z) => [[0, 0], [-8, -8], [8, -8], [-8, 8], [8, 8]].every(([a, b]) => land(x + a, z + b) && !taken[(z + b) * WX + x + a]));
+  grow(ISLE.x - ISLE.half, ISLE.z - ISLE.half, ISLE.x + ISLE.half, ISLE.z + ISLE.half, 400, (x, z) => rbox(x, z, ISLE.x, ISLE.z, ISLE.half - 9, ISLE.r) && Math.hypot(x - ISLE.x, z - ISLE.z) > 96);
 }
 // the El's frames: a steel column either side of the avenue and a girder across between them, under the deck
 function elFrames() {
@@ -382,6 +402,7 @@ function elFrames() {
   }
 }
 let STATUE = null, STATION = null;
+const GROVE = [];
 function build() {
   // the statue first, while her island is bare: the engine's own, copied out of the world to be drawn at twice the size
   STATUE = grabStatue(ISLE.x - LIBERTY.S / 2, ISLE.z - LIBERTY.S / 2, 1);   // (she looks east, at the cars coming over the causeway)
@@ -395,6 +416,7 @@ function build() {
   { const { T, on } = course(); setSeed(3003);
     for (let i = 0; i < T.N; i += 40) { if (on[i] || inPark(T.X[i], T.Z[i])) continue; for (const sd of [1, -1]) { const w = (sd > 0 ? T.WL[i] : T.WR[i]) + 4.5, x = Math.round(T.X[i] + T.TZ[i] * sd * w), z = Math.round(T.Z[i] - T.TX[i] * sd * w); if (x > 12 && z > 12 && x < WX - 12 && z < WZ - 12 && land(x, z) && !masks().road[z * WX + x]) lampPost(x, z, 22); } } }
   // the gantry spans the plaza at the line
+  vehicles.length = 0;   // nothing parked along the road (Will, 2026-11-24)
   gantry(LINE_X, LINE_Z - 39, LINE_Z + 39, ['EMPIRE CITY', 'NEW YORK GP'], -1, GANTRY_Y);
   finish();
 }
@@ -483,18 +505,6 @@ function radar(R, s, ox, oy, w, h) {
   R.drawImage(radarCv, 0, 0);
 }
 
-// ---- the cheap city (backdrop.js calls this with its kit): towers as boxes on every block the course leaves alone ------
-const OFFICES = [0x8a929c, 0x77808c, 0x9a958c, 0xa8a297, 0x7f8a94, 0xb0a898].map(lin), FLATS = [0xa06e56, 0xb49c82, 0x94908a, 0xae9274, 0x86766c].map(lin);
-function fill({ add }) {
-  add(0, 290, 0, 488, 38, 126, 18, 0, 0, lin(0x23252c), 0.1);   // the tower the stack of screens hangs on, head-on from the south
-  for (const b of plan().boxes) {
-    const tall = b.d === 'M' || b.d === 'F' || b.d === 'T', mid = b.d === 'W' || b.d === 'E' || b.d === 'V';
-    const h = tall ? 240 + b.r * 240 : mid ? 150 + b.r * 170 : 90 + b.r * 100, office = tall ? b.r2 < 0.75 : mid ? b.r2 < 0.3 : false;
-    const col = (office ? OFFICES : FLATS)[Math.floor(b.r3 * 4.99)], w = 31 + b.r2 * 7, d = 31 + b.r3 * 7, lit = 0.2 + b.r * 0.25;
-    if (h > 250) { add(0, b.x, 0, b.z, w, h * 0.62, d, 0, office ? 0 : 1, col, lit); add(0, b.x, h * 0.62, b.z, w * 0.72, h * 0.38, d * 0.72, 0, office ? 0 : 1, col, lit, office ? 8 : 0); }
-    else add(0, b.x, 0, b.z, w, h, d, 0, office ? 0 : 1, col, lit);
-  }
-}
 
 const P = (name) => course().parts.find((p) => p.name === name);
 let ROOFS = null;
@@ -531,7 +541,6 @@ export default {
     traffic: { east: [200, 560, 800], north: [112, 216, 320, 424, 528], length: 900, bank: [-700, 1400] },
     skyline: [0.4, 0.75, 1.0, 0.85, 0.8, 0.75, 0.95, 0.6, 0.4],
     heli: { ahead: 290, y: 96, size: 1.5, sway: 18 },
-    fill,
   },
   lodK: 0.4,
   // the road's height (vehicle.js, main.js's camera), the sides of the decks and the cut, and the floor that is drawn
@@ -559,6 +568,9 @@ export default {
       { kind: 'custom', make: (api) => { const { T, parts } = course(), by = (n) => parts.find((p) => p.name === n); dressBridges(api.scene, T, [{ part: by('Queens Bridge'), kind: 'truss' }, { part: by('Brooklyn Bridge'), kind: 'stone' }]); } },
       { kind: 'custom', make: (api) => { makeRoads(api.scene, course().T, course().parts.map((p) => ({ ...p, skip: near }))); } },
       { kind: 'custom', make: (api) => { const p = P('Subway'), i = p.i0 + p.open[0]; STATION = makeStation(api.scene, { x: course().T.X[i], w: course().W[i], z0: p.openZ[0], z1: p.openZ[1], y0: p.h, y1: p.roofY }); } },
+      { kind: 'custom', make: (api) => { makeBlocks(api.scene, [...plan().boxes, { x0: 272, z0: 480, w: 40, d: 16, h: 132, style: 'glass', seed: 9 }]); } },
+      { kind: 'custom', make: (api) => { makeGrove(api.scene, GROVE); } },
+      { kind: 'custom', make: (api) => { const far = harborLand(api.MAP.backdrop).land, inMap = (x, z) => x >= 0 && z >= 0 && x < WX && z < WZ; return makeWater(api.scene, { x0: -1024, z0: -1024, span: 3072, sun: DUSK.sun, isWater: (x, z) => (inMap(x, z) ? !land(x, z) || ((x - POND.x) / POND.rx) ** 2 + ((z - POND.z) / POND.rz) ** 2 < 1 : far(x, z) < 0), pools: [[POND.x - POND.rx - 4, POND.z - POND.rz - 4, POND.x + POND.rx + 4, POND.z + POND.rz + 4, 1.06]] }); } },
       { kind: 'custom', make: (api) => makeScreens(api.scene, screens()) },
       { kind: 'steam', pts: steamPts() },
       { kind: 'el', x: 112 - 16 - 10.5, z0: P('Subway').openZ[0] - 56, z1: P('Subway').openZ[1] + 56, ground: true, y: P('Subway').h, every: 7, speed: 64, see: 130, model: 'commuter', paint: 'blue' },
@@ -571,7 +583,8 @@ export default {
   get spawn() { return full().grid[4]; },   // the player starts fifth
   spawnPoint(player, taken) {
     const { T, gates } = full();
-    return pickSpot(gates.map((i) => ({ x: T.X[i], z: T.Z[i], yaw: Math.atan2(T.TX[i], T.TZ[i]) })), player, taken);
+    const at = pickSpot(gates.map((i) => ({ x: T.X[i], z: T.Z[i], yaw: Math.atan2(T.TX[i], T.TZ[i]) })), player, taken), H = course().H;
+    return { ...at, y: H[T.project(at.x, at.z).i] };   // (the road's height there)
   },
   waypoint(c, tx, tz, out) {
     const { T } = full(), p = T.project(c.x, c.z, c._rw ?? -1), j = T.at(p.i + Math.round(36 / T.STEP));
