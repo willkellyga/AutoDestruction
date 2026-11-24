@@ -40,6 +40,7 @@ import { makeGround } from './ground.js';
 import { makeDirt } from './dirt.js';
 import { makeStreaks } from './streaks.js';
 import { makeNet, makeLobby, serverUrl } from './net.js';
+import { makeLearn } from './learn.js';
 
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -1177,12 +1178,13 @@ function leaveGarage() {
   const from = game.garageFrom; game.garageFrom = null;
   if (from === 'home' || game.ended) { showHome(); return; }   // back to the home screen (after a round too: the next one starts from there)
   outOfRoom();
-  if (from === 'menu') { game.state = 'menu'; startGame(); return; }
+  if (from === 'menu') { game.state = 'menu'; learn.first(startGame); return; }
   game.state = 'play';
   if (from === 'break' && mode.afterGarage) mode.afterGarage();
   sfx.play('start', 0.9); lockMouse();
 }
 function startGame() {
+  learn.dismiss();   // (online, the round can start while the how-to-play card is still up)
   initAudio(); $('menu').hidden = true; game.state = 'play';
   // phones and tablets: the whole screen for the round, where the browser allows it (a tap on Start counts as asking)
   const root = document.documentElement;
@@ -1237,10 +1239,14 @@ addEventListener('mousemove', (e) => {
   if (cam.locked) { const f = 1 - 0.35 * (cam.sticky || 0); cam.yaw -= e.movementX * 0.0026 * f; cam.pitch = clamp(cam.pitch + e.movementY * 0.0022 * f, 0.02, 0.75); }   // never down behind the car's back
 });
 addEventListener('wheel', (e) => { cam.dist = clamp(cam.dist + Math.sign(e.deltaY) * 3, 20, 60); }, { passive: true });
+// the first time in a mode on this browser, its how-to-play card comes up before the round (learn.js)
+const learn = makeLearn({ $, MAP });
 $('go').addEventListener('click', () => {
-  if (net) { initAudio(); if (game.state !== 'menu') return; if (net.begun) startGame(); else { net.ready_(); $('go').disabled = true; $('go').textContent = 'Waiting for the others...'; } return; }
-  if (game.ended) { try { sessionStorage.setItem(BRIEF, 'solo'); } catch (e) { /* home */ } chooseMap(MAP.id); } else startGame();
+  if (net) { initAudio(); if (game.state !== 'menu') return; learn.first(() => { if (game.state !== 'menu') return; if (net.begun) startGame(); else { net.ready_(); $('go').disabled = true; $('go').textContent = 'Waiting for the others...'; } }); return; }
+  if (game.ended) { try { sessionStorage.setItem(BRIEF, 'solo'); } catch (e) { /* home */ } chooseMap(MAP.id); } else { initAudio(); learn.first(startGame); }
 });
+$('menu-learn').addEventListener('click', () => learn.show());
+$('pause-learn').addEventListener('click', () => learn.show());
 // the mode's card: its name and map, what it is, and the race's difficulty
 {
   $('brief-t').textContent = MAP.name;
