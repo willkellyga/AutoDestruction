@@ -1,21 +1,30 @@
 // Camp Deadfall: an army base the dead have overrun, for the last-car-standing round (modes/survival.js).
 // A square of concrete wall with a gate in each side. A runway runs east to west through the middle and the main road
 // north to south, and they cross in the open: that is the killing field. Round them, a quarter each, one big thing to
-// know it by and open ground round it: the hangar (a helicopter in for repair), headquarters with the radio mast and
-// the helipad, two quonset huts of barracks under a water tower, and three parked tanks beside the fuel farm. Guard
+// know it by and open ground round it: a helicopter parked on its apron, headquarters with the radio mast and the
+// helipad, two quonset huts of barracks under a water tower, and three parked tanks beside the fuel farm. Guard
 // towers stand at the corners. It is kept open on purpose, for driving through a horde of hundreds: no crates, wire,
 // sandbags or parked trucks to snag on, and the big pieces far enough apart for a car to get round them. Everything can
 // be knocked down; the fuel and the vehicles blow up. A ring road runs inside the wall, so there is always a way round.
+// Nothing has a way in for a car (Will, 2026-11-24: the hangar's doors let cars in and the camera got shut inside it, so
+// it is gone): headquarters and the huts are 'barrier' bodies, so cars bounce off them and only the guns break them.
 //
 // The horde comes in through the gates and over the wall (gates, wallSpot), and late in the round it blows holes in the
 // wall (breach). The rivals find their way with the route-finder in common.js.
 import * as THREE from 'three';
 import { WX, WZ, M, K, MAT_R, MAT_G, MAT_B, SOFT, CARRY, TOUGH, KIND, SHAPE, FLAM, BURN, CHARP, begin, set, box, walls, ctx, place, rnd, setSeed } from '../../../src/world.js';
 import { face, text, textW, disc } from '../../../src/kit.js';
-import { PACK } from '../../../units/src/pack.js';
+import { armyFoot } from '../hazards.js';
 import { canvasFor, finish, makeGridNav, pickSpot, gridRadar } from './common.js';
 
-const nav = makeGridNav();
+// the tanks and helicopters (Monster Mayhem's models, units/src/vehicles.js; run by hazards.js 'army'): a helicopter out
+// on the north-west apron and one on the helipad, three tanks in a row on the motor pool's slab. They aren't voxels, so
+// the route grid is told where they stand.
+const ARMY = [
+  { type: 'heli', x: 124, z: 104, yaw: 0 }, { type: 'heli', x: 438, z: 134, yaw: -Math.PI / 2 },
+  { type: 'tank', x: 306, z: 304, yaw: Math.PI }, { type: 'tank', x: 340, z: 308, yaw: Math.PI }, { type: 'tank', x: 374, z: 304, yaw: Math.PI },
+];
+const nav = makeGridNav({ also: (x, z) => ARMY.some((u) => armyFoot(u, x, z, 1)) });
 const radarGrid = gridRadar(nav);
 
 // ---- the plan (town voxels; x east, z south) ------------------------------------------------------------------------
@@ -25,7 +34,7 @@ const GX = 256, GZ = 208;              // the gates' middles: north and south on
 const RUN = [178, 238];                // the runway, z from and to
 const ROAD = [236, 276];               // the main road, x from and to
 const RING = 40;                       // the ring road: this far in from the wall's outside
-const HANGAR = { x0: 64, x1: 184, z0: 58, z1: 146 };
+const APRON = { x0: 64, x1: 184, z0: 58, z1: 146 };   // where the hangar stood: its slab, and the helicopter on it
 const HQ = { x0: 300, x1: 380, z0: 60, z1: 100 };
 const PAD = { x: 430, z: 134, r: 26 };
 const POOL = { x0: 290, x1: 410, z0: 250, z1: 366 };
@@ -34,7 +43,7 @@ const WTOWER = [98, 352];
 const TANKS = [[452, 272], [452, 306], [452, 340]];
 const CORNERS = [[17, 17], [WX - 17, 17], [17, WZ - 17], [WX - 17, WZ - 17]];   // the guard towers
 // what burns on the night of the storm (looks/storm.js): oil drums by the buildings, and two wrecked cars (on the
-// hangar's apron, and south of the barracks), all clear of the runway, the road and the places to line up
+// north-west apron, and south of the barracks), all clear of the runway, the road and the places to line up
 const DRUMS = [[196, 64], [48, 120], [286, 108], [46, 300], [118, 372], [470, 246]];
 const WRECKS = [[60, 160, true], [200, 330, true]];
 // the floodlight towers outside the wall (looks/storm.js): two a side, either side of its gate, 32 out in the cleared
@@ -69,9 +78,6 @@ function materials() {
   def(BAG, 'BAG', 0xa69a6c, 1.0, 1, 0.5, K.CLOTH, 3, 0.2, 2, 0.2);
   def(BAG_D, 'BAG_D', 0x8b7f57, 1.0, 1, 0.5, K.CLOTH, 3, 0.2, 2, 0.2);
 }
-// camouflage blotches over a box, from a hash of the voxel
-const hash = (x, y, z, s = 0) => { let h = (Math.imul(x, 73856093) ^ Math.imul(y, 19349663) ^ Math.imul(z, 83492791) ^ Math.imul(s, 2654435761)) >>> 0; h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0; return (h & 0xffff) / 65536; };
-const camo = (x, y, z) => (hash(x >> 2, y >> 1, z >> 2, 5) < 0.3 ? OLIVE_D : OLIVE);
 
 // ---- the wall, the gates and the wire ---------------------------------------------------------------------------------
 // One straight stretch of wall, xa..xb by za..zb, in concrete panels with darker joints, a painted band and a cap,
@@ -125,41 +131,11 @@ function tower(cx, cz, legM = M.WOOD) {
   box(cx - 1, f + 2, cz - 1, cx, f + 6, cz, M.DARK); set(cx, f + 7, cz, M.LIT_W); set(cx - 1, f + 7, cz, M.STEEL);   // the searchlight
   for (let y = 1; y < f; y += 2) set(cx + 6, y, cz - 5, M.WOOD);   // the ladder, up one leg
 }
-// ---- the hangar: an arched roof over a long shed, doors at both ends so a car can drive straight through -------------
-function hangar({ x0, x1, z0, z1 }) {
-  const cx = (x0 + x1) / 2, a = (x1 - x0) / 2, eave = 8, rise = 28;
-  const roofY = (x) => { const u = (x + 0.5 - cx) / a; return eave + Math.round(rise * Math.sqrt(Math.max(0, 1 - u * u))); };
-  // the roof, in bays of 11 along its length, ribbed with steel; each column of the arch runs down to its outer
-  // neighbour so the shell is whole
-  for (let zs = z0; zs <= z1; zs += 11) {
-    begin('Hangar roof', 'hangar', true);
-    for (let z = zs; z < Math.min(z1 + 1, zs + 11); z++) for (let x = x0; x <= x1; x++) {
-      const y1 = roofY(x), out = x < cx ? roofY(x - 1) : roofY(x + 1), y0 = x === x0 || x === x1 ? 0 : Math.min(y1, out + 1);
-      for (let y = y0; y <= y1; y++) set(x, y, z, z === zs ? M.STEEL : (x & 1) ? OLIVE : OLIVE_D);
-    }
-  }
-  // the gable ends: wall up to the arch, with the big door (south) and a smaller one (north), and the number
-  for (const [z, half, high] of [[z0, 22, 18], [z1, 40, 24]]) {
-    begin('Hangar end', 'hangar', true);
-    for (let x = x0 + 1; x < x1; x++) for (let y = 0; y < roofY(x); y++) {
-      const u = Math.abs(x + 0.5 - cx);
-      if (u < half && y < high) continue;
-      set(x, y, z, u < half + 1 && y === high ? M.STEEL : y < 2 ? M.CONC : (x % 6 === 0 ? OLIVE_D : OLIVE));
-    }
-    for (let x = Math.ceil(cx - half); x < cx + half; x++) set(x, high, z, M.STEEL);
-    for (const s of [-1, 1]) box(Math.round(cx + s * half) - (s < 0 ? 1 : 0), 0, z, Math.round(cx + s * half) - (s < 0 ? 1 : 0), high, z, M.STEEL);
-    const F = face(z === z0 ? 'f' : 'b', x0, z0, x1, z1), u0 = z === z0 ? Math.round(x1 - cx - textW('1', 2) / 2) : Math.round(cx - x0 - textW('1', 2) / 2);
-    text(F, '1', u0, high + 2, 0, M.TRIM, 2);
-  }
-  // inside: the helicopter in for repair, with room to drive round it
-  stamp('heli', cx, (z0 + z1) / 2 + 2, 's', 2, heliPaint(OLIVE, OLIVE_D), 'Helicopter', 10);
-}
-
 // ---- the barracks: quonset huts, half a cylinder of ribbed metal on its side -----------------------------------------
 function quonset(x0, x1, cz, r = 11) {
   const top = (dz) => Math.floor(Math.sqrt(Math.max(0, r * r - (dz + 0.5) * (dz + 0.5))));
   for (let xs = x0; xs <= x1; xs += 12) {
-    begin('Barracks hut', 'hut', true);
+    begin('Barracks hut', 'barrier', true);
     for (let x = xs; x < Math.min(x1 + 1, xs + 12); x++) for (let dz = -r; dz < r; dz++) {
       const y1 = top(dz), y0 = dz === -r || dz === r - 1 ? 0 : Math.min(y1, top(dz < 0 ? dz - 1 : dz + 1) + 1);
       for (let y = y0; y <= y1; y++) {
@@ -170,7 +146,7 @@ function quonset(x0, x1, cz, r = 11) {
   }
   // the ends: boarded, with a door and two windows
   for (const x of [x0, x1]) {
-    begin('Hut end', 'hut', true);
+    begin('Hut end', 'barrier', true);
     for (let dz = -r + 1; dz < r - 1; dz++) for (let y = 0; y < top(dz); y++) {
       const door = Math.abs(dz + 0.5) < 2.5 && y < 7, win = Math.abs(Math.abs(dz + 0.5) - 6) < 1.6 && y >= 4 && y <= 6;
       set(x, y, cz + dz, door ? M.DOOR_G : win ? M.GLASS : y === 0 ? M.CONC : M.PL_W);
@@ -181,7 +157,7 @@ function quonset(x0, x1, cz, r = 11) {
 
 // ---- headquarters, the radio mast and the flag ------------------------------------------------------------------------
 function headquarters({ x0, x1, z0, z1 }) {
-  begin('Headquarters', 'office', true);
+  begin('Headquarters', 'barrier', true);   // (cars bounce off: nothing to drive into)
   const top = 22;
   walls(x0, 0, z0, x1, top, z1, M.REND_C);
   box(x0 + 1, 11, z0 + 1, x1 - 1, 11, z1 - 1, M.SLAB); box(x0, top + 1, z0, x1, top + 1, z1, M.SLAB);
@@ -238,32 +214,6 @@ function fuelTank(cx, cz, r, h) {
   for (let y = 1; y <= h + 1; y++) { set(cx - r - 1, y, cz - 1, M.DARK); set(cx - r - 1, y, cz + 1, M.DARK); if (y % 2 === 0) set(cx - r - 1, y, cz, M.DARK); }
 }
 
-// ---- military vehicles: the CC0 pack's tank and helicopter, scaled and painted --------------------------------------
-// The pack models are one colour; paint(x, y, z) picks a material from where a cube sits in the model. The nose is the
-// model's z = 0 end; `dir` is which way it points ('n' -z, 's' +z, 'w' -x, 'e' +x). Each is one body that blows up
-// once enough of it is gone (a fuel voxel hidden in the middle goes up at once if a blow reaches it).
-const MODELS = {};
-function model(name) {
-  if (MODELS[name]) return MODELS[name];
-  const P = PACK[name], [X, Y, Z] = P.size, g = new Uint8Array(X * Y * Z);
-  for (let i = 0; i < P.cubes.length; i += 3) g[(P.cubes[i + 2] * Y + P.cubes[i + 1]) * X + P.cubes[i]] = 1;
-  return (MODELS[name] = { X, Y, Z, at: (x, y, z) => x >= 0 && y >= 0 && z >= 0 && x < X && y < Y && z < Z && g[(z * Y + y) * X + x] });
-}
-function stamp(name, cx, cz, dir, s, paint, title, explosive) {
-  const m = model(name), b = begin(title, 'vehicle', false); b.explosive = explosive;
-  const nx = Math.round(m.X * s), ny = Math.round(m.Y * s), nz = Math.round(m.Z * s);
-  for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
-    const mx = Math.floor((i + 0.5) / s), my = Math.floor((j + 0.5) / s), mz = Math.floor((k + 0.5) / s);
-    if (!m.at(mx, my, mz)) continue;
-    const u = i - nx / 2, v = k - nz / 2;
-    const [dx, dz] = dir === 'n' ? [u, v] : dir === 's' ? [-u, -v] : dir === 'w' ? [v, -u] : [-v, u];
-    set(Math.floor(cx + dx), j, Math.floor(cz + dz), paint(mx, my, mz, m));
-  }
-  set(Math.floor(cx), Math.max(1, Math.round(ny * 0.35)), Math.floor(cz), M.FUEL);
-}
-const tankPaint = (mx, my, mz) => (my <= 1 ? M.DARK : my === 2 ? M.METAL : mx >= 5 && mx <= 8 && my >= 7 && my <= 8 && mz < 14 ? M.STEEL : my >= 10 ? M.DARK : camo(mx, my, mz));
-const heliPaint = (a, b) => (mx, my, mz) => (my >= 8 || my <= 1 ? M.DARK : mz >= 24 && my >= 3 && my <= 5 ? M.GLASS : mz <= 1 && my >= 3 ? M.DARK : (mz >> 1) % 5 === 0 ? b : a);
-
 // ---- the water tower over the barracks: legs wide enough apart to drive between, braced above a car's roof ----------
 function waterTower(cx, cz) {
   begin('Water tower', 'tower', true);
@@ -299,20 +249,17 @@ function build() {
   const sign = face('f', GX - GATE - 4, S0 - 3, GX + GATE + 4, S0 - 3), name = 'CAMP DEADFALL';
   text(sign, name, ((sign.W - textW(name)) >> 1), 21, 1, M.LIT_Y);
 
-  // north-west: the hangar on its apron
-  hangar(HANGAR);
+  // north-west: the apron, open (a helicopter stands on it: ARMY)
 
   // north-east: headquarters, the parade square and its flag, the radio mast and the helipad
   headquarters(HQ); flag((HQ.x0 + HQ.x1) >> 1, HQ.z1 + 24); mast(HQ.x1 + 16, HQ.z0 + 6);
-  stamp('heli', PAD.x, PAD.z, 'w', 2, heliPaint(M.STEEL, M.DARK), 'Helicopter', 10);
   begin('Windsock', 'prop', false); box(PAD.x + 30, 0, PAD.z - 22, PAD.x + 30, 14, PAD.z - 22, M.DARK); for (let t = 1; t <= 6; t++) box(PAD.x + 30 + t, 13 - (t >> 2), PAD.z - 22, PAD.x + 30 + t, 14 - (t >> 2), PAD.z - 22, (t >> 1) & 1 ? M.TRIM : M.SIGN);
 
   // south-west: the barracks huts and the water tower
   for (const [a, b, cz] of HUTS) quonset(a, b, cz);
   waterTower(WTOWER[0], WTOWER[1]);
 
-  // south-east: three tanks parked in a row on the motor pool's slab, and the fuel farm
-  for (const [i, x] of [306, 340, 374].entries()) stamp('tank', x, 300 + (i & 1) * 4, 'n', 1.25, tankPaint, 'Tank', 9);
+  // south-east: the motor pool's slab (its tanks: ARMY) and the fuel farm
   for (const [x, z] of TANKS) fuelTank(x, z, 9, 18);
 
   // the night's fires and beacons
@@ -383,7 +330,7 @@ function ground() {
   for (const cell of [6, 2]) mottle(W1, N1, E0, S0, cell, [[70, 58, 40, 0.4], [170, 150, 110, 0.36]]);
   g.fillStyle = 'rgba(62,52,36,0.35)';
   for (const o of [16, 28]) { rect(o, o, WX - o, o + 1.2); rect(o, WZ - o - 1.2, WX - o, WZ - o); rect(o, o, o + 1.2, WZ - o); rect(WX - o - 1.2, o, WX - o, WZ - o); }
-  // aprons: concrete slabs in front of the hangar, round headquarters and in the motor pool, with joints and oil
+  // aprons: concrete slabs on the north-west apron, round headquarters and in the motor pool, with joints and oil
   const slabs = (x0, z0, x1, z1, col, joint = 'rgba(60,58,52,0.35)') => {
     g.fillStyle = col; rect(x0, z0, x1, z1);
     // each slab poured on its own day: a shade lighter or darker than the next, and blotched within
@@ -396,7 +343,7 @@ function ground() {
     for (let i = 0, n = Math.round((x1 - x0) * (z1 - z0) / 900); i < n; i++) { const r = 0.6 + c.r() * c.r() * 3.5; stain(x0 + c.r() * (x1 - x0), z0 + c.r() * (z1 - z0), r, r * (0.5 + c.r() * 0.4), c.r() * 3, 0.08 + c.r() * 0.2); }
     for (let i = 0, n = Math.round((x1 - x0) * (z1 - z0) / 2600); i < n; i++) puddle(x0 + 4 + c.r() * (x1 - x0 - 8), z0 + 4 + c.r() * (z1 - z0 - 8), 2 + c.r() * 3.5, true);
   };
-  const SLABS = [[HANGAR.x0 - 8, HANGAR.z0 - 4, HANGAR.x1 + 8, RUN[0], '#aaa69b'], [HQ.x0 - 12, HQ.z0 - 8, HQ.x1 + 12, HQ.z1 + 52, '#b8b2a3'],
+  const SLABS = [[APRON.x0 - 8, APRON.z0 - 4, APRON.x1 + 8, RUN[0], '#aaa69b'], [HQ.x0 - 12, HQ.z0 - 8, HQ.x1 + 12, HQ.z1 + 52, '#b8b2a3'],
     [POOL.x0, POOL.z0, POOL.x1, POOL.z1, '#8f8c84'], [TANKS[0][0] - 16, POOL.z0, WX - RING, POOL.z1, '#9b978e']];
   for (const s of SLABS) slabs(...s);
   for (let i = 0; i < 16; i++) { const x = POOL.x0 + c.r() * (POOL.x1 - POOL.x0), z = POOL.z0 + c.r() * (POOL.z1 - POOL.z0), r = 2 + c.r() * 5; g.fillStyle = 'rgba(30,28,26,0.3)'; g.beginPath(); g.ellipse(x * c.GK, z * c.GK, r * c.GK, r * 0.7 * c.GK, c.r() * 3, 0, 6.3); g.fill(); }
@@ -508,7 +455,7 @@ function breach(G) {
 export default {
   id: 'base', name: 'Camp Deadfall', mode: 'survival',
   blurb: 'An army base overrun by the dead, and more of them every minute. No fighting the other cars: outlast them all.',
-  loading: ['Building the base', 'Raising the fences and the hangars'],
+  loading: ['Building the base', 'Raising the fences and the towers'],
   outer: 0x8d8566,
   // a stormy night (looks/storm.js): the guard towers' searchlights (the lamps), the fires (on the drums' and the
   // wrecks' tops: x, y, z, size) and the beacons, round the middle of the base
@@ -540,6 +487,7 @@ export default {
     wind: [0.22, -0.06],                      // which way the smoke leans, a share of its height
   },
   build, ground,
+  hazards: [{ kind: 'army', units: ARMY }],
   // the open ground's grain, ruts and thrown dirt, the hard ground's grain and rubber, and all of it wet from the storm
   // (ground.js, dirt.js)
   groundDetail: { soft: 'dirt', hard: true, wet: 0.6 },

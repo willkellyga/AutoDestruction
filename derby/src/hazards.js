@@ -33,6 +33,11 @@
 //   scoreboard  the show's scoreboard, hung high over the floor on cables: a screen on all four sides with the clock and
 //            the leaders, from api.game.board ({ left, rows: [{ name, wrecks, me }] }, which a mode keeps: brawl.js), or
 //            the show's name when there is none. It hurts nobody. { x, z, y (its foot), w (across), h, anchors: [[x, y, z]] }
+//   army     military vehicles parked about the map: Monster Mayhem's tank and helicopter (units/src/vehicles.js), at
+//            their true size. Cars stop against them; guns chip them and blasts hurt them, and at the end they blow up
+//            (hurting the cars round them, and the vehicles beside them) and stay as burnt wrecks. A helicopter's
+//            rotor turns over slowly in the wind, a tank's turret looks about. { units: [{ type: 'tank'|'heli', x, z,
+//            yaw }] }. armyFoot() says where one stands, for the map's route grid.
 // Keep what hangs over the floor (a sweeper's drum and beams, a magnet) above about 30: the chase camera rides from 23
 // to 28 up behind the car, and would pass through it.
 // None of them are voxels: they are meshes that move and glow, so nothing has to be rebuilt. The map's own list objects
@@ -43,6 +48,8 @@
 // when, and a rival bound through it is sent round (by the map's route grid, which the map blocks while it is on).
 import * as THREE from 'three';
 import { fire, sparks, ring, dust } from '../../src/sim.js';
+import { Unit } from '../../units/src/unit.js';
+import { TANK, HELI } from '../../units/src/vehicles.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
@@ -462,6 +469,104 @@ function keepout(api, h) {
           if (over <= 0) continue;
           c.x += nx * over; c.z += nz * over;
           const vn = c.vx * nx + c.vz * nz; if (vn < 0) { c.vx -= nx * vn * 1.3; c.vz -= nz * vn * 1.3; }
+        }
+      }
+    },
+  };
+}
+
+// ---- parked military vehicles ------------------------------------------------------------------------------------------
+const OFF7 = [0, 0, 0, 0, 0, 0, 0];
+// what each kind is: its model (parked: the helicopter's rotor idles round in the wind and its body sits on its skids),
+// its footprint as boxes in its own space (x across, z along, nose +z: [x0, z0, x1, z1]), how tall it is, its armour,
+// how big a bang it goes up with and how high its root sits off the floor
+const ARMY = {
+  tank: { def: TANK, foot: [[-7.3, -15.6, 7.3, 15.6]], top: 14, hp: 420, boom: 8, y: 0 },
+  heli: { def: { ...HELI, start: 'Parked', clips: { ...HELI.clips, Parked: { loop: true, speed: 0, pose: (t, u) => ({ rotor: [0, u.phase + t * 0.35, 0], tailRotor: [u.phase, 0, 0], gun: [0.15, 0, 0], flash: OFF7 }) } } },
+    foot: [[-4.2, -9.5, 4.2, 13.5], [-7.4, -2, 7.4, 4.5], [-1.9, -31.5, 1.9, -9]], top: 15, hp: 240, boom: 7, y: 7 },
+};
+// is (x, z) inside parked vehicle u's footprint, with a margin?
+export function armyFoot(u, x, z, pad = 0) {
+  const s = Math.sin(u.yaw || 0), c = Math.cos(u.yaw || 0), dx = x - u.x, dz = z - u.z, lx = dx * c - dz * s, lz = dx * s + dz * c;
+  for (const [x0, z0, x1, z1] of ARMY[u.type].foot) if (lx > x0 - pad && lx < x1 + pad && lz > z0 - pad && lz < z1 + pad) return true;
+  return false;
+}
+function army(api, h) {
+  const list = h.units.map((o, i) => {
+    const A = ARMY[o.type], u = { ...o, A, hp: A.hp, dead: false, fuse: 0, by: null, yaw: o.yaw || 0 };
+    const def = { ...A.def, onKill: () => { if (!u.dead) u.fuse = 0.05; } };   // (chipped past what it can take: it goes up)
+    u.unit = new Unit(def, api.mats, { seed: 7 + i * 13 });
+    u.unit.root.position.set(o.x, A.y, o.z); u.unit.root.rotation.y = u.yaw; api.scene.add(u.unit.root);
+    return u;
+  });
+  const _p = new THREE.Vector3();
+  function blow(u) {
+    if (u.dead) return;
+    u.dead = true; u.fuse = 0;
+    const who = u.by && !u.by.dead ? u.by : null;
+    api.explode(u.x, 4, u.z, u.A.boom, 0.9, { maxDebris: 160, fire: true });
+    api.sfx.play('carboom', 1, u.x, u.z, { gap: 0.06 });
+    u.unit.dead = true; u.unit.wreck(api.cube, 0.3, 24);
+    if (u.unit.def.clips.Wreck) u.unit.play('Wreck', 0.05);
+    for (const c of api.cars) {
+      if (c.dead || c.gone) continue;
+      const dd = Math.hypot(c.x - u.x, c.z - u.z) - c.wide - 6; if (dd > 18) continue;
+      const k = 1 - Math.max(0, dd) / 18;
+      api.damage(c, 30 * k, who && who !== c ? who : null);
+      const p = Math.max(1, Math.hypot(c.x - u.x, c.z - u.z)); c.vx += (c.x - u.x) / p * 28 * k; c.vz += (c.z - u.z) / p * 28 * k;
+    }
+    if (who === api.player && api.player) { api.game.scrap += 40; api.toast(`${u.type === 'tank' ? 'Tank' : 'Helicopter'} destroyed`, '+40 scrap'); }
+  }
+  // shots strike them (main.js asks everything in `extras`), and blasts hurt them
+  api.extras.push({
+    solid(x, y, z) { if (y < 0) return false; for (const u of list) if (y < u.A.top && armyFoot(u, x, z, 0.3)) return true; return false; },
+    hit(p, dmg, owner, g) {
+      for (const u of list) {
+        if (p.y > u.A.top || !armyFoot(u, p.x, p.z, 0.6)) continue;
+        sparks(p.x, p.y, p.z, 4, 1, 0.8, 0.4, 14);
+        u.unit.hit(_p.copy(p), (g && g.carve) || 1.2, api.chip, 8);
+        if (!u.dead) { u.hp -= dmg; u.by = owner; if (u.hp <= 0) blow(u); }
+        return true;
+      }
+      return false;
+    },
+    explosion(x, y, z, reach, base, by) {
+      for (const u of list) {
+        const d = Math.max(0, Math.hypot(u.x - x, u.z - z) - 8); if (d > reach) continue;
+        const k = 1 - d / reach;
+        _p.set(x + (u.x - x) * 0.25, Math.max(2, y), z + (u.z - z) * 0.25);
+        u.unit.hit(_p, 1.5 + 3 * k, api.cube, 14);
+        if (u.dead || u.fuse) continue;
+        u.hp -= base * k * 2.2; u.by = by;
+        if (u.hp <= 0) u.fuse = 0.1 + Math.random() * 0.15;
+      }
+    },
+  });
+  // cars stop against them: each end of a car (the circles main.js's bump() uses) is put back out of every box
+  const out = (c, ex, ez, u, b) => {
+    const s = Math.sin(u.yaw), co = Math.cos(u.yaw), dx = ex - u.x, dz = ez - u.z, lx = dx * co - dz * s, lz = dx * s + dz * co, r = c.wide + 0.2;
+    const [x0, z0, x1, z1] = b, qx = clamp(lx, x0, x1), qz = clamp(lz, z0, z1);
+    let nx, nz, over;
+    const ox = lx - qx, oz = lz - qz, d = Math.hypot(ox, oz);
+    if (d > 0.01) { if (d >= r) return; nx = ox / d; nz = oz / d; over = r - d; }
+    else { const m = [[lx - x0, -1, 0], [x1 - lx, 1, 0], [lz - z0, 0, -1], [z1 - lz, 0, 1]].sort((a, bb) => a[0] - bb[0])[0]; nx = m[1]; nz = m[2]; over = m[0] + r; }
+    const wx = nx * co + nz * s, wz = -nx * s + nz * co;   // back into the world's axes
+    c.x += wx * over; c.z += wz * over;
+    const vn = c.vx * wx + c.vz * wz; if (vn < 0) { c.vx -= wx * vn * 1.3; c.vz -= wz * vn * 1.3; }
+  };
+  return {
+    units: list,
+    step(dt) {
+      for (const u of list) {
+        u.unit.update(dt);
+        if (u.fuse > 0 && (u.fuse -= dt) <= 0) blow(u);
+      }
+      for (const c of api.cars) {
+        if (c.gone) continue;
+        ends(c, _e);
+        for (const u of list) {
+          if (Math.abs(c.x - u.x) > 50 || Math.abs(c.z - u.z) > 50) continue;
+          for (const b of u.A.foot) for (const [ex, ez] of _e) out(c, ex, ez, u, b);
         }
       }
     },
@@ -922,4 +1027,4 @@ function scoreboard(api, h) {
   return { step(dt) { if ((t -= dt) <= 0) { t = 0.5; draw(); } } };
 }
 
-const KINDS = { grates, press, barrels, boost, conveyor, bounds, keepout, sweeper, hammer, jets, magnet, show, scoreboard };
+const KINDS = { army, grates, press, barrels, boost, conveyor, bounds, keepout, sweeper, hammer, jets, magnet, show, scoreboard };
