@@ -211,7 +211,8 @@ export function makeSurvival(G) {
       const starts = MAP.starts || [];
       const tiers = S.tiers.slice().sort(() => Math.random() - 0.5);
       const humans = net ? net.players.length : 1, rivals = net ? (net.host ? net.bots : 0) : S.rivals;
-      if (net && G.player && starts[net.slot]) { const a = starts[net.slot], p = G.player; p.x = a.x; p.z = a.z; p.yaw = p.gunYaw = a.yaw ?? Math.atan2(WX / 2 - a.x, WZ / 2 - a.z); }
+      // (a player who came late into a bot's seat starts where the bot was)
+      if (net && G.player && (net.spawn || starts[net.slot])) { const a = net.spawn || starts[net.slot], p = G.player; p.x = a.x; p.z = a.z; p.yaw = p.gunYaw = a.yaw ?? Math.atan2(WX / 2 - a.x, WZ / 2 - a.z); }
       for (let i = 0; i < rivals; i++) {
         const at = starts[i + humans] || MAP.spawnPoint(G.player, live());
         const c = G.addRival(tiers[i % tiers.length], { x: at.x, z: at.z, yaw: at.yaw ?? Math.atan2(WX / 2 - at.x, WZ / 2 - at.z) });
@@ -219,7 +220,11 @@ export function makeSurvival(G) {
       }
       for (const c of G.cars) { if (c.remote) continue; c.maxHp = c.hp = Math.round(c.maxHp * S.tough); held.set(c, { x: c.x, z: c.z, yaw: c.yaw }); }
       phase = 'count'; countT = S.countdown;
-      G.banner(String(S.countdown), 'Outlast them all'); G.sfx.play('ui_tab', 0.9);
+      // online, a page that came late (or reloaded) is straight into the round, its clock where everyone else's is
+      const late = net && net.lateBy > 0 ? net.lateBy : 0;
+      if (late > S.countdown) { phase = 'run'; clock = late - S.countdown; held.clear(); G.banner('Survive!', 'The others are already out there'); return; }
+      countT -= late;
+      G.banner(String(Math.ceil(countT)), 'Outlast them all'); G.sfx.play('ui_tab', 0.9);
     },
     step(dt) {
       if (!horde) return;

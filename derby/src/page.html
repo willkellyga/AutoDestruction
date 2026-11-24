@@ -232,6 +232,7 @@ button.alt:hover { background: rgba(255,255,255,0.16); }
 #menu.lobby-on .maps, #menu.lobby-on .ln-steps, #menu.lobby-on .ln-keys, #menu.lobby-on #menu-note, #menu.lobby-on .levels, #menu.lobby-on > div > .row, #menu.lobby-on .on-row, #menu.lobby-on .on-l { display: none; }
 .tag.human b { font-size: 15px; color: #0d1a22; background: #4ad6ff; padding: 1px 8px; border-radius: 6px; text-shadow: none; display: inline-block; }
 .tag.human s { background: #4ad6ff; }
+.tag.away { opacity: 0.5; } .tag.away b::after { content: ' · away'; }
 button:disabled { opacity: 0.6; cursor: default; }
 @media (max-width: 560px) { .maps { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; } }
 #over b.t { display: block; font-family: var(--f-logo); font-weight: 400; font-size: clamp(40px, 8.5vw, 66px); color: var(--hot); text-transform: uppercase; text-shadow: 0 4px 0 var(--tar), 0 8px 18px rgba(0,0,0,0.5); }
@@ -512,7 +513,7 @@ button.alt:hover { background: linear-gradient(180deg, #4a5056, #2e3237); }
 .h-card.base { --a: #8fe04a; } .h-card.arena { --a: #ff6a3a; } .h-card.garage { --a: #c9ced6; }
 body.at-home #tags, body.at-home #touch { display: none; }
 /* Solo or Online, over the cards */
-.h-play { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 0; padding: 4px; background: rgba(12,13,15,0.9); box-shadow: inset 0 0 0 2px rgba(255,255,255,0.14); --c: 10px; clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c)); }
+.h-play { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0; padding: 4px; background: rgba(12,13,15,0.9); box-shadow: inset 0 0 0 2px rgba(255,255,255,0.14); --c: 10px; clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c)); }
 .h-play[hidden] { display: none; }
 .h-play button { border: 0; cursor: pointer; padding: 9px 8px 7px; background: transparent; color: var(--ink); opacity: 0.7; font: 800 20px var(--f-head); letter-spacing: 0.14em; text-transform: uppercase; }
 .h-play button.on { opacity: 1; color: var(--tar); background: repeating-linear-gradient(-45deg, transparent 0 10px, rgba(0,0,0,0.11) 10px 14px), var(--hot); }
@@ -728,7 +729,7 @@ body.racing.touch #hint { top: 128px; }
   <div class="title logo" role="img" aria-label="AutoDestruction.io"><div class="lg-auto"><div class="lg-l"><span>A</span><span>U</span><span>T</span><span>O</span></div></div><div class="lg-bar"><div class="lg-l"><span>D</span><span>E</span><span>S</span><span>T</span><span>R</span><span>U</span><span>C</span><span>T</span><span>I</span><span>O</span><span>N</span></div></div><b class="lg-io">.io</b></div>
   <div class="h-top"><button class="h-unlock" id="home-unlock" title="Own every car and part, for playtesting">Unlock all</button><div class="h-scrap">Scrap<b id="home-scrap">0</b></div></div>
   <div class="h-car"><b id="home-car"></b><span class="g-rate" id="home-rate" data-c="C"><b class="g-class" id="home-class">C</b><em class="g-num" id="home-num">0</em></span><span class="h-gad" id="home-gad" hidden></span><i class="desk-only">Drag to turn the car</i></div>
-  <div class="h-cards" id="home-cards"><div class="h-play" id="home-play" role="group" aria-label="Solo or online"><button data-p="solo">Solo</button><button data-p="online">Online</button></div></div>
+  <div class="h-cards" id="home-cards"><div class="h-play" id="home-play" role="group" aria-label="Solo, online or with friends"><button data-p="solo">Solo</button><button data-p="online">Online</button><button data-p="friends">Friends</button></div></div>
 </div>
 <div id="garage" hidden>
   <div class="g-name"><b>Garage</b><span>Drag to turn the car · tap a glowing spot to change that part</span></div>

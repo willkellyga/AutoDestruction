@@ -746,6 +746,12 @@ export function makeHorde(G, o = {}) {
     if (P && !P.dead && H_.cling) { const e = Math.exp(-HORDE.drag * H_.cling * dt); P.vx *= e; P.vz *= e; }
     grid(); draw();
   }
+  // this device hosted and another one does now (this page was away too long): the horde here is that one's puppet
+  H_.release = () => {
+    if (H_.puppet) return;
+    H_.puppet = true; const now = performance.now();
+    for (const q of all) { q.tx = q.x; q.tz = q.z; q.tyaw = q.yaw; q.ty = q.y || 0; q.tfall = q.fall || 0; q.at = now; }
+  };
   // the host left and this device hosts now: the horde runs here, from where it stands
   H_.adopt = () => {
     if (!H_.puppet) return;

@@ -1,9 +1,10 @@
 // Playing online (derby/server: the lobby and the relay). Two halves:
 //
-// The lobby, on the start card: a name, "Play online" (a quick room for the mode on the card, filled with bots when the
-// countdown runs out) and "With friends" (a room with a four-letter code; whoever made it picks the mode and starts).
-// When a round starts, the page loads again on its map as ?map=<mode>&mp=<round>&h=<host> (the world is laid out once,
-// as the page loads).
+// The lobby. Quick play is one tap (quickPlay): a mode's card on the home screen (Online), or Play again on the results,
+// asks the relay for a quick room for that mode, and the relay answers `go` at once, for a round that is counting down
+// (derby/server/relay.mjs). The page loads again on its map as ?map=<mode>&mp=<round>&h=<host>&q=1 (the world is laid
+// out once, as the page loads), so the countdown runs while the map loads, and nobody waits on a menu. The lobby panel
+// on the start card (makeLobby) is for friends: a room with a four-letter code; whoever made it picks the mode and starts.
 //
 // The round. Each device drives its own car and sends where it is about 15 times a second, with its aim, its triggers
 // and its armour; the host's device also drives the bots (and, on the base, the horde) and sends theirs. Everyone else's
@@ -14,6 +15,11 @@
 // their car take one. The modes keep their own score from these, the same on every device. The hazards and the show
 // run on each device from the clock, which starts for everyone at the relay's `begin`.
 // When the host leaves, the next player in hosts: their device takes over the bots (and the horde) where they stand.
+// A device that drops out keeps its seat (Monster Mayhem's playtests: iPad pages die for memory and reload): the relay
+// holds the round and the host's bots for a while, and a page that comes back fresh gets its scores back (mode.netSave
+// and netLoad) and, if it hosts alone, the bots as they were (`b`, re-seeded here). A page in the background says it is
+// away, so a host's bots move on. In the first 30 s of an arena or survival round a new player takes over a bot (`seat`):
+// every device takes that bot out, and the new player's own car starts where it was.
 //
 // Without ?mp= in the address none of the round half runs, and the game is as it was.
 const Q = new URLSearchParams(location.search);
@@ -49,14 +55,44 @@ function myId() {
   return id;
 }
 export const ME = myId();
+// the rejoin key that goes with the id: the relay gives this id's seat back only to the device that has it
+const KEY = (() => {
+  const as = (Q.get('as') || '').replace(/\W/g, '').slice(0, 8);
+  let k = store && store.getItem('ad-key' + as);
+  if (!k) { const a = new Uint8Array(12); crypto.getRandomValues(a); k = Array.from(a, (b) => b.toString(16).padStart(2, '0')).join(''); try { store && store.setItem('ad-key' + as, k); } catch (e) { /* private */ } }
+  return k;
+})();
+// this page load: a car's id has it, so a page that reloaded mid-round makes cars nobody has seen yet
+const PAGE = Math.random().toString(36).slice(2, 5);
 export function myName() { return (store && store.getItem('ad-name')) || ''; }
 function setName(n) { try { store && store.setItem('ad-name', n); } catch (e) { /* private */ } }
+// a name for someone who never typed one (kept, so they are the same driver next time)
+const nameOrNew = () => { let n = myName(); if (!n) { n = 'Driver ' + (100 + Math.floor(Math.random() * 900)); setName(n); } return n; };
 const where = (map, extra) => { const u = new URL(location.href); u.search = ''; u.searchParams.set('map', map); for (const k in extra) if (extra[k]) u.searchParams.set(k, extra[k]); for (const k of ['server', 'as', 'q', 'touch']) if (Q.get(k) && k !== 'q') u.searchParams.set(k, Q.get(k)); return u.toString(); };
-// back to the lobby after a round: the same friends' room, or a new quick room for the same mode
-export const lobbyUrl = (map) => (ROOM && !QUICK ? where(map, { room: ROOM }) : where(map, { online: 'quick' }));
+const roundUrl = (m) => where(m.map, { mp: m.round, h: m.host, r: m.room, q: m.kind === 'quick' ? '1' : '' });
+// back to the lobby after a friends' round: the same room
+export const lobbyUrl = (map) => where(map, { room: ROOM });
+
+// ---- one tap: a quick room for this mode, and straight into its round -------------------------------------------
+// The relay sends `go` as soon as it has placed us; the page then loads on the round's map. fail(why) if it can't.
+export function quickPlay(mode, fail = () => {}) {
+  const url = serverUrl(); if (!url || !MODES.includes(mode)) { fail('Online play needs the game server'); return false; }
+  let ws, done = false;
+  const stop = (why) => { if (done) return; done = true; clearTimeout(t); try { ws.close(); } catch (e) { /* gone */ } fail(why); };
+  const t = setTimeout(() => stop('The server did not answer. Try again.'), 12000);
+  try { ws = new WebSocket(url); } catch (e) { stop('Could not reach the server'); return false; }
+  ws.onopen = () => ws.send(JSON.stringify({ t: 'hello', where: 'lobby', id: ME, key: KEY, name: nameOrNew(), touch: navigator.maxTouchPoints > 0, room: 'quick:' + mode }));
+  ws.onmessage = (e) => {
+    let m; try { m = JSON.parse(e.data); } catch (x) { return; }
+    if (m.t === 'go') { done = true; clearTimeout(t); location.href = roundUrl(m); }
+    else if (m.t === 'busy') stop('The server is full. Try again in a minute.');
+  };
+  ws.onclose = () => stop('Could not reach the server');
+  return true;
+}
 
 // ---- the lobby: on the start card ----------------------------------------------------------------------------------
-export function makeLobby({ $, MAP, onOpen, onShut }) {
+export function makeLobby({ $, MAP, onOpen, onShut, onQuick, onFail }) {
   const url = serverUrl();
   const box = $('online'); if (!box) return null;
   if (!url || ROUND || !MODES.includes(MAP.id)) { box.hidden = true; return null; }
@@ -68,7 +104,7 @@ export function makeLobby({ $, MAP, onOpen, onShut }) {
   const send = (m) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); };
   function connect() {
     ws = new WebSocket(url);
-    ws.onopen = () => { send({ t: 'hello', where: 'lobby', id: ME, name: nameEl.value, touch: navigator.maxTouchPoints > 0, room: want || undefined }); };
+    ws.onopen = () => { send({ t: 'hello', where: 'lobby', id: ME, key: KEY, name: nameEl.value, touch: navigator.maxTouchPoints > 0, room: want || undefined }); };
     ws.onmessage = (e) => { let m; try { m = JSON.parse(e.data); } catch (x) { return; } onMsg(m); };
     ws.onclose = () => { ws = null; if (!gone && want) setTimeout(connect, 1500); };
   }
@@ -86,7 +122,7 @@ export function makeLobby({ $, MAP, onOpen, onShut }) {
     else if (m.t === 'busy') { title.textContent = 'The server is full'; sub.textContent = 'Try again in a minute.'; want = null; }
     else if (m.t === 'go') {
       gone = true; title.textContent = `Starting: ${MODE_NAME[m.map] || m.map}`; sub.textContent = 'Loading the map...';
-      location.href = where(m.map, { mp: m.round, h: m.host, r: m.room, q: m.kind === 'quick' ? '1' : '' });
+      location.href = roundUrl(m);
     }
   }
   function draw() {
@@ -107,7 +143,8 @@ export function makeLobby({ $, MAP, onOpen, onShut }) {
     for (const b of modesEl.querySelectorAll('button')) b.className = b.dataset.m === st.pick ? 'on' : '';
   }
   for (const m of MODES) { const b = document.createElement('button'); b.dataset.m = m; b.textContent = MODE_NAME[m]; b.addEventListener('click', () => send({ t: 'pick', map: m })); modesEl.appendChild(b); }
-  $('on-quick').addEventListener('click', () => open('quick:' + MAP.id));
+  // quick play from the card is the same one tap as from the home screen: straight into a round, no panel
+  $('on-quick').addEventListener('click', () => { setName(nameEl.value.trim().slice(0, 16) || 'Driver'); if (onQuick) onQuick(); quickPlay(MAP.id, (why) => { title.textContent = why; panel.hidden = false; if (onFail) onFail(why); }); });
   $('on-new').addEventListener('click', () => open('new:' + MAP.id));
   $('on-join').addEventListener('click', () => { const c = codeIn.value.replace(/[^a-z]/gi, '').toUpperCase().slice(0, 4); if (c.length === 4) open(c); else codeIn.focus(); });
   codeIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('on-join').click(); e.stopPropagation(); });
@@ -117,7 +154,7 @@ export function makeLobby({ $, MAP, onOpen, onShut }) {
   $('lb-copy').addEventListener('click', () => { if (!st) return; const u = where(st.pick, { room: st.room.code }); try { navigator.clipboard.writeText(u); $('lb-copy').textContent = 'Link copied'; setTimeout(() => { $('lb-copy').textContent = 'Copy link'; }, 1500); } catch (e) { prompt('The link', u); } });
   setInterval(() => { if (st && st.room.kind === 'quick' && st.room.startIn > 0) { st.room.startIn = Math.max(0, st.room.startIn - 250); draw(); } }, 250);
   // came back from a round, or opened a shared link: straight into the room
-  const back = Q.get('room') ? Q.get('room').replace(/[^a-z]/gi, '').toUpperCase().slice(0, 4) : Q.get('online') === 'quick' ? 'quick:' + MAP.id : '';
+  const back = Q.get('room') ? Q.get('room').replace(/[^a-z]/gi, '').toUpperCase().slice(0, 4) : '';
   if (back) setTimeout(() => open(back), 50);
   return { open, shut, get state() { return st; } };
 }
@@ -133,8 +170,11 @@ export function makeNet(o) {
     on: true, me: ME, host: HOST0 === ME, hostId: HOST0, round: ROUND, slot: 0, bots: 0, players: [], begun: false, ready: false,
     names: new Map(), seats: new Map(),   // player id -> name; car seat -> its newest car
     lobby: () => lobbyUrl(o.MAP.id), quick: QUICK, room: ROOM,
+    startAt: 0,      // (performance.now()) when the countdown is out, while it runs
+    spawn: null,     // where this player's car starts: a bot's spot, when it came late into the bot's seat
+    lateBy: 0,       // seconds the round had been going when this page joined it
   };
-  let ws = null, q = [], sendT = 0, zT = 0, seq = 0, closed = false, welcomed = false;
+  let ws = null, q = [], sendT = 0, zT = 0, keepT = 0, seq = 0, closed = false, welcomed = false, fresh = true, seed = null, clock = null;
   const byId = new Map();         // car id -> car (puppets and our own)
   const info = new Map();         // car id -> what its owner said about it (to build the puppet)
   const asked = new Map();        // car id -> when we asked its owner for it
@@ -142,19 +182,33 @@ export function makeNet(o) {
   const send = (m) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); };
   function connect() {
     ws = new WebSocket(url);
-    ws.onopen = () => { send({ t: 'hello', where: 'game', id: ME, name: myName() || 'Driver', round: ROUND }); if (N.ready) send({ t: 'ready' }); };
+    // fresh: this page has just loaded (a reload mid-round has lost its car's score and, on the host, the bots: the relay
+    // sends them back). After a dropped connection the page still has them.
+    ws.onopen = () => { send({ t: 'hello', where: 'game', id: ME, key: KEY, name: myName() || 'Driver', round: ROUND, fresh }); fresh = false; if (N.ready) sendReady(); };
     ws.onmessage = (e) => { try { q.push(JSON.parse(e.data)); } catch (x) { /* not ours */ } };
     ws.onclose = () => { ws = null; if (!closed) setTimeout(connect, 1200); };
   }
   connect();
+  // In the background the page stops drawing: the others are told, and a host's bots move to another device soon after
+  document.addEventListener('visibilitychange', () => { if (welcomed) send({ t: 'away', on: document.visibilityState === 'hidden' }); });
+  const sendReady = () => send({ t: 'ready', len: o.mode.netLen || undefined });
   N.send = send;
   N.bye = () => { closed = true; send({ t: 'bye' }); };
-  N.ready_ = () => { if (N.ready) return; N.ready = true; send({ t: 'ready' }); };
+  // the map is built: ready (quick play and friends' rounds alike: the round starts when everyone is, no button)
+  N.ready_ = () => { if (N.ready) return; N.ready = true; sendReady(); };
+  // seconds left on the server's clock (a mode on a clock: the arena), or 0
+  N.clockLeft = () => (clock ? Math.max(0, clock.left - (performance.now() - clock.at) / 1000) : 0);
+  const clockAt = (ms) => { if (ms > 0) { clock = { left: ms / 1000, at: performance.now() }; if (N.begun && o.mode.netClock) o.mode.netClock(N.clockLeft()); } };
+  const roster = (m) => {
+    if (m.players) { N.players = m.players; for (const p of m.players) N.names.set(p.id, p.name); const mine = m.players.find((p) => p.id === ME); if (mine) N.slot = mine.slot; }
+    if (typeof m.bots === 'number') N.bots = m.bots;
+    if (o.onRoster) o.onRoster();
+  };
   N.nameOf = (id) => N.names.get(id) || 'Driver';
   // a car of ours gets an id and a seat (the player's is the player's id; a bot's is its name, kept when it comes back
   // from a wreck as a new car), and everyone is told what it is
   function own(c) {
-    c.nid = ME + '.' + (seq++).toString(36); c.owner = ME;
+    c.nid = ME + '.' + PAGE + (seq++).toString(36); c.owner = ME;
     c.seat = c === o.player() ? ME : 'b:' + c.name;
     byId.set(c.nid, c); N.seats.set(c.seat, c);
     send(carMsg(c));
@@ -180,7 +234,41 @@ export function makeNet(o) {
     byId.set(c.nid, c);
     const was = N.seats.get(c.seat); N.seats.set(c.seat, c);
     if (o.mode.netCar) o.mode.netCar(c, was);
+    // the same seat's old car, still standing: its page reloaded (a wreck lies where it fell and crumbles on its own)
+    if (was && was !== c && was.remote && !was.dead && !was.gone) drop(was);
     return c;
+  }
+  // a car taken out of the round on every device: a bot whose seat a player took, a player who left
+  function drop(c) {
+    if (o.mode.netDrop) o.mode.netDrop(c);
+    if (N.seats.get(c.seat) === c) N.seats.delete(c.seat);
+    if (c.nid) { forgot.add(c.nid); byId.delete(c.nid); }
+    o.removeCar(c);
+  }
+  // the bots, for the relay to keep (it hands them back to a host whose page reloaded with nobody else on)
+  const myBots = () => cars.filter((c) => !c.remote && c.nid && c.seat && c.seat.startsWith('b:') && !c.gone);
+  const botList = () => myBots().map((c) => ({ id: c.nid, seat: c.seat, name: c.name, load: c.load, x: r1(c.x), z: r1(c.z), yaw: r2(c.yaw), hp: r1(c.hp), maxHp: Math.round(c.maxHp), dead: !!c.dead, s: state(c) }));
+  // a puppet of ours from here: this device drives it
+  function adoptCar(c) { c.remote = false; c.owner = ME; c.net = null; if (o.mode.adopt) o.mode.adopt(c); send(carMsg(c)); }
+  // this device hosts from now on: the bots (and the horde) are ours, where they stand
+  function takeOver(quiet) {
+    const was = N.host; N.host = true; N.hostId = ME;
+    for (const c of [...cars]) if (c.remote && !c.human) adoptCar(c);
+    const h = o.horde(); if (h && h.adopt) h.adopt();
+    if (!was && !quiet && N.begun) o.toast('You host the bots now', '');
+  }
+  // another device hosts from now on (this one was away too long): the bots here become its puppets
+  function release(now) {
+    N.host = false; N.hostId = now;
+    for (const c of myBots()) { c.remote = true; c.owner = now; c.driver = null; c.net = null; c.want = [false, false]; if (o.mode.release) o.mode.release(c); }
+    const h = o.horde(); if (h && h.release) h.release();
+  }
+  // the host's page reloaded mid-round with nobody else on: the bots as the relay last had them, made as puppets and
+  // taken over at once (so each mode sets them up as it does a bot taken over from a host who left)
+  function reseed(list) {
+    const make = (e) => { const c = puppet({ id: e.id, seat: e.seat, name: e.name, load: e.load, rival: true, hp: e.hp, maxHp: e.maxHp, x: e.x, z: e.z, yaw: e.yaw }, 'relay'); if (c && Array.isArray(e.s)) take(c, e.s, 'relay'); return c; };
+    for (const e of list) { if (!e || !e.load) continue; if (!e.dead) make(e); else if (o.mode.netRevive) o.mode.netRevive(e, make); }
+    takeOver(true);
   }
   function take(c, p, from) {
     c.owner = from;
@@ -214,19 +302,42 @@ export function makeNet(o) {
     const from = m.from;
     switch (m.t) {
       case 'welcome': {
-        welcomed = true; N.hostId = m.host; N.host = m.host === ME; N.bots = m.bots; N.players = m.players;
-        for (const p of m.players) N.names.set(p.id, p.name);
-        const mine = m.players.find((p) => p.id === ME); N.slot = mine ? mine.slot : 0;
+        const first = !welcomed; welcomed = true; N.hostId = m.host; N.host = m.host === ME;
+        roster(m);
+        if (m.startIn > 0) N.startAt = performance.now() + m.startIn;
+        if (m.spawn && first) N.spawn = m.spawn;
+        clockAt(m.left);
+        if (m.back && o.mode.netLoad) N.back = m.back;   // a reload mid-round: the scores as they were, put back when it starts
+        // the host's page reloaded with nobody else on: the bots as the relay last had them, once the round is up here
+        if (m.botList && N.host) { seed = m.botList; N.host = false; }
         if (o.onWelcome) o.onWelcome(m);
-        if (m.begun >= 0) { N.begun = true; N.lateBy = m.begun / 1000; }
+        if (m.begun >= 0 && !N.begun) { N.begun = true; N.lateBy = m.begun / 1000; }
         for (const c of cars) if (c.nid && !c.remote) send(carMsg(c));
         break;
       }
       case 'noround': o.noRound(); closed = true; break;
-      case 'joined': N.names.set(m.id, m.name); for (const c of cars) if (c.nid && !c.remote) send({ ...carMsg(c), to: m.id }); break;
-      case 'begin': if (!N.begun) { N.begun = true; setTimeout(o.begin, m.in || 0); } break;
+      case 'joined': N.names.set(m.id, m.name); for (const c of cars) if (c.nid && !c.remote) send({ ...carMsg(c), to: m.id }); for (const c of cars) if (c.owner === m.id) c.away = false; break;
+      case 'add': roster({ players: [...N.players.filter((p) => p.id !== m.id), { id: m.id, slot: m.slot, name: m.name }], bots: m.bots }); break;   // one more player before the start
+      case 'begin': roster(m); if (m.host) { N.hostId = m.host; N.host = m.host === ME && !seed; } clockAt(m.left); if (!N.started) { N.started = true; N.begun = true; setTimeout(o.begin, m.in || 0); } break;
+      case 'host': {   // the host has been gone a while: the next player's device runs the bots from now on
+        if (m.now === ME) { if (!N.host) takeOver(); }
+        else if (N.host && N.begun) release(m.now);
+        else { N.host = false; N.hostId = m.now; }
+        break;
+      }
+      case 'seat': {   // a new player takes over a bot's seat: the bot goes, on every device
+        roster({ players: [...N.players.filter((p) => p.id !== m.id), { id: m.id, slot: m.slot, name: m.name }], bots: m.bots });
+        let c = m.bot && N.seats.get(m.bot);
+        if ((!c || c.gone) && N.host) { c = myBots().find((b) => !b.dead) || myBots()[0]; if (c) send({ t: 'drop', seat: c.seat }); }   // (the relay had no bot list yet: the host picks)
+        if (c && !c.gone) drop(c);
+        if (N.begun) o.toast(`${m.name} joined`, 'In place of a bot');
+        break;
+      }
+      case 'drop': { const c = N.seats.get(m.seat); if (c && !c.gone && c.remote) drop(c); break; }
+      case 'away': for (const c of cars) if (c.remote && c.owner === from && c.human) { c.away = !!m.on; if (c.tag) c.tag.classList.toggle('away', c.away); } break;
+      case 'clock': clockAt(m.left); break;
       case 'left': left(m); break;
-      case 'end': if (m.next) o.toast('The host started a new round', 'Back to the lobby to join it'); break;
+      case 'end': if (m.from === 'server') { if (o.mode.netEnd) o.mode.netEnd(); } else if (m.next) o.toast('The host started a new round', 'Back to the lobby to join it'); break;
       case 'car': if (from !== ME && !byId.has(m.id)) { info.set(m.id, m); puppet(m, from); } break;
       case 'need': { const c = byId.get(m.id); if (c && !c.remote) send({ ...carMsg(c), to: from }); break; }
       case 's':
@@ -254,18 +365,14 @@ export function makeNet(o) {
       case 'm': if (o.mode.netMsg) o.mode.netMsg(m, from); break;
     }
   }
-  // someone left: their car goes, and if they hosted, the next player hosts. When that is us, the bots (and the horde)
-  // are ours from here, where they stand.
+  // someone left. One who quit: their car goes. One who dropped out may be back in a moment (a page that reloaded makes
+  // a new car, which takes the old one's place): their car waits, marked away, and goes if nothing comes from it. If they
+  // hosted, the relay says who hosts next ('host').
   function left(m) {
-    for (const c of [...cars]) if (c.remote && c.owner === m.id && c.human) { forgot.add(c.nid); byId.delete(c.nid); o.removeCar(c); }
-    o.toast(`${N.nameOf(m.id)} left`, '');
-    if (!m.host) return;
-    N.hostId = m.now; const was = N.host; N.host = m.now === ME;
-    if (N.host && !was) {
-      for (const c of [...cars]) if (c.remote && c.owner === m.id && !c.human) { c.remote = false; c.owner = ME; c.net = null; if (o.mode.adopt) o.mode.adopt(c); send(carMsg(c)); }
-      const h = o.horde(); if (h && h.adopt) h.adopt();
-      o.toast('You host the bots now', '');
-    }
+    const theirs = () => cars.filter((c) => c.remote && c.owner === m.id && c.human && !c.gone);
+    if (m.quit) { for (const c of theirs()) drop(c); o.toast(`${N.nameOf(m.id)} left`, ''); return; }
+    for (const c of theirs()) { c.away = true; if (c.tag) c.tag.classList.add('away'); }
+    setTimeout(() => { for (const c of theirs()) if (c.away && (!c.net || performance.now() - c.net.at > 25000)) drop(c); }, 30000);
   }
   // what our device said hit someone else's car (the dead's claws, a stomp from the jump jets): to its owner
   N.hurt = (c, d, who) => { if (c.remote && c.nid) send({ t: 'hurt', to: c.owner, id: c.nid, d: r1(d), by: who && who.nid }); };
@@ -279,16 +386,26 @@ export function makeNet(o) {
   N.zkill = (c, n = 1) => { if (c && c.remote && c.human) send({ t: 'zk', to: c.owner, n }); };
   N.msg = (m) => send({ ...m, t: 'm' });
   N.forget = (c) => { if (c.nid) { forgot.add(c.nid); byId.delete(c.nid); } };
+  // the countdown before the start, while it runs (seconds), for the start card
+  N.startIn = () => (N.startAt && !N.begun ? Math.max(0, (N.startAt - performance.now()) / 1000) : 0);
 
   // ---- each frame: read what came, and send ours ----
   N.step = (dt) => {
     for (const m of q.splice(0)) onMsg(m);
     for (const c of cars) if (!c.remote && !c.dummy && !c.nid && welcomed) own(c);
     if (!N.begun) return;
+    if (game.state === 'play' || game.state === 'dead' || game.state === 'over') {
+      // the round is up here: a reloaded host's bots come back, and so do the scores
+      if (seed) { const list = seed; seed = null; reseed(list); }
+      if (N.back) { const b = N.back; N.back = null; o.mode.netLoad(b, N.nameOf(ME)); }
+    }
     if ((sendT += dt) >= SEND) {
       sendT = 0;
       const list = []; for (const c of cars) if (!c.remote && c.nid && !c.dead && !c.gone) list.push(state(c));
-      if (list.length) send({ t: 's', c: list });
+      const m = { t: 's', c: list };
+      // about once a second: this device's score (the mode's), and the host's bots, for the relay to keep
+      if ((keepT += SEND) >= 1) { keepT = 0; if (o.mode.netSave && game.state !== 'menu') m.k = o.mode.netSave(N.nameOf(ME)); if (N.host) m.b = botList(); }
+      if (list.length || m.k !== undefined || m.b) send(m);
     }
     const h = o.horde();
     if (N.host && h && h.pack && (zT += dt) >= ZSEND) {
