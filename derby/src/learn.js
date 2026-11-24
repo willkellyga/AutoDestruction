@@ -1,10 +1,7 @@
-// How to play: a short card the first time a player starts each mode (the race, zombie survival, the arena), with
-// three pictures and a line or two under each, in words a kid can read at a glance, and the controls for the device in
-// hand (keys and mouse, or the touch buttons: page.html's desk-only / touch-only). It shows once per mode on this
-// browser (localStorage `ad-learned`, by the map's mode); "How to play" on the start card and on the round's menu
-// brings it back. ?learn=0 never shows it on its own (for scripted tests). One button closes it (Enter, Space or Esc too), so it is never in the way for long.
-const KEY = 'ad-learned';
-const SKIP = (() => { try { return new URLSearchParams(location.search).get('learn') === '0'; } catch (e) { return false; } })();   // ?learn=0: never (scripted tests)
+// How to play: three pictures with a line or two under each, in words a kid can read at a glance, and the controls for
+// the device in hand (keys and mouse, or the touch buttons: page.html's desk-only / touch-only). They are the mode's
+// start card itself (#menu, before every round, with the difficulty and Back), and "How to play" on the round's menu
+// brings them back over the round (#learn). One button closes that (Enter, Space or Esc too).
 
 // the pictures: line drawings in the card's colour (64 x 64)
 const I = {
@@ -51,18 +48,17 @@ const TITLE = { race: 'Race', survival: 'Zombie Survival', brawl: 'Arena', waves
 export function makeLearn({ $, MAP }) {
   const id = STEPS[MAP.mode] ? MAP.mode : 'waves';
   const el = $('learn');
-  let seen = {};
-  try { seen = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { seen = {}; }
   let then = null;
 
-  $('ln-t').textContent = TITLE[id];
-  $('ln-steps').innerHTML = STEPS[id](MAP).map(([p, h, t], k) =>
+  const steps = STEPS[id](MAP).map(([p, h, t], k) =>
     `<div class="ln-step"><b class="ln-n">${k + 1}</b><div class="ln-pic">${pic(p)}</div><strong>${h}</strong><span>${t}</span></div>`).join('');
+  $('ln-t').textContent = TITLE[id];
+  $('ln-steps').innerHTML = steps;
+  $('brief-steps').innerHTML = steps;   // the start card's own copy
 
   function close() {
     if (el.hidden) return;
     el.hidden = true; document.body.classList.remove('learning');
-    seen[id] = 1; try { localStorage.setItem(KEY, JSON.stringify(seen)); } catch (e) { /* this visit only */ }
     const f = then; then = null; if (f) f();
   }
   function show(after) {
@@ -80,11 +76,8 @@ export function makeLearn({ $, MAP }) {
   return {
     id,
     open: () => !el.hidden,
-    // run `fn` now if this mode's card has been seen, or after it closes if not
-    first(fn) { if (seen[id] || SKIP) fn(); else show(fn); },
     show,
-    // the round started without waiting (online: the others were ready): out of the way, counted as seen, and what
-    // it was holding not run (the round is on already)
+    // the round started while it was up (online: the others were ready): out of the way, what it was holding not run
     dismiss() { then = null; close(); },
   };
 }

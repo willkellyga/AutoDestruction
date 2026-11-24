@@ -1255,7 +1255,7 @@ function leaveGarage() {
   const from = game.garageFrom; game.garageFrom = null;
   if (from === 'home' || game.ended) { showHome(); return; }   // back to the home screen (after a round too: the next one starts from there)
   outOfRoom();
-  if (from === 'menu') { game.state = 'menu'; learn.first(startGame); return; }
+  if (from === 'menu') { game.state = 'menu'; startGame(); return; }
   game.state = 'play';
   if (from === 'break' && mode.afterGarage) mode.afterGarage();
   sfx.play('start', 0.9); lockMouse();
@@ -1316,22 +1316,21 @@ addEventListener('mousemove', (e) => {
   if (cam.locked) { const f = 1 - 0.35 * (cam.sticky || 0); cam.yaw -= e.movementX * 0.0026 * f; cam.pitch = clamp(cam.pitch + e.movementY * 0.0022 * f, 0.02, 0.75); }   // never down behind the car's back
 });
 addEventListener('wheel', (e) => { cam.dist = clamp(cam.dist + Math.sign(e.deltaY) * 3, 20, 60); }, { passive: true });
-// the first time in a mode on this browser, its how-to-play card comes up before the round (learn.js)
+// the mode's how-to-play cards: on its start card, and again from the round's menu (learn.js)
 const learn = makeLearn({ $, MAP });
 $('go').addEventListener('click', () => {
-  if (net) { initAudio(); if (game.state !== 'menu') return; learn.first(() => { if (game.state !== 'menu') return; if (net.begun) startGame(); else { net.ready_(); $('go').disabled = true; $('go').textContent = 'Waiting for the others...'; } }); return; }
-  if (game.ended) { try { sessionStorage.setItem(BRIEF, 'solo'); } catch (e) { /* home */ } chooseMap(MAP.id); } else { initAudio(); learn.first(startGame); }
+  if (net) { initAudio(); if (game.state !== 'menu') return; if (net.begun) startGame(); else { net.ready_(); $('go').disabled = true; $('go').textContent = 'Waiting for the others...'; } return; }
+  if (game.ended) { try { sessionStorage.setItem(BRIEF, 'solo'); } catch (e) { /* home */ } chooseMap(MAP.id); } else { initAudio(); startGame(); }
 });
-$('menu-learn').addEventListener('click', () => learn.show());
 $('pause-learn').addEventListener('click', () => learn.show());
-// the mode's card: its name and map, what it is, and the race's difficulty
+// the mode's card: its name and map, how to play it (learn.js), and the difficulty
 {
   $('brief-t').textContent = MAP.name;
-  $('map-blurb').textContent = MAP.blurb; $('go').textContent = mode.go; $('menu-note').textContent = mode.note;
+  $('go').textContent = mode.go; $('menu-note').textContent = mode.tip || '';
   // a mode with difficulty levels (the race) gets a row of buttons for them, kept in the save
   if (mode.levels) {
     const row = $('levels'); row.hidden = false;
-    const show = () => { for (const b of row.querySelectorAll('button')) b.className = b.dataset.id === mode.levels.get() ? 'on' : ''; $('menu-note').textContent = mode.note; };
+    const show = () => { for (const b of row.querySelectorAll('button')) b.className = b.dataset.id === mode.levels.get() ? 'on' : ''; $('menu-note').textContent = mode.tip || ''; };
     for (const [id, name] of mode.levels.list) {
       const b = document.createElement('button'); b.dataset.id = id; b.textContent = name;
       b.addEventListener('click', () => { mode.levels.set(id); show(); });
@@ -1355,7 +1354,7 @@ $('menu-home').addEventListener('click', () => { if (game.state === 'menu') show
 if (net) {
   document.body.classList.add('online');
   $('brief-k').textContent = ({ waves: 'Waves', race: 'Race', survival: 'Zombie Survival', brawl: 'Arena' }[MAP.mode] || MAP.mode) + ' · Online';
-  for (const id of ['levels', 'menu-home', 'map-blurb', 'over-garage']) $(id).hidden = true;
+  for (const id of ['levels', 'menu-home', 'over-garage']) $(id).hidden = true;
   $('go').textContent = "I'm ready"; $('menu-note').textContent = 'Joining the round...';
   $('over-go').textContent = 'Back to the lobby';
 } else {

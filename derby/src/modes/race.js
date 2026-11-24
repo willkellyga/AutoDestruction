@@ -174,7 +174,8 @@ export function makeRace(G) {
   }
 
   return {
-    go: 'Start the race',
+    go: 'Race',
+    get tip() { return LV.note || ''; },
     get note() { return `${G.MAP.laps || 3} laps, six cars, guns on. ${LV.note} Tuck in behind a car for a tow.`; },
     // the start card's difficulty buttons (main.js)
     levels: {

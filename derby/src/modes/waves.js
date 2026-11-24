@@ -2,7 +2,8 @@
 // The player comes back after a wreck. The town's mode, and any map's that wants a straight brawl.
 //
 // A mode is made from the game's api (see `api` in main.js) and returns:
-//   go, note                 the menu's start button and its line under it
+//   go, note                 the menu's start button and what the mode is
+//   tip (optional)           the start card's one line under the difficulty (the level's note, a best time)
 //   start()                  the round begins (the player's car is already on the map)
 //   step(dt)                 every frame while the round runs
 //   wrecked(c, who)          a car was wrecked (c by who, who may be null); scrap for the player's kills is already paid
