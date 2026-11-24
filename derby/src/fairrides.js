@@ -92,7 +92,8 @@ function buildCarousel(r) {
   return { body: mergeGeometries([...body.map((g) => g.toNonIndexed()), coneN]), lamps: mergeGeometries(lamps) };
 }
 
-// api: main.js's api; spec: { wheel: { x, z, to (how far east it rolls before it falls over) }, carousel: { x, z, r } }
+// api: main.js's api; spec: { wheel: { x, z, to (how far east it rolls before it falls over), fixed (it stays on its
+// stand whatever is done to it: shots only spark off it) }, carousel: { x, z, r } }
 export function makeRides(api, spec) {
   const { scene } = api;
   const paint = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.15, side: THREE.DoubleSide });
@@ -101,7 +102,8 @@ export function makeRides(api, spec) {
   // ---- the carousel ----
   const C = spec.carousel, cg = buildCarousel(C.r), merry = new THREE.Group();
   merry.position.set(C.x, 3, C.z);
-  { const b = new THREE.Mesh(cg.body, paint), l = new THREE.Mesh(cg.lamps, lit); b.castShadow = true; merry.add(b, l); }
+  const lit2 = lit.clone();   // (the carousel's lamps: on another quarter's power than the wheel's)
+  { const b = new THREE.Mesh(cg.body, paint), l = new THREE.Mesh(cg.lamps, lit2); b.castShadow = true; merry.add(b, l); }
   scene.add(merry);
 
   // ---- the wheel ----
@@ -122,7 +124,7 @@ export function makeRides(api, spec) {
   const shake = (k, x, z) => { const P = api.player; if (P) api.game.shake = Math.min(1.2, api.game.shake + Math.max(0, 1 - Math.hypot(P.x - x, P.z - z) / 220) * k); };
 
   function release(by) {
-    if (S.state !== 'stand') return;
+    if (W.fixed || S.state !== 'stand') return;
     S.state = 'drop'; S.t = 0; S.by = by || null; S.v = 0;
     api.banner('The wheel is loose!', 'It is rolling east. Stay out of its alley');
     api.sfx.play('bigboom', 0.9, S.x, S.z); api.sound('alarm', 0.7);
@@ -136,11 +138,11 @@ export function makeRides(api, spec) {
     hit(p, dmg, owner) {
       if (!struck(p.x, p.y, p.z)) return false;
       sparks(p.x, p.y, p.z, 5, 1, 0.8, 0.4, 12);
-      if (!(owner && owner.remote) && (S.hp -= dmg) <= 0) release(owner);
+      if (!W.fixed && !(owner && owner.remote) && (S.hp -= dmg) <= 0) release(owner);
       return true;
     },
     explosion(x, y, z, reach, base, by) {
-      if (S.state !== 'stand') return;
+      if (W.fixed || S.state !== 'stand') return;
       const d = Math.hypot(x - S.x, z - S.z); if (d > R + reach || Math.abs(z - S.z) > reach + WHEEL.thick) return;
       if ((S.hp -= base * 2) <= 0) release(by);
     },
@@ -177,6 +179,8 @@ export function makeRides(api, spec) {
     wheel: S,
     get loose() { return S.state !== 'stand'; },
     release,
+    // how much power the wheel's lamps and the carousel's have (0 to 1)
+    power(w, c) { lit.color.setScalar(0.12 + 2.28 * w); lit2.color.setScalar(0.12 + 2.28 * c); },
     blocks: () => false,
     step(dt, live) {
       merry.rotation.y -= dt * 0.45;

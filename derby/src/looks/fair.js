@@ -7,19 +7,25 @@
 //   - The fair's own light: every bulb on the strings is a glow (one draw for all of them and the cars' lamps), each
 //     post throws a warm pool on the ground (one draw), and the voxels' lit cubes, the rides' lamps and the tent's are
 //     full on (look.dusk).
-//   - The power: where a quarter's lights are out (L.power.lit, which the map eases between 0 and 1) its bulbs and
-//     pools go dark, and a layer over the ground there takes the ground down to a blue dusk. It multiplies what is
+//   - The floodlights: eight towers outside the fence (the map's banks, drawn as Camp Deadfall's are: looks/storm.js),
+//     a glare at each, and the light they put on the ground inside (kit.js's floor layer), so the fair is bright
+//     where it has power. Each stall throws a pool of its sign's colour in front of it and has a soft glow at its sign.
+//   - The power: where a quarter's lights are out (L.power.lit: 1 on, 0 out, and jumping between while it flickers)
+//     its bulbs, pools and floodlights go dark, and a layer over the ground there takes the ground well down, to a
+//     blue dusk. It multiplies what is
 //     drawn, after everything solid, so the cars and the dead standing on it are never darkened: they stay easy to see.
 // Its pictures are drawn at load and it adds no light of its own. Down the quality ladder: half the bulbs at step 3,
 // the pools off at step 5.
 import * as THREE from 'three';
 import { look } from '../../../src/mesh.js';
-import { ADD, TONE, cloudStrip, glowSprites, lampPools, groundSpots, carLamps, commit, pixelAt } from './kit.js';
+import { TONE, cloudStrip, glowSprites, lampPools, groundSpots, carLamps, commit, pixelAt, floorLayer } from './kit.js';
+import { floodTowers } from './storm.js';
 
 export const FAIR = {
   sun: new THREE.Vector3(-0.78, 0.3, 0.38).normalize(), haze: 0x6a4a6e, fog: [340, 2300], exposure: 1.12,
-  hemi: [0x9a94d8, 0x5a4658, 1.75], light: [0xffa878, 2.5], lamps: [1, 0.9], box: 110,
-  dark: [0.42, 0.42, 0.62],   // what the ground is multiplied by where the lights are out
+  hemi: [0xa29cdc, 0x64505e, 2.1], light: [0xffa878, 2.5], lamps: [1, 0.9], box: 110,
+  dark: [0.24, 0.25, 0.42],   // what the ground is multiplied by where the lights are out
+  floor: { base: 1.0, gain: 0.55, FK: 1.7 },   // the floodlights on the ground: unlit, and how much more in their pools (kit.js)
 };
 // the bulbs' colours: red, amber, green, blue, white
 const BULB = [[2.6, 0.5, 0.35], [2.6, 1.7, 0.4], [0.6, 2.4, 0.7], [0.5, 1.2, 2.8], [2.2, 2.1, 1.8]];
@@ -101,24 +107,40 @@ const CAR_MAX = 4 * 40, POOL_MAX = 2 * 40;
 export function make(L, { scene, renderer, camera, sky, mats, quality }) {
   look.dusk.value = 1;                 // every lit cube full on
   mats[1].color.setScalar(1.3);
-  const bulbs = L.bulbs || [], posts = L.posts || [], P = L.power || { lit: [1, 1, 1, 1] };
-  const glows = glowSprites(bulbs.length + posts.length + CAR_MAX), pools = lampPools(POOL_MAX), spots = groundSpots(posts.length), dark = darkLayer(L);
+  const bulbs = L.bulbs || [], posts = L.posts || [], stalls = L.pools || [], banks = L.banks || [], P = L.power || { lit: [1, 1, 1, 1] };
+  const glows = glowSprites(bulbs.length + posts.length + stalls.length + banks.length + CAR_MAX), pools = lampPools(POOL_MAX), spots = groundSpots(posts.length + stalls.length), dark = darkLayer(L);
+  // the floodlight towers: the steel of all of them in one draw, the lamps' faces a quarter (so a quarter's can go out)
+  const faces = [null, null, null, null];
+  if (banks.length) {
+    scene.add(floorLayer(L, FAIR.floor));
+    scene.add(floodTowers(banks)[0]);
+    for (let q = 0; q < 4; q++) { const own = banks.filter((b) => b.quarter === q); if (!own.length) continue; const [mast, f] = floodTowers(own); mast.geometry.dispose(); mast.material.dispose(); faces[q] = f; scene.add(f); }
+  }
+  const floodGlow = banks.map((B) => [B.x + B.nx * 1.6, B.y, B.z + B.nz * 1.6, ...new THREE.Vector3(B.aim[0] - B.x, -B.y, B.aim[1] - B.z).normalize().toArray(), B.quarter]);
   for (const o of [dark, spots, pools, glows]) scene.add(o);
   const T = sky.material.uniforms.time;
   const A = glows.geometry.attributes, gp = A.gp.array, gc = A.gc.array, gd = A.gd.array;
   const B = spots.geometry.attributes, sa = B.sa.array, sb = B.sb.array, sc = B.sc.array;
-  let time = 0, q = -1, pooled = true, every = 1, shown = [-1, -1, -1, -1], nStatic = 0;
-  // the bulbs and the posts' lamps, then the posts' pools: written again only when a quarter's light has changed
+  let time = 0, q = -1, pooled = true, every = 1, shown = [-1, -1, -1, -1], rev = -1, nStatic = 0;
+  // the bulbs, the posts' lamps, the stalls' glows and the floodlights' glare, then the pools on the ground: written
+  // again only when a quarter's light has changed (or a stall has been smashed)
   function lamps() {
     let n = 0;
     for (let i = 0; i < bulbs.length; i += every) {
-      const [x, y, z, c, quarter] = bulbs[i], k = P.lit[quarter], col = BULB[c];
+      const [x, y, z, c, quarter, pa, pb] = bulbs[i], k = P.lit[quarter], col = BULB[c];
+      if (pa !== undefined && (posts[pa].lamp.dead || posts[pb].lamp.dead)) continue;   // (the string came down with its post)
       gp.set([x, y, z, 1.5], n * 4); gc.set([col[0] * k, col[1] * k, col[2] * k, 0], n * 4); gd.set([0, 1, 0, 0], n * 4); n++;
     }
-    for (const [x, z, quarter] of posts) { const k = P.lit[quarter]; gp.set([x, 16.6, z, 2.6], n * 4); gc.set([2.2 * k, 1.7 * k, 0.9 * k, 0], n * 4); gd.set([0, 1, 0, 0], n * 4); n++; }
+    for (const { x, z, quarter, lamp } of posts) { if (lamp.dead) continue; const k = P.lit[quarter]; gp.set([x, 16.6, z, 2.6], n * 4); gc.set([2.2 * k, 1.7 * k, 0.9 * k, 0], n * 4); gd.set([0, 1, 0, 0], n * 4); n++; }
+    for (const s of stalls) { const k = P.lit[s.quarter] * s.on * 0.5; if (k <= 0.01) continue; gp.set([s.at[0], s.at[1], s.at[2], 7], n * 4); gc.set([s.rgb[0] * k, s.rgb[1] * k, s.rgb[2] * k, 0], n * 4); gd.set([0, 1, 0, 0], n * 4); n++; }
+    for (const [x, y, z, dx, dy, dz, quarter] of floodGlow) { const k = P.lit[quarter]; if (k <= 0.01) continue; gp.set([x, y, z, 24], n * 4); gc.set([2.5 * k, 2.3 * k, 1.9 * k, 1], n * 4); gd.set([dx, dy, dz, 0.7], n * 4); n++; }
     nStatic = n;
+    for (let i = 0; i < 4; i++) if (faces[i]) faces[i].material.color.setRGB(3.2 * P.lit[i] + 0.05, 3.0 * P.lit[i] + 0.05, 2.6 * P.lit[i] + 0.06);
     let s = 0;
-    for (const [x, z, quarter] of posts) { const k = P.lit[quarter]; sa.set([x, z, 30, 30], s * 4); sb.set([1, 0, 1.6, 0], s * 4); sc.set([0.2 * k, 0.14 * k, 0.07 * k, 0], s * 4); s++; }
+    if (pooled) {
+      for (const { x, z, quarter, lamp } of posts) { if (lamp.dead) continue; const k = P.lit[quarter]; sa.set([x, z, 30, 30], s * 4); sb.set([1, 0, 1.6, 0], s * 4); sc.set([0.2 * k, 0.14 * k, 0.07 * k, 0], s * 4); s++; }
+      for (const o of stalls) { const k = P.lit[o.quarter] * o.on * 0.075; if (k <= 0.001) continue; sa.set([o.x, o.z, o.r, o.r], s * 4); sb.set([1, 0, 1.5, 0], s * 4); sc.set([o.rgb[0] * k, o.rgb[1] * k, o.rgb[2] * k, 0], s * 4); s++; }
+    }
     commit(spots, s, ['sa', 'sb', 'sc']);
   }
   function step(dt, cars) {
@@ -126,6 +148,7 @@ export function make(L, { scene, renderer, camera, sky, mats, quality }) {
     let changed = false;
     if (quality.step !== q) { q = quality.step; pooled = q <= 4; pools.visible = spots.visible = pooled; every = q >= 3 ? 2 : 1; changed = true; }
     for (let i = 0; i < 4; i++) if (Math.abs(P.lit[i] - shown[i]) > 0.004) { shown[i] = P.lit[i]; changed = true; }
+    if ((P.rev || 0) !== rev) { rev = P.rev || 0; changed = true; }
     if (changed) {
       lamps();
       dark.material.uniforms.lit.value.set(P.lit[0], P.lit[1], P.lit[2], P.lit[3]);

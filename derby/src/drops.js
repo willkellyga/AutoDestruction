@@ -1,11 +1,11 @@
 // Supply drops, for a mode that wants power-ups coming into the round as it goes (modes/survival.js): every so often a
 // crate comes down on a parachute at one of the places the map lists (MAP.drops, made with dropSpots() and listed in
-// its pickups too), under a beam of its colour so every car can see where. The first car to it takes it. What is in
+// its pickups too). Nothing is said of it: a plane is heard going over, and the crate is there to see, coming down under
+// a beam of its colour (and on the radar). The first car to it takes it. What is in
 // it is one of the arena's pickups (pickups.js): a repair kit, overcharge, nitro, a Hammerdown strike (on the dead,
 // where cars don't fight) or a crate of scrap.
 // Which crate lands where and when comes from the round's own clock and one seed (online, the round's id), so every
 // device in a round sees the same crates without a word sent; who took one is sent as for any pickup (net.js).
-import { PICKUPS } from './pickups.js';
 
 export const DROPS = {
   first: 20,          // seconds into the round the first one comes
@@ -33,13 +33,8 @@ export function makeDrops(G) {
     for (let t = 0; t < list.length && (list[at].up || list[at].fall > 0); t++) at = (at + 1) % list.length;
     const p = list[at]; if (p.up || p.fall > 0) return;
     G.pickups.call(p, kind, fall);
-    if (fall === undefined) {
-      const K = PICKUPS[kind], P = G.player;
-      const where = P && !P.dead ? ` (${Math.round(Math.hypot(p.x - P.x, p.z - P.z) / 10) * 10} away)` : '';
-      if (i === 0) G.banner('Supply drop', 'A crate is coming down. First car to the beam takes it');
-      else G.toast('Supply drop', `${K.name} coming down${where}`);
-      G.sfx.play('ui_tab', 0.8);
-    }
+    // no word of it on the screen: a plane goes over, and the crate is there to be seen coming down
+    if (fall === undefined) { G.sound('jet', 0.55); G.sound('whoosh', 0.5, p.x, 40, p.z); }
   }
   return {
     step(clock) {

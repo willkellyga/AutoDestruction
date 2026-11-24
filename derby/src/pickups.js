@@ -24,7 +24,7 @@
 // ai.js), but never make for a spot the map marks `rivals: false` (a lure for the player alone, say scrap among a
 // hazard's blades). Each spot object gets `up` (true while it can be taken) for the map's radar.
 import * as THREE from 'three';
-import { sparks, ring } from '../../src/sim.js';
+import { sparks, ring, dust } from '../../src/sim.js';
 
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 export const PICKUPS = {
@@ -199,14 +199,14 @@ export function makePickups(api, spots = []) {
   let chuteGeo = null;
   const chute = () => {
     if (!chuteGeo) {
-      chuteGeo = new THREE.SphereGeometry(8, 12, 5, 0, Math.PI * 2, 0, Math.PI / 2);
+      chuteGeo = new THREE.SphereGeometry(10, 12, 5, 0, Math.PI * 2, 0, Math.PI / 2);
       const pos = chuteGeo.attributes.position, col = new Float32Array(pos.count * 3);
       for (let i = 0; i < pos.count; i++) { const a = Math.atan2(pos.getZ(i), pos.getX(i)), w = (Math.floor((a + Math.PI) / (Math.PI / 6) + 0.5) & 1); col[i * 3] = w ? 1.2 : 1.25; col[i * 3 + 1] = w ? 1.15 : 0.5; col[i * 3 + 2] = w ? 1.05 : 0.12; }
       chuteGeo.setAttribute('color', new THREE.BufferAttribute(col, 3));
     }
     const m = new THREE.Mesh(chuteGeo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, toneMapped: false })); m.visible = false; scene.add(m); return m;
   };
-  const DROP = { fall: 5, from: 110, life: 50 };   // seconds coming down, from how high, and how long it lies there
+  const DROP = { fall: 7, from: 130, life: 50 };   // seconds coming down, from how high, and how long it lies there
   for (const p of spots) {
     if (p.drop && !p.kind) p.kind = 'repair';
     const K = PICKUPS[p.kind]; if (!K) continue;
@@ -357,10 +357,10 @@ export function makePickups(api, spots = []) {
             // coming down: the crate under its parachute, the beam and the ring already marking where
             p.fall -= dt;
             const y = 6 + Math.max(0, p.fall) / DROP.fall * DROP.from;
-            p.spin += dt * 0.8; p.model.rotation.y = p.spin; p.model.position.y = y; p.chute.position.set(p.x, y + 5, p.z);
+            p.spin += dt * 0.8; p.model.rotation.y = p.spin; p.model.position.y = y; p.chute.position.set(p.x + Math.sin(p.spin * 1.7) * 1.2, y + 6, p.z);
             p.ring.material.opacity = 0.35 + 0.35 * ((T * 5 | 0) & 1); p.ring.scale.setScalar(1.6 - 0.6 * (1 - Math.max(0, p.fall) / DROP.fall));
             p.beam.material.opacity = 0.3;
-            if (p.fall <= 0) { p.up = true; p.chute.visible = false; p.ring.scale.setScalar(1); const [r, g, b] = p.K.rgb; ring(p.x, 0.4, p.z, 9, new THREE.Color(r, g, b), 0.5); sparks(p.x, 3, p.z, 16, r, g, b, 16); api.sfx.play('crunch', 0.5, p.x, p.z); }
+            if (p.fall <= 0) { p.up = true; p.chute.visible = false; p.ring.scale.setScalar(1); const [r, g, b] = p.K.rgb; ring(p.x, 0.4, p.z, 9, new THREE.Color(r, g, b), 0.5); sparks(p.x, 3, p.z, 16, r, g, b, 16); api.sfx.play('crunch', 0.6, p.x, p.z); api.sound('thud', 0.8, p.x, 2, p.z); dust(p.x, 1, p.z, 6, 4, 0.6, 0.52, 0.38); }
             continue;
           }
           if (!p.up) { p.model.visible = p.beam.visible = p.ring.visible = false; continue; }

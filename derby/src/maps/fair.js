@@ -1,23 +1,26 @@
 // Dead Man's Fair: a county fair the dead have overrun, at twilight with the lights still on, for the last-car-standing
 // round (modes/survival.js). A painted board fence with a gate in each side. The midway runs east to west through the
 // middle and the avenue north to south, and they cross in the open. Round them, a quarter each:
-//   north-west  the Ferris wheel on its stand (a mesh, ../fairrides.js). Let loose (shoot it off its stand, or drive
-//               over the release beside it) it rolls east down its own alley, flattening the dead and any car in its
-//               way, through the east fence and off into the dark.
+//   north-west  the Ferris wheel on its stand, turning (a mesh, ../fairrides.js). It stays there (Will, 2026-11-24:
+//               shot loose early, it was gone for the rest of the round); the rolling is still in fairrides.js.
 //   north-east  the big top: a striped tent nobody can drive into.
 //   south-west  the carousel, still turning (a mesh on a voxel plinth), and the generator truck that runs the lights.
 //   south-east  the rollercoaster: track high overhead on steel legs a car can knock out.
-// Game booths with striped awnings line the midway (props: a car goes straight through them), and strings of coloured
-// bulbs hang between the lamp posts (the look's glows, ../looks/fair.js).
-// The lights: the generator is failing. Every so often a quarter of the fair goes dark, and the dead in the dark are
-// bolder (faster: hordeBoost, read by zombies.js). Driving over the switch by the generator truck brings them all back.
+// Game stalls and food stalls line the midway, food trucks stand by the avenue, and neon arches span the ways in
+// (all meshes at twice the town's detail: ../fairstalls.js. A car goes straight through a stall and it flies apart).
+// Strings of coloured bulbs hang between the lamp posts and run along the top of the fence (the look's glows,
+// ../looks/fair.js), and eight floodlight towers stand outside the fence, as Camp Deadfall's do.
+// The lights: the generator is failing. Every so often a quarter of the fair flickers and goes dark (its bulbs, its
+// neon, its two floodlights), and the dead in the dark are bolder (faster: hordeBoost, read by zombies.js). Driving
+// over the switch by the generator truck brings them all back.
 // Like Camp Deadfall it is kept open for driving through a horde of hundreds, with a ring road inside the fence, and
 // nothing has a way in for a car.
 import { WX, WZ, M, begin, set, box, ctx, place, setSeed } from '../../../src/world.js';
-import { face, text, textW, disc } from '../../../src/kit.js';
+import { disc } from '../../../src/kit.js';
 import { canvasFor, finish, makeGridNav, pickSpot, gridRadar } from './common.js';
 import { dropSpots } from '../drops.js';
 import { makeRides, WHEEL } from '../fairrides.js';
+import { makeStalls, stallPools } from '../fairstalls.js';
 
 const TAU = Math.PI * 2;
 // ---- the plan (town voxels; x east, z south) ------------------------------------------------------------------------
@@ -33,7 +36,6 @@ const CAROUSEL = { x: 132, z: 318, r: 17 };
 const GEN = { x0: 44, x1: 62, z0: 254, z1: 264 };       // the generator truck
 const COASTER = { x: 392, z: 318, hx: 72, hz: 48, r: 30 };
 const SWITCH = { x: 82, z: 259 };      // the lights' switch, by the generator
-const RELEASE = { x: 60, z: 112 };     // the wheel's release, by its stand
 
 // the lamp posts the bulbs hang between: along both sides of the midway and of the avenue, clear of the crossing
 const POSTS = [];
@@ -50,12 +52,75 @@ const BULBS = [];
     const a = POSTS[i], b = POSTS[j]; if (a[2] !== b[2]) continue;
     const along = a[2] === 'x' ? b[0] - a[0] : b[1] - a[1], across = a[2] === 'x' ? b[1] - a[1] : b[0] - a[0];
     if (across !== 0 || along !== 32) continue;
-    for (let t = 1; t <= 6; t++) { const f = t / 7, x = a[0] + (b[0] - a[0]) * f, z = a[1] + (b[1] - a[1]) * f; BULBS.push([x + 0.5, 15.5 - 3.2 * Math.sin(f * Math.PI), z + 0.5, k++ % 5, quarter(x, z)]); }
+    for (let t = 1; t <= 6; t++) { const f = t / 7, x = a[0] + (b[0] - a[0]) * f, z = a[1] + (b[1] - a[1]) * f; BULBS.push([x + 0.5, 15.5 - 3.2 * Math.sin(f * Math.PI), z + 0.5, k++ % 5, quarter(x, z), i, j]); }
   }
 }
-// the lights' state, shared with the look (which draws it) and the radar: how bright each quarter is (1 on, 0 out)
-const POWER = { on: [1, 1, 1, 1], lit: [1, 1, 1, 1] };
-const LIGHTS = { first: 50, every: 24, after: 45, boost: 1.35 };   // seconds to the first quarter going out, between quarters, after a reset; how much faster the dead are in the dark
+// and a string along the top of the fence, all the way round, broken at the gates
+{
+  let k = 0;
+  const run = (x0, z0, x1, z1) => { const n = Math.round(Math.hypot(x1 - x0, z1 - z0) / 7); for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, z = z0 + (z1 - z0) * i / n; BULBS.push([x, 11.2 + (i & 1) * 0.8, z, k++ % 5, quarter(x, z)]); } };
+  for (const z of [N1 + 1, S0 - 1]) { run(W1 + 4, z, GX - GATE - 8, z); run(GX + GATE + 8, z, E0 - 4, z); }
+  for (const x of [W1 + 1, E0 - 1]) { run(x, N1 + 4, x, GZ - GATE - 8); run(x, GZ + GATE + 8, x, S0 - 4); }
+}
+// the floodlight towers outside the fence (as Camp Deadfall's: looks/storm.js draws them): two a side, 32 out, each a
+// bank of lamps 80 up aimed well in. Each is on the circuit of the quarter it stands by, and goes out with it.
+const FLOODS = [];
+for (const f of [0.25, 0.75]) FLOODS.push({ x: WX * f, z: -32, nx: 0, nz: 1 }, { x: WX * f, z: WZ + 32, nx: 0, nz: -1 }, { x: -32, z: WZ * f, nx: 1, nz: 0 }, { x: WX + 32, z: WZ * f, nx: -1, nz: 0 });
+for (const b of FLOODS) { b.y = 80; b.aim = [b.x + b.nx * 190 + (WX / 2 - b.x) * 0.15 * Math.abs(b.nz), b.z + b.nz * 190 + (WZ / 2 - b.z) * 0.15 * Math.abs(b.nx)]; b.quarter = quarter(Math.max(1, Math.min(WX - 1, b.x)), Math.max(1, Math.min(WZ - 1, b.z))); }
+// the lights' state, shared with the look (which draws it), the stalls and the radar: whether each quarter has power
+// (on), how bright it is just now (lit: 1 on, 0 out, anything between while it flickers), and rev, which goes up
+// whenever something that throws light is smashed
+const POWER = { on: [1, 1, 1, 1], lit: [1, 1, 1, 1], rev: 0 };
+const LIGHTS = { first: 50, every: 24, after: 45, boost: 1.35, flicker: 2.6 };   // seconds to the first quarter going out, between quarters, after a reset; how much faster the dead are in the dark; how long a quarter flickers before it goes
+
+// ---- the stalls, the trucks and the signs (../fairstalls.js: meshes at twice the detail) ---------------------------------
+// Along the midway, their fronts to it: games down the north side and the west of the south side, the food at the
+// south-east. Trucks by the avenue, serving toward it. An arch over each way in to the crossing.
+const NORTH = MID[0] - 11, SOUTH = MID[1] + 8, F = Math.PI;
+const stall = (kind, x, z, yaw, name, neon, frame, a, more = {}) => ({ kind, x, z, yaw, name, neon, frame, a, ...more });
+const C = { red: 0xc8342c, blue: 0x2f6fc0, green: 0x3c9a52, yellow: 0xe8b830, teal: 0x1f9c98, pink: 0xe86aa8, purple: 0x7a4ac0, orange: 0xe2752a, navy: 0x243a6a, white: 0xeee8da };
+const STALLS = [
+  stall('booth', 64, NORTH, 0, 'RING TOSS', 'yellow', 'red', C.red, { game: 'ring' }),
+  stall('booth', 96, NORTH, 0, 'BALLOON POP', 'pink', 'cyan', C.blue, { game: 'balloon', seed: 2 }),
+  stall('booth', 128, NORTH, 0, 'KNOCK EM DOWN', 'green', 'yellow', C.green, { game: 'cans', seed: 4 }),
+  stall('booth', 160, NORTH, 0, 'DUCK POND', 'cyan', 'yellow', C.teal, { game: 'duck', seed: 1 }),
+  stall('booth', 192, NORTH, 0, 'DEAD EYE', 'red', 'white', C.purple, { game: 'deadeye', seed: 3 }),
+  stall('booth', 320, NORTH, 0, 'HOOPS', 'orange', 'blue', C.orange, { game: 'hoops', seed: 5 }),
+  stall('booth', 432, NORTH, 0, 'SPIN TO WIN', 'purple', 'yellow', C.yellow, { game: 'spin', seed: 6 }),
+  stall('booth', 464, NORTH, 0, 'RING TOSS', 'yellow', 'red', C.teal, { game: 'ring', seed: 2 }),
+  stall('booth', 64, SOUTH, F, 'SPIN TO WIN', 'purple', 'yellow', C.pink, { game: 'spin', seed: 3 }),
+  stall('booth', 96, SOUTH, F, 'DUCK POND', 'cyan', 'yellow', C.blue, { game: 'duck', seed: 5 }),
+  stall('booth', 128, SOUTH, F, 'DEAD EYE', 'red', 'white', C.green, { game: 'deadeye' }),
+  stall('booth', 160, SOUTH, F, 'HOOPS', 'orange', 'blue', C.red, { game: 'hoops', seed: 4 }),
+  stall('booth', 192, SOUTH, F, 'BALLOON POP', 'pink', 'cyan', C.orange, { game: 'balloon', seed: 6 }),
+  stall('kiosk', 320, SOUTH, F, 'FRIED OREOS', 'pink', 'white', C.navy, { food: 'oreo' }),
+  stall('kiosk', 352, SOUTH, F, 'CORN DOGS', 'yellow', 'red', C.red, { food: 'corndog' }),
+  stall('kiosk', 384, SOUTH, F, 'LEMONADE', 'green', 'yellow', C.yellow, { food: 'lemonade', b2: C.green }),
+  stall('kiosk', 416, SOUTH, F, 'POPCORN', 'orange', 'white', C.red, { food: 'popcorn' }),
+  stall('kiosk', 448, SOUTH, F, 'COTTON CANDY', 'cyan', 'pink', C.pink, { food: 'cotton', b: 0xcfeaf6 }),
+  stall('truck', 221, 130, Math.PI / 2 + 0.06, 'TACOS', 'green', 'orange', C.teal, { top: 'taco', c: C.orange }),
+  stall('truck', 291, 98, -Math.PI / 2 + 0.05, 'ICE CREAM', 'pink', 'cyan', C.white, { top: 'cone', b: C.pink, c: C.pink }),
+  stall('truck', 291, 300, -Math.PI / 2 - 0.07, 'BURGERS', 'yellow', 'red', C.red, { top: 'burger', c: C.yellow }),
+  stall('arch', 40, GZ, Math.PI / 2, 'GAMES', 'yellow', 'pink', C.red, { span: 116 }),
+  stall('arch', 478, GZ, Math.PI / 2, 'EATS', 'pink', 'cyan', C.blue, { span: 116 }),
+  stall('arch', GX, 44, 0, 'RIDES', 'cyan', 'yellow', C.purple, { span: 108 }),
+  stall('arch', GX, 372, 0, 'MIDWAY', 'orange', 'green', C.red, { span: 108 }),
+  stall('pylon', 140, 112, 0.3, 'BIG WHEEL', 'yellow', 'red', 0),
+  stall('pylon', 212, 168, -0.4, 'PRIZES', 'pink', 'cyan', 0),
+  stall('pylon', 356, 176, 0.2, 'FREAK SHOW', 'green', 'purple', 0),
+  stall('pylon', 170, 296, 2.6, 'FUN HOUSE', 'purple', 'yellow', 0),
+  stall('pylon', 212, 246, F + 0.3, 'COLD DRINKS', 'cyan', 'white', 0),
+  stall('striker', 300, 172, 0.5, '', 'red', 'red', C.red),
+  stall('striker', 214, 262, F - 0.4, '', 'yellow', 'yellow', C.blue),
+  stall('tickets', 66, 96, 0, 'TICKETS', 'yellow', 'red', C.blue),
+  stall('genset', (GEN.x0 + GEN.x1) / 2, (GEN.z0 + GEN.z1) / 2, 0, '', 'yellow', 'yellow', 0),
+  stall('board', TENT.x + 0.5, TENT.z + TENT.r + 2.2, 0, 'BIG TOP', 'yellow', 'red', 0, { w: 52, h: 13, y: 35, legs: true }),
+  stall('board', GX, S0 - 0.5, F, "DEAD MAN'S FAIR", 'red', 'yellow', 0, { w: 98, h: 15, y: 53 }),
+];
+// the lamp posts are the same kind of thing (so a car can knock one down): LAMPS[i] stands at POSTS[i]
+const LAMPS = POSTS.map(([x, z]) => stall('lamp', x + 0.5, z + 0.5, 0, '', 'warm', 'warm', 0));
+STALLS.push(...LAMPS);
+const POOLS = stallPools(STALLS, quarter);
 
 // the six places to line up for the round, the player's first, far apart and facing into the fair
 const STARTS = [
@@ -65,14 +130,13 @@ const STARTS = [
 const SPOTS = [...STARTS, { x: 24, z: 24 }, { x: WX - 24, z: 24 }, { x: 24, z: WZ - 24 }, { x: WX - 24, z: WZ - 24 }, { x: 160, z: 208 }, { x: 352, z: 208 }, { x: 256, z: 150 }, { x: 256, z: 270 }];
 // where the supply drops come down (../drops.js): open ground, spread over the fair
 const DROPS = dropSpots([[256, 208], [150, 150], [330, 76], [190, 360], [300, 250], [460, 208], [60, 190], [256, 110], [256, 320], [440, 80]]);
-// the two switches (pickups.js 'switch': driven over, it does what its `on` says). The map's rides and lights fill in
-// what they do when they are made (setup, below).
+// the lights' switch (pickups.js 'switch': driven over, it does what its `on` says, which the lights fill in when they
+// are made: setup, below)
 const SW_LIGHTS = { kind: 'switch', x: SWITCH.x, z: SWITCH.z, hold: true, name: 'Lights on', sub: 'The generator is running again' };
-const SW_WHEEL = { kind: 'switch', x: RELEASE.x, z: RELEASE.z, hold: true, up0: true, rivals: false, name: 'Wheel released', sub: 'Stay out of its way' };
 
-// ---- the route grid: the voxels, and the wheel while it is on its stand ------------------------------------------------
-let rides = null;
-const nav = makeGridNav({ also: (x, z) => !!rides && rides.blocks(x, z) });
+// ---- the route grid: the voxels, the stalls that still stand, and the wheel while it is on its stand ------------------------------------------------
+let rides = null, stalls = null;
+const nav = makeGridNav({ also: (x, z) => (!!rides && rides.blocks(x, z)) || (!!stalls && stalls.blocks(x, z)) });
 const radarGrid = gridRadar(nav);
 
 // ---- the fence and the gates --------------------------------------------------------------------------------------------
@@ -118,12 +182,6 @@ function bigTop({ x: cx, z: cz, r }) {
   // lamps round the eaves
   begin('Tent lamps', 'prop', false);
   for (let k = 0; k < 32; k++) { const a = k / 32 * TAU; set(Math.round(cx + Math.cos(a) * (r + 0.6) - 0.5), WALL + 1, Math.round(cz + Math.sin(a) * (r + 0.6) - 0.5), k & 1 ? M.LIT_Y : M.LIT_R); }
-  // the board over the way in
-  begin('Tent sign', 'sign', true);
-  box(cx - 14, 14, cz + r + 1, cx + 14, 21, cz + r + 1, M.DARK);
-  const F = face('b', cx - 14, cz + r + 1, cx + 14, cz + r + 1), name = 'BIG TOP';
-  text(F, name, (F.W - textW(name)) >> 1, 15, 1, M.LIT_Y);
-  for (const x of [cx - 14, cx + 14]) box(x, 0, cz + r + 1, x, 13, cz + r + 1, M.DARK);
 }
 
 // ---- the Ferris wheel's stand, and the carousel's plinth (the rides themselves are meshes: ../fairrides.js) -----------
@@ -136,9 +194,6 @@ function wheelStand({ x: cx, z: cz }) {
     box(cx - SPREAD - 3, 0, cz + dz - 1, cx + SPREAD + 3, 0, cz + dz + 2, M.CONC);
     box(cx - 2, H - 1, cz + dz, cx + 2, H + 2, cz + dz + 1, M.DARK); set(cx, H + 3, cz + dz, M.LIT_R);
   }
-  // the ticket hut
-  begin('Ticket hut', 'prop', false);
-  box(cx - 34, 0, cz + 18, cx - 26, 7, cz + 24, M.AWN_B); box(cx - 35, 8, cz + 17, cx - 25, 8, cz + 25, M.TRIM); box(cx - 32, 3, cz + 24, cx - 28, 5, cz + 24, M.LIT_Y);
 }
 function carouselPlinth({ x: cx, z: cz, r }) {
   begin('Carousel', 'barrier', false);
@@ -186,39 +241,8 @@ function coaster() {
   for (let z = sz - 11; z <= sz + 11; z++) box(sx - 1, 10, z, sx + 10, 10, z, ((z / 3) | 0) & 1 ? M.AWN_B : M.TRIM);
 }
 
-// ---- booths, the generator and the small things ---------------------------------------------------------------------
-// a game booth: a counter under a striped awning, open toward the midway (dir 1: its front is toward +z, -1: -z).
-// A prop: a car goes through it.
-const AWN = () => [M.AWN_R, M.AWN_B, M.AWN_G, M.SIGN];
-function booth(x, z, dir, k) {
-  begin('Game booth', 'prop', false);
-  const w = 13, d = 7, back = dir > 0 ? z : z + d, front = dir > 0 ? z + d : z, col = AWN()[k % 4];
-  box(x, 0, back, x + w, 7, back, M.WOOD); box(x, 0, Math.min(back, front), x, 7, Math.max(back, front), M.WOOD); box(x + w, 0, Math.min(back, front), x + w, 7, Math.max(back, front), M.WOOD);
-  box(x, 0, front, x + w, 2, front, col); box(x, 3, front, x + w, 3, front, M.TRIM);
-  for (let a = 0; a <= w; a++) box(x + a, 8, Math.min(back, front) - 1, x + a, 8, Math.max(back, front) + 1, ((a / 2) | 0) & 1 ? col : M.TRIM);
-  for (let a = 2; a < w; a += 3) set(x + a, 6, back + dir, [M.LIT_Y, M.LIT_R, M.LIT_B][(a + k) % 3]);   // the prizes on the back wall
-}
-function generator({ x0, x1, z0, z1 }) {
-  begin('Generator truck', 'barrier', true);
-  box(x0, 2, z0, x1, 11, z1, M.CAR_C); box(x0, 12, z0, x1, 12, z1, M.DARK);
-  for (let y = 4; y <= 9; y += 2) box(x0 + 2, y, z1, x1 - 6, y, z1, M.DARK);            // the louvres
-  box(x1 - 4, 5, z1, x1 - 2, 8, z1, M.LIT_Y);                                           // its panel
-  for (const x of [x0 + 2, x1 - 3]) for (const z of [z0, z1 - 1]) box(x, 0, z, x + 1, 1, z + 1, M.TYRE);
-  box(x0 + 3, 13, z0 + 3, x0 + 4, 18, z0 + 4, M.STEEL); set(x0 + 3, 19, z0 + 3, M.CHAR);   // the exhaust stack
-}
+// ---- the generator and the small things ---------------------------------------------------------------------
 function hayBale(x, z, alongX) { begin('Hay bale', 'prop', false); if (alongX) box(x, 0, z, x + 4, 2, z + 2, M.OCHRE); else box(x, 0, z, x + 2, 2, z + 4, M.OCHRE); }
-function lampPost(x, z) {
-  begin('Lamp post', 'prop', false);
-  box(x, 0, z, x, 15, z, M.DARK); set(x, 16, z, M.LIT_Y);
-}
-// the high striker: ring the bell
-function striker(x, z) {
-  begin('High striker', 'prop', false);
-  box(x, 0, z, x + 2, 1, z + 2, M.AWN_R);
-  for (let y = 2; y <= 26; y++) { set(x + 1, y, z + 1, ((y / 4) | 0) & 1 ? M.AWN_R : M.TRIM); }
-  disc(x + 1, z + 1, 27, 2, M.BRASS); set(x + 1, 28, z + 1, M.LIT_Y);
-}
-
 // ---- the build ------------------------------------------------------------------------------------------------------
 function build() {
   setSeed(1313); place(0, 0, -1); ctx.lot = -1; ctx.L = 3;
@@ -234,23 +258,13 @@ function build() {
   // the arch over the main gate, high enough to drive under
   begin('Fair arch', 'sign', true);
   for (const x of [GX - GATE - 4, GX + GATE + 3]) box(x, 20, S0 - 1, x + 1, 30, S0, M.AWN_R);
-  box(GX - GATE - 4, 22, S0 - 1, GX + GATE + 4, 30, S0 - 1, M.DARK);
-  const sign = face('f', GX - GATE - 4, S0 - 1, GX + GATE + 4, S0 - 1), name = 'DEAD MANS FAIR';
-  text(sign, name, ((sign.W - textW(name)) >> 1), 24, 1, M.LIT_Y);
-  for (let x = GX - GATE - 3; x <= GX + GATE + 3; x += 3) set(x, 31, S0 - 1, (x / 3) & 1 ? M.LIT_R : M.LIT_Y);
+  box(GX - GATE - 4, 20, S0 - 1, GX + GATE + 4, 21, S0, M.AWN_R); box(GX - GATE - 4, 31, S0 - 1, GX + GATE + 4, 31, S0, M.AWN_R);   // (its name is neon: STALLS)
 
   wheelStand(FERRIS);
   bigTop(TENT);
   carouselPlinth(CAROUSEL);
-  generator(GEN);
   coaster();
-  // the booths along the midway, their fronts to it
-  let k = 0;
-  for (const x of [56, 88, 120, 152, 184, 300, 428, 460]) booth(x, MID[0] - 18, 1, k++);
-  for (const x of [72, 104, 168, 296, 328, 360]) booth(x, MID[1] + 11, -1, k++);
-  striker(214, MID[0] - 16); striker(296, MID[1] + 44);
-  for (const [x, z, a] of [[150, 96, 1], [158, 96, 1], [300, 100, 0], [210, 250, 1], [216, 254, 0], [300, 296, 1], [60, 350, 0], [226, 120, 0], [90, 286, 1], [176, 150, 1], [330, 164, 0]]) hayBale(x, z, a);
-  for (const [x, z] of POSTS) lampPost(x, z);
+  for (const [x, z, a] of [[150, 96, 1], [158, 96, 1], [304, 118, 0], [60, 350, 0], [90, 286, 1], [176, 150, 1], [336, 160, 0], [420, 250, 1], [120, 150, 0]]) hayBale(x, z, a);
   // the crossing, the midway and the wheel's alley are left open
   finish();
 }
@@ -317,43 +331,65 @@ function breach(G) {
 }
 
 // ---- the lights -------------------------------------------------------------------------------------------------------
-// Run from the round's own clock (so every device online agrees): a quarter goes out at LIGHTS.first, then one more
-// every LIGHTS.every, in an order that is the same on every device, until someone drives over the switch.
+// Run from the round's own clock (so every device online agrees): a quarter goes at LIGHTS.first, then one more
+// every LIGHTS.every, in an order that is the same on every device, until someone drives over the switch. A quarter
+// doesn't just go: it flickers for a couple of seconds first (which is the warning), then it is out.
 let lightsApi = null, lightT = 0, lightN = 0, lightsRound = false;
 const ORDER = [2, 1, 0, 3, 1, 3, 0, 2];
+const flick = [0, 0, 0, 0];            // seconds of flickering a quarter has left before it goes out (or, coming back on, before it holds)
 function lightsOn(c) {
-  for (let q = 0; q < 4; q++) POWER.on[q] = 1;
+  for (let q = 0; q < 4; q++) { if (!POWER.on[q]) flick[q] = -0.7; POWER.on[q] = 1; }
   lightT = LIGHTS.after; SW_LIGHTS.raise = false;
-  if (lightsApi && c) lightsApi.sfx.play('ui_go', 0.8, SWITCH.x, SWITCH.z);
+  if (lightsApi && c) { lightsApi.sfx.play('ui_go', 0.8, SWITCH.x, SWITCH.z); lightsApi.sound('zap', 0.6, SWITCH.x, 4, SWITCH.z); }
+}
+// how bright a flickering light is, t seconds in of T: mostly on with dropouts at first, mostly out with flashes at the end
+function flickerAt(t, T) {
+  const f = t / T, n = Math.floor(t * 17), h = Math.sin(n * 91.7 + Math.floor(t * 5) * 13.3) * 43758.5453, r = h - Math.floor(h);
+  return r > f * f * 0.9 + 0.12 ? 1 - 0.25 * f : 0.08;
 }
 function stepLights(dt) {
   const G = lightsApi; if (!G) return;
   const m = G.mode, running = !!m && m.phase === 'run';
-  if (!running) { if (lightsRound && m && m.phase === 'count') { lightsRound = false; lightsOn(null); lightT = LIGHTS.first; } }
+  if (!running) { if (lightsRound && m && m.phase === 'count') { lightsRound = false; lightsOn(null); flick.fill(0); lightT = LIGHTS.first; } }
   else {
     if (!lightsRound) { lightsRound = true; lightT = Math.max(1, LIGHTS.first - (m.clock || 0)); }
     if ((lightT -= dt) <= 0) {
       lightT = LIGHTS.every;
-      let q = -1; for (let i = 0; i < ORDER.length && q < 0; i++) { const o = ORDER[(lightN + i) % ORDER.length]; if (POWER.on[o]) q = o; }
+      let q = -1; for (let i = 0; i < ORDER.length && q < 0; i++) { const o = ORDER[(lightN + i) % ORDER.length]; if (POWER.on[o] && flick[o] <= 0) q = o; }
       lightN++;
-      if (q >= 0) {
-        POWER.on[q] = 0; SW_LIGHTS.raise = true;
+      if (q >= 0) { flick[q] = LIGHTS.flicker; G.sound('zap', 0.5); }
+    }
+  }
+  for (let q = 0; q < 4; q++) {
+    if (flick[q] > 0) {
+      // going: flickering, then out
+      const was = POWER.lit[q];
+      flick[q] -= dt; POWER.lit[q] = flickerAt(LIGHTS.flicker - flick[q], LIGHTS.flicker);
+      if (POWER.lit[q] < 0.5 && was >= 0.5 && Math.random() < 0.5) G.sound('zap', 0.25);
+      if (flick[q] <= 0) {
+        flick[q] = 0; POWER.on[q] = 0; POWER.lit[q] = 0; SW_LIGHTS.raise = true;
         G.banner('Lights out', `The ${QUARTERS[q]} is dark. Hit the switch by the generator`);
         G.sfx.play('ui_tab', 0.9); G.sound('alarm', 0.5);
       }
-    }
+    } else if (flick[q] < 0) {
+      // coming back: a stutter, then on
+      flick[q] = Math.min(0, flick[q] + dt); POWER.lit[q] = flick[q] < 0 ? flickerAt(-flick[q], 0.7) : 1;
+    } else POWER.lit[q] += (POWER.on[q] - POWER.lit[q]) * Math.min(1, dt * 6);
   }
-  for (let q = 0; q < 4; q++) POWER.lit[q] += (POWER.on[q] - POWER.lit[q]) * Math.min(1, dt * 2.5);
 }
 
 export default {
   id: 'fair', name: "Dead Man's Fair", mode: 'survival',
   blurb: 'A county fair overrun by the dead, with the lights failing. No fighting the other cars: outlast them all.',
-  story: 'The dead have the run of the fair, and there are more every minute. Keep the lights on, and let the big wheel loose when they bunch up.',
+  story: 'The dead have the run of the fair, and there are more every minute. When the lights flicker, get to the switch by the generator: the dead are faster in the dark.',
   loading: ['Opening the fair', 'Stringing up the lights'],
   outer: 0x7f7450,
-  // twilight, with the fair's lights on (looks/fair.js): the bulbs, the posts' pools of light, and which quarters are lit
-  look: { kind: 'fair', middle: [GX, GZ], bulbs: BULBS, posts: POSTS.map(([x, z]) => [x + 0.5, z + 0.5, quarter(x, z)]), power: POWER, box: [W1 + 1, N1 + 1, E0, S0] },
+  // twilight, with the fair's lights on (looks/fair.js): the bulbs, the posts' and the stalls' pools of light, the
+  // floodlight towers outside the fence, and which quarters are lit
+  look: {
+    kind: 'fair', middle: [GX, GZ], bulbs: BULBS, posts: LAMPS.map((o) => ({ x: o.x, z: o.z, quarter: quarter(o.x, o.z), lamp: o })), pools: POOLS, power: POWER, box: [W1 + 1, N1 + 1, E0, S0],
+    banks: FLOODS, ring: { x: (W1 + 1 + E0) / 2, z: (N1 + 1 + S0) / 2, hx: (E0 - W1 - 1) / 2, hz: (S0 - N1 - 1) / 2, r: 2 },
+  },
   // The country past the fence (../backdrops/wilds.js): fields and woods, the road in, a farm, the town on the horizon.
   backdrop: {
     kind: 'wilds', seed: 7373,
@@ -374,16 +410,18 @@ export default {
     wind: [-0.18, -0.08],
   },
   build, ground,
-  pickups: [...DROPS, SW_LIGHTS, SW_WHEEL],
+  pickups: [...DROPS, SW_LIGHTS],
   drops: DROPS,
-  // the rides (meshes: the wheel and the carousel), made once the game's parts are there
+  // the rides (meshes: the wheel and the carousel) and the stalls, made once the game's parts are there
   hazards: [{ kind: 'custom', make(api) {
     lightsApi = api;
-    rides = makeRides(api, { wheel: { ...FERRIS, to: WX + 300 }, carousel: CAROUSEL });
-    SW_WHEEL.on = (c) => rides.release(c);
+    rides = makeRides(api, { wheel: { ...FERRIS, to: WX + 300, fixed: true }, carousel: CAROUSEL });
+    for (const p of POOLS) p.on = 1;
+    for (const o of STALLS) o.dead = false;
+    stalls = makeStalls(api, STALLS, POWER, quarter, [WX, WZ]);
     SW_LIGHTS.on = (c) => lightsOn(c);
     SW_LIGHTS.raise = false;
-    return { step(dt, live) { rides.step(dt, live); stepLights(dt); SW_WHEEL.gone = rides.loose; } };
+    return { step(dt, live) { rides.step(dt, live); stalls.step(dt); stepLights(dt); rides.power(POWER.lit[quarter(FERRIS.x, FERRIS.z)], POWER.lit[quarter(CAROUSEL.x, CAROUSEL.z)]); } };
   } }],
   groundDetail: { soft: 'dirt', hard: false, wet: 0 },
   rutBox: [W1, N1, E0, S0],
@@ -404,5 +442,5 @@ export default {
     if (rides) rides.radar(R, s, ox, oy);
   },
   nav,
-  rides: () => rides && rides.wheel,   // (for the tests)
+  rides: () => rides && rides.wheel, stalls: () => stalls, power: POWER,   // (for the tests)
 };
