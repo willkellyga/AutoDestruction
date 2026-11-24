@@ -638,7 +638,7 @@ function drawRadar() {
   const B = MAP.radarBox || [0, 0, WX, WZ], s = 150 / Math.max(B[2] - B[0], B[3] - B[1]), w = WX * s, h = WZ * s;
   const R = radar, ox = (150 - (B[2] - B[0]) * s) / 2 - B[0] * s, oy = (150 - (B[3] - B[1]) * s) / 2 - B[1] * s;
   R.clearRect(0, 0, 150, 150);
-  R.fillStyle = 'rgba(20,24,28,0.55)'; R.fillRect(ox, oy, w, h);
+  R.fillStyle = 'rgba(14,15,18,0.5)'; R.fillRect(ox, oy, w, h);   // (on the box's own dark backing: page.html #radar)
   MAP.radar(R, s, ox, oy, w, h);
   if (mode.radar) mode.radar(R, s, ox, oy, w, h);
   for (const c of cars) {
