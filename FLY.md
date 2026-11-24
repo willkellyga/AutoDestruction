@@ -17,6 +17,23 @@ yet. Pick a name nobody else on Fly.io has, because it becomes the address:
 If it asks "Do you want to tweak these settings before proceeding?", answer **No**. It writes the name into
 `fly.toml`; commit that change so later deploys use it.
 
+## Once: device reports
+
+Every game page reports how it runs on that device (frame rate, slowest frame, quality step, load time, errors, reloads
+after a crash) every 3 seconds; `derby/server/reports.mjs` keeps them in `/data/reports.jsonl`. Before the first deploy
+that has the `[mounts]` lines in `fly.toml`, make the volume they need (1 GB, about $0.15 a month) and pick a secret
+word for the host page (never put it in the repository):
+
+    fly volumes create ad_reports --size 1 --region iad -y
+    fly secrets set HOST_KEY=<your word>
+
+Then, after a deploy, open `https://<app name>.fly.dev/host?key=<your word>` once: the browser remembers the key and the
+page lists every device with its latest numbers. To copy all the reports to the Mac:
+
+    fly ssh sftp get /data/reports.jsonl reports.jsonl
+
+Add `?perf=1` to the game's address to see the same numbers in a corner of the screen, or `?report=0` to send none.
+
 ## Each deploy (in the repo's folder, after `git pull`)
 
     fly deploy --ha=false

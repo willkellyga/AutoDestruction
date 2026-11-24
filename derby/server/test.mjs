@@ -3,12 +3,15 @@
 // Quick play per mode (countdown, the mode's own number of cars, bots fill), friends' rooms (code, the host picks the
 // mode, start, a wrong code), a round's messages passed on, and the host leaving mid-round (the next player hosts).
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PORT = 19000 + Math.floor(Math.random() * 1000);
-const srv = spawn(process.execPath, [path.join(here, 'server.mjs')], { env: { ...process.env, PORT: String(PORT) }, stdio: ['ignore', 'pipe', 'inherit'] });
+const DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'ad-reports-'));
+const srv = spawn(process.execPath, [path.join(here, 'server.mjs')], { env: { ...process.env, PORT: String(PORT), DATA_DIR: DATA }, stdio: ['ignore', 'pipe', 'inherit'] });
 let srvLog = ''; srv.stdout.on('data', (d) => { srvLog += d; if (process.env.V) process.stdout.write(d); });
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 let fails = 0;
@@ -26,6 +29,18 @@ class Client {
 }
 try {
   for (let i = 0; i < 50 && !srvLog.includes('running'); i++) await wait(100);
+  console.log('Device reports');
+  const base = 'http://localhost:' + PORT;
+  const post = (d) => fetch(base + '/report', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(d) });
+  ok((await post({ id: 'ipad1', device: 'iPad', fps: 41, crashed: 1 })).status === 204, 'a report is taken');
+  await post({ id: 'ipad1', device: 'iPad', fps: 44 }); await post('not a report'); await wait(200);
+  const list = await (await fetch(base + '/reports')).json();
+  ok(list.length === 1 && list[0].fps === 44 && list[0].crashes === 1, 'the host sees the last report and one crash');
+  // (written through the same thread pool as the server's start-up Brotli of the page, so it can land a few seconds late)
+  let lines = [];
+  for (let i = 0; i < 150 && lines.length < 2; i++) { await wait(100); try { lines = fs.readFileSync(path.join(DATA, 'reports.jsonl'), 'utf8').trim().split('\n').filter(Boolean); } catch (e) { /* not yet */ } }
+  ok(lines.length === 2, 'both reports are kept in reports.jsonl (' + lines.length + ')');
+  ok((await fetch(base + '/host')).status === 200, 'the host page opens at home (no HOST_KEY)');
   console.log('Quick play');
   const a = [1, 2].map((i) => new Client('r' + i, 'Racer' + i, 'lobby', { room: 'quick:race', touch: i === 1 }));
   const z = new Client('z1', 'Zed', 'lobby', { room: 'quick:base' });

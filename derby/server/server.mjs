@@ -8,7 +8,8 @@
 //   sfx/*        named after their content (crunch-3f9a1c02be.mp3), so a name never changes what it holds: kept a year,
 //                immutable, never asked about again; a changed sound is a new name the new page asks for
 // Each file is compressed once as it is read, Brotli for browsers that take it and gzip for the rest (mp3s are left
-// as they are: they don't get smaller). Also /healthz and /stats (counts only).
+// as they are: they don't get smaller). Also /healthz and /stats (counts only), and the device reports (reports.mjs):
+// POST /report from every game page, kept in $DATA_DIR/reports.jsonl, shown on /host (behind HOST_KEY on Fly.io).
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,6 +17,7 @@ import zlib from 'node:zlib';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { attachRelay } from './relay.mjs';
+import { makeReports } from './reports.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DIR = process.env.GAME_DIR ? path.resolve(process.env.GAME_DIR) : path.join(here, '../dist/web');
@@ -51,9 +53,12 @@ function files() {
   return site.files;
 }
 files();
+const stamp = (t) => console.log('  ' + new Date().toISOString().slice(11, 19) + '  ' + t);
+const reports = makeReports({ dir: process.env.DATA_DIR || here, hostKey: process.env.HOST_KEY || '', isPublic: !!process.env.FLY_APP_NAME, log: stamp });
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x'), p = url.pathname;
+  if (reports.handle(req, res, url)) return;
   if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); return res.end(); }
   if (p === '/healthz') { res.writeHead(200, { 'content-type': 'text/plain' }); return res.end('ok'); }
   if (p === '/stats') { res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); return res.end(JSON.stringify(relay.stats())); }
@@ -69,6 +74,6 @@ const server = http.createServer((req, res) => {
   res.writeHead(200, { 'content-type': f.type, 'content-length': bytes.length, 'cache-control': keep, etag: f.tag, ...(f.br ? { vary: 'accept-encoding' } : {}), ...(enc ? { 'content-encoding': enc } : {}) });
   return res.end(req.method === 'HEAD' ? undefined : bytes);
 });
-const relay = attachRelay(server, { log: (t) => console.log('  ' + new Date().toISOString().slice(11, 19) + '  ' + t) });
+const relay = attachRelay(server, { log: stamp });
 server.listen(PORT, '0.0.0.0', () => console.log(`\nAuto Destruction online is running: http://localhost:${PORT}${files() ? '' : '   (no build yet: node derby/build.mjs)'}\n`));
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(0));

@@ -6,6 +6,15 @@ primary_region = 'iad'
 [build]
   dockerfile = 'Dockerfile'
 
+# Device reports (derby/server/reports.mjs) go to /data/reports.jsonl on a 1 GB volume, so they outlive deploys.
+# Make the volume once before the first deploy with these lines (FLY.md): fly volumes create ad_reports --size 1 --region iad
+[env]
+  DATA_DIR = '/data'
+
+[mounts]
+  source = 'ad_reports'
+  destination = '/data'
+
 [http_service]
   internal_port = 8080
   force_https = true

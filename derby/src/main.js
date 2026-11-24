@@ -33,6 +33,7 @@ import { bank as sfxBank, count as sfxCount } from './sfxfiles.js';
 import { makePickups } from './pickups.js';
 import { makeHazards } from './hazards.js';
 import { makeQuality } from './quality.js';
+import { startReports } from './report.js';
 import { makeDrift } from './drift.js';
 import { makeBackdrop } from './backdrop.js';
 import { lookSetup, makeLook } from './looks/index.js';
@@ -1578,14 +1579,19 @@ const quality = makeQuality({ renderer, composer, bloom: bloomPass, scene, camer
 const lookFrom = scene.children.length;
 const mapLook = MAP.look ? makeLook(MAP.look, { scene, renderer, camera, sky, hemi, sun, mats, bloom: bloomPass, quality, backdrop, sfx, setup: LOOK }) : null;
 const lookObjs = scene.children.slice(lookFrom);   // the look's own draws (the storm's rain, mist and beams): put away in the garage
+// how the game runs on this device, for the server's /host page (report.js; ?perf=1 shows it on screen too)
+const reports = startReports({ game, quality, renderer, MAP, cars, online: () => !!net });
 let last = performance.now();
 function frame(now) {
   requestAnimationFrame(frame);
   if (innerWidth !== sizeW || innerHeight !== sizeH) resize();
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   if (window.__hold) return;   // tests step the game by hand (window.__derby.step)
+  const a = performance.now();
   step(dt);
+  const b = performance.now();
   quality.judge(now); placeSky(); quality.draw();
+  reports.frame(now, b - a, performance.now() - b);
 }
 // Online, a hidden tab gets no frames: the host's bots (and horde) would stand still for everyone. So while the page is
 // hidden in an online round, a worker's clock steps the game (without drawing it); a worker's timer is not slowed the way
