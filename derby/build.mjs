@@ -35,8 +35,8 @@ const sfxFiles = { name: 'sfx-files', setup(b) {
 async function bundle(split) {
   const r = await build({ entryPoints: [here + 'src/main.js'], bundle: true, minify: !process.env.NOMIN, format: 'iife', write: false, define, loader: { '.wtxt': 'text', '.mp3': 'binary', '.wav': 'binary' }, plugins: split ? [sfxFiles] : [], logLevel: 'warning' });
   const js = r.outputFiles[0].text.replace(/<\/script/g, '<\\/script');
-  // one painted frame first, so the loading card is on the screen while the town is built
-  return '(() => { let done = false; const boot = () => { if (done) return; done = true;\n' + js + '\n}; requestAnimationFrame(() => setTimeout(boot, 30)); setTimeout(boot, 1500); })();';
+  // one painted frame first, so the loading screen is on the screen while the town is built (and its bar told: page.html)
+  return '(() => { let done = false; if (window.__adLoad) window.__adLoad.at(\'build\'); const boot = () => { if (done) return; done = true;\n' + js + '\n}; requestAnimationFrame(() => setTimeout(boot, 30)); setTimeout(boot, 1500); })();';
 }
 // the game's fonts (src/fonts, SIL Open Font License, see LICENSES.md) go into the page itself, so nothing loads from outside
 const fontCss = readFileSync(here + 'src/fonts/fonts.css', 'utf8').replace(/url\('([^']+\.woff2)'\)/g, (m, f) => `url(data:font/woff2;base64,${readFileSync(here + 'src/fonts/' + f).toString('base64')}) format('woff2')`);

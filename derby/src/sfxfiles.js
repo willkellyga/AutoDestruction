@@ -4,10 +4,14 @@
 // after its content so a browser can keep it for a year, and an import of one is { __sfx: 'sfx/<name>-<hash>.mp3' }.
 // Those are fetched once the page is up, all at once, and play as they arrive; one that fails stays quiet.
 const got = new Map();
+export const count = { asked: 0, got: 0 };   // files asked for and in (or failed), for the loading screen's bar
 const EMPTY = new Uint8Array(0);   // a sound that didn't come: decoding it fails, quietly, as a bad clip always has
 export function bytes(v) {
   if (!v || typeof v.__sfx !== 'string') return Promise.resolve(v || EMPTY);
-  if (!got.has(v.__sfx)) got.set(v.__sfx, fetch(v.__sfx).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(r.status))).then((b) => new Uint8Array(b)).catch(() => EMPTY));
+  if (!got.has(v.__sfx)) {
+    count.asked++;
+    got.set(v.__sfx, fetch(v.__sfx).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(r.status))).then((b) => new Uint8Array(b)).catch(() => EMPTY).finally(() => { count.got++; }));
+  }
   return got.get(v.__sfx);
 }
 // a bank of sets ({ name: [clip, clip] }, as src/sfx-bank.js has them) with every clip's bytes in, in the same order

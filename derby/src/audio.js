@@ -67,6 +67,8 @@ const LEVEL = { crunch: 0.8, crunch_heavy: 0.9, tink: 0.42, scrape: 0.5, carboom
 const TAKES = {};
 for (const k of Object.keys(CLIPS)) { const m = /^(.+)_\d+$/.exec(k); if (m && CLIPS[m[1]]) (TAKES[m[1]] = TAKES[m[1]] || [m[1]]).push(k); }
 
+// ask for every clip now (the served build fetches them), so they are in by the time the first sound plays
+export function fetchClips() { for (const clip of Object.values(CLIPS)) bytes(clip); }
 export function makeSounds(getCtx) {
   let ctx = null, bus = null, on = true;
   const buf = {}, last = {}, ear = { x: 0, z: 0, yaw: 0 };
