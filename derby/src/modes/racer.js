@@ -108,7 +108,7 @@ export function makeRacer(car, race, { autopilot = false, pace = 0.96, grip = 0.
     }
   }
 
-  // who to shoot: the nearest car ahead of it in the race that it can see in front, or the player when close
+  // who to shoot: the nearest car ahead of it in the race that it can see in front, or the player when close and in front
   function pick(all, player) {
     if (race.time() < 4) return null;   // nobody shoots for the first seconds, while the pack gets away from the grid
     const me = race.rec(car); let best = null, bs = 1e9;
@@ -118,6 +118,7 @@ export function makeRacer(car, race, { autopilot = false, pace = 0.96, grip = 0.
       const dx = o.x - car.x, dz = o.z - car.z, d = Math.hypot(dx, dz); if (d > AI.shoot) continue;
       const front = Math.abs(wrap(Math.atan2(dx, dz) - car.yaw)) < 1.1, ahead = r && me && r.progress > me.progress;
       let score;
+      if (!front && d > AI.close) continue;   // only at what it can see: in front, or right alongside
       if (o === player && d < CLOSE && race.time() > 5) score = d * 0.6;
       else if (ahead && front) score = d;
       else continue;
@@ -135,7 +136,8 @@ export function makeRacer(car, race, { autopilot = false, pace = 0.96, grip = 0.
     if (Tg) {
       const dx = Tg.x - car.x, dz = Tg.z - car.z, d = Math.hypot(dx, dz), lead = d / 340;
       car.aim.set(Tg.x + Tg.vx * lead + b.wob[0], 3 + b.wob[1] * 0.4, Tg.z + Tg.vz * lead + b.wob[2]);
-      b.seenT += dt;
+      const inView = d < AI.close || Math.abs(wrap(Math.atan2(dx, dz) - car.yaw)) < 1.1;   // (it may have gone behind since the pick)
+      b.seenT = inView ? b.seenT + dt : 0;
       const g0 = car.guns[0].g, reach = Math.min(150, (g0.range || AI.shoot) * 0.85), r = race.rec(Tg);
       gun = b.seenT > AI.reaction && d < reach && car.onTarget(0.18);
       if (Tg === player && b.seenT % 1.8 > 1) gun = false;   // at the player, in bursts: it gets a moment to get away

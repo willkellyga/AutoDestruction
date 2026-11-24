@@ -1442,33 +1442,61 @@ function aimRay() {
   return p;
 }
 // Aim help. With a mouse, a rival near the crosshair pulls the aim onto itself (and on where it will be when the rounds
-// get there), more the nearer the crosshair is. With touch, the guns pick the nearest rival they can see, mostly the
-// one ahead, and hold on to it for a moment.
-const AIM = { pull: 0.85, margin: 0.06, range: 330 };
+// get there), more the nearer the crosshair is. With touch, the guns lock on to a rival only while it is on the screen
+// (in front of the camera, inside the picture, with a clear line from the car): never one behind you or off to the side
+// that you can't see. It finds one by itself only in the middle of the picture (`zone`, of the screen's half-width,
+// round the crosshair), the one nearest the crosshair (a near one before a far one), held on to for a moment; a tap
+// on one anywhere on the screen picks it, and the guns stay on it while it stays on screen (`edge`). The locked one
+// wears the crosshair. On touch the guns swing round at `turn` radians a second (about a rival's), not the mouse's
+// near-instant 10, so a new target takes a moment to come onto.
+const AIM = { pull: 0.85, margin: 0.06, range: 330, edge: 0.88, zone: 0.6, tap: 70, turn: 3.5 };
 const _tc = new THREE.Vector3(), _ts = new THREE.Vector3();
-let autoT = null, autoKeep = 0, aimLock = null;
+let autoT = null, autoKeep = 0, aimLock = null, picked = null;
 function leadOn(o, from, out) { const t = Math.hypot(o.x - from.x, o.z - from.z) / 360; o.centre(out); out.x += o.vx * t; out.z += o.vz * t; out.y = 2.4; return out; }
+const aimables = () => (game.state !== 'test' && mode.targets ? mode.targets() : cars);   // (a mode can give other things to aim at: survival's zombies)
+// whether o is in the picture, or with `mid` in the middle of it round the crosshair (leaves where on the screen in _ts)
+function onScreen(o, c, mid) {
+  leadOn(o, c, _tc); if (camera.position.distanceTo(_tc) > AIM.range) return false;
+  _ts.copy(_tc).project(camera);
+  if (!(_ts.z < 1 && Math.abs(_ts.x) < AIM.edge && Math.abs(_ts.y) < AIM.edge)) return false;
+  return !mid || (Math.abs(_ts.x) < AIM.zone && Math.abs(_ts.y - 0.2) < AIM.zone);
+}
 function autoTarget(c, dt) {
   autoKeep -= dt;
-  const ok = (o) => o && !o.dead && !o.gone && Math.hypot(o.x - c.x, o.z - c.z) < 240 && clearLine(c.x, c.z, o.x, o.z, 4);
-  if (autoT && autoKeep > 0 && ok(autoT)) return autoT;
+  const ok = (o, mid) => o && o !== c && !o.dead && !o.gone && Math.hypot(o.x - c.x, o.z - c.z) < 240 && onScreen(o, c, mid) && clearLine(c.x, c.z, o.x, o.z, 4);
+  if (picked && !ok(picked)) picked = null;
+  if (picked) return picked;
+  if (autoT && autoKeep > 0 && ok(autoT)) return autoT;   // (one already locked can drift out of the middle for a moment)
   let best = null, bs = 1e9;
-  for (const o of game.state !== 'test' && mode.targets ? mode.targets() : cars) {   // (a mode can give other things to aim at: survival's zombies)
-    if (o === c || !ok(o)) continue;
-    const d = Math.hypot(o.x - c.x, o.z - c.z), off = Math.abs(wrap(Math.atan2(o.x - c.x, o.z - c.z) - cam.yaw));
-    const score = d * (1 + off * 0.9) * (o === autoT ? 0.7 : 1);
+  for (const o of aimables()) {
+    if (!ok(o, true)) continue;
+    const d = Math.hypot(o.x - c.x, o.z - c.z), r = Math.hypot(_ts.x * camera.aspect, _ts.y - 0.2);
+    const score = (r + 0.25) * (d + 60) * (o === autoT ? 0.7 : 1);
     if (score < bs) { bs = score; best = o; }
   }
   autoT = best; autoKeep = 0.6;
   return best;
 }
+// a tap on the picture (not on the stick or the buttons) picks the target nearest it, if one is close enough to the tap
+canvas.addEventListener('touchstart', (e) => {
+  const c = player, t = e.changedTouches[0];
+  if (!TOUCH || !t || !c || c.dead || (game.state !== 'play' && game.state !== 'test')) return;
+  const W = canvas.clientWidth, H = canvas.clientHeight; let best = null, bd = AIM.tap;
+  for (const o of aimables()) {
+    if (o === c || o.dead || o.gone || !onScreen(o, c)) continue;
+    const dd = Math.hypot((_ts.x * 0.5 + 0.5) * W - t.clientX, (-_ts.y * 0.5 + 0.5) * H - t.clientY);
+    if (dd < bd && clearLine(c.x, c.z, o.x, o.z, 4)) { bd = dd; best = o; }
+  }
+  if (best) { picked = autoT = best; autoKeep = 0.6; }
+}, { passive: true });
 function aimFor(c, dt) {
   const p = aimRay();
   let best = null, k = 0;
+  c.turretTurn = TOUCH ? AIM.turn : 10;
   if (TOUCH) { best = autoTarget(c, dt); k = best ? 1 : 0; }
   else {
     const tan = Math.tan(camera.fov * Math.PI / 360);
-    for (const o of game.state !== 'test' && mode.targets ? mode.targets() : cars) {
+    for (const o of aimables()) {
       if (o === c || o.dead || o.gone) continue;
       leadOn(o, c, _tc); const dist = camera.position.distanceTo(_tc); if (dist > AIM.range) continue;
       _ts.copy(_tc).project(camera); if (_ts.z > 1) continue;
@@ -1660,4 +1688,4 @@ if (window.__adLoad) window.__adLoad.built(() => sfxCount); else { const l = $('
   if (net || brief || /[?&](room|online|map)=/.test(location.search)) $('menu').hidden = false; else showHome();
 }
 requestAnimationFrame((t) => { last = t; frame(t); });
-window.__derby = { net, specials, crumple, cube, room, gcam, garageLight, startTest, endTest, tryPart: (s, k) => onTry(s, k), dummies, renderer, mapLook, touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, pauseOn, pauseOff, toHome, setPlay, sfx, audioMix, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop };
+window.__derby = { net, specials, crumple, cube, room, gcam, garageLight, startTest, endTest, tryPart: (s, k) => onTry(s, k), dummies, renderer, mapLook, touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH, picked }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, pauseOn, pauseOff, toHome, setPlay, sfx, audioMix, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop };

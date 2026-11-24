@@ -13,6 +13,7 @@
 // walls, and return the gaps as more gates). Without them the horde comes in from the middle of each edge.
 import { makeHorde, HORDE } from '../zombies.js';
 import { WX, WZ } from '../../../src/world.js';
+import { SURVIVAL_LEVELS } from '../tuning.js';
 
 const ORD = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th'];
 const clockText = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t) % 60).padStart(2, '0')}`;
@@ -55,14 +56,20 @@ export function makeSurvival(G) {
   const carsIn = () => (G.net ? G.net.players.length + G.net.bots : S.rivals + 1);
   const held = new Map();
   const bests = () => (G.save.survivalBest && typeof G.save.survivalBest === 'object' ? G.save.survivalBest : (G.save.survivalBest = {}));
-  const bestOf = () => +bests()[MAP.id] || 0;
-  function keepBest() { if (clock > bestOf()) { bests()[MAP.id] = Math.floor(clock); G.keepSave(); } }
+  // the difficulty (the start card's buttons): the save's, or Normal. Online rounds are always Normal. Each level has its
+  // own best time (Normal's under the map's id, as before the levels came in)
+  const levels = () => (G.save.levels && typeof G.save.levels === 'object' ? G.save.levels : (G.save.levels = {}));
+  const levelId = () => (SURVIVAL_LEVELS[levels().survival] ? levels().survival : 'normal');
+  let LV = SURVIVAL_LEVELS[levelId()], lvId = levelId();
+  const bestKey = () => (lvId === 'normal' ? MAP.id : `${MAP.id}-${lvId}`);
+  const bestOf = () => +bests()[bestKey()] || 0;
+  function keepBest() { if (clock > bestOf()) { bests()[bestKey()] = Math.floor(clock); G.keepSave(); } }
   // where the horde comes from
   const edge = [{ out: { x: WX / 2, z: -30 }, entry: { x: WX / 2, z: 30 } }, { out: { x: WX / 2, z: WZ + 30 }, entry: { x: WX / 2, z: WZ - 30 } }, { out: { x: -30, z: WZ / 2 }, entry: { x: 30, z: WZ / 2 } }, { out: { x: WX + 30, z: WZ / 2 }, entry: { x: WX - 30, z: WZ / 2 } }];
   let gates = (MAP.gates || edge).slice();
   const live = () => G.cars.filter((c) => !c.dead && !c.gone);
   const pick = (a) => a[Math.floor(Math.random() * a.length)];
-  const capNow = () => (horde ? Math.min(horde.max, Math.round(S.cap[0] + S.cap[1] * clock)) : 0);
+  const capNow = () => (horde ? Math.min(horde.max, Math.round((S.cap[0] + S.cap[1] * clock) * LV.count)) : 0);
 
   // a rival's driving: it mows down the dead, picking ones ahead of it that aren't at another car (going for those
   // means hitting the car too) and, when it is hurt, ones out on their own rather than in a crowd. It shoots the ones
@@ -106,7 +113,7 @@ export function makeSurvival(G) {
 
   // in they come: a few through a gate, or one over the wall. Returns how many.
   function spawn() {
-    const runs = breached ? Math.min(S.runners[1], S.runners[0] + (clock - S.breach) * S.runners[2]) : 0;
+    const runs = breached ? Math.min(S.runners[1], S.runners[0] + (clock - S.breach * LV.breach) * S.runners[2]) : 0;
     const runner = () => (Math.random() < runs ? HORDE.runner * (0.9 + Math.random() * 0.2) : undefined);
     if (MAP.wallSpot && Math.random() < 0.35) { const w = MAP.wallSpot(); return horde.spawn(w.x, w.z, { drop: true, in: w.in, speed: runner() }) ? 1 : 0; }
     const g = pick(gates), n = Math.round(S.group[0] + Math.random() * 2 + Math.min(1, clock / 120) * (S.group[1] - S.group[0] - 2));
@@ -141,7 +148,7 @@ export function makeSurvival(G) {
     if (G.net) mineOver = true; else { phase = won ? 'won' : 'done'; horde.active = false; }
     // (the player and the last rival can go down in the same moment: they share first)
     const place = won ? 1 : live().filter((c) => c !== G.player).length + 1, total = carsIn(), tie = !won && place === 1;
-    const bonus = S.place[place - 1] || 0, timeScrap = Math.round(clock / 60 * S.perMinute);
+    const bonus = Math.round((S.place[place - 1] || 0) * LV.prize), timeScrap = Math.round(clock / 60 * S.perMinute * LV.prize);
     const beat = clock > best0; keepBest();
     const lines = [
       `${tie ? 'Shared 1st' : ORD[place - 1]} of ${total}`,
@@ -166,7 +173,7 @@ export function makeSurvival(G) {
   // down at last after keeping going: the whole round, and the rest of the time's scrap
   function finishOvertime() {
     phase = 'done'; horde.active = false;
-    const rest = Math.max(0, Math.round((clock - paidT) / 60 * S.perMinute)), beat = clock > best0;
+    const rest = Math.max(0, Math.round((clock - paidT) / 60 * S.perMinute * LV.prize)), beat = clock > best0;
     keepBest();
     const scrap = Math.round(G.game.scrap + rest - scrap0);
     const lines = [
@@ -182,7 +189,12 @@ export function makeSurvival(G) {
 
   return {
     go: 'Survive',
-    get note() { const b = bestOf(); return 'The dead are overrunning the base and there are more every minute. One car, no second chances: outlast everyone.' + (b ? ` Your best here: ${clockText(b)}.` : ''); },
+    get note() { lvId = levelId(); LV = SURVIVAL_LEVELS[lvId]; const b = bestOf(); return 'The dead are overrunning the base and there are more every minute. One car, no second chances: outlast everyone.' + (LV.note ? ' ' + LV.note : '') + (b ? ` Your best here${lvId === 'normal' ? '' : ' on ' + LV.name}: ${clockText(b)}.` : ''); },
+    levels: {
+      list: Object.entries(SURVIVAL_LEVELS).map(([id, L]) => [id, L.name]),
+      get: levelId,
+      set(id) { if (!SURVIVAL_LEVELS[id]) return; levels().survival = id; G.keepSave(); },
+    },
     friendly: true,   // main.js: cars can't hurt each other, and shots go through them
     get horde() { return horde; }, get phase() { return phase; }, get clock() { return clock; }, get result() { return out; }, get breached() { return breached; },
     get cap() { return capNow(); }, get overtime() { return overtime; }, get best() { return bestOf(); },
@@ -191,6 +203,7 @@ export function makeSurvival(G) {
       // online (net.js): the host's device runs the horde and the bots; the others show its horde as a puppet, and tell
       // the host's device nothing about it (the same shots fly there). A zombie a player kills is paid on their device.
       const net = G.net;
+      lvId = net ? 'normal' : levelId(); LV = SURVIVAL_LEVELS[lvId];
       horde = makeHorde(G, { max: G.TOUCH() && !(net && net.host) ? S.peakPhone : S.peak, puppet: !!(net && !net.host), onKill: (z, by) => { if (net && by && by.remote) net.zkill(by); } });
       G.extras.push(horde);
       best0 = bestOf(); scrap0 = G.game.scrap;
@@ -220,13 +233,13 @@ export function makeSurvival(G) {
       }
       if (phase === 'run') {
         clock += dt;
-        horde.strength.speed = Math.min(S.speedMax, S.speed[0] + S.speed[1] * clock);
-        horde.strength.dmg = S.dmg[0] + S.dmg[1] * clock;
+        horde.strength.speed = Math.min(S.speedMax, (S.speed[0] + S.speed[1] * clock) * LV.speed);
+        horde.strength.dmg = (S.dmg[0] + S.dmg[1] * clock) * LV.dmg;
         // kept going after the win: each whole minute more pays as it passes (the rest when it ends)
-        if (overtime && clock - paidT >= 60) { paidT += 60; G.game.scrap += S.perMinute; G.toast('Another minute', `+${S.perMinute} scrap`); keepBest(); }
-        if (!breached && clock >= S.breach) breakThrough();
+        if (overtime && clock - paidT >= 60) { paidT += 60; const pm = Math.round(S.perMinute * LV.prize); G.game.scrap += pm; G.toast('Another minute', `+${pm} scrap`); keepBest(); }
+        if (!breached && clock >= S.breach * LV.breach) breakThrough();
         if (horde.puppet) owed = 0;   // (the host's device brings them in)
-        owed += horde.puppet ? 0 : (S.rate[0] + S.rate[1] * clock) * dt;
+        owed += horde.puppet ? 0 : (S.rate[0] + S.rate[1] * clock) * LV.rate * dt;
         const cap = capNow();
         while (owed >= 1 && horde.all.length < cap) owed -= Math.max(1, spawn());
         owed = Math.min(owed, 18);
