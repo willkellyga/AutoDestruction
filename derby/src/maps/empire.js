@@ -21,7 +21,10 @@
 import { WX, WZ, M, place, ctx, setSeed, bodies, put, set, begin, LOC, ri } from '../../../src/world.js';
 import { tree, lampPost } from '../../../src/kit.js';
 import { tenement, brownstone, deco, billboard } from '../../../src/nyc_kit.js';
-import { liberty, LIBERTY } from '../../../src/nyc_landmarks.js';
+import { LIBERTY } from '../../../src/nyc_landmarks.js';
+import { grabStatue, statueMesh } from './statue.js';
+import { dressBridges } from './bridges.js';
+import { makeStation } from './station.js';
 import { tower, church } from '../../../src/buildings_b.js';
 import { shop } from '../../../src/buildings_a.js';
 import { canvasFor, finish, pickSpot, GK } from './common.js';
@@ -87,7 +90,7 @@ function widthAt(leg, x, z) {
     case 4: return x > 610 ? 22 : 18;                  // the Brooklyn Bridge, then the canyon
     case 5: return 18;
     case 6: return 20;                                 // the causeway
-    case 7: case 8: case 9: case 10: return 26;        // round the statue
+    case 7: case 8: case 9: case 10: return 24;        // round the statue
     case 11: case 12: return 24;
     case 13: return z < 668 && z > 300 ? 16 : 24;      // the subway
     case 15: return 36;                                // the park
@@ -106,7 +109,7 @@ const PARTS = [
   { name: 'Queens Bridge', kind: 'deck', leg: 0, a: 636, b: 800, h: 16, up: 76, piers: 44 },
   { name: 'Brooklyn Bridge', kind: 'deck', leg: 4, a: 800, b: 636, h: 16, up: 76, piers: 44 },
   { name: 'Causeway', kind: 'deck', leg: 6, a: 452, b: 296, h: 6, up: 44, solid: 99 },
-  { name: 'Subway', kind: 'cut', leg: 13, a: 656, b: 312, h: -16, up: 72, roof: [576, 392], roofY: -1.5 },
+  { name: 'Subway', kind: 'cut', leg: 13, a: 656, b: 312, h: -16, up: 72, roof: [576, 392], roofY: -1.5, open: [560, 408] },
   { name: 'River Drive', kind: 'deck', leg: 21, a: 250, b: 644, h: 16, up: 78, piers: 48, solid: 15.6 },
 ];
 // the park's hills: [leg, the middle of it along the leg, how high, half its length]
@@ -114,7 +117,7 @@ const HILLS = [[15, 215, 9, 86], [17, 286, 7, 62]];
 const MARGIN = 6.5;                 // how far inside the room the racing line keeps a car's middle
 const GATES = 64;                   // checkpoint gates round the lap (about one every 90 voxels)
 // the El: portal frames over the avenue in Brooklyn (voxels), the deck and the train over them (hazards.js 'el')
-const EL = { x: 968, z0: 262, z1: 740, every: 40, y: 32 };
+const EL = { x: 968, z0: 44, z1: 980, every: 40, y: 32 };   // (it runs on past both ends of the avenue, so the train is seen crossing ahead)
 
 const ramp = (t) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
 const hump = (d, a, b, c, e) => (d <= a || d >= e ? 0 : d < b ? ramp((d - a) / (b - a)) : d <= c ? 1 : ramp((e - d) / (e - c)));
@@ -155,6 +158,7 @@ function course() {
     for (let i = 0; i < N; i++) if (leg[i] === p.leg && V[i] >= lo && V[i] <= hi) { idx.push(i); H[i] = p.h * hump(Math.abs(V[i] - p.a), 0, p.up, D - p.up, D); on[i] = p.kind === 'deck' ? 1 : 2; }
     const q = { ...p, i0: idx[0], n: idx.length - 1, H, half: (i) => W[i] };
     if (p.roof) { const r0 = Math.min(...p.roof), r1 = Math.max(...p.roof), ks = idx.map((i, k) => (V[i] >= r0 && V[i] <= r1 ? k : -1)).filter((k) => k >= 0); q.roof = [ks[0], ks[ks.length - 1]]; q.roofBox = V === Z ? [X[idx[0]] - W[idx[0]], r0, X[idx[0]] + W[idx[0]], r1] : [r0, Z[idx[0]] - W[idx[0]], r1, Z[idx[0]] + W[idx[0]]]; }
+    if (p.open) { const r0 = Math.min(...p.open), r1 = Math.max(...p.open), ks = idx.map((i, k) => (V[i] >= r0 && V[i] <= r1 ? k : -1)).filter((k) => k >= 0); q.open = [ks[0], ks[ks.length - 1]]; q.openZ = [r0, r1]; }
     return q;
   });
   const hills = HILLS.map(([lg, mid, h, half]) => {
@@ -189,6 +193,8 @@ function masks() {
       }
     }
   }
+  // (and nothing is built under the El where it runs on past the avenue)
+  for (let z = EL.z0 - 6; z <= EL.z1 + 6; z++) for (let x = EL.x - 33; x <= EL.x + 33; x++) used[z * WX + x] = 1;
   return (MK = { road, used, taken: new Uint8Array(WX * WZ) });
 }
 // whether a box of ground is free to build on: land, off the course, and nothing planned there yet
@@ -335,24 +341,27 @@ function trees() {
     }
   };
   grow(PARK.x0 + 6, PARK.z0 + 6, PARK.x1 - 8, PARK.z1 - 8, 1500, (x, z) => ((x - POND.x) / (POND.rx + 6)) ** 2 + ((z - POND.z) / (POND.rz + 6)) ** 2 > 1);
-  grow(ISLE.x - ISLE.half, ISLE.z - ISLE.half, ISLE.x + ISLE.half, ISLE.z + ISLE.half, 260, (x, z) => rbox(x, z, ISLE.x, ISLE.z, ISLE.half - 6, ISLE.r) && Math.hypot(x - ISLE.x, z - ISLE.z) > 54);
+  grow(ISLE.x - ISLE.half, ISLE.z - ISLE.half, ISLE.x + ISLE.half, ISLE.z + ISLE.half, 260, (x, z) => rbox(x, z, ISLE.x, ISLE.z, ISLE.half - 6, ISLE.r) && Math.hypot(x - ISLE.x, z - ISLE.z) > 96);
 }
 // the El's frames: a steel column either side of the avenue and a girder across between them, under the deck
 function elFrames() {
-  for (let z = EL.z0; z <= EL.z1; z += EL.every) {
+  const { road } = masks();
+  for (let z = EL.z0 + 18; z <= EL.z1 - 16; z += EL.every) {
+    if ([EL.x - 30, EL.x + 29].some((x) => road[z * WX + x] || road[(z + 1) * WX + x + 1] || !land(x, z))) continue;   // (no column in the road, where it turns in under the El)
     begin('El frame', 'barrier', false); bodies[bodies.length - 1].see = true;
     for (const x of [EL.x - 30, EL.x + 29]) for (let y = 0; y < EL.y; y++) for (let dz = 0; dz <= 1; dz++) for (let dx = 0; dx <= 1; dx++) put(x + dx, y, z + dz, y < 2 ? M.CONC : (y & 3) === 0 ? M.METAL : M.STEEL);
     for (let x = EL.x - 30; x <= EL.x + 30; x++) for (let dz = 0; dz <= 1; dz++) { set(x, EL.y - 2, z + dz, M.STEEL); set(x, EL.y - 1, z + dz, (x & 3) === 0 ? M.METAL : M.STEEL); }
   }
 }
+let STATUE = null, STATION = null;
 function build() {
+  // the statue first, while her island is bare: the engine's own, copied out of the world to be drawn at twice the size
+  STATUE = grabStatue(ISLE.x - LIBERTY.S / 2, ISLE.z - LIBERTY.S / 2, 1);   // (she looks east, at the cars coming over the causeway)
   place(0, 0, -1); ctx.L = 3; ctx.lot = -1; setSeed(5115);
   barriers();
   rows();
   place(0, 0, -1); ctx.L = 3; ctx.lot = -1;
   trees();
-  // the statue, on its island (for now Monster Mayhem's own, at its own size)
-  setSeed(1886); place(ISLE.x - LIBERTY.S / 2, ISLE.z - LIBERTY.S / 2, 0, LIBERTY.S); liberty(LOC, LOC, 3); place(0, 0, -1);
   elFrames();
   // a lamp now and then along the streets, outside the barriers
   { const { T, on } = course(); setSeed(3003);
@@ -416,7 +425,7 @@ function paint() {
   // the island: lawn, and a paved ring round the statue's foot
   g.fillStyle = '#74a65e'; g.beginPath(); rr(ISLE.x - ISLE.half + 5, ISLE.z - ISLE.half + 5, ISLE.x + ISLE.half - 5, ISLE.z + ISLE.half - 5, ISLE.r - 4); g.fill();
   C.speckle(ISLE.x - ISLE.half, ISLE.z - ISLE.half, ISLE.x + ISLE.half, ISLE.z + ISLE.half, 14000, ['rgba(92,146,74,0.5)', 'rgba(146,192,108,0.45)']);
-  g.fillStyle = '#d6cdb8'; g.beginPath(); g.arc(ISLE.x * GK, ISLE.z * GK, 52 * GK, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#d6cdb8'; g.beginPath(); g.arc(ISLE.x * GK, ISLE.z * GK, 70 * GK, 0, Math.PI * 2); g.fill();
   // Times Square's plaza: pale paving round the grid
   g.fillStyle = '#d6cdb8'; C.rect(300, LINE_Z - 52, LINE_X + 30, LINE_Z + 52);
   g.restore();
@@ -503,12 +512,23 @@ export default {
     if (!ROOFS) { const s = P('Subway').roofBox; ROOFS = [{ x0: s[0], z0: s[1] - 44, x1: s[2], z1: s[3] + 44, y: -1.5 }, { x0: 548, z0: LINE_Z - 30, x1: 676, z1: LINE_Z + 30, y: 13.5 }]; }
     return ROOFS;
   },
+  // where the chase camera looks up: coming over the Brooklyn Bridge, and along the causeway, with the statue ahead
+  vista(x, z) {
+    const sm = (t) => { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); };
+    if (z > 770 && z < 830 && x > 610 && x < 800) return sm((800 - x) / 40) * sm((x - 610) / 40);
+    if (z > 790 && z < 900 && x > 290 && x < 560) return sm((560 - x) / 50) * sm((x - 290) / 60);
+    return 0;
+  },
   get hazards() {
     const s = P('Subway').roofBox, { road } = masks();
     const near = (x, z) => { for (let dz = -5; dz <= 5; dz += 5) for (let dx = -5; dx <= 5; dx += 5) if (road[Math.floor(z + dz) * WX + Math.floor(x + dx)]) return true; return false; };
     return [
+      { kind: 'custom', make: (api) => { if (STATUE) { const m = statueMesh(STATUE, 2); m.position.set(ISLE.x, 0, ISLE.z); api.scene.add(m); } } },
+      { kind: 'custom', make: (api) => { const { T, parts } = course(), by = (n) => parts.find((p) => p.name === n); dressBridges(api.scene, T, [{ part: by('Queens Bridge'), kind: 'truss' }, { part: by('Brooklyn Bridge'), kind: 'stone' }]); } },
       { kind: 'custom', make: (api) => { makeRoads(api.scene, course().T, course().parts.map((p) => ({ ...p, skip: near }))); } },
-      { kind: 'el', x: EL.x, z0: EL.z0 - 20, z1: EL.z1 + 20, y: EL.y, every: 14 },
+      { kind: 'custom', make: (api) => { const p = P('Subway'), i = p.i0 + p.open[0]; STATION = makeStation(api.scene, { x: course().T.X[i], w: course().W[i], z0: p.openZ[0], z1: p.openZ[1], y0: p.h, y1: p.roofY }); } },
+      { kind: 'el', x: 112 - 16 - 10.5, z0: P('Subway').openZ[0] - 56, z1: P('Subway').openZ[1] + 56, ground: true, y: P('Subway').h, every: 7, speed: 64, model: 'commuter', paint: 'blue' },
+      { kind: 'el', x: EL.x, z0: EL.z0, z1: EL.z1, y: EL.y, every: 10, speed: 80, model: 'commuter', paint: 'orange', sheds: true },
       { kind: 'covered', x0: s[0], z0: s[1], x1: s[2], z1: s[3], dim: 0.5 },
     ];
   },

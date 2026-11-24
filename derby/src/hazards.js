@@ -58,6 +58,7 @@ import * as THREE from 'three';
 import { fire, sparks, ring, dust, puff } from '../../src/sim.js';
 import { Unit } from '../../units/src/unit.js';
 import { TANK, HELI } from '../../units/src/vehicles.js';
+import { makeTrain } from './maps/train.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
@@ -1079,7 +1080,7 @@ function ramp(api, h) {
 // With `ground`, the same train is a subway train in a station: no deck, its rails on the floor, and each car shown
 // only between z0 and z1 (it comes and goes through the tunnel mouths the map builds at the station's ends).
 function el(api, h) {
-  const len = h.z1 - h.z0, ground = !!h.ground, y = ground ? -5.2 : h.y ?? 32, W = 14, zc = (h.z0 + h.z1) / 2;
+  const len = h.z1 - h.z0, ground = !!h.ground, y = ground ? (h.y ?? 0) - 5.2 : h.y ?? 32, W = 14, zc = (h.z0 + h.z1) / 2;
   const steel = new THREE.MeshStandardMaterial({ color: 0x3e5a4c, roughness: 0.6, metalness: 0.5 });
   const dark = new THREE.MeshStandardMaterial({ color: 0x2a2c30, roughness: 0.8 });
   const root = new THREE.Group(); root.position.set(h.x, 0, zc); api.scene.add(root);
@@ -1088,25 +1089,40 @@ function el(api, h) {
     for (const sx of [-W / 2 + 1, W / 2 - 1]) add(new THREE.BoxGeometry(2, 4, len), steel, sx, y + 2, 0);       // the girders
     add(new THREE.BoxGeometry(W, 1, len), dark, 0, y + 4.5, 0);                                                  // the slab
   }
-  for (const rx of [-3.2, -1.8, 1.8, 3.2]) add(new THREE.BoxGeometry(0.4, 0.4, len), steel, rx, y + 5.2, 0);  // the rails
+  for (const rx of h.model ? [-3.25, 3.25] : [-3.2, -1.8, 1.8, 3.2]) add(new THREE.BoxGeometry(0.4, 0.4, len), steel, rx, y + 5.2, 0);  // the rails
   // cross beams under it (sleepers, in a station), every 6, as one instanced mesh
   const n = Math.floor(len / (ground ? 3 : 6)), beams = new THREE.InstancedMesh(new THREE.BoxGeometry(ground ? 9 : W, ground ? 0.3 : 1, 1), ground ? dark : steel, n), M4 = new THREE.Matrix4();
-  for (let i = 0; i < n; i++) { M4.makeTranslation(0, ground ? 0.1 : y + 0.5, -len / 2 + 1.5 + i * (ground ? 3 : 6)); beams.setMatrixAt(i, M4); }
+  for (let i = 0; i < n; i++) { M4.makeTranslation(0, ground ? y + 5.3 : y + 0.5, -len / 2 + 1.5 + i * (ground ? 3 : 6)); beams.setMatrixAt(i, M4); }
   root.add(beams);
-  // the train
-  const CAR = 22, GAP = 1.5, CARS = 4, TL = CARS * CAR + (CARS - 1) * GAP;
-  const body = new THREE.MeshStandardMaterial({ color: 0xb9bec4, roughness: 0.35, metalness: 0.7 });
-  const glass = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 1.4, 0.9), toneMapped: false });
-  const lamp = new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 2.8, 2.2), toneMapped: false });
+  // the train: Monster Mayhem's own (h.model: 'commuter' or 'express'), or a plain one of boxes
+  let CAR = 22, CARS = h.cars ?? 4, TL;
   const train = new THREE.Group(); train.position.y = y + 5.4; root.add(train);
-  for (let k = 0; k < CARS; k++) {
-    const z = -TL / 2 + CAR / 2 + k * (CAR + GAP), c = new THREE.Group(); c.position.z = z; train.add(c);
-    const b = new THREE.Mesh(new THREE.BoxGeometry(8, 8, CAR), body); b.position.y = 4.6; c.add(b);
-    for (const sx of [-4.05, 4.05]) { const w = new THREE.Mesh(new THREE.PlaneGeometry(CAR - 3, 2.2), glass); w.position.set(sx, 5.6, 0); w.rotation.y = sx > 0 ? Math.PI / 2 : -Math.PI / 2; c.add(w); }
-    const r = new THREE.Mesh(new THREE.BoxGeometry(7, 0.6, CAR - 1), dark); r.position.y = 8.9; c.add(r);
-    for (const ez of [-1, 1]) if ((k === 0 && ez < 0) || (k === CARS - 1 && ez > 0)) { const l = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1, 0.3), lamp); l.position.set(0, 6.8, ez * (CAR / 2 + 0.1)); c.add(l); }
+  if (h.model) {
+    const t = makeTrain(api.mats, { model: h.model, cars: CARS, paint: h.paint }); CAR = t.car; TL = t.length;
+    for (const c of [...t.group.children]) train.add(c);
+  } else {
+    const GAP = 1.5; TL = CARS * CAR + (CARS - 1) * GAP;
+    const body = new THREE.MeshStandardMaterial({ color: 0xb9bec4, roughness: 0.35, metalness: 0.7 });
+    const glass = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 1.4, 0.9), toneMapped: false });
+    const lamp = new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 2.8, 2.2), toneMapped: false });
+    for (let k = 0; k < CARS; k++) {
+      const z = -TL / 2 + CAR / 2 + k * (CAR + GAP), c = new THREE.Group(); c.position.z = z; train.add(c);
+      const b = new THREE.Mesh(new THREE.BoxGeometry(8, 8, CAR), body); b.position.y = 4.6; c.add(b);
+      for (const sx of [-4.05, 4.05]) { const w = new THREE.Mesh(new THREE.PlaneGeometry(CAR - 3, 2.2), glass); w.position.set(sx, 5.6, 0); w.rotation.y = sx > 0 ? Math.PI / 2 : -Math.PI / 2; c.add(w); }
+      const r = new THREE.Mesh(new THREE.BoxGeometry(7, 0.6, CAR - 1), dark); r.position.y = 8.9; c.add(r);
+      for (const ez of [-1, 1]) if ((k === 0 && ez < 0) || (k === CARS - 1 && ez > 0)) { const l = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1, 0.3), lamp); l.position.set(0, 6.8, ez * (CAR / 2 + 0.1)); c.add(l); }
+    }
   }
-  const EVERY = h.every ?? 16, RUN = len + TL + 120, SPEED = ground ? 70 : 55;
+  // a shed over each end of the line, which the train comes out of and goes into (h.sheds)
+  if (h.sheds) {
+    const SL = CAR + 6, lit = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.7, 1.45, 0.9), toneMapped: false });
+    for (const e of [-1, 1]) {
+      const z = e * (len / 2 - SL / 2);
+      for (const sx of [-W / 2 - 0.5, W / 2 + 0.5]) { add(new THREE.BoxGeometry(1, 16, SL), dark, sx, y + 12.5, z); add(new THREE.BoxGeometry(0.2, 3, SL - 8), lit, sx + Math.sign(sx) * 0.55, y + 13, z); }
+      add(new THREE.BoxGeometry(W + 4, 1.2, SL + 2), steel, 0, y + 21, z); add(new THREE.BoxGeometry(W + 2, 16, 1), dark, 0, y + 12.5, z + e * SL / 2);
+    }
+  }
+  const EVERY = h.every ?? 16, RUN = len + TL + 120, SPEED = h.speed ?? (ground ? 70 : 55), CLIP = ground || !!h.sheds;
   let t = EVERY * 0.4, dir = 1;
   train.visible = false;
   return {
@@ -1117,7 +1133,7 @@ function el(api, h) {
       if (run > RUN) { t = EVERY; dir = -dir; train.visible = false; return; }
       train.visible = true;
       const z = (-len / 2 - TL / 2 - 60 + run) * dir; train.position.z = z; train.rotation.y = dir > 0 ? 0 : Math.PI;
-      if (ground) for (const c of train.children) { const cz = z + c.position.z * dir; c.visible = Math.abs(cz) < len / 2 - CAR / 2 + 2; }
+      if (CLIP) for (const c of train.children) { const cz = z + c.position.z * dir; c.visible = Math.abs(cz) < len / 2 - CAR / 2 + 2; }
       // the rumble, now and then, from where the train is (it carries when the player is anywhere near)
       const p = api.player;
       if (live && p && Math.abs(p.x - h.x) < 160 && Math.random() < dt * 3) api.sound && api.sound('rumble', clamp(1 - Math.abs(zc + z - p.z) / 240, 0.1, 0.7), h.x, y, zc + z);

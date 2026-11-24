@@ -1589,7 +1589,10 @@ function stepCamera(dt) {
     cam.duck = (cam.duck || 0) + (want - (cam.duck || 0)) * Math.min(1, dt * (want > (cam.duck || 0) ? 6 : 3));
     if (cam.duck > 0.01) camera.position.y = Math.max(camera.position.y - cam.duck, (MAP.floor ? MAP.floor(camera.position.x, camera.position.z, _tgt.y) : 0) + 1.5); }
   const sh = game.shake; if (sh > 0) camera.position.add(_o.set((Math.random() - 0.5) * sh * 1.6, (Math.random() - 0.5) * sh * 1.2, (Math.random() - 0.5) * sh * 1.6));
-  camera.lookAt(_tgt.x + Math.sin(cam.yaw) * 16, _tgt.y - 0.5, _tgt.z + Math.cos(cam.yaw) * 16);
+  // a map's view (MAP.vista(x, z) -> 0 to 1): it looks up from the road, at something tall ahead (maps/empire.js: the statue)
+  { const v = MAP.vista ? MAP.vista(c.x, c.z) * (cam.locked ? 0.7 : 1) : 0;   // (less with the mouse on the camera: it can look up itself)
+    cam.vista = (cam.vista || 0) + (v - (cam.vista || 0)) * Math.min(1, dt * 1.4); }
+  camera.lookAt(_tgt.x + Math.sin(cam.yaw) * 16, _tgt.y - 0.5 + cam.vista * (tall ? 10 : 13), _tgt.z + Math.cos(cam.yaw) * 16);
   // a drift boost widens the view for a moment (it springs out, then eases back as the burst runs out)
   const fk = c.miniT > 0 ? (cam.fovKick || 0) * Math.min(1, c.miniT / 0.6) : 0;
   cam.fov = (cam.fov || 0) + (fk - (cam.fov || 0)) * Math.min(1, dt * (fk > (cam.fov || 0) ? 14 : 3));

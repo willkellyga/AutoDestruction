@@ -8,8 +8,8 @@
 //   { kind: 'deck' | 'cut', i0, n, H, half(i), ... }   samples i0 to i0 + n of the course, at heights H[i]
 //   deck: solid (a deck no higher than this stands on a wall down to the ground: a ramp, a causeway),
 //         piers (one pair every so many voxels where it is open underneath), skip(x, z) (no pier here)
-//   cut:  top (how high its walls stand over the ground), roof [k0, k1] (the samples from i0 with a roof over them)
-//         and roofY (its underside)
+//   cut:  top (how high its walls stand over the ground), roof [k0, k1] (the samples from i0 with a roof over them),
+//         roofY (its underside) and open [k0, k1] (the samples with no walls drawn: a station stands there, station.js)
 import * as THREE from 'three';
 
 const CONC = [0.5, 0.49, 0.46], PALE = [0.62, 0.61, 0.57], DARK = [0.2, 0.2, 0.21], TILE = [0.66, 0.67, 0.62], STEEL = [0.24, 0.3, 0.3];
@@ -71,7 +71,7 @@ export function makeRoads(scene, T, parts) {
       const top = p.top ?? 3, T0 = 1.6, [r0, r1] = p.roof || [1, 0], RY = p.roofY ?? -1, roofed = (c) => c.k >= r0 && c.k <= r1;
       strip(road, S.map((c) => row(c, c.w, c.h, -c.w, c.h, c.s / REPEAT)));
       for (const sd of [1, -1]) {
-        strip(body, S.map((c) => row(c, sd * c.w, c.h, sd * c.w, roofed(c) ? RY : top)), TILE);
+        for (const run of p.open ? [S.filter((c) => c.k <= p.open[0]), S.filter((c) => c.k >= p.open[1])] : [S]) strip(body, run.map((c) => row(c, sd * c.w, c.h, sd * c.w, roofed(c) ? RY : top)), TILE);
         for (const run of [S.filter((c) => c.k <= r0), S.filter((c) => c.k >= r1)]) {
           strip(body, run.map((c) => row(c, sd * c.w, top, sd * (c.w + T0), top)), PALE);
           strip(body, run.map((c) => row(c, sd * (c.w + T0), top, sd * (c.w + T0), 0)), CONC);
@@ -80,7 +80,7 @@ export function makeRoads(scene, T, parts) {
       const R = S.filter(roofed);
       if (R.length > 1) {
         strip(body, R.map((c) => row(c, c.w, RY, -c.w, RY)), DARK);
-        strip(glow, R.map((c) => row(c, 1.2, RY - 0.08, -1.2, RY - 0.08)));
+        for (let k = 2; k + 2 < R.length; k += 7) strip(glow, [R[k], R[k + 1], R[k + 2]].map((c) => row(c, 0.9, RY - 0.08, -0.9, RY - 0.08)));   // a lamp every so often
         for (const c of [R[0], R[R.length - 1]]) {   // over each mouth: the wall across, up to the parapet
           strip(body, [row(c, c.w + T0, RY, -(c.w + T0), RY), row(c, c.w + T0, top, -(c.w + T0), top)], CONC);
           strip(body, [row(c, c.w + T0, RY, -(c.w + T0), RY), row(c, c.w + T0, RY - 1.2, -(c.w + T0), RY - 1.2)], STEEL);
