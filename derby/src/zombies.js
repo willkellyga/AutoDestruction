@@ -282,6 +282,7 @@ export function makeHorde(G, o = {}) {
 
   // ---- the route field: how many cells to the nearest car, from every cell, over the map's route grid ----
   const nav = G.MAP.nav;
+  const boost = G.MAP.hordeBoost || null;
   const N = nav ? nav.NX * nav.NZ : 0, dist = new Uint16Array(N), queue = new Int32Array(N);
   let fieldT = 0;
   function field(cars) {
@@ -476,7 +477,7 @@ export function makeHorde(G, o = {}) {
       }
       // on its feet: walk in, lunge at the car, or stand at it clawing
       const T = z.tgt;
-      let wx = 0, wz = 0, sp = z.speed * H_.strength.speed;
+      let wx = 0, wz = 0, sp = z.speed * H_.strength.speed * (boost ? boost(z.x, z.z) : 1);   // (boost: where the map makes them bolder, the fair's dark quarters)
       if (z.entry) {
         wx = z.entry.x - z.x; wz = z.entry.z - z.z;
         if (Math.hypot(wx, wz) < 8 || (z.x > 14 && z.z > 14 && z.x < WX - 14 && z.z < WZ - 14)) z.entry = null;

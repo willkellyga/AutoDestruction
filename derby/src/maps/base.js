@@ -16,6 +16,7 @@ import { WX, WZ, M, K, MAT_R, MAT_G, MAT_B, SOFT, CARRY, TOUGH, KIND, SHAPE, FLA
 import { face, text, textW, disc } from '../../../src/kit.js';
 import { armyFoot } from '../hazards.js';
 import { canvasFor, finish, makeGridNav, pickSpot, gridRadar } from './common.js';
+import { dropSpots } from '../drops.js';
 
 // the tanks and helicopters (Monster Mayhem's models, units/src/vehicles.js; run by hazards.js 'army'): a helicopter out
 // on the north-west apron and one on the helipad, three tanks in a row on the motor pool's slab. They aren't voxels, so
@@ -62,6 +63,9 @@ const STARTS = [
 ];
 // where rivals could come in, if a mode asks for more (every start, and some open ground)
 const SPOTS = [...STARTS, { x: 24, z: 24 }, { x: WX - 24, z: 24 }, { x: 24, z: WZ - 24 }, { x: WX - 24, z: WZ - 24 }, { x: 160, z: 208 }, { x: 352, z: 208 }, { x: 256, z: 150 }, { x: 256, z: 270 }];
+
+// where the supply drops come down (../drops.js): open ground, clear of the buildings, the tanks and the helicopters
+const DROPS = dropSpots([[256, 208], [160, 208], [352, 208], [256, 120], [256, 300], [210, 150], [170, 345], [330, 150], [90, 208], [430, 208]]);
 
 // ---- the base's own materials: olive drab paint in two shades, and sandbag cloth in two -------------------------------
 // The town's materials stop short of the table's end; these take the free places when this map is built (and only then,
@@ -488,6 +492,7 @@ export default {
   },
   build, ground,
   hazards: [{ kind: 'army', units: ARMY }],
+  pickups: DROPS, drops: DROPS,
   // the open ground's grain, ruts and thrown dirt, the hard ground's grain and rubber, and all of it wet from the storm
   // (ground.js, dirt.js)
   groundDetail: { soft: 'dirt', hard: true, wet: 0.6 },

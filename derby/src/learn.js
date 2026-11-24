@@ -27,10 +27,10 @@ const STEPS = {
     ['radar', 'Follow the radar', `The blinking dot on the radar is where to go next. Lost or facing the wrong way? ${desk('Press <kbd>R</kbd>.')}${tap('Tap the yellow message.')}`],
     ['tow', 'Shoot and tow', 'Blast the cars in front of you. Drive right behind a car and it pulls you along faster.'],
   ],
-  survival: () => [
-    ['zombie', 'Last car running', 'Zombies are taking over the base. Stay alive longer than every other car!'],
-    ['smash', 'Run them over', 'Smash through zombies or shoot them. The cars here can\'t hurt each other.'],
-    ['shake', 'Shake them off', 'Zombies grab onto your car. Turn hard to throw them off. You only get one car!'],
+  survival: (MAP) => [
+    ['zombie', 'Last car running', `Zombies are taking over the ${MAP.id === 'fair' ? 'fair' : 'base'}. Stay alive longer than every other car. You only get one!`],
+    ['smash', 'Run them over', 'Smash through zombies or shoot them. Turn hard to throw off the ones that grab on.'],
+    ['glow', 'Race to the drops', `Crates parachute in: ${dot('#4be37a', 'fix')} ${dot('#45b4ff', 'speed')} ${dot('#ff8a2a', 'faster guns')} ${dot('#ff4fd8', 'air strike')}` + (MAP.id === 'fair' ? '<br>Red buttons turn the lights back on and let the big wheel roll!' : '')],
   ],
   brawl: () => [
     ['clock', 'Most wrecks wins', 'Everyone against everyone until the clock runs out.'],

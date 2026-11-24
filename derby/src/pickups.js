@@ -9,7 +9,16 @@
 //   super    the Hammerdown strike: a red ring locks on to the three nearest foes (the player first, for a rival), follows
 //            each for a second, holds still a moment and then a strike comes down on it; a car that gets out of its ring
 //            in time is spared. It comes up rarely, and a map can bring it up early (when its show calls an event, say)
-//            by setting the spot's `t` to 0.
+//            by setting the spot's `t` to 0. Where cars don't fight (survival) it locks on to the dead instead: the
+//            three thickest knots of them near the car.
+//   switch   a big red button a map wires up: driven over, it does what the spot's `on(car)` says (the fair's lights,
+//            its Ferris wheel) and shows the spot's `name` and `sub`.
+// A spot can also be:
+//   hold: true   never back by itself. It is up while the map says so (`raise`: true or false; left out, it is up from
+//                the start if `up0`, and gone for good once taken), and never while `gone`.
+//   drop: true   a supply drop's landing place: nothing there until call(spot, kind) sends a crate down on a parachute
+//                (the spot takes that kind then), which lies there until it is taken or a while has gone by. A mode
+//                runs them (modes/survival.js, with ../drops.js); the map lists where they can land.
 // A pickup is a little voxel-style model over a ring on the ground, with a beam of its colour going up so it can be seen
 // across the map. Rivals go for a repair kit when they are hurt, and take anything they pass close to (pickupFor, for
 // ai.js), but never make for a spot the map marks `rivals: false` (a lure for the player alone, say scrap among a
@@ -23,6 +32,7 @@ export const PICKUPS = {
   nitro: { name: 'Nitro', every: 14, css: '#45b4ff', rgb: [0.27, 0.7, 1], nitro: { time: 2.6, topK: 1.45, accelK: 2.4 } },
   ammo: { name: 'Overcharge', every: 18, css: '#ff8a2a', rgb: [1, 0.55, 0.16], time: 7, rate: 2 },
   scrap: { name: 'Scrap crate', every: 30, css: '#ffd23a', rgb: [1, 0.82, 0.25], scrap: 60 },
+  switch: { name: 'Switch', every: 0, css: '#ffd23a', rgb: [1, 0.8, 0.2] },
   super: { name: 'Hammerdown strike', every: 70, first: 30, css: '#ff4fd8', rgb: [1, 0.3, 0.85], hits: 3, range: 320, follow: 1.0, still: 0.4, dmg: 55, reach: 13 },
 };
 
@@ -126,6 +136,14 @@ const MODELS = {
     if (edges >= 2) return (ax > 6) + (ay > 6) + (az > 6) === 3 ? 0xfff0b0 : 0x6a4a1e;
     return Math.abs(((ay > 6 ? x + z : y) + 8) % 5) < 0.6 ? 0xc99a26 : 0xe8b830;   // the boards' joins
   }),
+  // a switch: a box in warning stripes with a big red button on top
+  switch: () => cubes([-8, 8, -8, 9, -8, 8], (x, y, z) => {
+    const ax = Math.abs(x), az = Math.abs(z), r = Math.hypot(x, z);
+    if (y > 3) return r < 5 && y < 8 ? (y > 6.8 && r < 4 ? 0xff7a66 : 0xe0261c) : r < 6.2 && y < 4.4 ? 0x8a8f96 : 0;
+    if (ax > 7.5 || az > 7.5 || y < -7.5) return 0;
+    if (ax > 6.5 || az > 6.5) return (Math.floor((x + y + z + 40) / 3) & 1) ? 0xf2c21a : 0x22242a;
+    return 0x3a3d44;
+  }),
   // the Hammerdown strike: a sledgehammer, a wrapped wooden handle with a gold knob, a pink head with gold bands,
   // a lit top edge and a yellow bolt on each face
   super: () => cubes([-12, 12, -15, 16, -7, 7], (x, y, z) => {
@@ -177,7 +195,20 @@ export function makePickups(api, spots = []) {
   all = spots;
   const geo = {}, ringGeo = new THREE.RingGeometry(4.2, 5.6, 32), beamGeo = new THREE.CylinderGeometry(1.6, 2.4, 70, 12, 1, true);
   beamGeo.translate(0, 35, 0);
+  // a supply drop's parachute: half a ball in orange and white gores, over the crate as it comes down
+  let chuteGeo = null;
+  const chute = () => {
+    if (!chuteGeo) {
+      chuteGeo = new THREE.SphereGeometry(8, 12, 5, 0, Math.PI * 2, 0, Math.PI / 2);
+      const pos = chuteGeo.attributes.position, col = new Float32Array(pos.count * 3);
+      for (let i = 0; i < pos.count; i++) { const a = Math.atan2(pos.getZ(i), pos.getX(i)), w = (Math.floor((a + Math.PI) / (Math.PI / 6) + 0.5) & 1); col[i * 3] = w ? 1.2 : 1.25; col[i * 3 + 1] = w ? 1.15 : 0.5; col[i * 3 + 2] = w ? 1.05 : 0.12; }
+      chuteGeo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    }
+    const m = new THREE.Mesh(chuteGeo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, toneMapped: false })); m.visible = false; scene.add(m); return m;
+  };
+  const DROP = { fall: 5, from: 110, life: 50 };   // seconds coming down, from how high, and how long it lies there
   for (const p of spots) {
+    if (p.drop && !p.kind) p.kind = 'repair';
     const K = PICKUPS[p.kind]; if (!K) continue;
     const glow = new THREE.Color(K.rgb[0] * 2.2, K.rgb[1] * 2.2, K.rgb[2] * 2.2);
     p.K = K; p.up = !K.first; p.t = K.first || 0; p.spin = Math.random() * 6;
@@ -188,13 +219,32 @@ export function makePickups(api, spots = []) {
     p.beam = new THREE.Mesh(beamGeo, new THREE.MeshBasicMaterial({ color: new THREE.Color(...K.rgb), map: beamTexture(), transparent: true, opacity: 0.45, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }));
     p.beam.position.set(p.x, 0, p.z); p.beam.renderOrder = 3;
     scene.add(p.model, p.ring, p.beam);
+    if (p.hold || p.drop) { p.up = !!p.up0; p.t = Infinity; p.fall = 0; p.ring.visible = p.up; }
+    if (p.drop) p.chute = chute();
     if (!p.up) p.model.visible = p.beam.visible = false;
+  }
+  // a drop spot takes the kind of the crate sent to it
+  function setKind(p, kind) {
+    const K = PICKUPS[kind]; if (!K || p.kind === kind) return;
+    p.kind = kind; p.K = K;
+    p.model.geometry = geo[kind] || (geo[kind] = MODELS[kind]());
+    p.ring.material.color.setRGB(K.rgb[0] * 2.2, K.rgb[1] * 2.2, K.rgb[2] * 2.2); p.beam.material.color.setRGB(...K.rgb);
+  }
+  // send a crate of `kind` down on drop spot p (`fall`: seconds until it lands; a page that came late lands it at once)
+  function call(p, kind, fall = DROP.fall) {
+    if (!p || !p.drop || !p.K) return;
+    setKind(p, kind); p.up = false; p.fall = Math.max(0.01, fall); p.life = DROP.life; p.t = Infinity;
+    p.ring.visible = p.beam.visible = p.model.visible = true; p.chute.visible = true;
   }
   const live = spots.filter((p) => p.K);
   // what taking one does
   function take(p, c) {
     const K = p.K, me = c === api.player;
-    if (p.kind === 'repair') {
+    if (p.kind === 'switch') {
+      if (p.on) p.on(c);
+      api.sfx.play('ui_equip', me ? 1 : 0.6, c.x, c.z);
+      api.toast(p.name || K.name, p.sub || '');
+    } else if (p.kind === 'repair') {
       const n = Math.min(c.maxHp - c.hp, c.maxHp * K.share); c.hp += n;
       api.sfx.play('ui_equip', me ? 1 : 0.6, c.x, c.z); api.sfx.play('servo', me ? 0.8 : 0.5, c.x, c.z);
       if (me) api.toast(K.name, `+${Math.round(n)} armour`);
@@ -214,7 +264,8 @@ export function makePickups(api, spots = []) {
     } else if (p.kind === 'super') strike(c, K);
     const [r, g, b] = K.rgb;
     sparks(p.x, 5, p.z, 22, r, g, b, 22); ring(p.x, 0.4, p.z, 9, new THREE.Color(r, g, b), 0.45);
-    p.up = false; p.t = K.every * (0.9 + Math.random() * 0.2);
+    p.up = false; p.t = p.hold || p.drop ? Infinity : K.every * (0.9 + Math.random() * 0.2);
+    if (p.hold || p.drop) p.ring.visible = false;
     // online (net.js): the other devices see it go, to the same car, and it is back on all of them at once
     if (api.net && !c.remote) api.net.picked(live.indexOf(p), c, p.t);
   }
@@ -223,6 +274,26 @@ export function makePickups(api, spots = []) {
   shaftGeo.translate(0, 45, 0);
   function strike(c, K) {
     const me = c === api.player, P = api.player;
+    const horde = api.friendly && api.friendly() && api.horde ? api.horde() : null;
+    if (horde) {
+      // no fighting between cars here: it comes down on the dead, on the thickest knots of them near the car (each
+      // knot a zombie with the most others round it, no two knots close together)
+      const near = horde.all.filter((q) => !q.dead && Math.hypot(q.x - c.x, q.z - c.z) < K.range * 0.6);
+      for (const q of near) { q._kn = 0; for (const o of near) if (Math.abs(o.x - q.x) < K.reach && Math.abs(o.z - q.z) < K.reach) q._kn++; }
+      near.sort((a, b) => b._kn - a._kn);
+      const picked = [];
+      for (const q of near) { if (picked.length >= K.hits) break; if (picked.every((o) => Math.hypot(o.x - q.x, o.z - q.z) > K.reach * 2)) picked.push(q); }
+      for (const q of picked) {
+        const rm = new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 0.3, 0.9), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
+        const sm = new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.25, 0.75), map: beamTexture(), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
+        const r = new THREE.Mesh(markGeo, rm), s = new THREE.Mesh(shaftGeo, sm);
+        r.rotation.x = -Math.PI / 2; r.renderOrder = 3; s.renderOrder = 3; scene.add(r, s);
+        marks.push({ car: q, by: c, t: K.follow + K.still, x: q.x, z: q.z, r, s, K: { ...K, reach: K.reach * 1.5 }, dead: true });
+      }
+      api.sfx.play('mine_beep', me ? 1.2 : 0.8, c.x, c.z); api.sound('c.alarm', 0.8);
+      if (me) api.toast(K.name, picked.length ? 'Coming down on the horde' : 'None of the dead in range');
+      return;
+    }
     const foes = cars.filter((o) => o !== c && !o.dead && !o.gone && Math.hypot(o.x - c.x, o.z - c.z) < K.range).sort((a, b) => Math.hypot(a.x - c.x, a.z - c.z) - Math.hypot(b.x - c.x, b.z - c.z));
     // a rival's strike always has the player in it (but not in the arena's free-for-all, where the player is one car of eight)
     if (!me && P && foes.includes(P) && api.MAP.mode !== 'brawl') { foes.splice(foes.indexOf(P), 1); foes.unshift(P); }
@@ -241,7 +312,7 @@ export function makePickups(api, spots = []) {
     for (let i = marks.length - 1; i >= 0; i--) {
       const m = marks[i], K = m.K;
       m.t -= dt;
-      if (m.t > K.still && m.car && !m.car.gone) { m.x = m.car.x; m.z = m.car.z; }   // following, then still for a moment
+      if (m.t > K.still && m.car && !m.car.gone && !m.car.dead) { m.x = m.car.x; m.z = m.car.z; }   // following, then still for a moment
       const k = Math.max(0, m.t) / (K.follow + K.still);
       m.r.position.set(m.x, 0.2, m.z); m.r.scale.setScalar(K.reach * (0.75 + 0.6 * k)); m.r.material.opacity = m.t > K.still ? 0.55 + 0.35 * ((m.t * 8 | 0) & 1) : 1;
       m.s.position.set(m.x, 0, m.z); m.s.material.opacity = 0.75 * (1 - k);
@@ -249,10 +320,11 @@ export function makePickups(api, spots = []) {
       // down it comes
       scene.remove(m.r, m.s); m.r.material.dispose(); m.s.material.dispose(); marks.splice(i, 1);
       api.explode(m.x, 2, m.z, 4.6, 0.8, { maxDebris: 160, fire: true });
+      if (m.dead) for (const e of api.extras) e.explosion(m.x, 2, m.z, K.reach, 60, m.by);   // (on the dead: the whole knot goes)
       api.sfx.play('bigboom', 1, m.x, m.z); api.sound('thunder', 0.8, m.x, 20, m.z);
       sparks(m.x, 2, m.z, 40, 1, 0.4, 0.9, 40); ring(m.x, 0.4, m.z, K.reach * 1.4, new THREE.Color(1, 0.3, 0.85), 0.5);
       for (const o of cars) {
-        if (o.dead || o.gone) continue;
+        if (o.dead || o.gone || m.dead) continue;
         const d = Math.hypot(o.x - m.x, o.z - m.z); if (d > K.reach + o.wide) continue;
         const f = 1 - Math.max(0, d - 3) / K.reach;
         api.damage(o, K.dmg * f, m.by && m.by !== o ? m.by : null);
@@ -263,7 +335,7 @@ export function makePickups(api, spots = []) {
   }
   const _o = { x: 0, z: 0 };
   return {
-    spots: live,
+    spots: live, call, drops: live.filter((p) => p.drop),
     // online: pickup i was taken on another device, by car c (one of ours there, a puppet here) or by nobody we know
     taken(i, c, t) {
       const p = live[i]; if (!p) return;
@@ -274,6 +346,27 @@ export function makePickups(api, spots = []) {
       stepMarks(dt);
       const T = performance.now() / 1000;
       for (const p of live) {
+        if (p.hold) {
+          // a held spot is up while the map says so
+          const want = !p.gone && (p.raise === undefined ? p.up : !!p.raise);
+          if (want && !p.up) { const [r, g, b] = p.K.rgb; ring(p.x, 0.4, p.z, 7, new THREE.Color(r, g, b), 0.4); }
+          p.up = want; p.ring.visible = want; p.ring.scale.setScalar(1);
+          if (!want) { p.model.visible = p.beam.visible = false; continue; }
+        } else if (p.drop) {
+          if (p.fall > 0) {
+            // coming down: the crate under its parachute, the beam and the ring already marking where
+            p.fall -= dt;
+            const y = 6 + Math.max(0, p.fall) / DROP.fall * DROP.from;
+            p.spin += dt * 0.8; p.model.rotation.y = p.spin; p.model.position.y = y; p.chute.position.set(p.x, y + 5, p.z);
+            p.ring.material.opacity = 0.35 + 0.35 * ((T * 5 | 0) & 1); p.ring.scale.setScalar(1.6 - 0.6 * (1 - Math.max(0, p.fall) / DROP.fall));
+            p.beam.material.opacity = 0.3;
+            if (p.fall <= 0) { p.up = true; p.chute.visible = false; p.ring.scale.setScalar(1); const [r, g, b] = p.K.rgb; ring(p.x, 0.4, p.z, 9, new THREE.Color(r, g, b), 0.5); sparks(p.x, 3, p.z, 16, r, g, b, 16); api.sfx.play('crunch', 0.5, p.x, p.z); }
+            continue;
+          }
+          if (!p.up) { p.model.visible = p.beam.visible = p.ring.visible = false; continue; }
+          if ((p.life -= dt) <= 0) { p.up = false; continue; }   // nobody came for it
+          p.model.visible = p.beam.visible = p.ring.visible = (p.life > 6 || ((T * 6 | 0) & 1) === 0);
+        }
         if (!p.up) {
           p.t -= dt;
           // coming back: the ring fills in and brightens over the last few seconds

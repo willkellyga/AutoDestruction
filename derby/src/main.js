@@ -18,7 +18,7 @@ import { SFX_BANK, SFX_NORM } from '../../src/sfx-bank.js';
 import { makeFx, WEAPONS } from '../../units/src/fx.js';
 import { Vehicle, newFrame } from './vehicle.js';
 import { makeDriver, clearLine } from './ai.js';
-import { MAP, MAPS, chooseMap } from './maps/index.js';
+import { MAP, MAPS, SHARED, chooseMap } from './maps/index.js';
 import { MODES } from './modes/index.js';
 import { CRASH, ROUND, AI, DRIFT, BUILDINGS } from './tuning.js';
 import { toughen, boom, chipAt, fuelBlast } from './sturdy.js';
@@ -779,6 +779,8 @@ const api = {
   addCar, addRival, rivalBuild, RIVAL_NAMES, damage, wreck, banner, toast, hint, over, keepSave: () => keepSave(save), sound,
   makeDriver, clearLine, spawnPlayer: (at) => spawnPlayer(at),
   get net() { return net; },
+  // for the map's own parts and the pickups: the mode (its phase and clock), whether cars can hurt each other, the dead
+  get mode() { return mode; }, get pickups() { return pickups; }, friendly: () => !!mode.friendly, horde: () => mode.horde || null,
 };
 // playing online (net.js): made before the mode, which asks it how many bots to run and where its player starts
 let net = null;
@@ -1134,7 +1136,7 @@ function outOfRoom() {
 const BRIEF = 'ad-brief';   // (kept across the page loading again on another map: straight to that mode's card)
 const HOME_CARDS = [
   { map: 'race', k: 'Manhattan Circuit', t: 'Race', d: 'Laps of New York with the guns on', icon: 'M5 3h2v18H5zm3 1h4l1 1h6v9h-6l-1-1H8zm2 2v2h2V6zm4 1v2h2V7zm-2 1v2h2V8zm-2 2v2h2v-2zm4 1v2h2v-2z' },
-  { map: 'base', k: 'Camp Deadfall', t: 'Zombie Survival', d: 'Outlast the horde. Last car running wins', icon: 'M12 2a8 8 0 0 1 8 8c0 3-1.5 5-3 6v3h-2v-2h-2v2h-2v-2H9v2H7v-3c-1.5-1-3-3-3-6a8 8 0 0 1 8-8zM8.5 9a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm7 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM12 13l-1.2 2.5h2.4z' },
+  { map: 'base', k: 'Two maps', t: 'Zombie Survival', d: 'Outlast the horde. Last car running wins', icon: 'M12 2a8 8 0 0 1 8 8c0 3-1.5 5-3 6v3h-2v-2h-2v2h-2v-2H9v2H7v-3c-1.5-1-3-3-3-6a8 8 0 0 1 8-8zM8.5 9a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm7 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM12 13l-1.2 2.5h2.4z' },
   { map: 'arena', k: 'Hammerdown Arena', t: 'Arena', d: 'Eight cars, three minutes, most wrecks wins', icon: 'M12 1l2.2 5.6L19 3.5l-1.6 5.6L23 10l-4.6 3.2L21 18.5l-5.6-1.3L14 23l-2-5-2 5-1.4-5.8L3 18.5l2.6-5.3L1 10l5.6-.9L5 3.5l4.8 3.1z' },
   { garage: true, k: 'Your car', t: 'Garage', d: 'Build it, arm it, paint it', icon: 'M21.7 6.3l-3.6 3.6-2.8-.7-.7-2.8 3.6-3.6a6 6 0 0 0-7.7 7.7L2.3 18.7a2.1 2.1 0 0 0 3 3l8.2-8.2a6 6 0 0 0 8.2-7.2z' },
 ];
@@ -1186,9 +1188,17 @@ function playAgain() { if (net) net.bye(); goOnline(MAP.id); }
     b.innerHTML = `<small></small><b></b><span></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${c.icon}"/></svg>`;
     b.querySelector('small').textContent = c.k; b.querySelector('b').textContent = c.t; b.querySelector('span').textContent = c.d;
     if (c.map) b.dataset.map = c.map;
-    b.addEventListener('click', () => { if (!game.home) return; if (c.garage) openGarage('home'); else if (playAs === 'online') goOnline(c.map); else pickMode(c.map); });
+    b.addEventListener('click', () => { if (!game.home) return; if (c.garage) openGarage('home'); else if (playAs === 'online') goOnline(c.map); else pickMode(lastMap(c.map)); });
     box.appendChild(b);
   }
+}
+// A mode with two maps (Zombie Survival: maps/index.js SHARED) opens on the one played last, kept in this browser; its
+// start card has a row to change map.
+const LAST = 'ad-last-';
+function lastMap(id) {
+  const m = MAPS.find((o) => o.id === id), list = m && SHARED[m.mode]; if (!list) return id;
+  let v = null; try { v = localStorage.getItem(LAST + m.mode); } catch (e) { /* the first */ }
+  return list.some((o) => o.id === v) ? v : id;
 }
 function drawHome() {
   const st = statsOf(save.load), r = rating(st), body = PARTS.body[save.load.body] || {};
@@ -1349,6 +1359,17 @@ $('pause-learn').addEventListener('click', () => learn.show());
 {
   $('brief-t').textContent = MAP.name;
   $('go').textContent = mode.go; $('menu-note').textContent = mode.tip || '';
+  // a mode with more than one map gets a row of buttons for them: the other map loads the page again on its own card
+  const maps = SHARED[MAP.mode];
+  if (maps && maps.includes(MAP)) {
+    const row = $('maprow'); row.hidden = false;
+    try { localStorage.setItem(LAST + MAP.mode, MAP.id); } catch (e) { /* this visit only */ }
+    for (const m of maps) {
+      const b = document.createElement('button'); b.textContent = m.name; b.className = m === MAP ? 'on' : '';
+      b.addEventListener('click', () => { if (m !== MAP && !net) pickMode(m.id); });
+      row.appendChild(b);
+    }
+  }
   // a mode with difficulty levels (the race) gets a row of buttons for them, kept in the save
   if (mode.levels) {
     const row = $('levels'); row.hidden = false;
@@ -1376,7 +1397,7 @@ $('menu-home').addEventListener('click', () => { if (game.state === 'menu') show
 if (net) {
   document.body.classList.add('online');
   $('brief-k').textContent = ({ waves: 'Waves', race: 'Race', survival: 'Zombie Survival', brawl: 'Arena' }[MAP.mode] || MAP.mode) + ' · Online';
-  for (const id of ['levels', 'menu-home', 'over-garage']) $(id).hidden = true;
+  for (const id of ['levels', 'maprow', 'menu-home', 'over-garage']) $(id).hidden = true;
   // no Ready button: the map is built, so this page is ready (main.js's end), and the round starts by itself when the
   // countdown is out and everyone has loaded. The card shows how to play meanwhile, and how long is left.
   $('go').disabled = true; $('go').textContent = 'Loading...'; $('menu-note').textContent = 'Joining the round...';
