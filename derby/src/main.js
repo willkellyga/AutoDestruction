@@ -28,8 +28,8 @@ import { makeGarageRoom } from './garageroom.js';
 import { makePartArt } from './partart.js';
 import { makeSpecials } from './specials.js';
 import { makeCrumple } from './crumple.js';
-import { makeSounds } from './audio.js';
-import { bank as sfxBank } from './sfxfiles.js';
+import { makeSounds, fetchClips } from './audio.js';
+import { bank as sfxBank, count as sfxCount } from './sfxfiles.js';
 import { makePickups } from './pickups.js';
 import { makeHazards } from './hazards.js';
 import { makeQuality } from './quality.js';
@@ -1124,7 +1124,7 @@ function pickMode(id) {
   initAudio(); sfx.play('ui_open', 0.7);
   if (id !== MAP.id || game.ended) {
     try { sessionStorage.setItem(BRIEF, playAs); } catch (e) { /* it lands on the home screen again */ }
-    $('home').hidden = true; const l = $('loading'); if (l) l.hidden = false;
+    $('home').hidden = true; if (window.__adLoad) window.__adLoad.again(((MAPS.find((m) => m.id === id) || {}).loading || [])[0]); else { const l = $('loading'); if (l) l.hidden = false; }
     chooseMap(id); return;
   }
   outOfRoom();
@@ -1560,7 +1560,9 @@ function step(dt) {
 $('hint').addEventListener('click', () => { if (game.state === 'play' && mode.garageOK()) openGarage('break'); else if (game.state === 'play' && mode.resetPlayer) mode.resetPlayer(); });
 spawnPlayer();
 followSun(player.x, player.z);
-const loadEl = $('loading'); if (loadEl) loadEl.hidden = true;
+// the loading screen (page.html) stays until the sounds are in too (or a few seconds more), then goes once a frame is drawn
+fetchClips();
+if (window.__adLoad) window.__adLoad.built(() => sfxCount); else { const l = $('loading'); if (l) l.hidden = true; }
 // the home screen first; a mode's card instead when one was just picked, in an online round, or on a link into a room
 {
   let brief = ''; try { brief = sessionStorage.getItem(BRIEF) || ''; sessionStorage.removeItem(BRIEF); } catch (e) { /* home */ }
