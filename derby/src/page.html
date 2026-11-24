@@ -618,9 +618,14 @@ body.racing.touch #hint { top: 128px; }
   #rh-lap { font-size: 20px; } #rh-time { font-size: 15px; } #rh-best { display: none; } #rh-strip { margin-top: 5px; } #rh-next { font-size: 13px; margin-top: 4px; }
   body.racing.touch #hint { top: 96px; }
 }
+/* the armour and the speed on the same dark backing as the rest of the HUD */
+#bars { box-sizing: border-box; padding: 6px 12px 9px; border-radius: 8px; background: rgba(14,15,18,0.8); box-shadow: 0 2px 10px rgba(0,0,0,0.35); }
+#bars { left: 14px; bottom: 14px; }
+#speedo { right: 14px; bottom: 14px; padding: 2px 12px 6px; border-radius: 8px; background: rgba(14,15,18,0.8); box-shadow: 0 2px 10px rgba(0,0,0,0.35); }
+#labels { opacity: 1; }
 /* a phone held upright, racing: slim, so the road ahead shows. One dark bar across the top (place, lap, the race strip,
-   the car to catch) with the pause button beside it, a small radar under it on the right, and the armour as a thin bar
-   along the bottom edge under the controls. No lap times, order or Wrecked / Scrap (scrap won still shows as a toast) */
+   the car to catch) with the pause button beside it, a small radar under it on the right, and the armour bar under it on the left.
+   No lap times, order or Wrecked / Scrap (scrap won still shows as a toast) */
 @media (orientation: portrait) {
   body.racing.touch #racehud { top: 6px; left: 8px; right: 60px; width: auto; min-width: 0; transform: none; padding: 3px 10px 6px; }
   body.racing.touch .rh-top { gap: 12px; }
@@ -631,11 +636,11 @@ body.racing.touch #hint { top: 128px; }
   body.racing.touch #pause-b { top: 6px; right: 8px; }
   body.racing.touch #radar { top: 108px; left: auto; right: 8px; width: 84px; height: 84px; opacity: 0.88; }
   body.racing.touch #standings, body.racing.touch #score { display: none; }
-  body.racing.touch #bars { top: auto; bottom: 5px; left: 8px; width: calc(100% - 16px); transform: none; box-sizing: border-box; padding: 4px 10px; border-radius: 8px; background: rgba(14,15,18,0.8); }
+  body.racing.touch #bars { top: 108px; bottom: auto; left: 8px; right: 100px; width: auto; transform: none; padding: 5px 10px 6px; }
   body.racing.touch #labels { display: none; }
-  body.racing.touch #hp { height: 13px; } body.racing.touch #hp-text { font-size: 11px; line-height: 13px; }
-  body.racing.touch #sec, body.racing.touch #gad { height: 4px; margin-top: 3px; }
-  body.racing.touch #hint { top: 112px; left: 8px; right: 100px; transform: none; max-width: none; }
+  body.racing.touch #hp { height: 16px; } body.racing.touch #hp-text { font-size: 14px; line-height: 16px; }
+  body.racing.touch #sec, body.racing.touch #gad { height: 6px; margin-top: 4px; }
+  body.racing.touch #hint { top: 200px; }
   body.racing.touch #toast { top: 24%; }
 }
 </style>
