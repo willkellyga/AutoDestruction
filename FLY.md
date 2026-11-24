@@ -34,7 +34,11 @@ page lists every device with its latest numbers. To copy all the reports to the 
 
 Add `?perf=1` to the game's address to see the same numbers in a corner of the screen, or `?report=0` to send none.
 
-## Each deploy (in the repo's folder, after `git pull`)
+## Each deploy
+
+Merging to `main` deploys by itself: `.github/workflows/fly-deploy.yml` runs `flyctl deploy --remote-only --ha=false`
+with the repo secret `FLY_API_TOKEN` (made with `fly tokens create deploy -a auto-destruction`). Watch it, or run it again
+by hand with **Run workflow**, in the repo's Actions tab. To deploy from a Mac instead (in the repo's folder, after `git pull`):
 
     fly deploy --ha=false
 
