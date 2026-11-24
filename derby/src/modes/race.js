@@ -159,6 +159,11 @@ export function makeRace(G) {
     for (const r of recs) grab(r);
     phase = 'count'; countT = COUNT; shown = COUNT + 1;
     lights = lights || makeLights();
+    // online, a page that was still loading at the start (or reloaded mid-race) goes straight into the race, with the
+    // race's clock where everyone else's is; a reloaded one gets its gates back (netLoad) and starts at its last one
+    const late = NET && NET.lateBy > 0 ? NET.lateBy : 0;
+    if (late > COUNT) { phase = 'race'; raceT = late - COUNT; lights.set(0, 'off'); for (const r of recs) { r.lapT0 = 0; r.lastProg = progressOf(r); } }
+    else countT -= late;
   }
 
   function finishRace() {
@@ -336,6 +341,19 @@ export function makeRace(G) {
       const r = byCar.get(c); if (!r) return;
       r.remote = false; r.downT = RESPAWN;
       if (!c.dead) c.driver = racer(c, { pace: between(LV.pace), grip: between(LV.grip) });
+    },
+    // ...a bot handed to another device (this one was away too long): raced there from now on
+    release(c) { const r = byCar.get(c); if (r) r.remote = true; },
+    // ...a host's page that reloaded: a bot that was wrecked is back on the track at once
+    netRevive(e, make) { make(e); },
+    // this player's race, for the relay to keep: a page that reloads mid-race gets its gates and laps back
+    netSave() { const r = recs.find((o) => o.me); return r ? { passed: r.passed, laps: r.laps, best: r.best, kills: r.kills, wrecks: r.wrecks } : 0; },
+    netLoad(back) {
+      const me = recs.find((o) => o.me), k = back && back[G.net.me];
+      if (!me || !k || !(k.passed > me.passed) || me.finished) return;
+      while (me.passed < k.passed) me.gateT[++me.passed] = raceT;
+      me.laps = Array.isArray(k.laps) ? k.laps.slice() : me.laps; me.best = k.best || me.best; me.kills = k.kills | 0; me.wrecks = k.wrecks | 0;
+      me.lapT0 = raceT; reset(me);
     },
     // the radar: the player's next gate, blinking
     radar(R, s, ox, oy) {

@@ -1,6 +1,9 @@
 # Deploys the game to auto-destruction.fly.dev on every push to main (each merged PR), the same as running
 # `fly deploy --ha=false` from a fresh clone (FLY.md). Needs the repo secret FLY_API_TOKEN (`fly tokens create deploy -a auto-destruction`).
 # Run it by hand from the Actions tab with "Run workflow".
+# The checks come from Monster Mayhem's deploy (its PR 71 and 72): the rooms live in one machine's memory, so the deploy
+# refuses to run onto anything but one machine; Monster Mayhem's first auto-deploy left its machine stopped (the site was
+# down about 12 minutes), so a stopped machine is started; and the real page must answer, not just /healthz.
 name: Deploy to Fly
 
 on:
@@ -13,15 +16,64 @@ concurrency:
   group: fly-deploy
   cancel-in-progress: false
 
+env:
+  FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+  APP: auto-destruction
+  SITE: https://auto-destruction.fly.dev
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+
       - uses: superfly/flyctl-actions/setup-flyctl@master
-      - run: flyctl deploy --remote-only --ha=false
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-      - name: Check the live site answers
-        run: curl -fsS --retry 5 --retry-delay 5 --retry-all-errors https://auto-destruction.fly.dev/healthz
+
+      # the game runs on one machine with the ad_reports volume; refuse to deploy onto anything else
+      - name: Check there is one machine before deploying
+        run: |
+          n=$(flyctl machines list -a "$APP" --json | jq 'length')
+          echo "machines before deploy: $n"
+          flyctl machines list -a "$APP"
+          if [ "$n" -ne 1 ]; then echo "::error::Expected 1 machine, found $n. Fix by hand before deploying (fly scale count 1)."; exit 1; fi
+
+      # --ha=false keeps it to the one machine; Fly builds the image on its own builder
+      - name: Deploy
+        run: flyctl deploy --remote-only --ha=false -a "$APP"
+
+      - name: Check there is still one machine
+        run: |
+          flyctl machines list -a "$APP"
+          n=$(flyctl machines list -a "$APP" --json | jq 'length')
+          if [ "$n" -ne 1 ]; then echo "::error::Deploy left $n machines (want 1). Destroy the extra one with fly machine destroy."; exit 1; fi
+
+      # a deploy can put the new image on the machine and leave it stopped: start it if it is not running
+      - name: Make sure the machine is started
+        run: |
+          for i in $(seq 1 12); do
+            id=$(flyctl machines list -a "$APP" --json | jq -r '.[0].id')
+            state=$(flyctl machines list -a "$APP" --json | jq -r '.[0].state')
+            echo "machine $id is $state"
+            if [ "$state" = started ]; then exit 0; fi
+            if [ "$state" = stopped ] || [ "$state" = suspended ]; then flyctl machine start "$id" -a "$APP" || true; fi
+            sleep 10
+          done
+          echo "::error::Machine $id did not start (last state: $state). By hand: fly machine start $id -a $APP"; exit 1
+
+      # the page itself, not just /healthz: a server that starts with the game missing answers /healthz but not /
+      - name: Check the live pages
+        run: |
+          check() {
+            for i in $(seq 1 12); do
+              code=$(curl -s -o /tmp/body -w '%{http_code}' --max-time 20 "$SITE$1" || echo 000)
+              if [ "$code" = 200 ]; then echo "$1 -> 200 ($(wc -c < /tmp/body) bytes)"; return 0; fi
+              echo "$1 -> $code, trying again in 10s"; sleep 10
+            done
+            echo "::error::$SITE$1 did not return 200 (last: $code)"; head -c 500 /tmp/body; return 1
+          }
+          ok=0
+          check /healthz || ok=1
+          check / || ok=1
+          check /stats || ok=1
+          exit $ok

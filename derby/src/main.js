@@ -40,7 +40,7 @@ import { lookSetup, makeLook } from './looks/index.js';
 import { makeGround } from './ground.js';
 import { makeDirt } from './dirt.js';
 import { makeStreaks } from './streaks.js';
-import { makeNet, makeLobby, serverUrl } from './net.js';
+import { makeNet, makeLobby, serverUrl, quickPlay } from './net.js';
 import { makeLearn } from './learn.js';
 
 const $ = (id) => document.getElementById(id);
@@ -787,8 +787,9 @@ net = makeNet({ cars, game, MAP, mode, api, addCar, wreck, damage, gadget, playe
   get pickups() { return pickups; }, horde: () => mode.horde || null,
   removeCar: (c) => { c.gone = true; c.dispose(); if (c.tag) c.tag.remove(); const i = cars.indexOf(c); if (i >= 0) cars.splice(i, 1); },
   begin: () => { if (game.state === 'menu') startGame(); },
-  onWelcome: () => { const n = net.players.length + net.bots; $('menu-note').textContent = `${net.players.map((p) => p.name).join(', ')}${net.bots ? ` and ${net.bots} bot${net.bots === 1 ? '' : 's'}` : ''}: ${n} cars.`; },
-  noRound: () => { toast('That round is over', 'Back to the lobby'); setTimeout(() => { location.href = net.lobby(); }, 1500); } });
+  onRoster: () => { const n = net.players.length + net.bots; $('menu-note').textContent = `${net.players.map((p) => p.name).join(', ')}${net.bots ? ` and ${net.bots} bot${net.bots === 1 ? '' : 's'}` : ''}: ${n} cars.`; },
+  // (quick play: the round is over, so straight into the next one)
+  noRound: () => { toast('That round is over', net.quick ? 'Finding another one' : 'Back to the lobby'); setTimeout(() => { if (net.quick) playAgain(); else location.href = net.lobby(); }, 1500); } });
 // the map's pickups and hazards, if it lists any (pickups.js, hazards.js)
 const pickups = makePickups(api, MAP.pickups), hazards = makeHazards(api, MAP.hazards);
 function spawnPlayer(at) {
@@ -1137,23 +1138,39 @@ const HOME_CARDS = [
   { map: 'arena', k: 'Hammerdown Arena', t: 'Arena', d: 'Eight cars, three minutes, most wrecks wins', icon: 'M12 1l2.2 5.6L19 3.5l-1.6 5.6L23 10l-4.6 3.2L21 18.5l-5.6-1.3L14 23l-2-5-2 5-1.4-5.8L3 18.5l2.6-5.3L1 10l5.6-.9L5 3.5l4.8 3.1z' },
   { garage: true, k: 'Your car', t: 'Garage', d: 'Build it, arm it, paint it', icon: 'M21.7 6.3l-3.6 3.6-2.8-.7-.7-2.8 3.6-3.6a6 6 0 0 0-7.7 7.7L2.3 18.7a2.1 2.1 0 0 0 3 3l8.2-8.2a6 6 0 0 0 8.2-7.2z' },
 ];
-// Solo or Online, picked on the home screen and kept: a mode's card then has only that way in (Start, or the lobby)
+// Solo, Online or Friends, picked on the home screen and kept. Solo: a mode's card has Start. Online is one tap: the
+// mode's card on the home screen goes straight into a round (quick play, net.js quickPlay), no lobby, no Ready button.
+// Friends: the mode's card has the friends' room (a code to share, the host starts it).
 const PLAY = 'ad-play', CAN_ONLINE = !!serverUrl();
-let playAs = 'solo'; try { if (CAN_ONLINE && localStorage.getItem(PLAY) === 'online') playAs = 'online'; } catch (e) { /* solo */ }
-const ONLINE_D = { race: 'Up to 6 drivers. Bots take the empty seats', base: 'Up to 6 cars against the horde, together', arena: 'Up to 8 cars. Bots take the empty seats' };
+let playAs = 'solo'; try { const p = localStorage.getItem(PLAY); if (CAN_ONLINE && (p === 'online' || p === 'friends')) playAs = p; } catch (e) { /* solo */ }
+const ONLINE_D = { race: 'Tap to race: up to 6 drivers, bots take the empty seats', base: 'Tap to play: up to 6 cars against the horde, together', arena: 'Tap to fight: up to 8 cars, bots take the empty seats' };
+const FRIENDS_D = { race: 'A room for friends: share the code', base: 'A room for friends: share the code', arena: 'A room for friends: share the code' };
 function setPlay(p) {
-  playAs = p === 'online' && CAN_ONLINE ? 'online' : 'solo';
+  playAs = (p === 'online' || p === 'friends') && CAN_ONLINE ? p : 'solo';
   try { localStorage.setItem(PLAY, playAs); } catch (e) { /* this visit only */ }
   drawHome();
 }
 // which way in the mode's card shows: 'solo', 'online', or both (a link straight to a map, as before)
 function cardAs(a) {
-  if (a === 'online' && !lobby) a = 'solo';
-  document.body.classList.toggle('as-solo', a === 'solo'); document.body.classList.toggle('as-online', a === 'online');
+  if ((a === 'online' || a === 'friends') && !lobby) a = 'solo';
+  document.body.classList.toggle('as-solo', a === 'solo'); document.body.classList.toggle('as-online', a === 'online' || a === 'friends');
   const kind = { waves: 'Waves', race: 'Race', survival: 'Zombie Survival', brawl: 'Arena' }[MAP.mode] || MAP.mode;
-  $('brief-k').textContent = a === 'online' ? kind + ' · Online' : a === 'solo' ? kind + ' · Solo' : kind;
-  $('on-quick').className = a === 'online' ? 'go' : 'alt'; $('on-quick').textContent = a === 'online' ? 'Quick match' : 'Play online';
+  $('brief-k').textContent = a === 'online' ? kind + ' · Online' : a === 'friends' ? kind + ' · Friends' : a === 'solo' ? kind + ' · Solo' : kind;
+  $('on-quick').hidden = a === 'friends';   // (Friends: the room's buttons only; quick play is the home screen's Online)
+  $('on-quick').className = a === 'online' ? 'go' : 'alt'; $('on-quick').textContent = 'Play online';
 }
+// one tap: the loading screen at once, and a quick room for this mode (the relay sends us straight into its round)
+function goOnline(id) {
+  initAudio(); sfx.play('ui_open', 0.7);
+  $('home').hidden = true; $('over').hidden = true; $('menu').hidden = true;
+  if (window.__adLoad) window.__adLoad.again('Finding a round'); else { const l = $('loading'); if (l) l.hidden = false; }
+  quickPlay(id, (why) => {
+    const l = $('loading'); if (l) l.hidden = true;
+    toast(why, ''); if (net) { $('over').hidden = false; } else showHome();
+  });
+}
+// Play again after a quick round: off this round, and straight into the next one for the same mode
+function playAgain() { if (net) net.bye(); goOnline(MAP.id); }
 {
   const box = $('home-cards');
   $('home-play').hidden = !CAN_ONLINE;
@@ -1169,7 +1186,7 @@ function cardAs(a) {
     b.innerHTML = `<small></small><b></b><span></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${c.icon}"/></svg>`;
     b.querySelector('small').textContent = c.k; b.querySelector('b').textContent = c.t; b.querySelector('span').textContent = c.d;
     if (c.map) b.dataset.map = c.map;
-    b.addEventListener('click', () => { if (!game.home) return; if (c.garage) openGarage('home'); else pickMode(c.map); });
+    b.addEventListener('click', () => { if (!game.home) return; if (c.garage) openGarage('home'); else if (playAs === 'online') goOnline(c.map); else pickMode(c.map); });
     box.appendChild(b);
   }
 }
@@ -1179,7 +1196,7 @@ function drawHome() {
   const all = Object.keys(PARTS).every((s) => Object.keys(PARTS[s]).every((k) => (save.owned[s] || []).includes(k)));
   $('home-unlock').disabled = all; $('home-unlock').textContent = all ? 'All unlocked' : 'Unlock all';
   for (const b of $('home-play').querySelectorAll('button')) b.classList.toggle('on', b.dataset.p === playAs);
-  for (const c of HOME_CARDS) if (c.map) document.querySelector(`.h-card[data-map="${c.map}"] span`).textContent = playAs === 'online' ? ONLINE_D[c.map] : c.d;
+  for (const c of HOME_CARDS) if (c.map) document.querySelector(`.h-card[data-map="${c.map}"] span`).textContent = playAs === 'online' ? ONLINE_D[c.map] : playAs === 'friends' ? FRIENDS_D[c.map] : c.d;
   $('home-car').textContent = body.name || 'Your car';
   $('home-class').textContent = classOf(r); $('home-rate').dataset.c = classOf(r); $('home-num').textContent = r;
   const gk = save.load.gadget, hg = $('home-gad'); hg.hidden = !GADGET[gk];
@@ -1319,7 +1336,7 @@ addEventListener('wheel', (e) => { cam.dist = clamp(cam.dist + Math.sign(e.delta
 // the mode's how-to-play cards: on its start card, and again from the round's menu (learn.js)
 const learn = makeLearn({ $, MAP });
 $('go').addEventListener('click', () => {
-  if (net) { initAudio(); if (game.state !== 'menu') return; if (net.begun) startGame(); else { net.ready_(); $('go').disabled = true; $('go').textContent = 'Waiting for the others...'; } return; }
+  if (net) { initAudio(); if (game.state === 'menu' && net.started) startGame(); return; }   // (online the round starts by itself: net.js begin)
   if (game.ended) { try { sessionStorage.setItem(BRIEF, 'solo'); } catch (e) { /* home */ } chooseMap(MAP.id); } else { initAudio(); startGame(); }
 });
 $('pause-learn').addEventListener('click', () => learn.show());
@@ -1340,7 +1357,7 @@ $('pause-learn').addEventListener('click', () => learn.show());
   }
 }
 let lobby = null;
-$('over-go').addEventListener('click', () => { if (net) { net.bye(); location.href = net.lobby(); } else chooseMap(MAP.id); });
+$('over-go').addEventListener('click', () => { if (net && net.quick) playAgain(); else if (net) { net.bye(); location.href = net.lobby(); } else chooseMap(MAP.id); });
 $('over-more').addEventListener('click', overGo);
 $('over-maps').addEventListener('click', () => { if (net) toHome(); else { game.ended = true; showHome(); } });
 $('pause-b').addEventListener('click', pauseOn);
@@ -1355,10 +1372,19 @@ if (net) {
   document.body.classList.add('online');
   $('brief-k').textContent = ({ waves: 'Waves', race: 'Race', survival: 'Zombie Survival', brawl: 'Arena' }[MAP.mode] || MAP.mode) + ' · Online';
   for (const id of ['levels', 'menu-home', 'over-garage']) $(id).hidden = true;
-  $('go').textContent = "I'm ready"; $('menu-note').textContent = 'Joining the round...';
-  $('over-go').textContent = 'Back to the lobby';
+  // no Ready button: the map is built, so this page is ready (main.js's end), and the round starts by itself when the
+  // countdown is out and everyone has loaded. The card shows how to play meanwhile, and how long is left.
+  $('go').disabled = true; $('go').textContent = 'Loading...'; $('menu-note').textContent = 'Joining the round...';
+  $('over-go').textContent = net.quick ? 'Play again' : 'Back to the lobby';
+  setInterval(() => {
+    if (game.state !== 'menu') return;
+    const s = net.startIn();
+    $('go').textContent = net.started ? 'Starting...' : s > 0.5 ? `Starting in ${Math.ceil(s)}` : net.ready ? 'Waiting for the others...' : 'Loading...';
+  }, 250);
 } else {
-  lobby = makeLobby({ $, MAP, onOpen: () => { $('menu').classList.add('lobby-on'); }, onShut: () => { $('menu').classList.remove('lobby-on'); } });
+  lobby = makeLobby({ $, MAP, onOpen: () => { $('menu').classList.add('lobby-on'); }, onShut: () => { $('menu').classList.remove('lobby-on'); },
+    onQuick: () => { const l = $('loading'); if (window.__adLoad) window.__adLoad.again('Finding a round'); else if (l) l.hidden = false; $('menu').hidden = true; },
+    onFail: () => { const l = $('loading'); if (l) l.hidden = true; $('menu').hidden = false; } });
   window.__lobby = lobby;
 }
 $('dead-garage').addEventListener('click', () => openGarage('dead'));
@@ -1688,11 +1714,16 @@ followSun(player.x, player.z);
 // the loading screen (page.html) stays until the sounds are in too (or a few seconds more), then goes once a frame is drawn
 fetchClips();
 if (window.__adLoad) window.__adLoad.built(() => sfxCount); else { const l = $('loading'); if (l) l.hidden = true; }
+// online: the map is built, so this page is ready for the round (it starts by itself: net.js)
+if (net) net.ready_();
 // the home screen first; a mode's card instead when one was just picked, in an online round, or on a link into a room
 {
   let brief = ''; try { brief = sessionStorage.getItem(BRIEF) || ''; sessionStorage.removeItem(BRIEF); } catch (e) { /* home */ }
-  if (!net) cardAs(/[?&](room|online)=/.test(location.search) ? 'online' : brief === 'online' ? 'online' : brief ? 'solo' : 'both');
-  if (net || brief || /[?&](room|online|map)=/.test(location.search)) $('menu').hidden = false; else showHome();
+  // (?online=quick, the old way back from a quick round, is the one tap now)
+  const quickLink = !net && /[?&]online=quick/.test(location.search) && lobby && MAPS.some((m) => m.id === MAP.id);
+  if (!net) cardAs(/[?&]room=/.test(location.search) ? 'friends' : brief === 'online' || brief === 'friends' ? brief : brief ? 'solo' : 'both');
+  if (quickLink) goOnline(MAP.id);
+  else if (net || brief || /[?&](room|online|map)=/.test(location.search)) $('menu').hidden = false; else showHome();
 }
 requestAnimationFrame((t) => { last = t; frame(t); });
 window.__derby = { net, specials, crumple, cube, room, gcam, garageLight, startTest, endTest, tryPart: (s, k) => onTry(s, k), dummies, renderer, mapLook, touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH, picked }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, pauseOn, pauseOff, toHome, setPlay, sfx, audioMix, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop };

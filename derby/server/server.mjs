@@ -9,7 +9,8 @@
 //                immutable, never asked about again; a changed sound is a new name the new page asks for
 // Each file is compressed once as it is read, Brotli for browsers that take it and gzip for the rest (mp3s are left
 // as they are: they don't get smaller). Also /healthz and /stats (counts only), and the device reports (reports.mjs):
-// POST /report from every game page, kept in $DATA_DIR/reports.jsonl, shown on /host (behind HOST_KEY on Fly.io).
+// POST /report from every game page, kept in $DATA_DIR/reports.jsonl, shown on /host (behind HOST_KEY on Fly.io), and the
+// rooms' event log, $DATA_DIR/events.jsonl.
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -55,6 +56,26 @@ function files() {
 files();
 const stamp = (t) => console.log('  ' + new Date().toISOString().slice(11, 19) + '  ' + t);
 const reports = makeReports({ dir: process.env.DATA_DIR || here, hostKey: process.env.HOST_KEY || '', isPublic: !!process.env.FLY_APP_NAME, log: stamp });
+// What happened in the rooms (players coming and going and why, rounds starting and ending, the host handing over), one
+// line each in $DATA_DIR/events.jsonl beside the reports (on Fly.io the volume at /data, so it outlives deploys). That
+// log is how Monster Mayhem found its iPad reload loop. It is put aside as events-<time>.jsonl at 32 MB, the newest 5 kept.
+const EVENTS_DIR = process.env.DATA_DIR || here, EVENTS = path.join(EVENTS_DIR, 'events.jsonl'), EVENTS_MAX = 32e6;
+const BUILD = process.env.FLY_IMAGE_REF ? String(process.env.FLY_IMAGE_REF).split(':').pop().slice(-12) : 'local';
+let evSize = 0, evFailed = false; try { evSize = fs.statSync(EVENTS).size; } catch (e) { /* none yet */ }
+function keepEvent(obj) {
+  const line = JSON.stringify(obj) + '\n';
+  if (evSize + line.length > EVENTS_MAX) {
+    try {
+      fs.renameSync(EVENTS, path.join(EVENTS_DIR, 'events-' + new Date().toISOString().replace(/[:.]/g, '-') + '.jsonl'));
+      const old = fs.readdirSync(EVENTS_DIR).filter((f) => /^events-.*\.jsonl$/.test(f)).sort();
+      for (const f of old.slice(0, Math.max(0, old.length - 5))) fs.unlinkSync(path.join(EVENTS_DIR, f));
+    } catch (e) { /* a lost line is better than a full disk */ }
+    evSize = 0;
+  }
+  evSize += line.length;
+  fs.appendFile(EVENTS, line, (err) => { if (err && !evFailed) { evFailed = true; stamp('Events are not being kept: ' + err.message); } });
+}
+keepEvent({ at: Date.now(), e: 'start', build: BUILD, release: process.env.FLY_MACHINE_VERSION || null, node: process.version });
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x'), p = url.pathname;
@@ -74,6 +95,6 @@ const server = http.createServer((req, res) => {
   res.writeHead(200, { 'content-type': f.type, 'content-length': bytes.length, 'cache-control': keep, etag: f.tag, ...(f.br ? { vary: 'accept-encoding' } : {}), ...(enc ? { 'content-encoding': enc } : {}) });
   return res.end(req.method === 'HEAD' ? undefined : bytes);
 });
-const relay = attachRelay(server, { log: stamp });
+const relay = attachRelay(server, { log: stamp, event: (e, o) => keepEvent({ at: Date.now(), e, ...o }) });
 server.listen(PORT, '0.0.0.0', () => console.log(`\nAuto Destruction online is running: http://localhost:${PORT}${files() ? '' : '   (no build yet: node derby/build.mjs)'}\n`));
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(0));

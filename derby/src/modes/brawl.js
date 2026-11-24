@@ -73,10 +73,12 @@ export function makeBrawl(G) {
     start() {
       const net = NET(), RIVALS = net ? (net.host ? net.bots : 0) : BRAWL.rivals;
       LV = net ? BRAWL_LEVELS.normal : BRAWL_LEVELS[levelId()]; useAILevel(LV);   // (before the rivals are made: their armour)
-      G.hint(null); phase = 'run'; left = LIMIT - (net && net.lateBy ? net.lateBy : 0); warned = 0;
+      // (online the server keeps the clock: a page that came late or reloaded takes what is left on it)
+      G.hint(null); phase = 'run'; left = net && net.clockLeft() > 0 ? net.clockLeft() : LIMIT - (net && net.lateBy ? net.lateBy : 0); warned = 0;
       you = G.player; row('You', true); if (you) shield(you);
       const humans = net ? net.players.length : 1;
-      if (net && you) { const at = seatAt(net.slot); if (at) { you.x = at.x; you.z = at.z; you.yaw = at.yaw; you.gunYaw = at.yaw; } }
+      // (a player who came late into a bot's seat starts where the bot was)
+      if (net && you) { const at = net.spawn || seatAt(net.slot); if (at) { you.x = at.x; you.z = at.z; you.yaw = at.yaw; you.gunYaw = at.yaw; } }
       for (let i = 0; i < RIVALS; i++) { const c = G.addRival(BRAWL.tiers[i % BRAWL.tiers.length], net ? seatAt(humans + i) : undefined); row(c.name); shield(c); }
       for (const c of G.cars) if (c.remote) row(c.name);
       G.banner('Free-for-all', `${clock(LIMIT)} on the clock. Most wrecks wins`);
@@ -123,6 +125,24 @@ export function makeBrawl(G) {
     // online: someone else's car joined (or came back from a wreck), and a bot taken over when the host left
     netCar(c) { if (phase !== 'wait') row(c.name); },
     adopt(c) { if (c.dead) back.push({ load: c.load, t: BRAWL.respawn }); else c.driver = G.makeDriver(c); },
+    // ...a bot handed to another device (this one was away too long): it brings the wrecked ones back now, not this one
+    release() { back.length = 0; },
+    // ...a bot whose seat a new player took: it does not come back
+    netDrop(c) { for (let i = back.length - 1; i >= 0; i--) if (back[i].load.name === c.name) back.splice(i, 1); },
+    // ...a host's page that reloaded: a bot that was wrecked comes back as the others do
+    netRevive(e) { back.push({ load: { ...e.load, name: e.name }, t: BRAWL.respawn }); },
+    // the round's clock is the server's (the relay ends it on time even when the host has gone)
+    netLen: LIMIT,
+    netClock(s) { if (phase === 'run' && Math.abs(s - left) > 0.5) left = s; },
+    netEnd() { if (phase === 'run') { left = 0; finish(); } },
+    // the scoreboard, for the relay to keep: a page that reloads mid-round gets it back (the most each device saw)
+    netSave(me) { return [...rows.values()].map((r) => [r.me ? me : r.name, r.wrecks, r.deaths]); },
+    netLoad(back, me) {
+      for (const list of Object.values(back)) {
+        if (!Array.isArray(list)) continue;
+        for (const [name, w, d] of list) { if (typeof name !== 'string') continue; const r = name === me ? row('You', true) : row(name); r.wrecks = Math.max(r.wrecks, w | 0); r.deaths = Math.max(r.deaths, d | 0); }
+      }
+    },
     playerDown: () => ({ respawn: BRAWL.respawn, noGarage: true, noSkip: true }),
     respawnAt: () => freeSpot(),
     rivalSpawn: () => freeSpot(),
