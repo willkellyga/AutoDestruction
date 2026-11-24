@@ -49,3 +49,23 @@ The guns, the scattergun, the cannon and their mechanics are real recordings, on
 | `flame_loop.wav` | the flamethrower burning (loop) | made in code, not recorded: shaped noise (a low roar and a hiss), a flutter, and crackle, filtered round the loop so it repeats without a seam |
 
 The buildings coming down, glass and fire are Monster Mayhem's own clips (`src/sfx-bank.js`, credited in `assets/sfx/CREDITS.md`). The 2026 bundle has no gunfire, so the gun recordings come from the older bundle parts named above.
+
+### The road
+
+The driving sounds under the engine (roadsound.js). The tyre squeal and the car crashes come from older bundle parts on the same page, pulled one file at a time: **PP Skids** Pole Position, Skids & Screeches Tarmac (2018 part 5); **Car Destruction** Pole Position, Car Destruction (2020 part 6); **Coll Anderson** Coll Anderson, Car Destruction (2015 bundle). The rest are from the 2026 bundle. Times are seconds in the source file.
+
+| File | Used for | Cut from (pack: file, time ranges) |
+|---|---|---|
+| `squeal_loop.wav` | tyres squealing on tarmac: hard cornering, sliding, braking, wheelspin (loop) | PP Skids: Skids_Tarmac_t4, exterior, skidding in circles, MKH8060 (48.9 to 51.5, the engine filtered off below 850 Hz) |
+| `scrape_loop.wav` | metal grinding along a wall or another car (loop) | Coll Anderson: EFX EXT Car Impacts and Scrapes 19 A (1.75 to 2.65, there and back); 344 Audio Extreme Winds: Large Metal Box, Drag (20.0 to 21.8, low) |
+| `wind_loop.wav` | the air rushing past at speed (loop) | ESM: Loop Weather Wind Whipping Constricted Flow Turbulent 01 (1.0 to 3.3) |
+| `hiss_loop.wav` | a badly hurt engine wheezing and hissing (loop) | Car Destruction: Damaged Engine t22, Ext, Heavy Damage, No Oil, Water Hiss (1.0 to 3.3) |
+| `bump.mp3` | cars knocking together, and the bodies' thump under a crash | SoundBits Mad Mustang Mercury: Car Door Open and Close Exterior 04 (the slam, 1.80 to 2.50); 344 Audio Cinematic Fight: 4 x Punch, Body 02 (1.08, low) |
+| `bump_2.mp3`, `bump_3.mp3` | takes of `bump` | Coll Anderson: Car Impacts and Scrapes 19 A (0.22 to 0.97, 3.14 to 3.89); 344 Punch, Body 02 (2.16, 3.18, low) |
+| `crunch_2.mp3` | a take of `crunch` | Coll Anderson: EFX EXT Metal Impact Smash Move 07 B (0.78 to 2.28) |
+| `crunch_heavy_2.mp3` | a take of `crunch_heavy` | Car Destruction: Chassis Impact t36, Ext, Drop on Ground, Metal Crash Bounce (2.9 to 5.1) |
+| `land.mp3` | coming down from a jump | Car Destruction: Chassis Impact t36 (11.35 to 12.15, low); 344 Punch, Body 02 (0.18, low) |
+| `debris.mp3` | bits falling off after a big hit or a wreck | Coll Anderson: EFX EXT Metal Impact Drop 01 A (0.25 to 1.40) |
+| `whoosh.mp3`, `whoosh_2.mp3` | a car rushing past close by | 344 Audio Elemental Palette: Wind, Rush, Whoosh, Long x5 01 (the second lower and slower) |
+
+Glass on the biggest hits is Monster Mayhem's own `glass` set.

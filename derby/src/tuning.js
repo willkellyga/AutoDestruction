@@ -15,6 +15,46 @@ export const CRASH = {
   kick: 1.0,        // how hard cars bounce off each other
 };
 
+// ---- the road's sounds (roadsound.js) ------------------------------------------------------------------------------
+// One set of driving sounds for every mode (tyres, scrapes, knocks, wind, pass-bys, landings, a hurt engine), mixed
+// for each: `ROAD_MIX.all` holds the shared numbers and each mode (a map's `mode`) changes only what it needs.
+// Volumes are shares (1 = as cut).
+export const ROAD_MIX = {
+  all: {
+    squeal: 1,          // tyres squealing on tarmac: cornering hard, sliding, braking hard, spinning away from a stop
+    asphalt: 1,         // how much of the ground squeals (tarmac); the rest is the gravel skid (skid_loop)
+    gravel: 1,          // the gravel skid, on dirt, grass and a map's rough ground
+    cornerFrom: 0.5,    // the share of a car's grip a turn must use before its tyres start to squeal ...
+    latGrip: 21,        // ... where a car's grip in a turn is its spec.grip times this (voxels a second squared)
+    brakeFrom: 24,      // braking hard above this speed squeals the tyres
+    spin: 0.55,         // the chirp of the wheels spinning up from a standstill (0 for none)
+    rivals: 0.7,        // the nearest rival squealing (one loop, for the loudest of them)
+    scrape: 1,          // metal grinding along a wall, or door to door with another car
+    wind: 1,            // the air rushing past at speed
+    windFrom: 30,       // ... from this speed up
+    whoosh: 1,          // a car rushing past close by ...
+    passNear: 16,       // ... within this many voxels ...
+    passSpeed: 24,      // ... this much faster or slower than the player
+    knock: 1,           // two cars touching too gently to crunch
+    knockGap: 0.1,      // the least time between two knocks (with eight cars in a ring they can stack up)
+    body: 0.8,          // the thump of a body under a crash's crunch
+    debris: 1,          // bits falling off after a big hit
+    glass: 0.5,         // the chance a big hit breaks glass too
+    land: 1,            // coming down from a jump
+    hiss: 0.7,          // the player's engine wheezing and hissing when it is badly hurt ...
+    hissFrom: 0.35,     // ... below this share of its armour
+  },
+  // the race: tyres and speed carry it, so the squeal, wind and pass-bys are full and the hurt engine is quieter
+  race: {},
+  // the arena: a dirt pit, eight cars always touching and guns going: mostly gravel, knocks spaced out and a little
+  // quieter, little wind at its lower speeds, and the hurt engine up (staying alive is the point)
+  brawl: { asphalt: 0.25, squeal: 0.8, rivals: 0.45, knock: 0.85, knockGap: 0.16, wind: 0.35, whoosh: 0.45, passSpeed: 34, hiss: 1, glass: 0.6 },
+  // the zombie base: concrete and dirt in a storm, few other cars: some gravel, a softer wind under the storm's own,
+  // few pass-bys, the hurt engine up
+  survival: { asphalt: 0.7, squeal: 0.9, rivals: 0.5, knock: 0.9, knockGap: 0.14, wind: 0.5, whoosh: 0.35, hiss: 1 },
+  waves: { asphalt: 0.8, rivals: 0.55, knockGap: 0.14, wind: 0.6, whoosh: 0.5, hiss: 1 },
+};
+
 // ---- drifting ----------------------------------------------------------------------------------------------------
 // The handbrake (Space, or Drift on a phone) while steering at speed lets the back out: the car yaws faster than its
 // direction of travel follows, so it slides at an angle, and most of the speed the slide would scrub off is kept.
