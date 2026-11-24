@@ -774,7 +774,7 @@ function overGo() {
   game.state = 'play'; lockMouse(); m.go(); return true;
 }
 const api = {
-  game, cars, extras, MAP, scene, mats, camera, sfx, save, cube, chip, blast, explode, sparks, dust, CRASH, ROUND, AI,
+  game, cars, extras, MAP, scene, mats, camera, renderer, sfx, save, cube, chip, blast, explode, sparks, dust, CRASH, ROUND, AI,
   get player() { return player; }, TOUCH: () => TOUCH,
   addCar, addRival, rivalBuild, RIVAL_NAMES, damage, wreck, banner, toast, hint, over, keepSave: () => keepSave(save), sound,
   makeDriver, clearLine, spawnPlayer: (at) => spawnPlayer(at),
@@ -1561,7 +1561,7 @@ function stepCamera(dt) {
     for (let t = 4; t < dist; t += 1.5) {
       const i = idx(Math.floor(_tgt.x + bx * t), Math.floor(_tgt.y + by * t), Math.floor(_tgt.z + bz * t));
       if (!solid(Math.floor(_tgt.x + bx * t), Math.floor(_tgt.y + by * t), Math.floor(_tgt.z + bz * t))) continue;
-      const b = bodies[ownerAt(i)]; if (b && (b.kind === 'prop' || b.kind === 'rubble')) continue;
+      const b = bodies[ownerAt(i)]; if (b && (b.kind === 'prop' || b.kind === 'rubble' || b.see)) continue;   // (b.see: a roof the map lets it look through, maps/crossings.js)
       return Math.max(7, t - 2);
     }
     return dist;
@@ -1569,11 +1569,15 @@ function stepCamera(dt) {
   // a wall behind: rise and look down over it rather than close in on the car, which would hide the road ahead. Backed
   // up to a tall wall, the last tries go up nearly over the car's roof, so the camera never sits inside the wall.
   let pitch = cam.pitch, dd = room(pitch);
-  if (dd < dist) for (const up of [0.2, 0.45, 0.7, 0.95, 1.15]) { const p2 = Math.min(1.45, cam.pitch + up), d2 = room(p2); if (d2 > dd + 2) { pitch = p2; dd = d2; } if (d2 >= dist * 0.85) break; }
+  // under a map's roof (a tunnel, a hall: MAP.roofs, [{ x0, z0, x1, z1, y }]) it never climbs: it would go up into it
+  const under = (x, z) => { if (MAP.roofs) for (const r of MAP.roofs) if (x > r.x0 && x < r.x1 && z > r.z0 && z < r.z1) return r.y; return Infinity; };
+  const roofY = under(_tgt.x, _tgt.z);
+  if (dd < dist && roofY === Infinity) for (const up of [0.2, 0.45, 0.7, 0.95, 1.15]) { const p2 = Math.min(1.45, cam.pitch + up), d2 = room(p2); if (d2 > dd + 2) { pitch = p2; dd = d2; } if (d2 >= dist * 0.85) break; }
   cam.p = cam.p === undefined ? pitch : cam.p + (pitch - cam.p) * Math.min(1, dt * 5);
   const bx = -Math.sin(cam.yaw) * Math.cos(cam.p), by_ = Math.sin(cam.p) + 0.15, bz = -Math.cos(cam.yaw) * Math.cos(cam.p);
   cam.d = cam.d === undefined ? dd : cam.d + (dd - cam.d) * Math.min(1, dt * (dd < cam.d ? 14 : 3));
   camera.position.set(_tgt.x + bx * cam.d, Math.max(2.5, _tgt.y + by_ * cam.d), _tgt.z + bz * cam.d);
+  { const ry = Math.min(roofY, under(camera.position.x, camera.position.z)); if (camera.position.y > ry - 2.5) camera.position.y = ry - 2.5; }
   const sh = game.shake; if (sh > 0) camera.position.add(_o.set((Math.random() - 0.5) * sh * 1.6, (Math.random() - 0.5) * sh * 1.2, (Math.random() - 0.5) * sh * 1.6));
   camera.lookAt(_tgt.x + Math.sin(cam.yaw) * 16, _tgt.y - 0.5, _tgt.z + Math.cos(cam.yaw) * 16);
   // a drift boost widens the view for a moment (it springs out, then eases back as the burst runs out)
@@ -1604,7 +1608,7 @@ addEventListener('resize', resize); resize();
 // check again after a turn, and on any frame where the window's size no longer matches the view's
 addEventListener('orientationchange', () => { for (const t of [100, 300, 700]) setTimeout(resize, t); });
 if (window.visualViewport) visualViewport.addEventListener('resize', resize);
-const quality = makeQuality({ renderer, composer, bloom: bloomPass, scene, camera, sun, resize, playing: () => game.state === 'play' || game.state === 'test', mobile: MOBILE });
+const quality = makeQuality({ renderer, composer, bloom: bloomPass, scene, camera, sun, resize, playing: () => game.state === 'play' || game.state === 'test', mobile: MOBILE, lodK: MAP.lodK });
 // the rest of a map's look (looks/): its beams, glows, lamps, weather and the rest
 const lookFrom = scene.children.length;
 const mapLook = MAP.look ? makeLook(MAP.look, { scene, renderer, camera, sky, hemi, sun, mats, bloom: bloomPass, quality, backdrop, sfx, setup: LOOK }) : null;

@@ -25,8 +25,9 @@ import base from './base.js';
 import arena from './arena.js';
 import crumble from './crumble.js';
 import bowtie from './bowtie.js';
+import crossings from './crossings.js';
 
-const ALL = [town, manhattan, base, arena, crumble, bowtie];
+const ALL = [town, manhattan, base, arena, crumble, bowtie, crossings];
 // The start card: three ways to play, in this order. The rest (Crumbletown's waves, its race and the bow-tie) are
 // still there by address: ?map=town, ?map=crumble, ?map=bowtie.
 export const MAPS = [manhattan, base, arena];

@@ -179,6 +179,8 @@ export function makeRace(G) {
   }
 
   return {
+    // tests: the player's car drives itself round, as it does after the flag (window.__derby.mode.pilot())
+    pilot() { const m = recs.find((r) => r.me); if (m) m.car.driver = makeRacer(m.car, race, { autopilot: true, pace: 1, grip: 0.9 }); },
     go: 'Race',
     get tip() { return LV.note || ''; },
     get note() { return `${G.MAP.laps || 3} laps, six cars, guns on. ${LV.note} Tuck in behind a car for a tow.`; },
