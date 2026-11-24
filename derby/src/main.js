@@ -1488,9 +1488,10 @@ function stepCamera(dt) {
     }
     return dist;
   };
-  // a wall behind: rise and look down over it rather than close in on the car, which would hide the road ahead
+  // a wall behind: rise and look down over it rather than close in on the car, which would hide the road ahead. Backed
+  // up to a tall wall, the last tries go up nearly over the car's roof, so the camera never sits inside the wall.
   let pitch = cam.pitch, dd = room(pitch);
-  if (dd < dist) for (const up of [0.2, 0.45, 0.7, 0.95]) { const p2 = Math.min(1.25, cam.pitch + up), d2 = room(p2); if (d2 > dd + 2) { pitch = p2; dd = d2; } if (d2 >= dist * 0.85) break; }
+  if (dd < dist) for (const up of [0.2, 0.45, 0.7, 0.95, 1.15]) { const p2 = Math.min(1.45, cam.pitch + up), d2 = room(p2); if (d2 > dd + 2) { pitch = p2; dd = d2; } if (d2 >= dist * 0.85) break; }
   cam.p = cam.p === undefined ? pitch : cam.p + (pitch - cam.p) * Math.min(1, dt * 5);
   const bx = -Math.sin(cam.yaw) * Math.cos(cam.p), by_ = Math.sin(cam.p) + 0.15, bz = -Math.cos(cam.yaw) * Math.cos(cam.p);
   cam.d = cam.d === undefined ? dd : cam.d + (dd - cam.d) * Math.min(1, dt * (dd < cam.d ? 14 : 3));

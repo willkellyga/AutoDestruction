@@ -209,7 +209,8 @@ export class Vehicle {
     return true;
   }
   collide(dt, hooks) {
-    const ox = this.x, oz = this.z, nx = ox + this.vx * dt, nz = oz + this.vz * dt, H = this._h || (this._h = {}), N = this._n || (this._n = { x: 0, z: 0 });
+    const ox = this.x, oz = this.z, H = this._h || (this._h = {}), N = this._n || (this._n = { x: 0, z: 0 });
+    let nx = ox + this.vx * dt, nz = oz + this.vz * dt;
     // already in something: rubble came down on it, it turned a corner into a wall, it is half way through the hole it
     // just punched, a shove pushed it in. Rubble, lamps and bins are shoved aside, and so is a wall the car is still
     // going into faster than BUILDINGS.smash. Out of any other wall it eases itself, away from where it is in it; only
@@ -219,7 +220,7 @@ export class Vehicle {
       if (H.hard) {
         const s = Math.sin(this.yaw), c = Math.cos(this.yaw), ex = ox + s * this.mid - H.x, ez = oz + c * this.mid - H.z, e = Math.hypot(ex, ez) || 1;
         const vn = -(this.vx * ex + this.vz * ez) / e;   // speed towards where it is in the wall
-        if (vn <= BUILDINGS.smash && this.inWall < BUILDINGS.stuck) {
+        if (H.wall || (vn <= BUILDINGS.smash && this.inWall < BUILDINGS.stuck)) {   // (a barrier never gives way)
           this.x += ex / e * 8 * dt; this.z += ez / e * 8 * dt;
           if (vn > 0) { this.vx += ex / e * vn; this.vz += ez / e * vn; }
           return;
@@ -230,6 +231,13 @@ export class Vehicle {
         blast(H.x, H.y, H.z, 2.6, { push: 8, maxDebris: 30, core: 0.2, pushDebris: false, only: H.hard ? null : EASY });
       }
     } else this.inWall = 0;
+    // fast, a car moves further in a frame than a thin wall is thick (a building's walls are one block): feel along the
+    // way in steps under a block, and stop at the first thing met, so it can't pass clean through
+    const mv = Math.hypot(nx - ox, nz - oz);
+    if (mv > 0.8) for (let k = 1, n = Math.ceil(mv / 0.8); k < n; k++) {
+      const t = k / n, sx = ox + (nx - ox) * t, sz = oz + (nz - oz) * t;
+      if (this.hits(sx, sz, this.yaw, H)) { nx = sx; nz = sz; break; }
+    }
     if (!this.hits(nx, nz, this.yaw, H)) { this.x = nx; this.z = nz; return; }
     const sy = Math.sin(this.yaw), cy = Math.cos(this.yaw), vf = this.vx * sy + this.vz * cy, vs = this.vx * cy - this.vz * sy;
     // how fast it meets the wall: the part of its speed square into the wall (a glancing hit counts for little)
