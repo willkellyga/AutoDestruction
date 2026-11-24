@@ -630,6 +630,33 @@ export function makeHorde(G, o = {}) {
       if (!q.dead) fling(q, dx / dl * 30 * k, dz / dl * 30 * k, 8 + 14 * k, by);
     }
   };
+  // A flamethrower's puff (specials.js): every one in a cone from `from` along unit `d` out to `reach`, `w0` wide at
+  // the nozzle and `widen` wider for each voxel along, takes `dmg`, nearest first, at most `most` of them. How many it hit.
+  const _burnt = [];
+  H_.cone = (from, d, reach, w0, widen, dmg, by, gun, most) => {
+    if (most <= 0) return 0;
+    _burnt.length = 0;
+    const hl = Math.hypot(d.x, d.z) || 1, ux = d.x / hl, uz = d.z / hl;
+    for (const q of all) {
+      if (q.dead) continue;
+      const dx = q.x - from.x, dz = q.z - from.z, t = dx * ux + dz * uz;
+      if (t < -R || t > reach + R) continue;
+      if (Math.abs(dx * uz - dz * ux) > w0 + R + Math.max(0, t) * widen) continue;
+      q._t = t; _burnt.push(q);
+    }
+    if (_burnt.length > most) { _burnt.sort((a, b) => a._t - b._t); _burnt.length = most; }
+    for (const q of _burnt) {
+      if (H_.puppet) { q.L = Math.max(q.L, 0.6); continue; }
+      let k = dmg; if (by && by.rival) k *= HORDE.rivalGun;
+      q.L = Math.max(q.L, 0.6);
+      hurt(q, k, by, ux, uz, 10);
+    }
+    return _burnt.length;
+  };
+  // is one within r of (x, z)? (a mine goes off: main.js)
+  H_.onMine = (x, z, r) => { for (const q of all) if (!q.dead && q.y < 3 && Math.abs(q.x - x) < r + R && Math.abs(q.z - z) < r + R && Math.hypot(q.x - x, q.z - z) < r + R) return true; return false; };
+  // the one nearest (x, z) within `range`, or null (a seeker missile locks on to it: specials.js)
+  H_.closest = (x, z, range) => { let best = null, bd = range; for (const q of all) { if (q.dead) continue; const d = Math.hypot(q.x - x, q.z - z); if (d < bd) { bd = d; best = q; } } return best; };
   // the nearest one to a car within `range`, within `cone` radians either side of `yaw` (0: any way), or null.
   // `own`: leave out the ones at another car (shooting those hits the car)
   H_.nearest = (c, range, cone = 0, yaw = c.yaw, own = false) => {

@@ -189,7 +189,7 @@ const target = {
 const fx = makeFx(scene, { target, debris, audio: armySfx, shake: (a, p) => hooks.shake(a, p.x, p.y, p.z), world: { solid: (x, y, z) => solid(Math.floor(x), Math.floor(y), Math.floor(z)) !== 0 }, onLand, trail: 0.5 });
 // the flamethrower, seekers, mortar, shield, oil slick and jump jets (specials.js)
 const specials = makeSpecials({
-  scene, fx, sfx, cars, extras, player: () => player, damage, cube, chip, friendly: () => !!mode.friendly,
+  scene, fx, sfx, cars, extras, player: () => player, damage, cube, chip, friendly: () => !!mode.friendly, mobile: MOBILE,
   // a mortar shell landing: the town's blast, credited to the car that fired it
   blast(who, g, x, y, z, wall) {
     const was = by; by = who; splashK = g;
@@ -315,7 +315,7 @@ function shoot(c, G) {
   for (const i of barrels) {
     if (!c.muzzle(G, _m, _d, i)) continue;
     if (g.mine) { dropMine(c, g, _m); return; }
-    if (g.flame) { specials.flame(c, G, _m, coneAim(c, G, _ap)); continue; }   // (its roar is a loop: see the sounds)
+    if (g.flame) { specials.flame(c, G, _m, coneAim(c, G, _ap), i); continue; }   // (its roar is a loop: see the sounds)
     if (g.mortar) { specials.lob(c, G, _m, coneAim(c, G, _ap)); return; }
     // a round whose way out crosses its own car's box (a gun aimed down over the bonnet, a door gun aimed in across the
     // nose) starts just past the box
@@ -577,10 +577,11 @@ function stepMines(dt) {
     if (m.t < 1.2) continue;
     if (!m.armed) { m.armed = true; sfx.play('mine_beep', 0.8, m.x, m.z); }
     const hit = cars.find((o) => !o.gone && !o.dead && !((o.y || 0) > 1.5) && Math.hypot(o.x - m.x, o.z - m.z) < o.wide + 1.6 && (o !== m.owner || m.t > 3));
+    const trod = !hit && extras.some((e) => e.onMine && e.onMine(m.x, m.z, 1.6));   // one of the dead walking onto it (survival) sets it off too
     const fused = m.fuse !== undefined && m.t >= m.fuse;   // (one dropped on the garage floor goes off by itself)
-    if (!hit && !fused && m.t < 45) continue;
+    if (!hit && !trod && !fused && m.t < 45) continue;
     mines.splice(i, 1); m.mesh.removeFromParent();
-    if (!hit && !fused) continue;
+    if (!hit && !trod && !fused) continue;
     const was = by; by = m.owner; splashK = m.g;
     try { boom(m.x, 1, m.z, m.g.wall, 0.5, { maxDebris: 160, fire: true }, BUILDINGS.shell); if (hit) { hit.vx *= 0.3; hit.vz *= 0.3; } } finally { by = was; splashK = null; }
   }

@@ -7,7 +7,9 @@
 import * as THREE from 'three';
 import { WEAPONS } from '../../units/src/fx.js';
 import { solid } from '../../src/world.js';
-import { mote, puff, igniteAt, sparks, dust, smoke, ring, fire } from '../../src/sim.js';
+import { mote, puff, igniteAt, sparks, dust, smoke, ring } from '../../src/sim.js';
+import { AI } from './tuning.js';
+import { makePixelFire } from './pixelfire.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 // the seeker missiles: slower off the rail than the rocket pod's, and they turn hard after their car
@@ -16,13 +18,18 @@ WEAPONS.missile = { kind: 'rocket', speed: 46, top: 132, acc: 200, turn: 4.4, sp
 const GRAV = 70;   // the mortar's shells fall at this (voxels a second squared)
 const _d = new THREE.Vector3(), _p = new THREE.Vector3(), _c = new THREE.Vector3();
 
-export function makeSpecials({ scene, fx, sfx, cars, extras, player, damage, blast, friendly, cube, chip }) {
+export function makeSpecials({ scene, fx, sfx, cars, extras, player, damage, blast, friendly, cube, chip, mobile }) {
   const enemy = (c, o) => o !== c && !o.dead && !o.gone && (!friendly() || o.dummy);
+  const pix = makePixelFire(scene, { mobile });   // the fire's blocks (pixelfire.js)
+  // the rivals' guns do AI.dmg of the player's to cars (main.js); their flames the same
+  const cut = (c) => (c && c.rival ? AI.dmg : 1);
 
   // ---- the flamethrower ----------------------------------------------------------------------------------------
   // One puff of the jet: fire along the line to the aim point, cut short by a wall, burning every car and zombie in a
-  // cone that widens along it. What it touches keeps burning for a few seconds (burn, below).
-  function flame(c, G, from, aim) {
+  // cone that widens along it. What it touches keeps burning for a few seconds (burn, below). The look is block fire
+  // (pixelfire.js); a side burner (w under 1) is a thinner jet.
+  const FLAME = { widen: 0.08, burnFor: 2.5, zombies: 3 };   // cone half-width grows this per voxel; seconds a car burns on; zombies one puff can burn
+  function flame(c, G, from, aim, i = 0) {
     const g = G.g;
     _d.subVectors(aim, from); _d.y = clamp(_d.y / Math.max(1, Math.hypot(_d.x, _d.z)), -0.25, 0.3) * Math.hypot(_d.x, _d.z); _d.normalize();
     let reach = g.range, wall = false;
@@ -30,21 +37,9 @@ export function makeSpecials({ scene, fx, sfx, cars, extras, player, damage, bla
       const x = from.x + _d.x * t, y = from.y + _d.y * t, z = from.z + _d.z * t;
       if (y <= 0.4 || solid(Math.floor(x), Math.floor(y), Math.floor(z))) { reach = t; wall = y > 0.4; break; }
     }
-    // the jet: bright at the nozzle, yellow to orange to red as it goes, a little smoke where it ends
-    for (let k = 0; k < 5; k++) {   // the stream, racing out
-      const sp = 80 + Math.random() * 30, life = reach / sp * (0.8 + Math.random() * 0.3), w = 0.05 + Math.random() * 0.05;
-      mote(from.x, from.y, from.z, (_d.x + (Math.random() - 0.5) * w * 2) * sp, (_d.y + (Math.random() - 0.3) * w) * sp + 3, (_d.z + (Math.random() - 0.5) * w * 2) * sp,
-        3 + Math.random() * 2.5, life, 1, 0.75 + Math.random() * 0.2, 0.35);
-    }
-    // and the fire all along it, fatter and redder the further it goes
-    for (let t = 4 + Math.random() * 4; t < reach; t += 5 + Math.random() * 2) {
-      const f = t / g.range;
-      fire(from.x + _d.x * t, from.y + _d.y * t - 0.6, from.z + _d.z * t, f < 0.25 ? 1 : 2, 0.5 + f * 1.6);
-    }
-    if (Math.random() < 0.5) {
-      _p.copy(from).addScaledVector(_d, reach * (0.75 + Math.random() * 0.25));
-      puff(_p.x, _p.y + 1, _p.z, _d.x * 10, 4 + Math.random() * 4, _d.z * 10, 3.2, 1.4 + Math.random(), 0.35, 1.4, 0.8);
-    }
+    // the look: the nozzle pours blocks every frame until the next puff (step, below)
+    const J = (G.jets || (G.jets = []))[i] || (G.jets[i] = { d: new THREE.Vector3(), left: 0 });
+    J.d.copy(_d); J.reach = g.range; J.w = G.slot === 'door' ? 0.7 : 1; J.left = 1.6 / (g.rate || 14);
     // what it burns: cars in the cone
     for (const o of cars) {
       if (!enemy(c, o)) continue;
@@ -52,32 +47,30 @@ export function makeSpecials({ scene, fx, sfx, cars, extras, player, damage, bla
       const t = (_c.x - from.x) * _d.x + (_c.z - from.z) * _d.z;
       if (t < -2 || t > reach + o.wide) continue;
       const px = _c.x - (from.x + _d.x * t), pz = _c.z - (from.z + _d.z * t);
-      if (Math.hypot(px, pz) > o.wide + 1.5 + Math.max(0, t) * 0.12) continue;
-      damage(o, g.dmg, c);
-      if (!o.dead) { o.burnT = Math.max(o.burnT || 0, 3.2); o.burnBy = c; o.burnDps = g.burn || 5; }
+      if (Math.hypot(px, pz) > o.wide + 1.5 + Math.max(0, t) * FLAME.widen) continue;
+      damage(o, g.dmg * cut(c), c);
+      if (!o.dead) { o.burnT = Math.max(o.burnT || 0, FLAME.burnFor); o.burnBy = c; o.burnDps = (g.burn || 4) * cut(c); }
     }
-    // and the dead on foot (survival), and a wall it plays on catches now and then
+    // and the dead on foot (survival): the same cone, a few of them a puff
     let n = 0;
-    for (let t = 3; t < reach && n < 4; t += 2.5) for (const e of extras) {
+    for (const e of extras) if (e.cone) n += e.cone(from, _d, reach, 1.5, FLAME.widen, g.dmg, c, g, FLAME.zombies - n);
+    // (anything else a mode puts out to be shot: along the middle of the stream)
+    for (let t = 3; t < reach && n < FLAME.zombies; t += 2.5) for (const e of extras) {
+      if (e.cone) continue;
       _p.copy(from).addScaledVector(_d, t); _p.y = Math.min(_p.y, 3);
-      if (e.solid(_p.x, _p.y, _p.z) && e.hit(_p, g.dmg * 1.3, c, g, _d)) { n++; break; }
+      if (e.solid(_p.x, _p.y, _p.z) && e.hit(_p, g.dmg, c, g, _d)) { n++; break; }
     }
     if (wall && Math.random() < 0.05) { _p.copy(from).addScaledVector(_d, reach); igniteAt(_p.x, _p.y, _p.z, 2.4, 0.5); }
     c.flameT = 0.15;
   }
-  // a burning car: flames along it, smoke off the top, and its health going down
+  // a burning car: block flames licking up off it, and its health going down
   function burn(c, dt) {
     if (!(c.burnT > 0)) return;
     if (c.dead || c.gone || c.shieldT > 0) { c.burnT = 0; return; }
     c.burnT -= dt;
     c.burnAcc = (c.burnAcc || 0) + c.burnDps * dt;
     if (c.burnAcc >= 2) { damage(c, c.burnAcc, c.burnBy); c.burnAcc = 0; }
-    const s = Math.sin(c.yaw), co = Math.cos(c.yaw), y0 = (c.y || 0);
-    for (let k = 0; k < 2; k++) {
-      const u = (Math.random() - 0.5) * 1.6 * c.half, v = (Math.random() - 0.5) * 1.6 * c.wide;
-      mote(c.x + s * (c.mid + u) + co * v, y0 + 2 + Math.random() * 2.5, c.z + co * (c.mid + u) - s * v, (Math.random() - 0.5) * 3, 6 + Math.random() * 6, (Math.random() - 0.5) * 3, 1.6 + Math.random() * 1.8, 0.35 + Math.random() * 0.3, 1, 0.5 + Math.random() * 0.3, 0.12);
-    }
-    if (Math.random() < dt * 8) puff(c.x + s * c.mid, y0 + c.top, c.z + co * c.mid, 0, 6, 0, 2.6, 1.6, 0.4, 1.6, 0.4);
+    pix.burning(c.x + Math.sin(c.yaw) * c.mid, (c.y || 0) + c.top * 0.55, c.z + Math.cos(c.yaw) * c.mid, c.yaw, c.half, c.wide, dt);
   }
 
   // ---- the seeker missiles ---------------------------------------------------------------------------------------
@@ -93,6 +86,8 @@ export function makeSpecials({ scene, fx, sfx, cars, extras, player, damage, bla
       const a = Math.abs(Math.atan2(Math.sin(Math.atan2(dx, dz) - c.gunYaw), Math.cos(Math.atan2(dx, dz) - c.gunYaw)));
       if (a < ba) { ba = a; best = o; }
     }
+    // nothing to lock on among the cars (survival, where the cars are on the same side): the zombie nearest the aim point
+    if (!best) for (const e of extras) if (e.closest && (best = e.closest(aim.x, aim.z, 40))) break;
     return best;
   }
   const seekers = [];
@@ -105,8 +100,8 @@ export function makeSpecials({ scene, fx, sfx, cars, extras, player, damage, bla
       const S = seekers[i];
       if (!fx.shots.includes(S.shot)) { seekers.splice(i, 1); continue; }
       const t = S.car; if (t.dead || t.gone || t.shieldT > 0) continue;   // (it flies on to the last place it saw)
-      const d = S.shot.p.distanceTo(t.centre(_c)), lead = d / 150;
-      S.shot.aim.set(t.x + Math.sin(t.yaw) * t.mid + t.vx * lead, 1.6 + (t.y || 0), t.z + Math.cos(t.yaw) * t.mid + t.vz * lead);
+      const d = S.shot.p.distanceTo(t.centre(_c)), lead = d / 150, mid = t.mid || 0;   // (a zombie has no mid)
+      S.shot.aim.set(t.x + Math.sin(t.yaw) * mid + (t.vx || 0) * lead, (t.mid === undefined ? 3 : 1.6) + (t.y || 0), t.z + Math.cos(t.yaw) * mid + (t.vz || 0) * lead);
     }
   }
 
@@ -143,7 +138,7 @@ export function makeSpecials({ scene, fx, sfx, cars, extras, player, damage, bla
       if (s.mark) { const k = clamp(s.t / s.T, 0, 1); s.mark.material.opacity = 0.35 + 0.5 * k; }
       if (!hit && s.t < 8) continue;
       shells.splice(i, 1); s.mesh.removeFromParent(); if (s.mark) s.mark.removeFromParent();
-      if (car && !friendly()) damage(car, s.g.dmg * 0.6, s.c);   // a direct hit on top of a car, besides the blast
+      if (car && !friendly()) damage(car, s.g.dmg * 0.6 * cut(s.c), s.c);   // a direct hit on top of a car, besides the blast
       blast(s.c, s.g, s.x, Math.max(1, s.y), s.z, hit === 3);
     }
   }
@@ -275,6 +270,8 @@ export function makeSpecials({ scene, fx, sfx, cars, extras, player, damage, bla
     }
   }
   function landed(c, speed) {
+    // coming down from the jump jets on the dead squashes the ones under the car and throws the rest back
+    if (speed > 14 && !c.dead) for (const e of extras) if (e.explosion) e.explosion(c.x + Math.sin(c.yaw) * c.mid, 0.5, c.z + Math.cos(c.yaw) * c.mid, Math.max(c.half, c.wide) + 3, 10 + speed * 0.4, c);
     if (speed < 8) return;
     dust(c.x, 0.6, c.z, Math.round(4 + speed * 0.25), 6);
     if (speed > 20) sfx.play('crunch', 0.6, c.x, c.z, { rate: 0.8 });
@@ -287,15 +284,33 @@ export function makeSpecials({ scene, fx, sfx, cars, extras, player, damage, bla
     if (c.y <= 0) { landed(c, -c.vy); c.y = 0; c.vy = 0; }
   }
 
+  // each frame, from every nozzle still lit: a frame's worth of blocks, out of where the nozzle is now (after the
+  // blocks already out have moved, so the stream starts right at the nozzle), going the car's speed as well
+  function pour(dt) {
+    for (const c of cars) {
+      if (!c.guns) continue;
+      for (const G of c.guns) {
+        if (!G.jets) continue;
+        for (let i = 0; i < G.jets.length; i++) {
+          const J = G.jets[i]; if (!J || J.left <= 0) continue;
+          J.left -= dt;
+          if (c.dead || c.gone || !c.muzzle(G, _p, null, i)) { J.left = 0; continue; }
+          c.flameClock = (c.flameClock || 0) + dt;
+          pix.jet(_p, J.d, J.reach, dt, J.w, c.flameClock, c.vx || 0, c.vz || 0);
+        }
+      }
+    }
+  }
   function step(dt) {
     stepSeekers(); stepShells(dt); stepSlicks(dt);
     for (const c of cars) { burn(c, dt); stepShield(c, dt); if (!c.gone) stepAir(c); }
+    pix.step(dt); pour(dt);
   }
   // the garage closed, a round over: everything in flight and on the ground goes
   function clear(all = true) {
     for (const s of shells) { s.mesh.removeFromParent(); if (s.mark) s.mark.removeFromParent(); }
     shells.length = 0; seekers.length = 0;
-    if (all) { for (const S of slicks) S.mesh.removeFromParent(); slicks.length = 0; }
+    if (all) { for (const S of slicks) S.mesh.removeFromParent(); slicks.length = 0; pix.clear(); }
   }
   // slicks and shells in the garage's room and yard (south of the map) go when it closes
   function clearOffMap() {
@@ -310,5 +325,5 @@ export function makeSpecials({ scene, fx, sfx, cars, extras, player, damage, bla
     const s = Math.sin(c.yaw), co = Math.cos(c.yaw), b = c.mid - c.half - 0.3;
     smoke(c.x + s * b - co * 1.2, 0.8 + c.y, c.z + co * b + s * 1.2, 1, 0.3, 0.05);
   }
-  return { exhaust, flame, seek, lockFor, lob, shieldOn, shieldHit, oil, jump, landed, hop, step, clear, clearOffMap, slicks, shells };
+  return { pix, exhaust, flame, seek, lockFor, lob, shieldOn, shieldHit, oil, jump, landed, hop, step, clear, clearOffMap, slicks, shells };
 }
