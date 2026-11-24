@@ -173,7 +173,11 @@ button.go:active { transform: skewX(-8deg) translateY(3px); box-shadow: 0 2px 0 
 @media (prefers-reduced-motion: reduce) { .ld-stage * { animation-duration: 12s !important; } }
 #gad { margin-top: 5px; height: 8px; width: 40%; background: rgba(0,0,0,0.45); border: 2px solid var(--edge); border-radius: 3px; overflow: hidden; transform: skewX(-12deg); }
 #gad-fill { height: 100%; width: 100%; background: #6fb6ff; }
-#gad.ready #gad-fill { background: #8ef0ff; }
+#gad-fill { background: color-mix(in srgb, var(--g, #6fb6ff) 70%, #222); } #gad.ready #gad-fill { background: var(--g, #8ef0ff); }
+#gad-ico { display: inline-block; vertical-align: middle; } #gad-ico .gad-ico { width: 18px; height: 18px; margin: 3px 0 0 4px; filter: drop-shadow(0 1px 1px #000); }
+#gad-ico:empty { display: none; } #gad[hidden] + #gad-ico { display: none; }
+#gad:not([hidden]) { display: inline-block; vertical-align: middle; }
+#t-boost .gad-ico { display: block; width: 26px; height: 26px; margin: 0 auto 1px; }
 #hint { left: 50%; bottom: 22px; transform: translateX(-50%); font-size: 15px; opacity: 0; transition: opacity 0.3s; padding: 8px 14px; border-radius: 8px; background: rgba(18,20,24,0.6); }
 #hint.on { pointer-events: auto; cursor: pointer; }
 body.in-garage .hud, body.in-garage #radar, body.in-garage #cross { display: none; }
@@ -337,6 +341,7 @@ body.touch #banner { top: 40%; }
 .g-art { display: grid; place-items: center; height: 60px; border-radius: 6px; background: radial-gradient(ellipse at 50% 60%, rgba(255,255,255,0.12), rgba(255,255,255,0.02) 70%); position: relative; }
 .g-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }   /* absolute: a grid cell's 100% height didn't hold on phones, so the car spilled over its name */
 .g-glyph { opacity: 0.6; } .g-glyph svg { width: 30px; height: 30px; }
+.g-glyph.g-gad { opacity: 1; color: var(--g); filter: drop-shadow(0 0 6px color-mix(in srgb, var(--g) 45%, transparent)); } .g-glyph.g-gad svg { width: 38px; height: 38px; }
 .g-art em { position: absolute; right: 6px; bottom: 4px; font: var(--head-w) var(--head-st) calc(14px * var(--head-k)) var(--f-head); color: var(--hot); }
 .g-none { width: 26px; height: 26px; border: 2px dashed rgba(255,255,255,0.3); border-radius: 50%; }
 .g-card .g-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
@@ -485,6 +490,10 @@ button.alt:hover { background: linear-gradient(180deg, #4a5056, #2e3237); }
 .h-car { position: absolute; left: 22px; bottom: 20px; text-shadow: 0 2px 0 rgba(0,0,0,0.6); }
 .h-car > b { display: block; font: 400 clamp(30px, 4.4vw, 50px)/1 var(--f-logo); color: var(--hot); text-transform: uppercase; text-shadow: 0 4px 0 var(--tar); }
 .h-car .g-rate { position: static; display: inline-flex; margin-top: 8px; } .h-car .g-class { width: 38px; height: 38px; font-size: 26px; text-shadow: none; } .h-car .g-num { font-size: 28px; }
+/* the gadget fitted, as its picture and name beside the rating */
+.gad-ico { display: inline-grid; place-items: center; color: var(--g); } .gad-ico svg { width: 100%; height: 100%; fill: currentColor; }
+.h-gad { display: inline-flex; align-items: center; gap: 6px; margin: 8px 0 0 10px; vertical-align: top; height: 38px; padding: 0 12px 0 8px; font: 700 15px var(--f-head); letter-spacing: 0.1em; text-transform: uppercase; background: rgba(22,24,27,0.78); box-shadow: inset 0 0 0 2px rgba(255,255,255,0.12); --c: 6px; clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c)); }
+.h-gad .gad-ico { width: 24px; height: 24px; }
 .h-car > i { display: block; font-style: normal; font-size: 13px; font-weight: 600; opacity: 0.75; margin-top: 6px; }
 .h-cards { position: absolute; right: 22px; top: 50%; transform: translateY(-46%); width: min(440px, 38vw); display: grid; gap: 12px; pointer-events: auto; }
 .h-card { --a: var(--hot); --c: 14px; position: relative; text-align: left; border: 0; cursor: pointer; color: var(--ink); padding: 14px 92px 14px 20px; font-family: var(--f-ui);
@@ -495,8 +504,7 @@ button.alt:hover { background: linear-gradient(180deg, #4a5056, #2e3237); }
 .h-card b { display: block; font: 800 clamp(30px, 3.4vw, 42px)/1 var(--f-head); letter-spacing: 0.04em; text-transform: uppercase; margin: 2px 0 4px; }
 .h-card span { display: block; font-size: 14px; font-weight: 500; opacity: 0.85; }
 .h-card svg { position: absolute; right: 22px; top: 50%; width: 52px; height: 52px; margin-top: -26px; fill: var(--a); opacity: 0.9; }
-.h-card.race { background: repeating-linear-gradient(-45deg, transparent 0 14px, rgba(0,0,0,0.1) 14px 20px), var(--hot); color: var(--tar); box-shadow: inset 0 -6px 0 #b37d00; padding-top: 18px; padding-bottom: 22px; }
-.h-card.race small, .h-card.race svg { color: var(--tar); fill: var(--tar); } .h-card.race span { opacity: 1; font-weight: 600; }
+.h-card.race { --a: var(--hot); }   /* the same look as the others: a hazard-yellow side line and gradient */
 .h-card.base { --a: #8fe04a; } .h-card.arena { --a: #ff6a3a; } .h-card.garage { --a: #c9ced6; }
 body.at-home #tags, body.at-home #touch { display: none; }
 /* Solo or Online, over the cards */
@@ -558,9 +566,9 @@ body.learning #menu > div, body.learning #pause > div { visibility: hidden; }   
 @media (max-height: 520px) and (min-width: 561px) {
   #home .title { font-size: 26px; left: 14px; top: 10px; } .h-top { top: 8px; right: 12px; flex-direction: column-reverse; align-items: flex-end; gap: 6px; } .h-scrap { font-size: 14px; padding: 3px 12px 2px; } .h-scrap b { font-size: 20px; }
   .h-unlock { font-size: 12px; padding: 5px 10px 3px; }
-  .h-car { left: 14px; bottom: 10px; } .h-car > b { font-size: 26px; } .h-car .g-rate { margin-top: 4px; } .h-car .g-class { width: 28px; height: 28px; font-size: 19px; } .h-car .g-num { font-size: 20px; }
+  .h-car { left: 14px; bottom: 10px; } .h-car > b { font-size: 26px; } .h-car .g-rate { margin-top: 4px; } .h-car .g-class { width: 28px; height: 28px; font-size: 19px; } .h-car .g-num { font-size: 20px; } .h-gad { height: 28px; margin: 4px 0 0 8px; padding: 0 9px 0 6px; font-size: 12px; } .h-gad .gad-ico { width: 18px; height: 18px; }
   .h-cards { right: 12px; width: 52vw; grid-template-columns: 1fr 1fr; gap: 8px; transform: translateY(-40%); }
-  .h-card, .h-card.race { padding: 10px 12px 12px 16px; --c: 10px; } .h-card b { font-size: 24px; } .h-card span { font-size: 12px; } .h-card small { font-size: 11px; letter-spacing: 0.14em; }
+  .h-card { padding: 10px 12px 12px 16px; --c: 10px; } .h-card b { font-size: 24px; } .h-card span { font-size: 12px; } .h-card small { font-size: 11px; letter-spacing: 0.14em; }
   .h-card svg { width: 26px; height: 26px; right: 10px; top: 10px; margin: 0; }
   .brief-t { font-size: 30px; margin-bottom: 4px; } .brief-k { font-size: 12px; }
 }
@@ -569,10 +577,10 @@ body.learning #menu > div, body.learning #pause > div { visibility: hidden; }   
   #home .title { font-size: 25px; left: 12px; top: 12px; } .h-top { top: 12px; right: 10px; flex-direction: column-reverse; align-items: flex-end; gap: 6px; } .h-scrap { font-size: 14px; padding: 4px 12px 3px; } .h-scrap b { font-size: 21px; }
   .h-unlock { font-size: 12px; padding: 5px 10px 3px; }
   .h-cards { left: 10px; right: 10px; top: auto; bottom: max(12px, env(safe-area-inset-bottom)); width: auto; transform: none; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .h-card, .h-card.race { padding: 12px 10px 14px 16px; --c: 10px; min-height: 104px; } .h-card b { font-size: min(27px, 7vw); } .h-card span { font-size: 12px; } .h-card small { font-size: 11px; letter-spacing: 0.12em; padding-right: 30px; }
+  .h-card { padding: 12px 10px 14px 16px; --c: 10px; min-height: 104px; } .h-card b { font-size: min(27px, 7vw); } .h-card span { font-size: 12px; } .h-card small { font-size: 11px; letter-spacing: 0.12em; padding-right: 30px; }
   .h-card svg { width: 26px; height: 26px; right: 10px; top: 10px; margin: 0; }
   .h-card:hover { transform: none; } .h-play button { font-size: 18px; padding: 8px 8px 6px; }
-  .h-car { left: 12px; bottom: auto; top: 96px; } .h-car > b { font-size: 26px; } .h-car .g-rate { margin-top: 4px; } .h-car .g-class { width: 28px; height: 28px; font-size: 19px; } .h-car .g-num { font-size: 20px; }
+  .h-car { left: 12px; bottom: auto; top: 96px; } .h-car > b { font-size: 26px; } .h-car .g-rate { margin-top: 4px; } .h-car .g-class { width: 28px; height: 28px; font-size: 19px; } .h-car .g-num { font-size: 20px; } .h-gad { height: 28px; margin: 4px 0 0 8px; padding: 0 9px 0 6px; font-size: 12px; } .h-gad .gad-ico { width: 18px; height: 18px; }
 }
 
 /* the race panel (modes/race.js raceHud, main.js drawRaceHud): the place big and coloured, the lap, the lap time, the
@@ -652,7 +660,7 @@ body.racing.touch #hint { top: 128px; }
 <div class="hud" id="racehud" hidden><div class="rh-top"><div id="rh-place"><i id="rh-arrow"></i><b id="rh-pos">1</b><sup id="rh-suf">st</sup><span id="rh-of">/6</span></div><div class="rh-lap"><div id="rh-lap">Lap 1/3</div><div id="rh-time">0:00.0</div><div id="rh-best"></div></div></div><div id="rh-strip"></div><div id="rh-next"></div></div>
 <div class="hud" id="standings" hidden></div>
 <div class="hud" id="score"><div><span id="kills-l">Wrecked</span> <b id="kills">0</b></div><div>Scrap <b id="scrap">0</b></div></div>
-<div class="hud" id="bars"><div id="labels"><span class="big">Armour</span><span id="sec-name">Rockets</span></div><div id="hp"><div id="hp-fill"></div><span id="hp-text">160</span></div><div id="sec"><div id="sec-fill"></div></div><div id="gad" hidden><div id="gad-fill"></div></div></div>
+<div class="hud" id="bars"><div id="labels"><span class="big">Armour</span><span id="sec-name">Rockets</span></div><div id="hp"><div id="hp-fill"></div><span id="hp-text">160</span></div><div id="sec"><div id="sec-fill"></div></div><div id="gad" hidden><div id="gad-fill"></div></div><span id="gad-ico"></span></div>
 <div class="hud" id="speedo"><span id="speed" class="big">0</span><small>km/h</small></div>
 <div class="hud" id="toast"></div>
 <div class="hud" id="drift"><b>Drift</b><i><s></s></i></div>
@@ -701,12 +709,12 @@ body.racing.touch #hint { top: 128px; }
 <div id="home" hidden>
   <div class="title logo" role="img" aria-label="AutoDestruction.io"><div class="lg-auto"><div class="lg-l"><span>A</span><span>U</span><span>T</span><span>O</span></div></div><div class="lg-bar"><div class="lg-l"><span>D</span><span>E</span><span>S</span><span>T</span><span>R</span><span>U</span><span>C</span><span>T</span><span>I</span><span>O</span><span>N</span></div></div><b class="lg-io">.io</b></div>
   <div class="h-top"><button class="h-unlock" id="home-unlock" title="Own every car and part, for playtesting">Unlock all</button><div class="h-scrap">Scrap<b id="home-scrap">0</b></div></div>
-  <div class="h-car"><b id="home-car"></b><span class="g-rate" id="home-rate" data-c="C"><b class="g-class" id="home-class">C</b><em class="g-num" id="home-num">0</em></span><i class="desk-only">Drag to turn the car</i></div>
+  <div class="h-car"><b id="home-car"></b><span class="g-rate" id="home-rate" data-c="C"><b class="g-class" id="home-class">C</b><em class="g-num" id="home-num">0</em></span><span class="h-gad" id="home-gad" hidden></span><i class="desk-only">Drag to turn the car</i></div>
   <div class="h-cards" id="home-cards"><div class="h-play" id="home-play" role="group" aria-label="Solo or online"><button data-p="solo">Solo</button><button data-p="online">Online</button></div></div>
 </div>
 <div id="garage" hidden>
   <div class="g-name"><b>Garage</b><span>Drag to turn the car · tap a glowing spot to change that part</span></div>
-  <div class="g-rate" data-c="C"><span>Build</span><b class="g-class">C</b><em class="g-num">0</em><em class="g-delta"></em></div>
+  <div class="g-rate" data-c="C" title="Car rating: armour, speed, handling, firepower and ramming added up. The letter is its class, D up to S."><span>Rating</span><b class="g-class">C</b><em class="g-num">0</em><em class="g-delta"></em></div>
   <div class="g-hots"></div>
   <div class="g-panel">
     <div class="g-head"><div class="g-builds"></div><span class="g-scrap">Scrap<b>0</b></span></div>
