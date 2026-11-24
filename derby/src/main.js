@@ -1426,28 +1426,32 @@ function aimRay() {
 // Aim help. With a mouse, a rival near the crosshair pulls the aim onto itself (and on where it will be when the rounds
 // get there), more the nearer the crosshair is. With touch, the guns lock on to a rival only while it is on the screen
 // (in front of the camera, inside the picture, with a clear line from the car): never one behind you or off to the side
-// that you can't see. Of those, the one nearest the crosshair (a near one before a far one), held on to for a moment;
-// a tap on one picks it, and the guns stay on it while it stays on screen. The locked one wears the crosshair.
-const AIM = { pull: 0.85, margin: 0.06, range: 330, edge: 0.88, tap: 70 };
+// that you can't see. It finds one by itself only in the middle of the picture (`zone`, of the screen's half-width,
+// round the crosshair), the one nearest the crosshair (a near one before a far one), held on to for a moment; a tap
+// on one anywhere on the screen picks it, and the guns stay on it while it stays on screen (`edge`). The locked one
+// wears the crosshair. On touch the guns swing round at `turn` radians a second (about a rival's), not the mouse's
+// near-instant 10, so a new target takes a moment to come onto.
+const AIM = { pull: 0.85, margin: 0.06, range: 330, edge: 0.88, zone: 0.6, tap: 70, turn: 3.5 };
 const _tc = new THREE.Vector3(), _ts = new THREE.Vector3();
 let autoT = null, autoKeep = 0, aimLock = null, picked = null;
 function leadOn(o, from, out) { const t = Math.hypot(o.x - from.x, o.z - from.z) / 360; o.centre(out); out.x += o.vx * t; out.z += o.vz * t; out.y = 2.4; return out; }
 const aimables = () => (game.state !== 'test' && mode.targets ? mode.targets() : cars);   // (a mode can give other things to aim at: survival's zombies)
-// whether o is in the picture (leaves where on the screen in _ts)
-function onScreen(o, c) {
+// whether o is in the picture, or with `mid` in the middle of it round the crosshair (leaves where on the screen in _ts)
+function onScreen(o, c, mid) {
   leadOn(o, c, _tc); if (camera.position.distanceTo(_tc) > AIM.range) return false;
   _ts.copy(_tc).project(camera);
-  return _ts.z < 1 && Math.abs(_ts.x) < AIM.edge && Math.abs(_ts.y) < AIM.edge;
+  if (!(_ts.z < 1 && Math.abs(_ts.x) < AIM.edge && Math.abs(_ts.y) < AIM.edge)) return false;
+  return !mid || (Math.abs(_ts.x) < AIM.zone && Math.abs(_ts.y - 0.2) < AIM.zone);
 }
 function autoTarget(c, dt) {
   autoKeep -= dt;
-  const ok = (o) => o && o !== c && !o.dead && !o.gone && Math.hypot(o.x - c.x, o.z - c.z) < 240 && onScreen(o, c) && clearLine(c.x, c.z, o.x, o.z, 4);
+  const ok = (o, mid) => o && o !== c && !o.dead && !o.gone && Math.hypot(o.x - c.x, o.z - c.z) < 240 && onScreen(o, c, mid) && clearLine(c.x, c.z, o.x, o.z, 4);
   if (picked && !ok(picked)) picked = null;
   if (picked) return picked;
-  if (autoT && autoKeep > 0 && ok(autoT)) return autoT;
+  if (autoT && autoKeep > 0 && ok(autoT)) return autoT;   // (one already locked can drift out of the middle for a moment)
   let best = null, bs = 1e9;
   for (const o of aimables()) {
-    if (!ok(o)) continue;
+    if (!ok(o, true)) continue;
     const d = Math.hypot(o.x - c.x, o.z - c.z), r = Math.hypot(_ts.x * camera.aspect, _ts.y - 0.2);
     const score = (r + 0.25) * (d + 60) * (o === autoT ? 0.7 : 1);
     if (score < bs) { bs = score; best = o; }
@@ -1470,6 +1474,7 @@ canvas.addEventListener('touchstart', (e) => {
 function aimFor(c, dt) {
   const p = aimRay();
   let best = null, k = 0;
+  c.turretTurn = TOUCH ? AIM.turn : 10;
   if (TOUCH) { best = autoTarget(c, dt); k = best ? 1 : 0; }
   else {
     const tan = Math.tan(camera.fov * Math.PI / 360);
