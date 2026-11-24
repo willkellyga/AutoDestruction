@@ -23,7 +23,7 @@ import { MODES } from './modes/index.js';
 import { CRASH, ROUND, AI, DRIFT, BUILDINGS } from './tuning.js';
 import { toughen, boom, chipAt, fuelBlast } from './sturdy.js';
 import { PARTS, PAINTS, loadSave, keepSave, rivalBuild, RIVAL_NAMES, statsOf } from './parts.js';
-import { makeGarage, rating, classOf } from './garage.js';
+import { makeGarage, rating, classOf, GADGET, gadgetIcon } from './garage.js';
 import { makeGarageRoom } from './garageroom.js';
 import { makePartArt } from './partart.js';
 import { makeSpecials } from './specials.js';
@@ -661,17 +661,24 @@ function drawHud() {
   if (TOUCH) {
     const heavy = player.guns.find((g) => g.group === 1); $('t-heavy').hidden = !heavy;
     if (heavy && $('t-heavy').dataset.k !== heavy.key) { $('t-heavy').dataset.k = heavy.key; $('t-heavy').textContent = heavy.g.mine ? 'Mine' : heavy.g.fx === 'cannon' ? 'Cannon' : 'Rockets'; }
-    $('t-boost').hidden = !player.gadget || !player.gadget.cost; $('t-boost').textContent = player.gadget && player.gadget.repair ? 'Fix' : 'Nitro';
-    $('t-boost').classList.toggle('ready', player.gadgetT <= 0);
+    const gk = gadgetKey(player.gadget), tb = $('t-boost');
+    tb.hidden = !gk;
+    if (gk && tb.dataset.k !== gk) { tb.dataset.k = gk; tb.innerHTML = gadgetIcon(gk) + GADGET[gk].label; }
+    tb.classList.toggle('ready', player.gadgetT <= 0);
   }
-  const G = player.gadget, every = G && (G.nitro ? G.nitro.every : G.repair ? G.repair.every : 0);
+  // the gadget's meter fills as it comes back, with its picture beside it
+  const G = player.gadget, gk = gadgetKey(G), gd = G && (G.nitro || G.repair || G.shield || G.oil || G.jump), every = gd ? gd.every : 0;
   $('gad').hidden = !every;
+  if ($('gad').dataset.k !== (gk || '')) { $('gad').dataset.k = gk || ''; $('gad-ico').innerHTML = gadgetIcon(gk); $('gad').style.setProperty('--g', gk ? GADGET[gk].c : ''); }
   if (every) { $('gad-fill').style.width = `${(1 - player.gadgetT / every) * 100}%`; $('gad').classList.toggle('ready', player.gadgetT <= 0); }
   const [top, sub, count] = mode.hud(); $('wave').textContent = top; $('left').textContent = sub;
   drawRaceHud();
   // the counter by the scrap: cars wrecked, unless the mode counts something else (survival counts zombies)
   $('kills-l').textContent = count ? count[0] : 'Wrecked'; $('kills').textContent = count ? count[1] : game.kills; $('scrap').textContent = Math.floor(game.scrap);
 }
+
+// which gadget a car carries (its key in PARTS.gadget), or null
+function gadgetKey(G) { if (!G || !G.cost) return null; for (const k in PARTS.gadget) if (PARTS.gadget[k] === G || PARTS.gadget[k].name === G.name) return k; return null; }
 
 // the race panel (a mode with raceHud: modes/race.js): the place, big and coloured, with an arrow and a pop when it
 // changes; the lap ('Final lap' blinking red); the lap time; a strip of the whole race with every car on it; the car
@@ -1168,6 +1175,8 @@ function drawHome() {
   for (const c of HOME_CARDS) if (c.map) document.querySelector(`.h-card[data-map="${c.map}"] span`).textContent = playAs === 'online' ? ONLINE_D[c.map] : c.d;
   $('home-car').textContent = body.name || 'Your car';
   $('home-class').textContent = classOf(r); $('home-rate').dataset.c = classOf(r); $('home-num').textContent = r;
+  const gk = save.load.gadget, hg = $('home-gad'); hg.hidden = !GADGET[gk];
+  if (GADGET[gk]) hg.innerHTML = gadgetIcon(gk) + PARTS.gadget[gk].name;
 }
 // the part of the screen the cards leave free, for the camera to frame the car in
 function homeFree() {

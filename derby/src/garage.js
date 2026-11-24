@@ -26,6 +26,16 @@ export const ICON = {
   gadget: P('M13 2L4 14h6l-1 8 9-12h-6z'),
   paint: P('M17 2l5 5-9 9-5-5zM7 12l5 5c-1 3-4 5-9 5 1-1 2-3 2-5 0-3 1-5 2-5z'),
 };
+// a picture for each gadget, in its own colour: on its card, under the car on the home screen, and on the HUD
+const S = (inner) => `<svg viewBox="0 0 24 24" aria-hidden="true">${inner}</svg>`;
+export const GADGET = {
+  nitro: { c: '#5fb0ff', label: 'Nitro', svg: S('<path fill-rule="evenodd" d="M9 1h6v2.5h-1.5v2.7A4 4 0 0 1 17 10v10a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V10a4 4 0 0 1 3.5-3.8V3.5H9zM9 12h6v4H9z"/>') },
+  repair: { c: '#7fe07a', label: 'Fix', svg: S('<g transform="rotate(45 12 12)"><rect x="10.4" y="8" width="3.2" height="15" rx="1.6"/><path d="M7 1v4a5 5 0 0 0 10 0V1h-3v4h-4V1z"/></g>') },
+  shield: { c: '#8ef0ff', label: 'Shield', svg: S('<path d="M2 21a10 10 0 0 1 20 0h-3.4a6.6 6.6 0 0 0-13.2 0zM7 21v-2.6l1.4-.6 1.4-2.6h4.4l1.4 2.6 1.4.6V21zM11 1h2v3.4h-2zM3.6 4.4l1.4-1.4 2.4 2.4L6 6.8zM20.4 4.4L19 3l-2.4 2.4L18 6.8z"/>') },
+  oil: { c: '#e8b45a', label: 'Oil', svg: S('<path d="M12 1.5c2.6 4 5.2 7 5.2 10.2a5.2 5.2 0 0 1-10.4 0c0-3.2 2.6-6.2 5.2-10.2zM2.5 20.5C4.5 19 7.6 18.5 12 18.5s7.5.5 9.5 2c-2 1.5-5.1 2-9.5 2s-7.5-.5-9.5-2z"/>') },
+  jump: { c: '#ff8a3a', label: 'Jump', svg: S('<path d="M12 1l5 5.5h-3V10h-4V6.5H7zM3.5 17v-2.6l2-1 2.2-3h8.6l2.2 3 2 1V17zM6.5 18h3.4l-1.7 5zm8 0h3.4l-1.7 5z"/>') },
+};
+export const gadgetIcon = (key) => (GADGET[key] ? `<i class="gad-ico" style="--g:${GADGET[key].c}">${GADGET[key].svg}</i>` : '');
 const SHORT = { body: 'Body', primary: 'Main gun', roof: 'Roof', door: 'Doors', secondary: 'Heavy', front: 'Front', armour: 'Armour', wheels: 'Wheels', engine: 'Engine', gadget: 'Gadget', paint: 'Paint' };
 
 // what a part changes, as short chips on its card
@@ -59,6 +69,8 @@ function chips(slot, p) {
   return c;
 }
 // the button on a card that shows the part working: fire a weapon on the range, rev an engine, light the nitro
+// the shop's cards, cheapest first (a slot's free part, Nothing or the stock one, leads)
+export const byPrice = (parts) => Object.entries(parts).sort((a, b) => (a[1].cost || 0) - (b[1].cost || 0));
 export function tryLabel(slot, p) {
   if ((slot === 'primary' || slot === 'roof' || slot === 'door' || slot === 'secondary') && (p.dmg || p.mine || p.arc)) return p.mine ? 'Drop' : 'Fire';
   if (slot === 'engine') return 'Rev';
@@ -155,6 +167,7 @@ export function makeGarage({ root, save, art, onChange, onDrive, onTest, onTry, 
     const url = art && art.get(slot, key, save.load, () => { const img = root.querySelector(`.g-card[data-slot="${slot}"][data-key="${key}"] .g-art`); if (img) img.innerHTML = artHtml(slot, key); });
     if (url) return `<img src="${url}" alt="">`;
     if (key === 'none') return '<i class="g-none"></i>';
+    if (slot === 'gadget' && GADGET[key]) return `<i class="g-glyph g-gad" style="--g:${GADGET[key].c}">${GADGET[key].svg}</i>`;
     return `<i class="g-glyph g-${esc(slot)}">${ICON[slot] || ''}</i>${slot === 'engine' ? `<em>${{ stock: '', turbo: 'T', v8: 'V8', diesel: 'D', blower: 'SC', jet: 'J' }[key] || ''}</em>` : ''}`;
   }
   function card(slot, key, p) {
@@ -185,7 +198,7 @@ export function makeGarage({ root, save, art, onChange, onDrive, onTest, onTry, 
     $('.g-sel').innerHTML = cur ? `<b>${esc(cur.name)}</b> ${esc(cur.desc || S.tip)}` : esc(S.tip);
     const list = $('.g-list'), keepX = list.scrollLeft, keepY = list.scrollTop, same = list.dataset.tab === tab;
     list.dataset.tab = tab; list.classList.toggle('paint', tab === 'paint');
-    list.innerHTML = `<div class="g-tip">${esc(S.tip)}</div>` + (tab === 'paint' ? paintHtml() : Object.entries(PARTS[tab]).map(([k, p]) => card(tab, k, p)).join(''));
+    list.innerHTML = `<div class="g-tip">${esc(S.tip)}</div>` + (tab === 'paint' ? paintHtml() : byPrice(PARTS[tab]).map(([k, p]) => card(tab, k, p)).join(''));
     if (same) { list.scrollLeft = keepX; list.scrollTop = keepY; }
     else { list.scrollLeft = 0; list.scrollTop = 0; const on = list.querySelector('.g-card.eq'); if (on && list.scrollWidth > list.clientWidth + 4) list.scrollLeft = Math.max(0, on.offsetLeft - 12); }
     const hot = root.querySelectorAll('.g-hot'); hot.forEach((h) => h.classList.toggle('on', h.dataset.tab === tab));
