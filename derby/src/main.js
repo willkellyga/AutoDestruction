@@ -1567,7 +1567,7 @@ function stepCamera(dt) {
     for (let t = 4; t < dist; t += 1.5) {
       const i = idx(Math.floor(_tgt.x + bx * t), Math.floor(_tgt.y + by * t), Math.floor(_tgt.z + bz * t));
       if (!solid(Math.floor(_tgt.x + bx * t), Math.floor(_tgt.y + by * t), Math.floor(_tgt.z + bz * t))) continue;
-      const b = bodies[ownerAt(i)]; if (b && (b.kind === 'prop' || b.kind === 'rubble' || b.see)) continue;   // (b.see: a roof the map lets it look through, maps/crossings.js)
+      const b = bodies[ownerAt(i)]; if (b && (b.kind === 'prop' || b.kind === 'rubble' || b.see)) continue;   // (b.see: something the map lets it look through, maps/empire.js)
       return Math.max(7, t - 2);
     }
     return dist;

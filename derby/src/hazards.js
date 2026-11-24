@@ -1131,7 +1131,8 @@ function el(api, h) {
       if (t > 0) return;
       const run = -t * SPEED;   // how far this run has gone
       if (run > RUN) { t = EVERY; dir = -dir; train.visible = false; return; }
-      train.visible = true;
+      const pl = api.player, SEE = h.see ?? 460;   // (not drawn from far off: a car of it is as much to draw as a racing car)
+      train.visible = !pl || (Math.abs(pl.x - h.x) < SEE && Math.abs(pl.z - zc) < len / 2 + SEE);
       const z = (-len / 2 - TL / 2 - 60 + run) * dir; train.position.z = z; train.rotation.y = dir > 0 ? 0 : Math.PI;
       if (CLIP) for (const c of train.children) { const cz = z + c.position.z * dir; c.visible = Math.abs(cz) < len / 2 - CAR / 2 + 2; }
       // the rumble, now and then, from where the train is (it carries when the player is anywhere near)

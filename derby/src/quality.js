@@ -43,7 +43,7 @@ export function makeQuality({ renderer, composer, bloom, scene, camera, sun, res
     bloom.enabled = n <= 1;
     post = n <= 3;   // below that the picture goes straight to the screen, without the grade and vignette
     setDebrisBudget(n <= 1 ? 8000 : n <= 3 ? 5000 : 3000);
-    const L = (mobile ? LODS_MOBILE : LODS)[n]; setLod(L[0] * (mobile ? lodK : 1), L[1] * (mobile ? lodK : 1));   // (lodK: a map that shows more city at once asks for less of it in full, maps/crossings.js)
+    const L = (mobile ? LODS_MOBILE : LODS)[n]; setLod(L[0] * (mobile ? lodK : 1), L[1] * (mobile ? lodK : 1));   // (lodK: a map that shows more city at once asks for less of it in full, maps/empire.js)
     win.t = 0; win.n = 0; win.fast = 0; win.settle = 3;   // let a change settle (shaders compile) before judging again
   }
   // once a frame, with the frame's time stamp

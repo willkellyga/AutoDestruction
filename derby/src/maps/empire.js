@@ -25,6 +25,7 @@ import { LIBERTY } from '../../../src/nyc_landmarks.js';
 import { grabStatue, statueMesh } from './statue.js';
 import { dressBridges } from './bridges.js';
 import { makeStation } from './station.js';
+import { makeScreens } from './screens.js';
 import { tower, church } from '../../../src/buildings_b.js';
 import { shop } from '../../../src/buildings_a.js';
 import { canvasFor, finish, pickSpot, GK } from './common.js';
@@ -43,6 +44,7 @@ const SH = { W: 60, E: 645, N: 34, S: 735, BK: 795, BAT_X: 456, BAT_Z: 900, SH_X
 const ISLE = { x: 185, z: 895, half: 119, r: 56 };
 const NECK = { x0: 174, x1: 236, z0: 728, z1: 784 };
 const PARK = { x0: 236, z0: 106, x1: 566, z1: 420 };
+const BATTERY = { x0: 458, z0: 742, x1: 566, z1: 898 };
 const POND = { x: 352, z: 236, rx: 15, rz: 62 };
 const rbox = (x, z, cx, cz, h, r) => { const dx = Math.max(Math.abs(x - cx) - (h - r), 0), dz = Math.max(Math.abs(z - cz) - (h - r), 0); return dx * dx + dz * dz <= r * r; };
 const onIsle = (x, z) => rbox(x, z, ISLE.x, ISLE.z, ISLE.half, ISLE.r);
@@ -266,18 +268,18 @@ function kitFor(d, R) {
   const p = (a) => a[Math.floor(R() * a.length)], n = (a, b) => a + Math.floor(R() * (b - a + 1)), r = R(), plain = { inside: false, car: 0 };
   const bricks = [M.BRICK, M.BRICK2, M.BROWNST], awns = [M.AWN_R, M.AWN_G, M.AWN_B, M.AWN_W], doors = [M.DOOR_G, M.DOOR_R, M.DOOR_B, M.DARK];
   const tene = (lo, hi, loft) => { const [name, title] = p(SHOPS); return ['tenement', { ...plain, floors: n(lo, hi), name, title, wall: p(bricks), front: p(doors), awn: p(awns), tank: R() < 0.6, loft: loft ? 1 : 0 }]; };
-  const brown = () => ['brownstone', { ...plain, walls: [p(bricks), p(bricks), p(bricks)], doors: [p(doors), p(doors), p(doors)], floors: [n(3, 4), n(3, 4), n(3, 4)] }];
+  const brown = () => ['brownstone', { ...plain, walls: [p(bricks), p(bricks), p(bricks)], doors: [p(doors), p(doors), p(doors)], floors: [n(4, 5), n(4, 5), n(4, 5)] }];
   const apts = (lo, hi) => ['deco', { ...plain, floors: n(lo, hi), title: 'Apartment house', wall: p([M.BRICK2, M.LIME2, M.BRICK, M.REND_C]), span: M.DARK, crown: p(['tank', 'lantern', 'twin']), cap: p([M.ROOF_G, M.ROOF_D, M.COPPER]) }];
   const offices = (lo, hi) => (R() < 0.56
     ? ['deco', { ...plain, floors: n(lo, hi), wall: p([M.LIME, M.LIME2, M.REND_C]), span: p([M.DARK, M.SPANDREL]), crown: p(['pyramid', 'pyramid', 'lantern', 'tank', 'mast']), cap: p([M.ROOF_G, M.COPPER, M.ROOF_D, M.BRASS]) }]
     : ['tower', { ...plain, floors: n(lo, hi), name: p(BANKS), glass: p([M.GLASS, M.GLASS_G, M.GLASS_Z]), span: p([M.SPANDREL, M.SPAN_G, M.SPAN_Z]), ink: p([M.LIT_W, M.LIT_Y, M.LIT_B]) }]);
   switch (d) {
-    case 'T': return r < 0.7 ? ['billboard', { ...plain, floors: n(7, 10), signs: [p(SIGNS), p(SIGNS), p(SIGNS), p(SIGNS), p(SIGNS)] }] : offices(13, 17);
-    case 'M': case 'F': return offices(13, 17);
-    case 'W': case 'E': return r < 0.6 ? apts(10, 15) : r < 0.8 ? brown() : tene(5, 6);
-    case 'U': return r < 0.4 ? brown() : r < 0.86 ? tene(4, 6) : r < 0.93 ? ['church', null] : ['shop', { ...plain, name: p(SHOPS)[0], wall: p(bricks), awn: p(awns), door: p(doors) }];
-    case 'V': return r < 0.5 ? tene(5, 7, true) : r < 0.8 ? tene(5, 6) : apts(9, 12);
-    default: return r < 0.34 ? brown() : r < 0.7 ? tene(4, 6, R() < 0.3) : r < 0.84 ? ['shop', { ...plain, name: p(SHOPS)[0], wall: p(bricks), awn: p(awns), door: p(doors) }] : apts(8, 10);
+    case 'T': return r < 0.8 ? ['billboard', { ...plain, floors: n(9, 12), signs: [p(SIGNS), p(SIGNS), p(SIGNS), p(SIGNS), p(SIGNS)] }] : offices(15, 17);
+    case 'M': case 'F': return offices(15, 17);
+    case 'W': case 'E': return r < 0.65 ? apts(12, 16) : r < 0.9 ? tene(7, 9) : brown();
+    case 'U': return r < 0.5 ? tene(6, 8) : r < 0.75 ? apts(9, 12) : r < 0.9 ? brown() : r < 0.95 ? ['church', null] : ['shop', { ...plain, name: p(SHOPS)[0], wall: p(bricks), awn: p(awns), door: p(doors) }];
+    case 'V': return r < 0.5 ? tene(6, 9, true) : r < 0.75 ? tene(6, 8) : apts(10, 14);
+    default: return r < 0.45 ? tene(6, 8, R() < 0.3) : r < 0.75 ? apts(9, 13) : r < 0.9 ? brown() : ['shop', { ...plain, name: p(SHOPS)[0], wall: p(bricks), awn: p(awns), door: p(doors) }];
   }
 }
 const KITS = { tenement, brownstone, deco, billboard, tower, church, shop };
@@ -312,10 +314,32 @@ function plan() {
   const boxes = [];
   for (let bz = 8; bz < WZ - 60; bz += 104) for (let bx = 8; bx < WX - 60; bx += 104) for (const [qx, qz] of [[10, 10], [56, 10], [10, 56], [56, 56]]) {
     const x0 = bx + qx, z0 = bz + qz, x1 = x0 + 38, z1 = z0 + 38;
-    if (!free(x0 - 3, z0 - 3, x1 + 3, z1 + 3) || onIsle(x0 + 19, z0 + 19)) continue;
+    if (!free(x0 - 3, z0 - 3, x1 + 3, z1 + 3) || onIsle(x0 + 19, z0 + 19) || (x1 > BATTERY.x0 && x0 < BATTERY.x1 && z1 > BATTERY.z0 && z0 < BATTERY.z1)) continue;   // (and nothing on the Battery's lawn)
     boxes.push({ x: x0 + 19, z: z0 + 19, d: district(x0 + 19, z0 + 19), r: R(), r2: R(), r3: R() });
   }
   return (PLAN = { lots, boxes });
+}
+// Times Square's screens: a big one on the front of every building that faces the plaza, a blade sign hung out from it
+// over the pavement, facing the cars as they come, and a stack of them head-on where the course turns in from the south
+function screens() {
+  const out = [];
+  for (const L of plan().lots) {
+    const cx = L.x + 20, cz = L.z + 20; if (district(cx, cz) !== 'T' || Math.abs(cz - LINE_Z) > 70) continue;
+    const [nx, nz] = [[0, -1], [1, 0], [0, 1], [-1, 0]][L.f];
+    out.push({ x: cx + nx * 16.5, y: 38, z: cz + nz * 16.5, nx, nz, w: 30, h: 30 });
+    out.push({ x: cx + nx * 20 + 12, y: 31, z: cz + nz * 20, nx: -1, nz: 0, w: 8, h: 26 });   // (the cars come from the west)
+  }
+  for (let k = 0; k < 3; k++) out.push({ x: 290, y: 30 + k * 30, z: 498, nx: 0, nz: 1, w: 34, h: 28 });
+  return out;
+}
+// steam from the street here and there, at the road's edge, where the course runs between buildings
+function steamPts() {
+  const { T, on, hilly, W } = course(), out = [];
+  for (let i = 60, k = 0; i < T.N; i += 170, k++) {
+    if (on[i] || hilly[i] || inPark(T.X[i], T.Z[i]) || onIsle(T.X[i], T.Z[i])) continue;
+    const l = (k % 2 ? 1 : -1) * (W[i] - 5); out.push([T.X[i] + T.TZ[i] * l, T.Z[i] - T.TX[i] * l]);
+  }
+  return out;
 }
 function rows() {
   for (const L of plan().lots) {
@@ -340,7 +364,11 @@ function trees() {
       got.push([x, z]); tree(x, z, ri(11, 17), ri(5, 7));
     }
   };
-  grow(PARK.x0 + 6, PARK.z0 + 6, PARK.x1 - 8, PARK.z1 - 8, 1500, (x, z) => ((x - POND.x) / (POND.rx + 6)) ** 2 + ((z - POND.z) / (POND.rz + 6)) ** 2 > 1);
+  // (only within sight of the road: a wood two or three trees deep either side of it, lawn beyond)
+  const byRoad = (x, z) => { for (let dz = -48; dz <= 48; dz += 24) for (let dx = -48; dx <= 48; dx += 24) { const X = x + dx, Z = z + dz; if (X > 0 && Z > 0 && X < WX && Z < WZ && used[Z * WX + X]) return true; } return false; };
+  grow(PARK.x0 + 6, PARK.z0 + 6, PARK.x1 - 8, PARK.z1 - 8, 1500, (x, z) => ((x - POND.x) / (POND.rx + 6)) ** 2 + ((z - POND.z) / (POND.rz + 6)) ** 2 > 1 && byRoad(x, z));
+  // the Battery: a little park where the road swings out to the causeway, the statue ahead over the trees
+  { const { taken } = masks(); grow(BATTERY.x0 + 5, BATTERY.z0 + 5, BATTERY.x1 - 6, BATTERY.z1 - 6, 260, (x, z) => land(x - 6, z + 6) && land(x + 6, z + 6) && !taken[z * WX + x] && !taken[(z - 6) * WX + x] && !taken[(z + 6) * WX + x - 6] && !taken[(z + 6) * WX + x + 6]); }
   grow(ISLE.x - ISLE.half, ISLE.z - ISLE.half, ISLE.x + ISLE.half, ISLE.z + ISLE.half, 260, (x, z) => rbox(x, z, ISLE.x, ISLE.z, ISLE.half - 6, ISLE.r) && Math.hypot(x - ISLE.x, z - ISLE.z) > 96);
 }
 // the El's frames: a steel column either side of the avenue and a girder across between them, under the deck
@@ -426,6 +454,9 @@ function paint() {
   g.fillStyle = '#74a65e'; g.beginPath(); rr(ISLE.x - ISLE.half + 5, ISLE.z - ISLE.half + 5, ISLE.x + ISLE.half - 5, ISLE.z + ISLE.half - 5, ISLE.r - 4); g.fill();
   C.speckle(ISLE.x - ISLE.half, ISLE.z - ISLE.half, ISLE.x + ISLE.half, ISLE.z + ISLE.half, 14000, ['rgba(92,146,74,0.5)', 'rgba(146,192,108,0.45)']);
   g.fillStyle = '#d6cdb8'; g.beginPath(); g.arc(ISLE.x * GK, ISLE.z * GK, 70 * GK, 0, Math.PI * 2); g.fill();
+  // the Battery's lawn
+  g.fillStyle = '#74a65e'; g.beginPath(); rr(BATTERY.x0 + 3, BATTERY.z0 + 3, BATTERY.x1 - 3, BATTERY.z1 - 3, 16); g.fill();
+  C.speckle(BATTERY.x0, BATTERY.z0, BATTERY.x1, BATTERY.z1, 9000, ['rgba(92,146,74,0.5)', 'rgba(146,192,108,0.45)']);
   // Times Square's plaza: pale paving round the grid
   g.fillStyle = '#d6cdb8'; C.rect(300, LINE_Z - 52, LINE_X + 30, LINE_Z + 52);
   g.restore();
@@ -455,9 +486,10 @@ function radar(R, s, ox, oy, w, h) {
 // ---- the cheap city (backdrop.js calls this with its kit): towers as boxes on every block the course leaves alone ------
 const OFFICES = [0x8a929c, 0x77808c, 0x9a958c, 0xa8a297, 0x7f8a94, 0xb0a898].map(lin), FLATS = [0xa06e56, 0xb49c82, 0x94908a, 0xae9274, 0x86766c].map(lin);
 function fill({ add }) {
+  add(0, 290, 0, 488, 38, 126, 18, 0, 0, lin(0x23252c), 0.1);   // the tower the stack of screens hangs on, head-on from the south
   for (const b of plan().boxes) {
     const tall = b.d === 'M' || b.d === 'F' || b.d === 'T', mid = b.d === 'W' || b.d === 'E' || b.d === 'V';
-    const h = tall ? 190 + b.r * 250 : mid ? 100 + b.r * 150 : 44 + b.r * 70, office = tall ? b.r2 < 0.75 : mid ? b.r2 < 0.3 : false;
+    const h = tall ? 240 + b.r * 240 : mid ? 150 + b.r * 170 : 90 + b.r * 100, office = tall ? b.r2 < 0.75 : mid ? b.r2 < 0.3 : false;
     const col = (office ? OFFICES : FLATS)[Math.floor(b.r3 * 4.99)], w = 31 + b.r2 * 7, d = 31 + b.r3 * 7, lit = 0.2 + b.r * 0.25;
     if (h > 250) { add(0, b.x, 0, b.z, w, h * 0.62, d, 0, office ? 0 : 1, col, lit); add(0, b.x, h * 0.62, b.z, w * 0.72, h * 0.38, d * 0.72, 0, office ? 0 : 1, col, lit, office ? 8 : 0); }
     else add(0, b.x, 0, b.z, w, h, d, 0, office ? 0 : 1, col, lit);
@@ -527,7 +559,9 @@ export default {
       { kind: 'custom', make: (api) => { const { T, parts } = course(), by = (n) => parts.find((p) => p.name === n); dressBridges(api.scene, T, [{ part: by('Queens Bridge'), kind: 'truss' }, { part: by('Brooklyn Bridge'), kind: 'stone' }]); } },
       { kind: 'custom', make: (api) => { makeRoads(api.scene, course().T, course().parts.map((p) => ({ ...p, skip: near }))); } },
       { kind: 'custom', make: (api) => { const p = P('Subway'), i = p.i0 + p.open[0]; STATION = makeStation(api.scene, { x: course().T.X[i], w: course().W[i], z0: p.openZ[0], z1: p.openZ[1], y0: p.h, y1: p.roofY }); } },
-      { kind: 'el', x: 112 - 16 - 10.5, z0: P('Subway').openZ[0] - 56, z1: P('Subway').openZ[1] + 56, ground: true, y: P('Subway').h, every: 7, speed: 64, model: 'commuter', paint: 'blue' },
+      { kind: 'custom', make: (api) => makeScreens(api.scene, screens()) },
+      { kind: 'steam', pts: steamPts() },
+      { kind: 'el', x: 112 - 16 - 10.5, z0: P('Subway').openZ[0] - 56, z1: P('Subway').openZ[1] + 56, ground: true, y: P('Subway').h, every: 7, speed: 64, see: 130, model: 'commuter', paint: 'blue' },
       { kind: 'el', x: EL.x, z0: EL.z0, z1: EL.z1, y: EL.y, every: 10, speed: 80, model: 'commuter', paint: 'orange', sheds: true },
       { kind: 'covered', x0: s[0], z0: s[1], x1: s[2], z1: s[3], dim: 0.5 },
     ];
