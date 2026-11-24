@@ -40,7 +40,9 @@ async function bundle(split) {
 }
 // the game's fonts (src/fonts, SIL Open Font License, see LICENSES.md) go into the page itself, so nothing loads from outside
 const fontCss = readFileSync(here + 'src/fonts/fonts.css', 'utf8').replace(/url\('([^']+\.woff2)'\)/g, (m, f) => `url(data:font/woff2;base64,${readFileSync(here + 'src/fonts/' + f).toString('base64')}) format('woff2')`);
-const page = readFileSync(here + 'src/page.html', 'utf8').replace('/*@fonts*/', () => fontCss);
+// the loading screen's cars, drawn from the game's models by tools/loading-cars.mjs
+let loadCars = 'null'; try { loadCars = readFileSync(here + 'src/loadcars.json', 'utf8').trim(); } catch (e) { console.log('no src/loadcars.json: the loading screen has no cars (node derby/tools/loading-cars.mjs)'); }
+const page = readFileSync(here + 'src/page.html', 'utf8').replace('/*@fonts*/', () => fontCss).replace('/*@loadcars*/null', () => loadCars);
 const [head, rest] = page.split('</style>\n');
 const doc = (js) => '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">\n' + head + '</style>\n</head>\n<body>\n' + rest + '\n<script>' + js + '</script>\n</body>\n</html>\n';
 const js = await bundle(false), body = page + '\n<script>' + js + '</script>\n';

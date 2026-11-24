@@ -22,7 +22,7 @@ import { MAP, MAPS, chooseMap } from './maps/index.js';
 import { MODES } from './modes/index.js';
 import { CRASH, ROUND, AI, DRIFT, BUILDINGS } from './tuning.js';
 import { toughen, boom, chipAt, fuelBlast } from './sturdy.js';
-import { PARTS, PAINTS, loadSave, keepSave, rivalBuild, RIVAL_NAMES, statsOf } from './parts.js';
+import { PARTS, PAINTS, STARTER, loadSave, keepSave, rivalBuild, RIVAL_NAMES, statsOf } from './parts.js';
 import { makeGarage, rating, classOf, GADGET, gadgetIcon } from './garage.js';
 import { makeGarageRoom } from './garageroom.js';
 import { makePartArt } from './partart.js';
@@ -1731,4 +1731,4 @@ if (net) net.ready_();
   else if (net || brief || /[?&](room|online|map)=/.test(location.search)) $('menu').hidden = false; else showHome();
 }
 requestAnimationFrame((t) => { last = t; frame(t); });
-window.__derby = { net, specials, crumple, cube, room, gcam, garageLight, startTest, endTest, tryPart: (s, k) => onTry(s, k), dummies, renderer, mapLook, touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH, picked }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, pauseOn, pauseOff, toHome, setPlay, sfx, audioMix, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop };
+window.__derby = { art, STARTER, net, specials, crumple, cube, room, gcam, garageLight, startTest, endTest, tryPart: (s, k) => onTry(s, k), dummies, renderer, mapLook, touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH, picked }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, pauseOn, pauseOff, toHome, setPlay, sfx, audioMix, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop };
