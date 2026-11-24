@@ -70,7 +70,7 @@ export function makeSpecials({ scene, fx, sfx, cars, extras, player, damage, bla
     c.burnT -= dt;
     c.burnAcc = (c.burnAcc || 0) + c.burnDps * dt;
     if (c.burnAcc >= 2) { damage(c, c.burnAcc, c.burnBy); c.burnAcc = 0; }
-    pix.burning(c.x + Math.sin(c.yaw) * c.mid, (c.y || 0) + c.top * 0.55, c.z + Math.cos(c.yaw) * c.mid, c.yaw, c.half, c.wide, dt);
+    pix.burning(c.x + Math.sin(c.yaw) * c.mid, c.h + c.top * 0.55, c.z + Math.cos(c.yaw) * c.mid, c.yaw, c.half, c.wide, dt);
   }
 
   // ---- the seeker missiles ---------------------------------------------------------------------------------------
@@ -101,7 +101,7 @@ export function makeSpecials({ scene, fx, sfx, cars, extras, player, damage, bla
       if (!fx.shots.includes(S.shot)) { seekers.splice(i, 1); continue; }
       const t = S.car; if (t.dead || t.gone || t.shieldT > 0) continue;   // (it flies on to the last place it saw)
       const d = S.shot.p.distanceTo(t.centre(_c)), lead = d / 150, mid = t.mid || 0;   // (a zombie has no mid)
-      S.shot.aim.set(t.x + Math.sin(t.yaw) * mid + (t.vx || 0) * lead, (t.mid === undefined ? 3 : 1.6) + (t.y || 0), t.z + Math.cos(t.yaw) * mid + (t.vz || 0) * lead);
+      S.shot.aim.set(t.x + Math.sin(t.yaw) * mid + (t.vx || 0) * lead, (t.mid === undefined ? 3 : 1.6) + (t.h ?? (t.y || 0)), t.z + Math.cos(t.yaw) * mid + (t.vz || 0) * lead);
     }
   }
 
@@ -176,7 +176,7 @@ export function makeSpecials({ scene, fx, sfx, cars, extras, player, damage, bla
     if (c.gone) { b.removeFromParent(); c.bubble = null; return; }
     c.bubbleHit = Math.max(0, (c.bubbleHit || 0) - dt * 3);
     const u = b.material.uniforms; u.t.value += dt; u.hit.value = c.bubbleHit; u.fade.value = c.shieldT < 0.8 ? ((c.shieldT * 8) % 1 < 0.5 ? 0.4 : 1) : 1;   // it flickers before it goes
-    b.position.set(c.x + Math.sin(c.yaw) * c.mid, (c.y || 0) + c.top * 0.42, c.z + Math.cos(c.yaw) * c.mid);
+    b.position.set(c.x + Math.sin(c.yaw) * c.mid, c.h + c.top * 0.42, c.z + Math.cos(c.yaw) * c.mid);
     b.rotation.y = c.yaw; b.scale.set(c.wide + 2.2, c.top * 0.75 + 1.4, c.half + 2.4);
   }
 
@@ -241,7 +241,7 @@ export function makeSpecials({ scene, fx, sfx, cars, extras, player, damage, bla
     return true;
   }
   function jets(c, n) {
-    const s = Math.sin(c.yaw), co = Math.cos(c.yaw), y = (c.y || 0) + 0.6;
+    const s = Math.sin(c.yaw), co = Math.cos(c.yaw), y = c.h + 0.6;
     for (let k = 0; k < n; k++) {
       const u = (Math.random() < 0.5 ? -0.6 : 0.6) * c.half, v = (Math.random() < 0.5 ? -0.7 : 0.7) * c.wide;
       mote(c.x + s * (c.mid + u) + co * v, y, c.z + co * (c.mid + u) - s * v, (Math.random() - 0.5) * 3, -24 - Math.random() * 14, (Math.random() - 0.5) * 3, 0.9 + Math.random() * 0.9, 0.12 + Math.random() * 0.1, 1, 0.62 + Math.random() * 0.25, 0.3);

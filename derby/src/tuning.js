@@ -70,6 +70,8 @@ export const BUILDINGS = {
   // driving into them (vehicle.js)
   smash: 40,        // [26] a car must meet a wall faster than this, square into it, to break through; slower it is
                     // stopped, and at a glancing angle it slides along (only its speed square into the wall counts)
+  chip: 2.2,        // a car can't break into a building (keepout.js); hitting its wall faster than `smash` knocks a dent
+                    // this wide in it, bigger by holeK for every voxel a second faster, and some of it falls
   hole: 3.4,        // [4.2] radius of the hole a car punches at the smash speed (times its build's ram) ...
   holeK: 0.03,      // [0.035] ... and how much bigger it gets for every voxel a second faster
   stuck: 0.6,       // [0] seconds a car can sit wedged in a wall (turned into one, shoved in) before it digs itself out

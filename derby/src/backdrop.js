@@ -55,6 +55,7 @@ export function makeBackdrop({ scene, map, mobile, viewH, follow }) {
   const { tower, LANDMARKS, landmark } = towerKit(add, blink, rand, pick);
   const kit = { L, map, mobile, rand, pick, add, pt, pts, blink, tower, LANDMARKS, landmark, U, NIGHT };
   const S = STYLES[kind](kit);
+  if (L.fill) L.fill(kit);   // and what the map stands on its own ground the same cheap way (maps/empire.js: the city off the course)
   const objects = [], parts = {};
 
   // ---- the ground ------------------------------------------------------------------------------------------------
