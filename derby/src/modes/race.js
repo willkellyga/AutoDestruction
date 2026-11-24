@@ -110,14 +110,15 @@ export function makeRace(G) {
       const i = T.at(gi - Math.round(back / T.STEP)), x = T.X[i] + T.TZ[i] * lat, z = T.Z[i] - T.TX[i] * lat;
       if (T.WL && (lat > WL(i) - 5 || -lat > WR(i) - 5)) continue;   // too near the kerb on a street
       if (G.cars.some((c) => !c.gone && (c !== r.car || c.dead) && Math.hypot(c.x - x, c.z - z) < 18)) continue;   // wrecks too
-      return { x, z, yaw: Math.atan2(T.TX[i], T.TZ[i]) };
+      return { x, z, yaw: Math.atan2(T.TX[i], T.TZ[i]), y: TR.H ? TR.H[i] : 0 };   // (y: the road's height there, on a course that climbs)
     }
-    return { x: T.X[gi], z: T.Z[gi], yaw: Math.atan2(T.TX[gi], T.TZ[gi]) };
+    return { x: T.X[gi], z: T.Z[gi], yaw: Math.atan2(T.TX[gi], T.TZ[gi]), y: TR.H ? TR.H[gi] : 0 };
   }
   // put a car back on the track at its last gate without a wreck (stuck, or lost off the route)
   function reset(r) {
     const at = backAt(r), c = r.car;
     c.x = at.x; c.z = at.z; c.yaw = at.yaw; c.vx = c.vz = 0; c.yawRate = 0; c.gunYaw = at.yaw;
+    if (G.MAP.floor) { c.fy = G.MAP.floor(at.x, at.z, at.y || 0); c.y = 0; c.vy = 0; }   // on the bridge, not under it
     if (c.driver && c.driver.brain) { c.driver.brain.i = -1; c.driver.brain.lane = 0; c.driver.brain.backT = 0; }
     locate(r, true); r.stuckT = 0; r.lostT = 0; r.lastProg = progressOf(r); r.resets++;
   }

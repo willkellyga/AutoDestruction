@@ -305,6 +305,9 @@ export function makeGround({ scene, renderer, MAP, mobile }) {
   g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([0, 1, 1, 1, 1, 0, 0, 0]), 2));
   g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array([0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0]), 3));
   g.setIndex([0, 2, 1, 0, 3, 2]);
+  // a map with hills, cuts and dips lays its own floor: a grid with its heights, and holes where the road goes under it
+  // { position, uv, normal, index }, the picture mapped as the flat floor's is (u = x / WX, v = 1 - z / WZ)
+  if (MAP.floorMesh) { const F = MAP.floorMesh(); for (const k of ['position', 'uv', 'normal']) g.setAttribute(k, new THREE.BufferAttribute(F[k], k === 'uv' ? 2 : 3)); g.setIndex(new THREE.BufferAttribute(F.index, 1)); }
   const opt = detailOf(MAP.groundDetail);
   if (!opt) {   // as it always was
     const mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ map: tex })); mesh.receiveShadow = true; scene.add(mesh);

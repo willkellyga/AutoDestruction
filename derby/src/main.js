@@ -444,7 +444,7 @@ function onLand(s, hit, p) {
 // two cars meeting: each is two circles, front and back
 const _n = { x: 0, z: 0 };
 function bump(a, b) {
-  if (Math.abs((a.y || 0) - (b.y || 0)) > Math.min(a.top, b.top) * 0.6) return;   // one jumping over the other
+  if (Math.abs(a.h - b.h) > Math.min(a.top, b.top) * 0.6) return;   // one jumping over the other
   let best = 0, ax = 0, az = 0, bx = 0, bz = 0;
   const ra = a.wide + 0.6, rb = b.wide + 0.6;
   for (const fa of [-0.55, 0.55]) for (const fb of [-0.55, 0.55]) {
@@ -1559,7 +1559,8 @@ function stepCamera(dt) {
   }
   cam.cx += (c.x - cam.cx) * Math.min(1, dt * 12); cam.cz += (c.z - cam.cz) * Math.min(1, dt * 12);
   const dist = cam.dist * (tall ? 1.2 : 1) * (1 + clamp(Math.abs(c.fwd) / 300, 0, 0.25));
-  _tgt.set(cam.cx, 7.5, cam.cz);
+  cam.cy = cam.cy === undefined ? c.h : cam.cy + (c.h - cam.cy) * Math.min(1, dt * 9);   // (the road's height, and a jump's)
+  _tgt.set(cam.cx, 7.5 + (c.fy === undefined ? 0 : cam.cy - Math.max(0, c.y || 0) * 0.6), cam.cz);
   // how far back the camera can sit before a wall; lamps, props and rubble don't count (it looks past them)
   const room = (pitch) => {
     const bx = -Math.sin(cam.yaw) * Math.cos(pitch), by = Math.sin(pitch) + 0.15, bz = -Math.cos(cam.yaw) * Math.cos(pitch);
@@ -1575,14 +1576,18 @@ function stepCamera(dt) {
   // up to a tall wall, the last tries go up nearly over the car's roof, so the camera never sits inside the wall.
   let pitch = cam.pitch, dd = room(pitch);
   // under a map's roof (a tunnel, a hall: MAP.roofs, [{ x0, z0, x1, z1, y }]) it never climbs: it would go up into it
-  const under = (x, z) => { if (MAP.roofs) for (const r of MAP.roofs) if (x > r.x0 && x < r.x1 && z > r.z0 && z < r.z1) return r.y; return Infinity; };
+  const under = (x, z) => { if (MAP.roofs) for (const r of MAP.roofs) if (x > r.x0 && x < r.x1 && z > r.z0 && z < r.z1 && c.h < r.y - 4) return r.y; return Infinity; };   // (a car on the deck over a road is over that roof, not under it)
   const roofY = under(_tgt.x, _tgt.z);
   if (dd < dist && roofY === Infinity) for (const up of [0.2, 0.45, 0.7, 0.95, 1.15]) { const p2 = Math.min(1.45, cam.pitch + up), d2 = room(p2); if (d2 > dd + 2) { pitch = p2; dd = d2; } if (d2 >= dist * 0.85) break; }
   cam.p = cam.p === undefined ? pitch : cam.p + (pitch - cam.p) * Math.min(1, dt * 5);
   const bx = -Math.sin(cam.yaw) * Math.cos(cam.p), by_ = Math.sin(cam.p) + 0.15, bz = -Math.cos(cam.yaw) * Math.cos(cam.p);
   cam.d = cam.d === undefined ? dd : cam.d + (dd - cam.d) * Math.min(1, dt * (dd < cam.d ? 14 : 3));
-  camera.position.set(_tgt.x + bx * cam.d, Math.max(2.5, _tgt.y + by_ * cam.d), _tgt.z + bz * cam.d);
-  { const ry = Math.min(roofY, under(camera.position.x, camera.position.z)); if (camera.position.y > ry - 2.5) camera.position.y = ry - 2.5; }
+  camera.position.set(_tgt.x + bx * cam.d, Math.max((MAP.floor ? MAP.floor(_tgt.x + bx * cam.d, _tgt.z + bz * cam.d, _tgt.y) : 0) + 2.5, _tgt.y + by_ * cam.d), _tgt.z + bz * cam.d);
+  // (it comes down under a roof over a moment, not at once; and never below the road where it is: coming down a ramp to
+  // a tunnel's mouth it is still up the ramp behind the car)
+  { const ry = Math.min(roofY, under(camera.position.x, camera.position.z)), want = ry === Infinity ? 0 : Math.max(0, camera.position.y - (ry - 2.5));
+    cam.duck = (cam.duck || 0) + (want - (cam.duck || 0)) * Math.min(1, dt * (want > (cam.duck || 0) ? 6 : 3));
+    if (cam.duck > 0.01) camera.position.y = Math.max(camera.position.y - cam.duck, (MAP.floor ? MAP.floor(camera.position.x, camera.position.z, _tgt.y) : 0) + 1.5); }
   const sh = game.shake; if (sh > 0) camera.position.add(_o.set((Math.random() - 0.5) * sh * 1.6, (Math.random() - 0.5) * sh * 1.2, (Math.random() - 0.5) * sh * 1.6));
   camera.lookAt(_tgt.x + Math.sin(cam.yaw) * 16, _tgt.y - 0.5, _tgt.z + Math.cos(cam.yaw) * 16);
   // a drift boost widens the view for a moment (it springs out, then eases back as the burst runs out)
