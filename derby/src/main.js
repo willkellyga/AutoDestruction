@@ -786,7 +786,7 @@ const mode = MODES[MAP.mode](api);
 net = makeNet({ cars, game, MAP, mode, api, addCar, wreck, damage, gadget, player: () => player, toast, banner, $,
   get pickups() { return pickups; }, horde: () => mode.horde || null,
   removeCar: (c) => { c.gone = true; c.dispose(); if (c.tag) c.tag.remove(); const i = cars.indexOf(c); if (i >= 0) cars.splice(i, 1); },
-  begin: () => { if (game.state === 'menu') startGame(); },
+  begin: () => { if (game.state === 'menu') startGame(true); },
   onRoster: () => { const n = net.players.length + net.bots; $('menu-note').textContent = `${net.players.map((p) => p.name).join(', ')}${net.bots ? ` and ${net.bots} bot${net.bots === 1 ? '' : 's'}` : ''}: ${n} cars.`; },
   // (quick play: the round is over, so straight into the next one)
   noRound: () => { toast('That round is over', net.quick ? 'Finding another one' : 'Back to the lobby'); setTimeout(() => { if (net.quick) playAgain(); else location.href = net.lobby(); }, 1500); } });
@@ -1277,15 +1277,19 @@ function leaveGarage() {
   if (from === 'break' && mode.afterGarage) mode.afterGarage();
   sfx.play('start', 0.9); lockMouse();
 }
-function startGame() {
+// auto: the round started by itself (online, net.js begin), not from a click. The browser only hands the mouse over on a
+// click, so the first click on the game takes it (Will's online playtest, 2026-11-24: the refusal had switched the
+// mouse lock off for good, and the gun stayed pointing straight ahead)
+function startGame(auto) {
   learn.dismiss();   // (online, the round can start while the how-to-play card is still up)
   initAudio(); $('menu').hidden = true; game.state = 'play';
   // phones and tablets: the whole screen for the round, where the browser allows it (a tap on Start counts as asking)
   const root = document.documentElement;
   if (MOBILE && root.requestFullscreen && !document.fullscreenElement) { try { root.requestFullscreen({ navigationUI: 'hide' }).catch(() => {}); } catch (err) { /* not allowed here */ } }
   sfx.play('start', 0.9); setTimeout(() => sfx.play('ui_go', 0.8), 350);
-  lockMouse();
+  lockMouse(auto);
   mode.start();
+  if (auto && !MOBILE && !TOUCH && !cam.locked) hint('<b>Click</b> to take the mouse and aim');
 }
 // (soft: straight after Esc the browser may refuse the mouse for a second; that is not "this browser cannot", and the next click on the game takes it)
 function lockMouse(soft) { if (soft) cam.softAt = performance.now(); if (canvas.requestPointerLock && !MOBILE) { try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => { if (!soft) cam.noLock = true; }); } catch (err) { if (!soft) cam.noLock = true; } } }
@@ -1322,6 +1326,7 @@ canvas.addEventListener('mousedown', (e) => {
 addEventListener('mouseup', (e) => { cam.drag = false; if (e.button === 0) mouse.b0 = false; if (e.button === 2) mouse.b2 = false; });
 document.addEventListener('pointerlockchange', () => {
   const was = cam.locked; cam.locked = document.pointerLockElement === canvas; document.body.classList.toggle('locked', cam.locked);
+  if (cam.locked && /take the mouse/.test($('hint').innerHTML)) hint(null);
   if (was && !cam.locked && game.state === 'play') pauseOn();   // Esc with the mouse held by the game: the browser lets go of it, and the round's menu comes up
 });
 document.addEventListener('pointerlockerror', () => { if (performance.now() - (cam.softAt || -1e9) > 1500) cam.noLock = true; });
@@ -1708,7 +1713,7 @@ function step(dt) {
   if (TOUCH) $('touch').hidden = (game.state !== 'play' && game.state !== 'test') || !!game.paused;
   drawHud(); drawTags(); drawRadar();
 }
-$('hint').addEventListener('click', () => { if (game.state === 'play' && mode.garageOK()) openGarage('break'); else if (game.state === 'play' && mode.resetPlayer) mode.resetPlayer(); });
+$('hint').addEventListener('click', () => { if (/take the mouse/.test($('hint').innerHTML)) { lockMouse(true); return; } if (game.state === 'play' && mode.garageOK()) openGarage('break'); else if (game.state === 'play' && mode.resetPlayer) mode.resetPlayer(); });
 spawnPlayer();
 followSun(player.x, player.z);
 // the loading screen (page.html) stays until the sounds are in too (or a few seconds more), then goes once a frame is drawn
