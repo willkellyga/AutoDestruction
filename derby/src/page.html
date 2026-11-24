@@ -41,12 +41,12 @@ body.locked #view { cursor: none; }
 /* touch: a stick that appears where the left thumb lands, and buttons on the right */
 #touch { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
 #pad { position: absolute; left: 0; bottom: 0; width: 48%; height: 62%; pointer-events: auto; touch-action: none; }
-#stick { position: absolute; left: 120px; top: calc(100% - 130px); width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.35); background: rgba(0,0,0,0.18); pointer-events: none; opacity: 0.55; }
+#stick { position: absolute; left: 120px; top: calc(100% - 130px); width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.3); background: rgba(14,15,18,0.6); pointer-events: none; opacity: 0.7; }
 #stick.on { opacity: 1; }
-#knob { position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; margin: -27px 0 0 -27px; border-radius: 50%; background: rgba(255,255,255,0.8); box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
-.tbtn { position: absolute; pointer-events: auto; touch-action: none; border-radius: 50%; border: 3px solid rgba(255,255,255,0.55); background: rgba(20,22,26,0.45); color: #fff; font: var(--head-w) var(--head-st) calc(14px * var(--head-k)) var(--f-head); text-transform: uppercase; letter-spacing: 0.03em; text-shadow: 0 1px 0 rgba(0,0,0,0.5); padding: 0; }
+#knob { position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; margin: -27px 0 0 -27px; border-radius: 50%; background: rgba(242,239,230,0.85); box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+.tbtn { position: absolute; pointer-events: auto; touch-action: none; border-radius: 50%; border: 3px solid rgba(255,255,255,0.4); background: rgba(14,15,18,0.8); box-shadow: 0 2px 10px rgba(0,0,0,0.35); color: #fff; font: var(--head-w) var(--head-st) calc(14px * var(--head-k)) var(--f-head); text-transform: uppercase; letter-spacing: 0.03em; text-shadow: 0 1px 0 rgba(0,0,0,0.5); padding: 0; }
 .tbtn.down { background: rgba(255,194,26,0.55); border-color: var(--hot); }
-#t-fire { right: 26px; bottom: 34px; width: 104px; height: 104px; font-size: 18px; background: rgba(226,68,47,0.5); }
+#t-fire { right: 26px; bottom: 34px; width: 104px; height: 104px; font-size: 18px; border-color: var(--red); color: #ff8a7d; }
 #t-heavy { right: 142px; bottom: 26px; width: 78px; height: 78px; }
 #t-drift { right: 40px; bottom: 152px; width: 66px; height: 66px; font-size: 12px; }
 #t-boost { right: 128px; bottom: 120px; width: 66px; height: 66px; font-size: 12px; opacity: 0.6; }
@@ -618,24 +618,25 @@ body.racing.touch #hint { top: 128px; }
   #rh-lap { font-size: 20px; } #rh-time { font-size: 15px; } #rh-best { display: none; } #rh-strip { margin-top: 5px; } #rh-next { font-size: 13px; margin-top: 4px; }
   body.racing.touch #hint { top: 96px; }
 }
-/* an iPhone held upright, racing: the same dark boxes, stacked. The race panel across the top (pause button beside it),
-   then the radar, the three cars round yours, and Wrecked / Scrap in a row, then the armour across */
+/* a phone held upright, racing: slim, so the road ahead shows. One dark bar across the top (place, lap, the race strip,
+   the car to catch) with the pause button beside it, a small radar under it on the right, and the armour as a thin bar
+   along the bottom edge under the controls. No lap times, order or Wrecked / Scrap (scrap won still shows as a toast) */
 @media (orientation: portrait) {
-  body.racing.touch #racehud { top: 6px; left: 8px; right: 60px; width: auto; min-width: 0; transform: none; padding: 4px 10px 6px; }
+  body.racing.touch #racehud { top: 6px; left: 8px; right: 60px; width: auto; min-width: 0; transform: none; padding: 3px 10px 6px; }
   body.racing.touch .rh-top { gap: 12px; }
-  body.racing.touch #rh-place b { font-size: 50px; } body.racing.touch #rh-place sup { font-size: 20px; } body.racing.touch #rh-place span { font-size: 18px; }
+  body.racing.touch #rh-place b { font-size: 46px; } body.racing.touch #rh-place sup { font-size: 19px; } body.racing.touch #rh-place span { font-size: 18px; }
   body.racing.touch .rh-lap { padding-left: 10px; }
-  body.racing.touch #rh-lap { font-size: 22px; } body.racing.touch #rh-time { font-size: 16px; } body.racing.touch #rh-best { font-size: 12px; }
-  body.racing.touch #rh-strip { margin: 7px 4px 0; } body.racing.touch #rh-next { display: block; font-size: 14px; margin-top: 5px; }
+  body.racing.touch #rh-lap { font-size: 24px; } body.racing.touch #rh-time, body.racing.touch #rh-best { display: none; }
+  body.racing.touch #rh-strip { margin: 6px 4px 0; } body.racing.touch #rh-next { display: block; font-size: 14px; margin-top: 5px; min-height: 17px; }
   body.racing.touch #pause-b { top: 6px; right: 8px; }
-  body.racing.touch #radar { top: 120px; left: 8px; width: 96px; height: 96px; background: rgba(14,15,18,0.8); }
-  body.racing.touch #standings { display: block; top: 120px; left: 112px; right: 112px; min-width: 0; font-size: 14px; }
-  body.racing.touch #standings div { padding: 2px 8px 2px 5px; margin-bottom: 3px; }
-  body.racing.touch #standings div:not(.near) { display: none; }
-  body.racing.touch #standings b { font-size: 15px; width: 12px; } body.racing.touch #standings em { font-size: 13px; }
-  body.racing.touch #score { top: 120px; right: 8px; }
-  body.racing.touch #bars { top: 226px; left: 8px; width: calc(100% - 16px); transform: none; box-sizing: border-box; padding: 4px 12px 7px; border-radius: 8px; background: rgba(14,15,18,0.8); box-shadow: 0 2px 10px rgba(0,0,0,0.35); }
-  body.racing.touch #hint { top: 300px; }
+  body.racing.touch #radar { top: 108px; left: auto; right: 8px; width: 84px; height: 84px; opacity: 0.88; }
+  body.racing.touch #standings, body.racing.touch #score { display: none; }
+  body.racing.touch #bars { top: auto; bottom: 5px; left: 8px; width: calc(100% - 16px); transform: none; box-sizing: border-box; padding: 4px 10px; border-radius: 8px; background: rgba(14,15,18,0.8); }
+  body.racing.touch #labels { display: none; }
+  body.racing.touch #hp { height: 13px; } body.racing.touch #hp-text { font-size: 11px; line-height: 13px; }
+  body.racing.touch #sec, body.racing.touch #gad { height: 4px; margin-top: 3px; }
+  body.racing.touch #hint { top: 112px; left: 8px; right: 100px; transform: none; max-width: none; }
+  body.racing.touch #toast { top: 24%; }
 }
 </style>
 <canvas id="view"></canvas>
