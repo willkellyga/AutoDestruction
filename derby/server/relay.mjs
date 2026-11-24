@@ -219,7 +219,7 @@ export function attachRelay(server, { log = () => {}, event = () => {} } = {}) {
     const h = hostOf(r), round = r.round;
     return { t: 'lobby', room: { code: r.code, kind: r.kind, max: roomMax(r), startIn: r.kind === 'quick' && !round && r.startAt ? Math.max(0, r.startAt - Date.now()) : 0 },
       host: h, pick: r.pick, cars: MODES[r.pick].max, round: round && { id: round.id, map: round.map, ids: round.ids, begun: round.begun },
-      players: here(r).map((p) => ({ id: p.id, name: p.name, playing: !!(round && round.ids.includes(p.id) && p.game && p.game.open) })) };
+      players: here(r).map((p) => ({ id: p.id, name: p.name, playing: !!(round && round.ids.includes(p.id) && onIn(p, round)) })) };
   }
   function tellRoom(r) {
     if (!rooms.has(r.code)) return;
@@ -231,7 +231,10 @@ export function attachRelay(server, { log = () => {}, event = () => {} } = {}) {
   function tellHub() { let f = null; for (const p of players.values()) if (inLobby(p) && !p.room) p.lobby.sendFrame(f || (f = frame(JSON.stringify(hubState())))); }
 
   // ---- rounds ----
-  const inRound = (round) => (round ? round.ids.map((id) => players.get(id)).filter((p) => p && p.game && p.game.open) : []);
+  // who is on in this round: a game page open on it. (Not just any open game page: a player who quit a round and went on
+  // to the next one is still in the old round's list, and was made its host there. Playtest, 2026-11-24, room BRRS.)
+  const onIn = (p, round) => !!p && !!p.game && p.game.open && p.game.round === round.id;
+  const inRound = (round) => (round ? round.ids.map((id) => players.get(id)).filter((p) => onIn(p, round)) : []);
   function startRound(r, ids, host) {
     const map = modeOf(r.pick), max = MODES[map].max;
     ids = ids.slice(0, max); if (!ids.includes(host)) host = ids[0];
@@ -282,7 +285,7 @@ export function attachRelay(server, { log = () => {}, event = () => {} } = {}) {
     round.handT = null;
     if (r.round !== round) return;
     const cur = players.get(round.host);
-    if (!skip && cur && cur.game && cur.game.open && !cur.away) return;   // back in time
+    if (!skip && onIn(cur, round) && !cur.away) return;   // back in time
     const on = inRound(round).filter((q) => q.id !== skip), rest = on.some((q) => !q.away) ? on.filter((q) => !q.away) : [];   // not to a page that is away too
     if (!rest.length) return;   // nobody to take them: the host keeps them, and its seat waits
     round.host = round.ids.find((id) => rest.some((q) => q.id === id));
@@ -321,6 +324,7 @@ export function attachRelay(server, { log = () => {}, event = () => {} } = {}) {
         p.game = c; p.away = false;
         const r = rounds.get(m.round), round = r && r.round;
         if (!round || round.id !== m.round || !round.ids.includes(id)) { c.send({ t: 'noround' }); return; }
+        c.round = round.id;
         if (p.room !== r.code) { leaveRoom(p); r.members.set(id, r.members.get(id) || Date.now()); p.room = r.code; }
         // someone is back: the round is not let go
         clearTimeout(round.holdT); round.holdT = null;
@@ -330,7 +334,7 @@ export function attachRelay(server, { log = () => {}, event = () => {} } = {}) {
         if (id === round.host && round.handT) { clearTimeout(round.handT); round.handT = null; if (m.fresh) handOver(r, round, id); }
         const fresh = !!m.fresh, host = round.host === id;
         c.send({ t: 'welcome', round: round.id, map: round.map, host: round.host, me: id, bots: round.bots, room: r.code, kind: r.kind,
-          players: round.ids.map((pid, slot) => ({ id: pid, slot, ...round.look[pid], here: pid === id || !!((players.get(pid) || {}).game && players.get(pid).game.open) })), begun: round.begun ? Date.now() - round.begun : -1,
+          players: round.ids.map((pid, slot) => ({ id: pid, slot, ...round.look[pid], here: pid === id || onIn(players.get(pid), round) })), begun: round.begun ? Date.now() - round.begun : -1,
           left: clockLeft(round), startIn: !round.begun && r.kind === 'quick' ? Math.max(0, r.startAt - Date.now()) : 0, spawn: round.spawn[id],
           // a page that reloaded mid-round: the scores every device last sent (its own among them), and (if it hosts) the bots
           back: fresh && round.begun && Object.keys(round.keep).length ? round.keep : undefined,
@@ -385,7 +389,7 @@ export function attachRelay(server, { log = () => {}, event = () => {} } = {}) {
       if (m.k !== undefined) round.keep[me.id] = m.k;
       if (me.id === round.host && Array.isArray(m.b)) round.botList = m.b.slice(0, MAX_BOTS);
     }
-    if (typeof m.to === 'string') { const q = players.get(m.to); if (q && q.game && q.game.open && round.ids.includes(q.id)) q.game.sendFrame(f, state); return; }
+    if (typeof m.to === 'string') { const q = players.get(m.to); if (q && round.ids.includes(q.id) && onIn(q, round)) q.game.sendFrame(f, state); return; }
     for (const q of inRound(round)) if (q !== me) q.game.sendFrame(f, state);
   }
   // a lobby asks for a room: 'quick:<mode>' for quick play, 'new:<mode>' for a friends' room of its own, or a friends'
@@ -412,7 +416,8 @@ export function attachRelay(server, { log = () => {}, event = () => {} } = {}) {
   function onClose(c) {
     const p = c.pid && players.get(c.pid);
     if (!p) return;
-    const r = p.room && rooms.get(p.room), round = r && r.round;
+    // (a game page's own round, not the player's room now: they may have gone on to the next round already)
+    const r = (c.round && rounds.get(c.round)) || (p.room && rooms.get(p.room)), round = r && r.round;
     event('bye', { player: p.id, name: p.name, where: c.where || '?', why: c.why || '?', ms: c.age, room: r ? r.code : undefined, round: round && round.ids.includes(p.id) ? round.id : undefined, begun: round ? !!round.begun : undefined });
     if (round && p.game === c && round.ids.includes(p.id)) {
       // Their seat is kept: a page that died and reloaded (or a connection that dropped) comes back into the same round.

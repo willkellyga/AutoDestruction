@@ -125,6 +125,23 @@ try {
   const home = new Client('a3', 'Cy', 'lobby', { key: 'kc' }); await home.ready;
   ok(!!(await home.until('hub', 1000)), 'a lobby hello with no room is the menu (not pulled back into the room)');
   [p1, p2, p3, pg3, lg, home].forEach((c) => c.close());
+  console.log('A player who went on to the next round');
+  // (a friends' room, so it is a round of its own: the quick rooms above may still be taking players)
+  const h1 = new Client('h1', 'Hank', 'lobby', { key: 'kh1', room: 'new:arena' }); await h1.ready; await wait(150);
+  const h2 = new Client('h2', 'Ivy', 'lobby', { key: 'kh2', room: h1.last('lobby').room.code, touch: true }); await h2.ready; await wait(150);
+  h1.send({ t: 'start' }); const hgo = await h1.until('go', 1000);
+  const hg1 = new Client('h1', 'Hank', 'game', { key: 'kh1', round: hgo.round, fresh: true }), hg2 = new Client('h2', 'Ivy', 'game', { key: 'kh2', round: hgo.round, fresh: true });
+  await Promise.all([hg1.ready, hg2.ready]); hg1.send({ t: 'ready' }); hg2.send({ t: 'ready' });
+  await hg1.until('begin', 4000);
+  hg2.send({ t: 'bye' }); await wait(150);   // Ivy plays again: off this round...
+  const i2 = new Client('h2', 'Ivy', 'lobby', { key: 'kh2', room: 'quick:base' }); await i2.ready;
+  const igo = await i2.until('go', 1000);
+  const ig = new Client('h2', 'Ivy', 'game', { key: 'kh2', round: igo.round, fresh: true }); await ig.ready; await ig.until('welcome');   // ...and into the next one
+  hg1.send({ t: 'away', on: true }); await wait(900);
+  ok(!(await ig.until('host', 300)) && !(await hg1.until('host', 300)), 'the host away: its bots do not go to a player who has gone on to another round');
+  ig.send({ t: 's', c: [['h2.x', 1, 1]] }); await wait(150);
+  ok(!hg1.msgs.some((m) => m.t === 's' && m.from === 'h2'), "...and that player's new round is not sent to the old one");
+  [h1, h2, hg1, hg2, i2, ig].forEach((c) => c.close());
   console.log("Friends' rooms");
   const f1 = new Client('f1', 'Will', 'lobby', { room: 'new:arena' }); await f1.ready; await wait(200);
   const code = f1.last('lobby') && f1.last('lobby').room.code;
