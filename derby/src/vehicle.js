@@ -7,6 +7,7 @@ import { solid, idx, ownerAt, bodies, WX, WZ } from '../../src/world.js';
 import { blast, dust } from '../../src/sim.js';
 import { CRASH, DRIFT, BUILDINGS } from './tuning.js';
 import { EASY } from './sturdy.js';
+import { at as keptOut, nearestOut } from './keepout.js';
 import { MAP } from './maps/index.js';
 import { carDef, LOOSE } from './carmodel.js';
 import { PARTS, statsOf } from './parts.js';
@@ -181,9 +182,15 @@ export class Vehicle {
   }
   hits(x, z, yaw, out) {
     const s = Math.sin(yaw), c = Math.cos(yaw); let n = 0;
-    out.front = 0; out.back = 0; out.side = 0; out.soft = 0; out.hard = 0; out.wall = 0; out.x = 0; out.y = 0; out.z = 0;
+    out.front = 0; out.back = 0; out.side = 0; out.soft = 0; out.hard = 0; out.wall = 0; out.bld = 0; out.x = 0; out.y = 0; out.z = 0;
     for (const [lx, lz, kind] of this.probes()) {
       const wx = x + lx * c + lz * s, wz = z - lx * s + lz * c;
+      if (keptOut(wx, wz)) {   // where a building stands, or stood (keepout.js): a wall to a car, holes or not
+        out.hard++; out.wall++; out.bld = 1;
+        if (kind === 0) out.front++; else if (kind === 1) out.back++; else out.side++;
+        out.x += wx; out.y += 3; out.z += wz; n++;
+        continue;
+      }
       for (const y of [2, 4]) {
         const ix = Math.floor(wx), iz = Math.floor(wz);
         if (!solid(ix, y, iz)) continue;
@@ -206,7 +213,7 @@ export class Vehicle {
     let n = 0, sx = 0, sz = 0, sxx = 0, sxz = 0, szz = 0;
     for (let dz = -3; dz <= 3; dz++) for (let dx = -3; dx <= 3; dx++) {
       if (dx * dx + dz * dz > 10) continue;
-      if (solid(cx + dx, 2, cz + dz) || solid(cx + dx, 4, cz + dz)) { n++; sx += dx; sz += dz; sxx += dx * dx; sxz += dx * dz; szz += dz * dz; }
+      if (keptOut(cx + dx, cz + dz) || solid(cx + dx, 2, cz + dz) || solid(cx + dx, 4, cz + dz)) { n++; sx += dx; sz += dz; sxx += dx * dx; sxz += dx * dz; szz += dz * dz; }
     }
     if (n < 4) return false;
     const mx = sx / n, mz = sz / n, a = sxx / n - mx * mx, b = sxz / n - mx * mz, c = szz / n - mz * mz;
@@ -222,6 +229,11 @@ export class Vehicle {
   collide(dt, hooks) {
     const ox = this.x, oz = this.z, H = this._h || (this._h = {}), N = this._n || (this._n = { x: 0, z: 0 });
     let nx = ox + this.vx * dt, nz = oz + this.vz * dt;
+    // the middle of the car inside a building (shoved in, or put there): out to the nearest open ground
+    if (keptOut(ox + Math.sin(this.yaw) * this.mid, oz + Math.cos(this.yaw) * this.mid) && (this.outT = (this.outT || 0) + dt) > 0.4) {
+      const o = nearestOut(ox, oz); this.outT = 0;
+      if (o) { this.x = o.x; this.z = o.z; this.vx = this.vz = 0; return; }
+    }
     // already in something: rubble came down on it, it turned a corner into a wall, it is half way through the hole it
     // just punched, a shove pushed it in. Rubble, lamps and bins are shoved aside, and so is a wall the car is still
     // going into faster than BUILDINGS.smash. Out of any other wall it eases itself, away from where it is in it; only
@@ -272,6 +284,13 @@ export class Vehicle {
     else if (H.front > H.back && vf > 0) { this.vx -= sy * vf * 1.3; this.vz -= cy * vf * 1.3; }
     else if (H.back > H.front && vf < 0) { this.vx -= sy * vf * 1.3; this.vz -= cy * vf * 1.3; }
     else { this.vx -= cy * vs * 1.4; this.vz += sy * vs * 1.4; }
+    // a building is never broken into, but a hard hit still knocks a dent in its wall and brings down some of it
+    if (this.chipT > 0) this.chipT -= dt;
+    if (H.bld && into > BUILDINGS.smash && !(this.chipT > 0)) {
+      this.chipT = 0.25;
+      blast(H.x + N.x * 0.5, 3, H.z + N.z * 0.5, BUILDINGS.chip + (into - BUILDINGS.smash) * BUILDINGS.holeK, { push: 6, maxDebris: 50, core: 0.3, hard: 0.85, pushDebris: false });
+      dust(H.x, 3, H.z, 10, 4, 0.3, 0.28, 0.25);
+    }
     if (into > CRASH.bump) hooks.bump(this, into, H);
   }
 
