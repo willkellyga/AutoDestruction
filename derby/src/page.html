@@ -618,13 +618,24 @@ body.racing.touch #hint { top: 128px; }
   #rh-lap { font-size: 20px; } #rh-time { font-size: 15px; } #rh-best { display: none; } #rh-strip { margin-top: 5px; } #rh-next { font-size: 13px; margin-top: 4px; }
   body.racing.touch #hint { top: 96px; }
 }
+/* an iPhone held upright, racing: the same dark boxes, stacked. The race panel across the top (pause button beside it),
+   then the radar, the three cars round yours, and Wrecked / Scrap in a row, then the armour across */
 @media (orientation: portrait) {
-  body.touch #racehud { top: 6px; width: calc(100% - 230px); min-width: 150px; padding: 2px 8px 5px; }
-  body.touch #rh-place b { font-size: 42px; } body.touch #rh-place sup { font-size: 17px; } body.touch #rh-place span { font-size: 16px; }
-  body.touch .rh-top { gap: 8px; } body.touch .rh-lap { padding-left: 8px; }
-  body.touch #rh-lap { font-size: 18px; } body.touch #rh-time { font-size: 14px; } body.touch #rh-best { display: none; }
-  body.touch #rh-strip { margin-top: 5px; height: 6px; } body.touch #rh-next { display: none; }
-  body.racing.touch #hint { top: 150px; }
+  body.racing.touch #racehud { top: 6px; left: 8px; right: 60px; width: auto; min-width: 0; transform: none; padding: 4px 10px 6px; }
+  body.racing.touch .rh-top { gap: 12px; }
+  body.racing.touch #rh-place b { font-size: 50px; } body.racing.touch #rh-place sup { font-size: 20px; } body.racing.touch #rh-place span { font-size: 18px; }
+  body.racing.touch .rh-lap { padding-left: 10px; }
+  body.racing.touch #rh-lap { font-size: 22px; } body.racing.touch #rh-time { font-size: 16px; } body.racing.touch #rh-best { font-size: 12px; }
+  body.racing.touch #rh-strip { margin: 7px 4px 0; } body.racing.touch #rh-next { display: block; font-size: 14px; margin-top: 5px; }
+  body.racing.touch #pause-b { top: 6px; right: 8px; }
+  body.racing.touch #radar { top: 120px; left: 8px; width: 96px; height: 96px; background: rgba(14,15,18,0.8); }
+  body.racing.touch #standings { display: block; top: 120px; left: 112px; right: 112px; min-width: 0; font-size: 14px; }
+  body.racing.touch #standings div { padding: 2px 8px 2px 5px; margin-bottom: 3px; }
+  body.racing.touch #standings div:not(.near) { display: none; }
+  body.racing.touch #standings b { font-size: 15px; width: 12px; } body.racing.touch #standings em { font-size: 13px; }
+  body.racing.touch #score { top: 120px; right: 8px; }
+  body.racing.touch #bars { top: 226px; left: 8px; width: calc(100% - 16px); transform: none; box-sizing: border-box; padding: 4px 12px 7px; border-radius: 8px; background: rgba(14,15,18,0.8); box-shadow: 0 2px 10px rgba(0,0,0,0.35); }
+  body.racing.touch #hint { top: 300px; }
 }
 </style>
 <canvas id="view"></canvas>

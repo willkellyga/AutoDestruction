@@ -723,9 +723,9 @@ function drawRaceHud() {
   // the order, with the gaps (seconds ahead of, or behind, the player)
   const rows = d.order.map((o, k) => `${k + 1}|${o.name}|${o.me ? 'me' : o.dead ? 'dead' : ''}|${o.me ? '' : o.gap == null ? '' : gapText(o.gap)}`).join(';');
   if (rows !== RH.rows) {
-    RH.rows = rows; const box = $('standings'); box.innerHTML = '';
+    RH.rows = rows; const box = $('standings'); box.innerHTML = ''; const near = Math.min(Math.max(at, 1), d.order.length - 2);
     d.order.forEach((o, k) => {
-      const r = document.createElement('div'); r.className = o.me ? 'me' : o.dead ? 'dead' : '';
+      const r = document.createElement('div'); r.className = (o.me ? 'me' : o.dead ? 'dead' : '') + (Math.abs(k - near) <= 1 ? ' near' : '');   // near: the three shown on a phone held upright
       const b = document.createElement('b'), n = document.createElement('span'), g = document.createElement('em');
       b.textContent = k + 1; n.textContent = o.me ? 'You' : o.name; g.textContent = o.me || o.gap == null ? '' : gapText(o.gap);
       r.append(b, n, g); box.appendChild(r);
