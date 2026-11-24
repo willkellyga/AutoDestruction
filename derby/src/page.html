@@ -104,8 +104,73 @@ button.go:hover { filter: brightness(1.08); }
 button.go:active { transform: skewX(-8deg) translateY(3px); box-shadow: 0 2px 0 #8a4a10; }
 .note { font-size: 13px; opacity: 0.7; margin-top: 18px; }
 #dead b { display: block; font-family: var(--f-logo); font-weight: 400; font-size: 70px; color: var(--red); text-transform: uppercase; text-shadow: 0 4px 0 #2a0a0a, 0 8px 18px rgba(0,0,0,0.5); }
-#loading { position: fixed; inset: 0; display: grid; place-items: center; background: #1a1c20; z-index: 9; font: var(--head-w) var(--head-st) calc(28px * var(--head-k)) var(--f-head); text-transform: uppercase; color: var(--hot); }
-#loading small { display: block; font: 14px var(--f-ui); color: #fff7ea; opacity: 0.7; text-transform: none; margin-top: 8px; text-align: center; }
+/* ---- the loading screen: the logo, your car chasing a rival down the road (both shooting), and a bar that follows the
+   real loading (the page, the map being built, the sounds; the script after the markup). Everything moves by transform and
+   opacity only, so the browser keeps it going on its own while the page is busy building the map. */
+#loading { position: fixed; inset: 0; z-index: 9; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: clamp(10px, 3vh, 26px); padding: 16px;
+  background: radial-gradient(ellipse at 50% 38%, #2a2e34 0%, #1a1c20 62%, #121316 100%); transition: opacity 0.4s; }
+#loading.out { opacity: 0; pointer-events: none; }
+#loading .title { position: static; font-size: clamp(26px, min(7vw, 8vh), 60px); }
+.ld-stage { position: relative; width: min(640px, 94vw, 210vh); aspect-ratio: 10 / 3; overflow: hidden; --c: 14px;
+  clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c));
+  background: linear-gradient(180deg, #3b2a2a 0%, #6a3a22 48%, #b0561f 74%, #e0802a 86%); }
+.ld-stage > * { position: absolute; will-change: transform, opacity; }
+.ld-sky { left: 0; bottom: 18%; width: 200%; height: 60%; animation: ld-slide 14s linear infinite; }
+.ld-sky svg, .ld-road svg { width: 100%; height: 100%; display: block; }
+.ld-road { left: 0; bottom: 0; width: 200%; height: 22%; animation: ld-slide 0.9s linear infinite; }
+@keyframes ld-slide { to { transform: translateX(-50%); } }
+.ld-car { bottom: 12%; width: 32%; aspect-ratio: 5 / 2; }
+.ld-car svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.ld-me { left: 4%; animation: ld-me 6s linear infinite; }
+.ld-foe { left: 62%; animation: ld-foe 6s linear infinite; }
+.ld-me .ld-body, .ld-foe .ld-body { position: absolute; inset: 0; animation: ld-bob 0.22s ease-in-out infinite alternate; }
+.ld-foe .ld-body { animation-duration: 0.26s; }
+@keyframes ld-bob { to { transform: translateY(-2.5%) rotate(-0.6deg); } }
+.ld-wheel { position: absolute; top: 61%; width: 15%; aspect-ratio: 1; border-radius: 50%; animation: ld-spin 0.32s linear infinite;
+  background: radial-gradient(circle, #c9ced3 0 16%, #3a3f44 17% 40%, transparent 41%), conic-gradient(#15120a 0 10%, #2b2f33 10% 25%, #15120a 25% 35%, #2b2f33 35% 50%, #15120a 50% 60%, #2b2f33 60% 75%, #15120a 75% 85%, #2b2f33 85%);
+  box-shadow: inset 0 0 0 2px #0b0a08; }
+@keyframes ld-spin { to { transform: rotate(360deg); } }
+/* your car eases back and forth behind the rival; the rival drives in, swerves under fire, blows up and flips away */
+@keyframes ld-me { 0%, 100% { transform: translateX(0); } 30% { transform: translateX(6%); } 55% { transform: translateX(-3%); } 80% { transform: translateX(10%) translateY(-4%); } 84% { transform: translateX(8%); } }
+@keyframes ld-foe { 0% { transform: translateX(140%); } 9% { transform: translateX(0); } 24% { transform: translateX(-6%) translateY(-3%); } 40% { transform: translateX(5%); } 58% { transform: translateX(-4%) translateY(-2%); }
+  76% { transform: translateX(0); opacity: 1; } 82% { transform: translate(18%, -95%) rotate(-170deg); opacity: 1; } 90% { transform: translate(60%, 0%) rotate(-330deg); opacity: 0; } 90.1%, 100% { transform: translateX(140%); opacity: 0; } }
+/* bursts: .ld-gm is on only while your car fires, .ld-gf while the rival does; inside, the flashes, tracers and sparks loop fast */
+.ld-gm, .ld-gf { position: absolute; inset: 0; opacity: 0; }
+.ld-gm { animation: ld-gate-me 6s linear infinite; } .ld-gf { animation: ld-gate-foe 6s linear infinite; }
+@keyframes ld-gate-me { 0%, 11.9% { opacity: 0; } 12%, 20% { opacity: 1; } 20.1%, 27.9% { opacity: 0; } 28%, 36% { opacity: 1; } 36.1%, 45.9% { opacity: 0; } 46%, 54% { opacity: 1; } 54.1%, 61.9% { opacity: 0; } 62%, 76% { opacity: 1; } 76.1%, 100% { opacity: 0; } }
+@keyframes ld-gate-foe { 0%, 20.9% { opacity: 0; } 21%, 26.5% { opacity: 1; } 26.6%, 37.9% { opacity: 0; } 38%, 44% { opacity: 1; } 44.1%, 55.9% { opacity: 0; } 56%, 60.5% { opacity: 1; } 60.6%, 100% { opacity: 0; } }
+.ld-lane { position: absolute; top: 52.3%; height: 2.2%; }
+.ld-gm .ld-lane { left: 29%; width: 33%; }
+.ld-gf .ld-lane { left: 36%; width: 27%; transform: scaleX(-1); }
+.ld-lane i { position: absolute; inset: 0; animation: ld-shot 0.24s linear infinite; }
+.ld-lane i:nth-child(2) { animation-delay: -0.12s; }
+.ld-lane i::before { content: ''; position: absolute; left: 0; top: 0; width: 16%; height: 100%; border-radius: 2px; background: linear-gradient(90deg, rgba(255,220,120,0), #fff2b0 70%, #fff); box-shadow: 0 0 6px #ffc21a; }
+@keyframes ld-shot { 0% { transform: translateX(-10%); opacity: 1; } 70% { transform: translateX(88%); opacity: 1; } 71%, 100% { transform: translateX(88%); opacity: 0; } }
+.ld-flash, .ld-spark { position: absolute; width: 24%; aspect-ratio: 1; margin: -12% 0 0 -12%; border-radius: 50%; animation: ld-flash 0.12s steps(2) infinite;
+  background: radial-gradient(circle, #fff 0 18%, #ffe07a 30%, #ff9a2a 50%, rgba(255,120,20,0) 70%); }
+.ld-spark { width: 16%; margin: -8% 0 0 -8%; background: radial-gradient(circle, #fff 0 12%, #ffd067 26%, rgba(255,160,40,0) 62%); animation-duration: 0.16s; }
+.ld-me .ld-flash { left: 77%; top: 18.75%; } .ld-me .ld-spark { left: 95%; top: 45%; }
+.ld-foe .ld-flash { left: 6%; top: 18.75%; } .ld-foe .ld-spark { left: 4%; top: 48%; }
+@keyframes ld-flash { 0% { transform: scale(1) rotate(0deg); opacity: 1; } 100% { transform: scale(0.45) rotate(45deg); opacity: 0.35; } }
+/* the rival smokes more and more, then the blast */
+.ld-smoke { position: absolute; left: 4%; top: 6%; width: 22%; aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle, rgba(40,36,34,0.9), rgba(40,36,34,0) 68%); animation: ld-puff 0.7s linear infinite; }
+.ld-smoke + .ld-smoke { animation-delay: -0.35s; left: 10%; }
+@keyframes ld-puff { 0% { transform: translate(0, 0) scale(0.4); opacity: 0.9; } 100% { transform: translate(-90%, -60%) scale(1.6); opacity: 0; } }
+.ld-hurt { position: absolute; inset: 0; opacity: 0; animation: ld-hurt 6s linear infinite; }
+@keyframes ld-hurt { 0%, 30% { opacity: 0; } 50% { opacity: 0.5; } 75% { opacity: 1; } 88%, 100% { opacity: 0; } }
+.ld-boom { left: 66%; top: 27%; width: 24%; aspect-ratio: 1; border-radius: 50%; opacity: 0; animation: ld-boom 6s ease-out infinite;
+  background: radial-gradient(circle, #fff 0 10%, #ffe07a 22%, #ff9a2a 40%, #c2541b 56%, rgba(40,20,10,0) 72%); }
+@keyframes ld-boom { 0%, 75.9% { transform: scale(0.2); opacity: 0; } 76% { transform: scale(0.3); opacity: 1; } 84% { transform: scale(1.7); opacity: 0.9; } 92%, 100% { transform: scale(2.2); opacity: 0; } }
+/* the bar, a steel slot filling with hazard stripes, and what it is doing */
+.ld-meter { width: min(520px, 86vw); }
+.ld-bar { position: relative; height: 22px; overflow: hidden; background: #0d0e10; transform: skewX(-12deg); box-shadow: inset 0 0 0 2px #3a3f44, 0 3px 0 rgba(0,0,0,0.4); }
+.ld-fill { position: absolute; inset: 3px; overflow: hidden; transform: translateX(-100%); will-change: transform; }
+.ld-fill i { position: absolute; top: 0; bottom: 0; left: 0; width: calc(100% + 44px); background: repeating-linear-gradient(-45deg, #ffc21a 0 12px, #e29a10 12px 22px); animation: ld-stripes 0.6s linear infinite; }
+@keyframes ld-stripes { from { transform: translateX(-31.1px); } to { transform: translateX(0); } }
+.ld-row { display: flex; justify-content: space-between; align-items: baseline; margin-top: 8px; font: 800 18px var(--f-head); letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink); }
+.ld-row b { font: 400 22px var(--f-logo); color: var(--hot); letter-spacing: 0.04em; }
+@media (max-height: 420px) { #loading { gap: 8px; } .ld-stage { width: min(520px, 86vw, 150vh); } .ld-row { margin-top: 5px; font-size: 15px; } .ld-row b { font-size: 18px; } .ld-bar { height: 16px; } }
+@media (prefers-reduced-motion: reduce) { .ld-stage * { animation-duration: 12s !important; } }
 #gad { margin-top: 5px; height: 8px; width: 40%; background: rgba(0,0,0,0.45); border: 2px solid var(--edge); border-radius: 3px; overflow: hidden; transform: skewX(-12deg); }
 #gad-fill { height: 100%; width: 100%; background: #6fb6ff; }
 #gad.ready #gad-fill { background: #8ef0ff; }
@@ -369,7 +434,6 @@ button.alt:hover { background: linear-gradient(180deg, #4a5056, #2e3237); }
 #lb-title .code { font-family: var(--f-logo); font-weight: 400; letter-spacing: 0.14em; }
 #online .on-l { font: 700 14px var(--f-head); letter-spacing: 0.2em; }
 #online input { border-radius: 0; background: rgba(0,0,0,0.45); }
-#loading { font-family: var(--f-logo); font-weight: 400; color: var(--hot); }
 /* the HUD */
 #labels { font-weight: 600; }
 #labels .big { letter-spacing: 0.18em; }
@@ -543,4 +607,94 @@ body.in-round #pause-b { display: flex; } body.touch #pause-b { right: 12px; top
 <div id="testbar" hidden><b>Test drive</b><span id="test-t">30</span><button class="alt" id="test-back">Back to garage</button></div>
 <div id="pops"></div>
 <div id="touch" hidden><div id="pad"></div><div id="stick"><div id="knob"></div></div><button class="tbtn" id="t-fire">Fire</button><button class="tbtn" id="t-heavy">Rockets</button><button class="tbtn" id="t-drift">Drift</button><button class="tbtn" id="t-boost" hidden>Nitro</button></div>
-<div id="loading"><div>Building the map<small>Laying it out and raising the walls</small></div></div>
+<div id="loading">
+  <div class="title logo" role="img" aria-label="AutoDestruction.io"><div class="lg-auto"><div class="lg-l"><span>A</span><span>U</span><span>T</span><span>O</span></div></div><div class="lg-bar"><div class="lg-l"><span>D</span><span>E</span><span>S</span><span>T</span><span>R</span><span>U</span><span>C</span><span>T</span><span>I</span><span>O</span><span>N</span></div></div><b class="lg-io">.io</b></div>
+  <div class="ld-stage" aria-hidden="true">
+    <div class="ld-sky"><svg viewBox="0 0 2000 180" preserveAspectRatio="none"><path d="M0 180V111h60V180zM63 180V124h81V180zM144 180V62h92V180zM236 180V56h63V180zM299 180V103h72V180zM371 180V75h45V180zM419 180V100h44V180zM463 180V76h75V180zM538 180V58h92V180zM630 180V50h54V180zM689 180V123h77V180zM770 180V80h77V180zM847 180V125h54V180zM905 180V113h94V180zM1000 180V111h60V180zM1063 180V124h81V180zM1144 180V62h92V180zM1236 180V56h63V180zM1299 180V103h72V180zM1371 180V75h45V180zM1419 180V100h44V180zM1463 180V76h75V180zM1538 180V58h92V180zM1630 180V50h54V180zM1689 180V123h77V180zM1770 180V80h77V180zM1847 180V125h54V180zM1905 180V113h94V180z" fill="#2a1d1c" opacity="0.85"/><path d="M14 136h5v6h-5zM12 134h5v6h-5zM24 135h5v6h-5zM81 134h5v6h-5zM196 158h5v6h-5zM391 102h5v6h-5zM448 150h5v6h-5zM438 133h5v6h-5zM438 147h5v6h-5zM483 147h5v6h-5zM512 139h5v6h-5zM668 107h5v6h-5zM656 77h5v6h-5zM712 166h5v6h-5zM701 138h5v6h-5zM720 160h5v6h-5zM784 108h5v6h-5zM801 165h5v6h-5zM953 126h5v6h-5zM954 132h5v6h-5zM1042 141h5v6h-5zM1009 165h5v6h-5zM1022 140h5v6h-5zM1282 97h5v6h-5zM1284 113h5v6h-5zM1349 146h5v6h-5zM1346 148h5v6h-5zM1435 160h5v6h-5zM1443 163h5v6h-5zM1439 167h5v6h-5zM1517 134h5v6h-5zM1574 120h5v6h-5zM1666 160h5v6h-5zM1645 113h5v6h-5zM1660 100h5v6h-5zM1750 162h5v6h-5zM1746 143h5v6h-5zM1820 117h5v6h-5zM1797 122h5v6h-5zM1861 165h5v6h-5zM1929 156h5v6h-5z" fill="#ffc21a" opacity="0.55"/></svg></div>
+    <div class="ld-road"><svg viewBox="0 0 2000 66" preserveAspectRatio="none"><rect width="2000" height="66" fill="#2b2a28"/><rect width="2000" height="4" fill="#4a4540"/><path d="M0 30h50v5h-50zM100 30h50v5h-50zM200 30h50v5h-50zM300 30h50v5h-50zM400 30h50v5h-50zM500 30h50v5h-50zM600 30h50v5h-50zM700 30h50v5h-50zM800 30h50v5h-50zM900 30h50v5h-50zM1000 30h50v5h-50zM1100 30h50v5h-50zM1200 30h50v5h-50zM1300 30h50v5h-50zM1400 30h50v5h-50zM1500 30h50v5h-50zM1600 30h50v5h-50zM1700 30h50v5h-50zM1800 30h50v5h-50zM1900 30h50v5h-50z" fill="#ffc21a" opacity="0.8"/><path d="M674 49h4v2h-4zM1674 49h4v2h-4zM496 60h6v2h-6zM1496 60h6v2h-6zM269 51h4v2h-4zM1269 51h4v2h-4zM149 55h12v2h-12zM1149 55h12v2h-12zM378 61h13v2h-13zM1378 61h13v2h-13zM326 46h12v2h-12zM1326 46h12v2h-12zM973 61h14v2h-14zM1973 61h14v2h-14zM692 43h11v2h-11zM1692 43h11v2h-11zM921 59h10v2h-10zM1921 59h10v2h-10zM407 54h10v2h-10zM1407 54h10v2h-10zM106 57h14v2h-14zM1106 57h14v2h-14zM410 43h7v2h-7zM1410 43h7v2h-7zM68 48h11v2h-11zM1068 48h11v2h-11zM166 45h9v2h-9zM1166 45h9v2h-9zM615 43h5v2h-5zM1615 43h5v2h-5zM0 60h6v2h-6zM1000 60h6v2h-6zM549 45h9v2h-9zM1549 45h9v2h-9zM628 42h5v2h-5zM1628 42h5v2h-5z" fill="#3e3a36"/></svg></div>
+    <div class="ld-car ld-foe"><div class="ld-body"><svg viewBox="0 0 200 80"><path d="M10 62 L8 40 L40 34 L170 34 L192 44 L192 62 Z" fill="var(--foe)" stroke="#15120a" stroke-width="2.5" stroke-linejoin="round"/>
+<path d="M14 40 l6 -10 l6 10 M150 34 l6 -10 l6 10" fill="#c9ced3" stroke="#15120a" stroke-width="1.5"/>
+<path d="M90 34 L104 18 L156 18 L170 34 Z" fill="var(--foe)" stroke="#15120a" stroke-width="2.5" stroke-linejoin="round" style="filter:brightness(0.75)"/>
+<path d="M106 22 L152 22 L162 32 L100 32 Z" fill="#1c2a33"/>
+<path d="M8 48 H192" stroke="#15120a" stroke-width="3" stroke-dasharray="10 6"/>
+<rect x="44" y="10" width="28" height="12" rx="2" fill="#3a3f44" stroke="#15120a" stroke-width="2"/><rect x="12" y="12.5" width="36" height="5" fill="#2b2f33" stroke="#15120a" stroke-width="1.5"/>
+<path d="M192 42 L198 46 L198 62 L192 62 Z" fill="#4a5056" stroke="#15120a" stroke-width="2"/></svg><div class="ld-hurt"><i class="ld-smoke"></i><i class="ld-smoke"></i></div></div><i class="ld-wheel" style="left:10%"></i><i class="ld-wheel" style="left:73%"></i><div class="ld-gf"><i class="ld-flash"></i></div><div class="ld-gm"><i class="ld-spark"></i></div></div>
+    <div class="ld-car ld-me"><div class="ld-body"><svg viewBox="0 0 200 80"><path d="M12 62 L10 44 L22 38 L150 38 L184 46 L190 62 Z" fill="var(--paint)" stroke="#15120a" stroke-width="2.5" stroke-linejoin="round"/>
+<path d="M10 50 H186" stroke="var(--trim)" stroke-width="5"/>
+<path d="M48 38 L62 20 L118 20 L138 38 Z" fill="var(--paint)" stroke="#15120a" stroke-width="2.5" stroke-linejoin="round" style="filter:brightness(0.78)"/>
+<path d="M67 24 L115 24 L129 36 L60 36 Z" fill="#1c2a33"/><path d="M72 24 L86 24 L78 36 L66 36 Z" fill="#fff" opacity="0.18"/>
+<rect x="78" y="10" width="28" height="11" rx="2" fill="#3a3f44" stroke="#15120a" stroke-width="2"/><rect x="100" y="12.5" width="52" height="5" fill="#2b2f33" stroke="#15120a" stroke-width="1.5"/>
+<path d="M184 44 L198 50 L198 66 L184 66 Z" fill="#8a9097" stroke="#15120a" stroke-width="2"/><path d="M188 52 H198 M188 58 H198" stroke="#4a5056" stroke-width="2"/>
+<path d="M10 40 L4 30 L22 30 L22 38" fill="#2b2f33" stroke="#15120a" stroke-width="2"/></svg></div><i class="ld-wheel" style="left:15%"></i><i class="ld-wheel" style="left:70%"></i><div class="ld-gm"><i class="ld-flash"></i></div><div class="ld-gf"><i class="ld-spark"></i></div></div>
+    <div class="ld-gm"><div class="ld-lane"><i></i><i></i></div></div>
+    <div class="ld-gf"><div class="ld-lane"><i></i><i></i></div></div>
+    <i class="ld-boom"></i>
+  </div>
+  <div class="ld-meter"><div class="ld-bar"><div class="ld-fill" id="ld-fill"><i></i></div></div><div class="ld-row"><span id="ld-what">Loading the game</span><b id="ld-pct">0%</b></div></div>
+</div>
+<script>
+// The loading screen's bar. It runs as soon as the page has this far, while the rest of the page (the game's code) is still
+// on its way. Three steps, each one moved on by the code when it gets there: the page arriving, the map being built
+// (build.mjs's start-up calls at('build')), and the sounds (main.js calls built() once the map is up; the served build
+// fetches them, src/sfxfiles.js). The map is built in one go that holds the page up, so the bar can't be redrawn then:
+// it eases on by itself (an animation the browser runs on its own) over about as long as that step took last time, and
+// jumps to the true point when the code is back.
+(function () {
+  var L = document.getElementById('loading'), F = document.getElementById('ld-fill'), W = document.getElementById('ld-what'), P = document.getElementById('ld-pct');
+  if (!L || !F) return;
+  // your car in your paint (the saved build: src/parts.js), the rival in another
+  var PAINT = { orange: '#e0782a', red: '#c23b2e', blue: '#2f62a8', teal: '#2c8f8c', green: '#3d7d55', yellow: '#e8b82a', purple: '#6a3f9a', white: '#e6e4dc', silver: '#a4a9b0', black: '#2b2e35', maroon: '#7c2734', lime: '#8cc63a', pink: '#e06a9a', sand: '#c9a66b' };
+  var load = {}; try { load = (JSON.parse(localStorage.getItem('auto-destruction-save-1') || '{}') || {}).load || {}; } catch (e) { /* the starter's */ }
+  var mine = PAINT[load.paint] || PAINT.orange, others = Object.keys(PAINT).filter(function (k) { return PAINT[k] !== mine && k !== 'black'; });
+  L.style.setProperty('--paint', mine); L.style.setProperty('--trim', PAINT[load.trim] || PAINT.black);
+  L.style.setProperty('--foe', PAINT[others[Math.floor(Math.random() * others.length)]]);
+  // how long each step took last time on this device (a first visit guesses)
+  var took = { page: 2500, build: 3000 }; try { var t = JSON.parse(localStorage.getItem('ad-load-ms') || '{}'); if (t.page > 0) took.page = t.page; if (t.build > 0) took.build = t.build; } catch (e) { /* guesses */ }
+  var t0 = performance.now(), tBuild = 0, at = 0, anim = null, poll = 0;
+  function shown() {   // where the bar is drawn right now, 0 to 1
+    var m = /matrix\(([^)]+)\)/.exec(getComputedStyle(F).transform || ''), w = F.offsetWidth || 1;
+    return m ? Math.max(0, Math.min(1, 1 + parseFloat(m[1].split(',')[4]) / w)) : at;
+  }
+  function tx(k) { return 'translateX(' + ((k - 1) * 100).toFixed(2) + '%)'; }
+  // go to k at once (never back), then ease on toward next over ms
+  function go(k, what, next, ms) {
+    k = Math.max(k, shown(), at); at = k;
+    if (what) W.textContent = what;
+    if (anim) anim.cancel();
+    F.style.transform = tx(k);
+    if (next > k && ms > 0 && F.animate) anim = F.animate([{ transform: tx(k) }, { transform: tx(next) }], { duration: ms, easing: 'cubic-bezier(0.15, 0.6, 0.35, 1)', fill: 'forwards' });
+  }
+  function pct() { P.textContent = Math.round(shown() * 100) + '%'; if (!L.hidden) requestAnimationFrame(pct); }
+  function keep() { try { localStorage.setItem('ad-load-ms', JSON.stringify(took)); } catch (e) { /* guesses again next time */ } }
+  window.__adLoad = {
+    at: function (step) {
+      if (step !== 'build') return;
+      tBuild = performance.now(); took.page = Math.round(tBuild - t0);
+      var what = 'Building the map'; try { what = sessionStorage.getItem('ad-load-what') || what; sessionStorage.removeItem('ad-load-what'); } catch (e) { /* the plain words */ }
+      go(0.3, what, 0.85, took.build * 1.15);
+    },
+    // the map is up: the sounds next (sounds() says how many are in of how many asked), then off once a frame is drawn
+    built: function (sounds) {
+      if (tBuild) { took.build = Math.round(performance.now() - tBuild); keep(); }
+      go(0.86, 'Loading sounds', 0, 0);
+      var tS = performance.now();
+      clearInterval(poll);
+      poll = setInterval(function () {
+        var s = sounds ? sounds() : { got: 1, asked: 1 }, k = s.asked ? s.got / s.asked : 1;
+        go(0.86 + 0.12 * k, '', 0, 0);
+        if (k >= 1 || performance.now() - tS > 6000) { clearInterval(poll); finish(); }   // (sounds still coming after that play as they arrive)
+      }, 100);
+    },
+    // shown again on the way to another map (the page loads again; what: the words for building that one, its loading[0])
+    again: function (what) { try { if (what) sessionStorage.setItem('ad-load-what', what); } catch (e) { /* the plain words */ } L.classList.remove('out'); L.hidden = false; at = 0; go(0.1, 'Loading the map', 0.3, took.page); requestAnimationFrame(pct); },
+  };
+  function finish() {
+    requestAnimationFrame(function () { requestAnimationFrame(function () {
+      go(1, 'Ready', 0, 0); P.textContent = '100%';
+      L.classList.add('out'); setTimeout(function () { L.hidden = true; }, 420);
+    }); });
+  }
+  go(0.04, 'Loading the game', 0.28, took.page * 1.2);
+  requestAnimationFrame(pct);
+})();
+</script>
