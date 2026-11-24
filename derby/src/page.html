@@ -125,10 +125,10 @@ button.go:active { transform: skewX(-8deg) translateY(3px); box-shadow: 0 2px 0 
 .ld-sky svg, .ld-road svg { width: 100%; height: 100%; display: block; }
 .ld-road { left: 0; bottom: 0; width: 200%; height: 22%; animation: ld-slide 0.9s linear infinite; }
 @keyframes ld-slide { to { transform: translateX(-50%); } }
-.ld-car { bottom: 12%; width: 38%; aspect-ratio: 5 / 2; }
+.ld-car { bottom: 12%; width: 30%; aspect-ratio: 2 / 1; }
 .ld-car svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .ld-me { left: 4%; animation: ld-me 6s linear infinite; }
-.ld-foe { left: 58%; animation: ld-foe 6s linear infinite; }
+.ld-foe { left: 66%; animation: ld-foe 6s linear infinite; }
 .ld-me .ld-body, .ld-foe .ld-body { position: absolute; inset: 0; animation: ld-bob 0.22s ease-in-out infinite alternate; }
 .ld-foe .ld-body { animation-duration: 0.26s; }
 @keyframes ld-bob { to { transform: translateY(-2.5%) rotate(-0.6deg); } }
@@ -146,8 +146,7 @@ button.go:active { transform: skewX(-8deg) translateY(3px); box-shadow: 0 2px 0 
 .ld-gm { animation: ld-gate-me 6s linear infinite; } .ld-gf { animation: ld-gate-foe 6s linear infinite; }
 @keyframes ld-gate-me { 0%, 11.9% { opacity: 0; } 12%, 20% { opacity: 1; } 20.1%, 27.9% { opacity: 0; } 28%, 36% { opacity: 1; } 36.1%, 45.9% { opacity: 0; } 46%, 54% { opacity: 1; } 54.1%, 61.9% { opacity: 0; } 62%, 76% { opacity: 1; } 76.1%, 100% { opacity: 0; } }
 @keyframes ld-gate-foe { 0%, 20.9% { opacity: 0; } 21%, 26.5% { opacity: 1; } 26.6%, 37.9% { opacity: 0; } 38%, 44% { opacity: 1; } 44.1%, 55.9% { opacity: 0; } 56%, 60.5% { opacity: 1; } 60.6%, 100% { opacity: 0; } }
-.ld-lane { position: absolute; top: 52.3%; height: 2.2%; }
-.ld-gf .ld-lane { transform: scaleX(-1); }
+.ld-lane { position: absolute; left: 30%; top: 52.3%; width: 36%; height: 2.2%; transform-origin: 0 50%; }
 .ld-lane i { position: absolute; inset: 0; animation: ld-shot 0.24s linear infinite; }
 .ld-lane i:nth-child(2) { animation-delay: -0.12s; }
 .ld-lane i::before { content: ''; position: absolute; left: 0; top: 0; width: 16%; height: 100%; border-radius: 2px; background: linear-gradient(90deg, rgba(255,220,120,0), #fff2b0 70%, #fff); box-shadow: 0 0 6px #ffc21a; }
@@ -770,37 +769,48 @@ body.racing.touch #hint { top: 128px; }
   if (!L || !F) return;
   // the cars: yours as main.js last drew it on this device (keepLoadCar), or the starter car; the rival one of a few.
   // Each is the game's own model seen from the side (partart.js side(), tools/loading-cars.mjs): the car without its
-  // near wheels, one wheel to spin, and where the wheels and the gun are on the picture. Placed here on the stage:
-  // the car boxes are 38% of its width (5:2, like the pictures; yours at 4%, the rival's at 58%) with their bottoms 12%
-  // up, so a box is 50.67% of the stage's height and its top is at 37.33%.
-  var CARS = /*@loadcars*/null;
+  // near wheels, one wheel to spin, and where the wheels and the gun are on the picture. Every picture is at the same
+  // scale, so a truck is bigger than a car: the stage is STAGE picture pixels across (and 0.3 of that high). Both cars'
+  // bottoms are 12% up; yours starts 4% in from the left, the rival ends 4% in from the right.
+  var CARS = /*@loadcars*/null, STAGE = 1300;
   if (CARS) {
     var mine = null; try { mine = JSON.parse(localStorage.getItem('ad-load-car') || 'null'); } catch (e) { /* the starter */ }
-    if (!mine || !mine.body || !mine.meta) mine = CARS.me;
+    if (!mine || !mine.body || !mine.meta || !mine.meta.w) mine = CARS.me;
     var foe = CARS.foes[Math.floor(Math.random() * CARS.foes.length)];
     var pc = function (n) { return (n * 100).toFixed(2) + '%'; };
-    var place = function (el, car, flip) {
-      var m = car.meta, X = function (x) { return flip ? 1 - x : x; };
+    // a car's box on the stage, in % of the stage's width (x, w) and height (y, h)
+    // (both drawn smaller together when the pair is too tall for the stage, or too long to leave a gap between them)
+    var size = function (car) { return { w: (car.meta.w / STAGE) * 100, h: (car.meta.h / (STAGE * 0.3)) * 100 }; };
+    var boxOf = function (car, right, k) { var z = size(car), w = z.w * k, h = z.h * k; return { x: right ? 96 - w : 4, w: w, y: 88 - h, h: h }; };
+    var place = function (el, car, B, flip) {
+      var m = car.meta, X = function (x) { return flip ? 1 - x : x; }, asp = m.w / m.h;
+      el.style.left = B.x.toFixed(2) + '%'; el.style.width = B.w.toFixed(2) + '%'; el.style.aspectRatio = m.w + ' / ' + m.h;
       el.querySelector('.ld-pic').src = car.body;
       var ws = el.querySelectorAll('.ld-wheel');
-      for (var i = 0; i < ws.length; i++) { var w = m.wheels[i]; ws[i].style.cssText = 'left:' + pc(X(w.x) - m.d / 2) + ';top:' + pc(w.y - m.d * 1.25) + ';width:' + pc(m.d) + ';background-image:url(' + car.wheel + ')'; }
+      for (var i = 0; i < ws.length; i++) { var w = m.wheels[i]; ws[i].style.cssText = 'left:' + pc(X(w.x) - m.d / 2) + ';top:' + pc(w.y - (m.d * asp) / 2) + ';width:' + pc(m.d) + ';background-image:url(' + car.wheel + ')'; }
       var g = m.gun || { x: 0.8, y: 0.3 }, fl = el.querySelector(flip ? '.ld-gf .ld-flash' : '.ld-gm .ld-flash');
       fl.style.left = pc(X(g.x)); fl.style.top = pc(g.y);
     };
-    // where a shot at height y (of the box) meets the car's front, as a fraction across its picture
+    // where a shot at height y (of the picture) meets the car's front, as a fraction across its picture
     var hitAt = function (car, y) { var f = car.meta.front || [], i = Math.max(0, Math.min(15, Math.floor(y * 16))); for (var j = i; j < 16; j++) if (f[j] > 0) return f[j]; return 0.85; };
-    var meEl = L.querySelector('.ld-me'), foeEl = L.querySelector('.ld-foe');
-    place(meEl, mine, false); place(foeEl, foe, true);
-    var gm = mine.meta.gun || { x: 0.8, y: 0.3 }, gf = foe.meta.gun || { x: 0.8, y: 0.3 };
-    var hitFoe = hitAt(foe, gm.y), hitMe = hitAt(mine, gf.y);
-    var sf = foeEl.querySelector('.ld-gm .ld-spark'); sf.style.left = pc(1 - hitFoe); sf.style.top = pc(gm.y);
-    var sm = meEl.querySelector('.ld-gf .ld-spark'); sm.style.left = pc(hitMe); sm.style.top = pc(gf.y);
-    // the tracers' lanes on the stage, from each muzzle to the other car's front
+    var meEl = L.querySelector('.ld-me'), foeEl = L.querySelector('.ld-foe'), zm = size(mine), zf = size(foe);
+    var fit = Math.min(1, 84 / Math.max(zm.h, zf.h), 80 / (zm.w + zf.w)), BM = boxOf(mine, false, fit), BF = boxOf(foe, true, fit);
+    place(meEl, mine, BM, false); place(foeEl, foe, BF, true);
+    var gm = mine.meta.gun || { x: 0.8, y: 0.3 }, gf = foe.meta.gun || { x: 0.8, y: 0.3 }, AIM = 0.5;   // (shots land half way down the other car)
+    var hitFoe = hitAt(foe, AIM), hitMe = hitAt(mine, AIM);
+    var sf = foeEl.querySelector('.ld-gm .ld-spark'); sf.style.left = pc(1 - hitFoe); sf.style.top = pc(AIM);
+    var sm = meEl.querySelector('.ld-gf .ld-spark'); sm.style.left = pc(hitMe); sm.style.top = pc(AIM);
+    // the tracers' lanes, from each muzzle to where it hits the other car (turned to slope between them; the stage is
+    // 0.3 as high as it is wide)
+    var lane = function (el, x0, y0, x1, y1) {
+      var dx = x1 - x0, dy = (y1 - y0) * 0.3, len = Math.max(4, Math.sqrt(dx * dx + dy * dy)), ang = Math.atan2(dy, dx);
+      el.style.cssText = 'left:' + x0.toFixed(2) + '%;top:' + (y0 - 1.1).toFixed(2) + '%;width:' + len.toFixed(2) + '%;transform:rotate(' + ang.toFixed(4) + 'rad)';
+    };
     var lanes = L.querySelectorAll('.ld-stage > .ld-gm .ld-lane, .ld-stage > .ld-gf .ld-lane');
-    var a = 4 + 38 * gm.x, b = 58 + 38 * (1 - hitFoe);
-    lanes[0].style.cssText = 'left:' + a.toFixed(2) + '%;width:' + Math.max(4, b - a).toFixed(2) + '%;top:' + (37.33 + 50.67 * gm.y - 1.1).toFixed(2) + '%';
-    a = 4 + 38 * hitMe; b = 58 + 38 * (1 - gf.x);
-    lanes[1].style.cssText = 'left:' + a.toFixed(2) + '%;width:' + Math.max(4, b - a).toFixed(2) + '%;top:' + (37.33 + 50.67 * gf.y - 1.1).toFixed(2) + '%';
+    lane(lanes[0], BM.x + BM.w * gm.x, BM.y + BM.h * gm.y, BF.x + BF.w * (1 - hitFoe), BF.y + BF.h * AIM);
+    lane(lanes[1], BF.x + BF.w * (1 - gf.x), BF.y + BF.h * gf.y, BM.x + BM.w * hitMe, BM.y + BM.h * AIM);
+    // the rival's blast, on the middle of it
+    var boom = L.querySelector('.ld-boom'); boom.style.left = (BF.x + BF.w / 2 - 12).toFixed(2) + '%'; boom.style.top = (BF.y + BF.h * 0.45 - 40).toFixed(2) + '%';
   }
   // how long each step took last time on this device (a first visit guesses)
   var took = { page: 2500, build: 3000 }; try { var t = JSON.parse(localStorage.getItem('ad-load-ms') || '{}'); if (t.page > 0) took.page = t.page; if (t.build > 0) took.build = t.build; } catch (e) { /* guesses */ }

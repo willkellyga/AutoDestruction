@@ -1193,7 +1193,7 @@ function playAgain() { if (net) net.bye(); goOnline(MAP.id); }
 // the loading screen (page.html) shows your own car: it is drawn from the side (partart.js side()) while the home screen
 // or the garage is up, a moment after the build changes, and kept in localStorage 'ad-load-car' with the build it shows
 // (LOADCAR_V: change it when the drawing changes, so every device draws its car again)
-const LOADCAR_V = 1;
+const LOADCAR_V = 2;
 let loadCarT = 0;
 function keepLoadCar() {
   clearTimeout(loadCarT);

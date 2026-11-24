@@ -75,8 +75,10 @@ export function makePartArt({ mats }) {
   // The whole car from its right-hand side, nose to the right and a little from above, for the loading screen
   // (page.html): the car without its near wheels, one near wheel on its own (the screen spins it), and where the
   // wheels and the gun's muzzle are on the picture, as fractions of it (y from the top). Drawn flat (no perspective),
-  // so the wheel is the same size wherever it sits. W x H pixels; the car fills the width or the height, wheels down.
-  function side(load, W2 = 400, H2 = 160) {
+  // so the wheel is the same size wherever it sits. Every car at the same scale (PPU pixels a town unit), so the
+  // picture's size (meta w, h) says how big the car is.
+  function side(load, PPU = 20) {
+    let W2 = 400, H2 = 160;
     if (!gl) setup();
     const sc = new THREE.Scene();
     sc.add(new THREE.HemisphereLight(0xe8f0ff, 0x6b5a48, 1.7));
@@ -110,6 +112,8 @@ export function makePartArt({ mats }) {
       for (let y = 0; y < H2; y++) for (let x = 0; x < W2; x++) if (a[(y * W2 + x) * 4 + 3] > 8) { if (x < px0) px0 = x; if (x > px1) px1 = x; if (y < py0) py0 = y; if (y > py1) py1 = y; }
       if (px1 >= 0) { const L0 = cam2.left, T0 = cam2.top; x0 = L0 + (px0 / W2) * fw; x1 = L0 + ((px1 + 1) / W2) * fw; y1 = T0 - (py0 / H2) * fh; y0 = T0 - ((py1 + 1) / H2) * fh; }
     }
+    // then a picture of the car's own size: PPU pixels to a town unit for every car, so a truck comes out bigger than a car
+    W2 = Math.round((x1 - x0) * 1.04 * PPU); H2 = Math.round((y1 - y0) * 1.04 * PPU);
     frame(1.04);
     const at = (v) => { const q = v.clone().project(cam2); return [(q.x + 1) / 2, (1 - q.y) / 2]; };
     const shot = (w3, h3) => { gl.setSize(w3, h3, false); gl.render(sc, cam2); return gl.domElement.toDataURL(load.webp ? 'image/webp' : 'image/png', 0.9); };
@@ -136,7 +140,7 @@ export function makePartArt({ mats }) {
     if (unit.bones.gun && def.muzzles && def.muzzles.gun) { const v = new THREE.Vector3(...def.muzzles.gun); unit.bones.gun.localToWorld(v); const [x, y] = at(v); gun = { x, y }; }
     unit.dispose(); gl.setSize(W, H, false);
     const f = (n) => Math.round(n * 1000) / 1000;
-    return { body, wheel, meta: { wheels: wheels.map((q) => ({ x: f(q.x), y: f(q.y) })), d: f(d), gun: gun && { x: f(gun.x), y: f(gun.y) }, front } };
+    return { body, wheel, meta: { wheels: wheels.map((q) => ({ x: f(q.x), y: f(q.y) })), d: f(d), gun: gun && { x: f(gun.x), y: f(gun.y) }, front, w: W2, h: H2 } };
   }
   return {
     side,
