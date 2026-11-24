@@ -23,7 +23,7 @@ import { MODES } from './modes/index.js';
 import { CRASH, ROUND, AI, DRIFT, BUILDINGS } from './tuning.js';
 import { toughen, boom, chipAt, fuelBlast } from './sturdy.js';
 import { PARTS, PAINTS, loadSave, keepSave, rivalBuild, RIVAL_NAMES, statsOf } from './parts.js';
-import { makeGarage, rating, classOf } from './garage.js';
+import { makeGarage, rating, classOf, GADGET, gadgetIcon } from './garage.js';
 import { makeGarageRoom } from './garageroom.js';
 import { makePartArt } from './partart.js';
 import { makeSpecials } from './specials.js';
@@ -486,10 +486,15 @@ const crashHooks = {
   },
   land(c, speed) { specials.landed(c, speed); },   // down from a jump (vehicle.js)
   // a drift held long enough pays out a short burst as it ends (vehicle.js)
+  // (bigger the longer it was held: a whoosh, the nitro's roar, the view widening and a jolt, DRIFT.boost)
   drift(c, lvl) {
-    sfx.play('nitro', c === player ? 0.35 + 0.15 * lvl : 0.25, c.x, c.z, { rate: 1.3, gap: 0.3 });
-    if (c === player) drifts.boost(c, lvl);
+    const me = c === player;
+    sfx.play('nitro', me ? 0.45 + 0.2 * lvl : 0.25, c.x, c.z, { rate: 1.45 - 0.1 * lvl, gap: 0.2 });
+    sound('charge', me ? 0.55 + 0.2 * lvl : 0.3, c.x, 1, c.z);   // the whoosh
+    if (me) { drifts.boost(c, lvl); cam.fovKick = DRIFT.boost.fov[lvl - 1]; game.shake = Math.min(1.2, game.shake + 0.12 * lvl); }
   },
+  // a slide held long enough to reach the next boost level: a click, higher each level
+  driftUp(c, lvl) { if (c === player) sfx.play('ui_tab', 0.5 + 0.15 * lvl, undefined, undefined, { rate: 0.9 + 0.3 * lvl }); },
 };
 // the parked cars stand in the way until they are smashed
 const _body = { x: 0, z: 0, vx: 0, vz: 0 };
@@ -661,17 +666,24 @@ function drawHud() {
   if (TOUCH) {
     const heavy = player.guns.find((g) => g.group === 1); $('t-heavy').hidden = !heavy;
     if (heavy && $('t-heavy').dataset.k !== heavy.key) { $('t-heavy').dataset.k = heavy.key; $('t-heavy').textContent = heavy.g.mine ? 'Mine' : heavy.g.fx === 'cannon' ? 'Cannon' : 'Rockets'; }
-    $('t-boost').hidden = !player.gadget || !player.gadget.cost; $('t-boost').textContent = player.gadget && player.gadget.repair ? 'Fix' : 'Nitro';
-    $('t-boost').classList.toggle('ready', player.gadgetT <= 0);
+    const gk = gadgetKey(player.gadget), tb = $('t-boost');
+    tb.hidden = !gk;
+    if (gk && tb.dataset.k !== gk) { tb.dataset.k = gk; tb.innerHTML = gadgetIcon(gk) + GADGET[gk].label; }
+    tb.classList.toggle('ready', player.gadgetT <= 0);
   }
-  const G = player.gadget, every = G && (G.nitro ? G.nitro.every : G.repair ? G.repair.every : 0);
+  // the gadget's meter fills as it comes back, with its picture beside it
+  const G = player.gadget, gk = gadgetKey(G), gd = G && (G.nitro || G.repair || G.shield || G.oil || G.jump), every = gd ? gd.every : 0;
   $('gad').hidden = !every;
+  if ($('gad').dataset.k !== (gk || '')) { $('gad').dataset.k = gk || ''; $('gad-ico').innerHTML = gadgetIcon(gk); $('gad').style.setProperty('--g', gk ? GADGET[gk].c : ''); }
   if (every) { $('gad-fill').style.width = `${(1 - player.gadgetT / every) * 100}%`; $('gad').classList.toggle('ready', player.gadgetT <= 0); }
   const [top, sub, count] = mode.hud(); $('wave').textContent = top; $('left').textContent = sub;
   drawRaceHud();
   // the counter by the scrap: cars wrecked, unless the mode counts something else (survival counts zombies)
   $('kills-l').textContent = count ? count[0] : 'Wrecked'; $('kills').textContent = count ? count[1] : game.kills; $('scrap').textContent = Math.floor(game.scrap);
 }
+
+// which gadget a car carries (its key in PARTS.gadget), or null
+function gadgetKey(G) { if (!G || !G.cost) return null; for (const k in PARTS.gadget) if (PARTS.gadget[k] === G || PARTS.gadget[k].name === G.name) return k; return null; }
 
 // the race panel (a mode with raceHud: modes/race.js): the place, big and coloured, with an arrow and a pop when it
 // changes; the lap ('Final lap' blinking red); the lap time; a strip of the whole race with every car on it; the car
@@ -1168,6 +1180,8 @@ function drawHome() {
   for (const c of HOME_CARDS) if (c.map) document.querySelector(`.h-card[data-map="${c.map}"] span`).textContent = playAs === 'online' ? ONLINE_D[c.map] : c.d;
   $('home-car').textContent = body.name || 'Your car';
   $('home-class').textContent = classOf(r); $('home-rate').dataset.c = classOf(r); $('home-num').textContent = r;
+  const gk = save.load.gadget, hg = $('home-gad'); hg.hidden = !GADGET[gk];
+  if (GADGET[gk]) hg.innerHTML = gadgetIcon(gk) + PARTS.gadget[gk].name;
 }
 // the part of the screen the cards leave free, for the camera to frame the car in
 function homeFree() {
@@ -1400,6 +1414,10 @@ function drivePlayer(dt) {
     const want = cam.yaw - Math.atan2(touch.sx, touch.sy), off = wrap(want - c.yaw);
     if (Math.abs(off) < 2.3) { c.throttle = clamp(m * 1.3, 0, 1); c.steer = clamp(off * 2.2, -1, 1); }
     else { c.throttle = -clamp(m * 1.3, 0, 1); c.steer = 0; }
+    // drifting (Drift held and the back out): the stick steers left and right, the way it is pushed across the screen,
+    // rather than pointing the car. Pointing it, the car would swing round to the stick, straighten up and end the
+    // slide, so a long drift (and its bigger boost, DRIFT.boost) meant winding the stick round with the car.
+    if (touch.drift && c.slide > 0.3 && touch.sy > -0.5) { c.throttle = clamp(m * 1.3, 0, 1); c.steer = clamp(-touch.sx / 0.45, -1, 1); }
   }
   // a brake, not reverse, while still rolling forwards fast
   if (c.throttle < 0 && c.fwd > 12) { c.brake = 1; c.throttle = -0.2; }
@@ -1424,33 +1442,61 @@ function aimRay() {
   return p;
 }
 // Aim help. With a mouse, a rival near the crosshair pulls the aim onto itself (and on where it will be when the rounds
-// get there), more the nearer the crosshair is. With touch, the guns pick the nearest rival they can see, mostly the
-// one ahead, and hold on to it for a moment.
-const AIM = { pull: 0.85, margin: 0.06, range: 330 };
+// get there), more the nearer the crosshair is. With touch, the guns lock on to a rival only while it is on the screen
+// (in front of the camera, inside the picture, with a clear line from the car): never one behind you or off to the side
+// that you can't see. It finds one by itself only in the middle of the picture (`zone`, of the screen's half-width,
+// round the crosshair), the one nearest the crosshair (a near one before a far one), held on to for a moment; a tap
+// on one anywhere on the screen picks it, and the guns stay on it while it stays on screen (`edge`). The locked one
+// wears the crosshair. On touch the guns swing round at `turn` radians a second (about a rival's), not the mouse's
+// near-instant 10, so a new target takes a moment to come onto.
+const AIM = { pull: 0.85, margin: 0.06, range: 330, edge: 0.88, zone: 0.6, tap: 70, turn: 3.5 };
 const _tc = new THREE.Vector3(), _ts = new THREE.Vector3();
-let autoT = null, autoKeep = 0, aimLock = null;
+let autoT = null, autoKeep = 0, aimLock = null, picked = null;
 function leadOn(o, from, out) { const t = Math.hypot(o.x - from.x, o.z - from.z) / 360; o.centre(out); out.x += o.vx * t; out.z += o.vz * t; out.y = 2.4; return out; }
+const aimables = () => (game.state !== 'test' && mode.targets ? mode.targets() : cars);   // (a mode can give other things to aim at: survival's zombies)
+// whether o is in the picture, or with `mid` in the middle of it round the crosshair (leaves where on the screen in _ts)
+function onScreen(o, c, mid) {
+  leadOn(o, c, _tc); if (camera.position.distanceTo(_tc) > AIM.range) return false;
+  _ts.copy(_tc).project(camera);
+  if (!(_ts.z < 1 && Math.abs(_ts.x) < AIM.edge && Math.abs(_ts.y) < AIM.edge)) return false;
+  return !mid || (Math.abs(_ts.x) < AIM.zone && Math.abs(_ts.y - 0.2) < AIM.zone);
+}
 function autoTarget(c, dt) {
   autoKeep -= dt;
-  const ok = (o) => o && !o.dead && !o.gone && Math.hypot(o.x - c.x, o.z - c.z) < 240 && clearLine(c.x, c.z, o.x, o.z, 4);
-  if (autoT && autoKeep > 0 && ok(autoT)) return autoT;
+  const ok = (o, mid) => o && o !== c && !o.dead && !o.gone && Math.hypot(o.x - c.x, o.z - c.z) < 240 && onScreen(o, c, mid) && clearLine(c.x, c.z, o.x, o.z, 4);
+  if (picked && !ok(picked)) picked = null;
+  if (picked) return picked;
+  if (autoT && autoKeep > 0 && ok(autoT)) return autoT;   // (one already locked can drift out of the middle for a moment)
   let best = null, bs = 1e9;
-  for (const o of game.state !== 'test' && mode.targets ? mode.targets() : cars) {   // (a mode can give other things to aim at: survival's zombies)
-    if (o === c || !ok(o)) continue;
-    const d = Math.hypot(o.x - c.x, o.z - c.z), off = Math.abs(wrap(Math.atan2(o.x - c.x, o.z - c.z) - cam.yaw));
-    const score = d * (1 + off * 0.9) * (o === autoT ? 0.7 : 1);
+  for (const o of aimables()) {
+    if (!ok(o, true)) continue;
+    const d = Math.hypot(o.x - c.x, o.z - c.z), r = Math.hypot(_ts.x * camera.aspect, _ts.y - 0.2);
+    const score = (r + 0.25) * (d + 60) * (o === autoT ? 0.7 : 1);
     if (score < bs) { bs = score; best = o; }
   }
   autoT = best; autoKeep = 0.6;
   return best;
 }
+// a tap on the picture (not on the stick or the buttons) picks the target nearest it, if one is close enough to the tap
+canvas.addEventListener('touchstart', (e) => {
+  const c = player, t = e.changedTouches[0];
+  if (!TOUCH || !t || !c || c.dead || (game.state !== 'play' && game.state !== 'test')) return;
+  const W = canvas.clientWidth, H = canvas.clientHeight; let best = null, bd = AIM.tap;
+  for (const o of aimables()) {
+    if (o === c || o.dead || o.gone || !onScreen(o, c)) continue;
+    const dd = Math.hypot((_ts.x * 0.5 + 0.5) * W - t.clientX, (-_ts.y * 0.5 + 0.5) * H - t.clientY);
+    if (dd < bd && clearLine(c.x, c.z, o.x, o.z, 4)) { bd = dd; best = o; }
+  }
+  if (best) { picked = autoT = best; autoKeep = 0.6; }
+}, { passive: true });
 function aimFor(c, dt) {
   const p = aimRay();
   let best = null, k = 0;
+  c.turretTurn = TOUCH ? AIM.turn : 10;
   if (TOUCH) { best = autoTarget(c, dt); k = best ? 1 : 0; }
   else {
     const tan = Math.tan(camera.fov * Math.PI / 360);
-    for (const o of game.state !== 'test' && mode.targets ? mode.targets() : cars) {
+    for (const o of aimables()) {
       if (o === c || o.dead || o.gone) continue;
       leadOn(o, c, _tc); const dist = camera.position.distanceTo(_tc); if (dist > AIM.range) continue;
       _ts.copy(_tc).project(camera); if (_ts.z > 1) continue;
@@ -1498,6 +1544,11 @@ function stepCamera(dt) {
   camera.position.set(_tgt.x + bx * cam.d, Math.max(2.5, _tgt.y + by_ * cam.d), _tgt.z + bz * cam.d);
   const sh = game.shake; if (sh > 0) camera.position.add(_o.set((Math.random() - 0.5) * sh * 1.6, (Math.random() - 0.5) * sh * 1.2, (Math.random() - 0.5) * sh * 1.6));
   camera.lookAt(_tgt.x + Math.sin(cam.yaw) * 16, _tgt.y - 0.5, _tgt.z + Math.cos(cam.yaw) * 16);
+  // a drift boost widens the view for a moment (it springs out, then eases back as the burst runs out)
+  const fk = c.miniT > 0 ? (cam.fovKick || 0) * Math.min(1, c.miniT / 0.6) : 0;
+  cam.fov = (cam.fov || 0) + (fk - (cam.fov || 0)) * Math.min(1, dt * (fk > (cam.fov || 0) ? 14 : 3));
+  const fov = baseFov + cam.fov;
+  if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
   camera.updateMatrixWorld();
   if (!c.dead) aimFor(c, dt);
   const ch = $('cross');
@@ -1507,12 +1558,12 @@ function stepCamera(dt) {
 }
 
 // ---- the frame -----------------------------------------------------------------------------------------------------
-let tall = false;   // a phone held upright: a wider view, from further back and higher up, so the road ahead still shows
+let tall = false, baseFov = 64;   // a phone held upright: a wider view, from further back and higher up, so the road ahead still shows
 let sizeW = 0, sizeH = 0;
 function resize() {
   const w = innerWidth, h = innerHeight; sizeW = w; sizeH = h;
   renderer.setSize(w, h, false); composer.setSize(w, h);
-  tall = w / h < 0.9; camera.fov = tall ? 76 : 64;
+  tall = w / h < 0.9; baseFov = camera.fov = tall ? 76 : 64;
   camera.aspect = w / h; camera.updateProjectionMatrix();
   const ph = h * renderer.getPixelRatio(); setParticleScale(ph, camera.fov); fx.setScale(ph, camera.fov);
 }
@@ -1638,4 +1689,4 @@ if (window.__adLoad) window.__adLoad.built(() => sfxCount); else { const l = $('
   if (net || brief || /[?&](room|online|map)=/.test(location.search)) $('menu').hidden = false; else showHome();
 }
 requestAnimationFrame((t) => { last = t; frame(t); });
-window.__derby = { net, specials, crumple, cube, room, gcam, garageLight, startTest, endTest, tryPart: (s, k) => onTry(s, k), dummies, renderer, mapLook, touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, pauseOn, pauseOff, toHome, setPlay, sfx, audioMix, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop };
+window.__derby = { net, specials, crumple, cube, room, gcam, garageLight, startTest, endTest, tryPart: (s, k) => onTry(s, k), dummies, renderer, mapLook, touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH, picked }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, pauseOn, pauseOff, toHome, setPlay, sfx, audioMix, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop };
