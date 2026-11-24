@@ -201,7 +201,6 @@ button.alt:hover { background: rgba(255,255,255,0.16); }
 .maps button i { font-style: normal; opacity: 0.7; font-size: 12px; }
 .maps button.on { border-color: var(--hot); background: rgba(255,194,26,0.16); }
 .maps button:hover { background: rgba(255,255,255,0.12); }
-.map-blurb { font-size: 14px; opacity: 0.85; min-height: 2.6em; max-width: 520px; margin: 4px auto 0; }
 .levels { display: flex; gap: 6px; justify-content: center; align-items: center; margin: 8px auto 0; }   /* the race's difficulty */
 .levels[hidden] { display: none; }
 .levels span { font-size: 13px; opacity: 0.75; margin-right: 4px; }
@@ -230,7 +229,7 @@ button.alt:hover { background: rgba(255,255,255,0.16); }
 #lb-modes button { pointer-events: auto; padding: 5px 12px; border-radius: 6px; border: 2px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.06); color: var(--ink); cursor: pointer; font: var(--head-w) var(--head-st) calc(13px * var(--head-k)) var(--f-head); text-transform: uppercase; }
 #lb-modes button.on { border-color: var(--hot); background: rgba(255,194,26,0.16); }
 #lobby .row button.alt { font-size: 14px; padding: 7px 14px; } #lobby .row button.go { font-size: 20px; padding: 9px 26px; }
-#menu.lobby-on .maps, #menu.lobby-on .map-blurb, #menu.lobby-on .levels, #menu.lobby-on .keys, #menu.lobby-on > div > .row, #menu.lobby-on .on-row, #menu.lobby-on .on-l { display: none; }
+#menu.lobby-on .maps, #menu.lobby-on .ln-steps, #menu.lobby-on .ln-keys, #menu.lobby-on #menu-note, #menu.lobby-on .levels, #menu.lobby-on > div > .row, #menu.lobby-on .on-row, #menu.lobby-on .on-l { display: none; }
 .tag.human b { font-size: 15px; color: #0d1a22; background: #4ad6ff; padding: 1px 8px; border-radius: 6px; text-shadow: none; display: inline-block; }
 .tag.human s { background: #4ad6ff; }
 button:disabled { opacity: 0.6; cursor: default; }
@@ -260,7 +259,6 @@ body.touch #banner { top: 40%; }
   .card > div { padding: 10px 18px; }
   .title { font-size: 30px; }
   .maps { margin: 8px auto 2px; gap: 6px; } .maps button { padding: 5px 8px; } .maps button b { font-size: 14px; }
-  .map-blurb { font-size: 12px; min-height: 0; }
   .levels { margin-top: 4px; } .levels button { padding: 3px 10px; font-size: 12px; }
   .keys { margin: 8px auto; font-size: 12px; gap: 2px 16px; }
   .note { display: none; }
@@ -535,6 +533,14 @@ body.in-round #pause-b { display: flex; } body.touch #pause-b { right: 12px; top
 #learn { z-index: 8; background: rgba(8,7,5,0.92); }
 body.learning #menu > div, body.learning #pause > div { visibility: hidden; }   /* (the card under it, so its words don't show through) */
 #learn > div { max-width: min(900px, 100%); }
+/* the mode's start card is the same cards (learn.js), then the difficulty, a line about it, Back and Start */
+#menu > div { max-width: min(900px, 100%); }
+body:has(#menu:not([hidden])) :is(.hud, #radar, #tags) { visibility: hidden; }   /* (the round's numbers wait until it starts) */
+#menu .ln-keys { width: max-content; max-width: 100%; box-sizing: border-box; padding: 6px 14px; background: rgba(12,13,15,0.72); --c: 8px; clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c)); }
+#menu .ln-keys { margin-bottom: 4px; }
+#menu .levels { margin-top: 10px; }
+#menu-note { max-width: 560px; margin: 8px auto 0; } #menu-note:empty { display: none; }
+#menu .brief-row { margin-top: 14px; } #menu .brief-row button.go { min-width: 220px; }
 .ln-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 6px auto 16px; text-align: left; }
 .ln-step { position: relative; padding: 16px 16px 18px; background: var(--steel); box-shadow: inset 0 0 0 2px rgba(255,255,255,0.12); --c: 12px; clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c)); }
 .ln-step::after { content: ''; position: absolute; right: 8px; top: 8px; width: 6px; height: 6px; border-radius: 50%; background: #8a8f94; box-shadow: inset -1px -1px 0 rgba(0,0,0,0.6); }
@@ -680,26 +686,17 @@ body.racing.touch #hint { top: 128px; }
   <div class="ln-keys desk-only"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive</span><span><b>Mouse</b> aim</span><span><b>Left click</b> guns</span><span><b>Right click</b> rockets</span><span><kbd>Space</kbd> drift</span></div>
   <div class="ln-keys touch-only"><span><b>Left thumb</b> drive</span><span><b>Fire</b> guns aim for you</span><span><b>Rockets</b> big hits</span><span><b>Drift</b> sharp turns</span></div>
   <div class="row"><button class="go" id="ln-go">Let's go!</button></div>
-  <div class="ln-again">Shows once. Find it again under <b>How to play</b>.</div>
 </div></div>
 <div class="card" id="pause" hidden><div><b class="t" id="pause-t">Paused</b><div class="note" id="pause-note"></div><div class="p-col"><button class="go" id="pause-go">Resume</button><button class="alt" id="pause-again">Restart</button><button class="alt" id="pause-learn">How to play</button><button class="alt" id="pause-sound">Sound: on</button><button class="alt" id="pause-home">Main menu</button></div><div class="note desk-only"><kbd>Esc</kbd> or <kbd>P</kbd> to go back to the round</div></div></div>
 <div class="card" id="over" hidden><div><b class="t" id="over-t">Round over</b><div id="over-l"></div><div class="row more-only"><button class="go" id="over-more">Keep going</button></div><div class="note desk-only more-only"><kbd>Enter</kbd> or <kbd>C</kbd> to keep going: the same round, on your own</div><div class="row"><button class="alt" id="over-maps">Home</button><button class="alt" id="over-garage">Garage</button><button class="go" id="over-go">Again</button></div></div></div>
 <div class="card" id="menu" hidden><div>
   <div class="brief-k" id="brief-k"></div><div class="brief-t" id="brief-t"></div>
-  <div class="map-blurb" id="map-blurb"></div>
+  <div class="ln-steps" id="brief-steps"></div>
+  <div class="ln-keys desk-only"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive</span><span><b>Mouse</b> aim</span><span><b>Left click</b> guns</span><span><b>Right click</b> rockets</span><span><kbd>Space</kbd> drift</span><span><kbd>Shift</kbd> gadget</span><span><kbd>Esc</kbd> pause</span></div>
+  <div class="ln-keys touch-only"><span><b>Left thumb</b> drive</span><span><b>Fire</b> guns aim for you</span><span><b>Rockets</b> big hits</span><span><b>Drift</b> sharp turns</span></div>
   <div class="levels" id="levels" hidden><span>Difficulty</span></div>
-  <div class="keys">
-    <span class="desk-only"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive</span><span class="desk-only"><kbd>Space</kbd> handbrake / drift</span>
-    <span class="desk-only"><b>Mouse</b> aim (it pulls onto rivals)</span><span class="desk-only"><b>Wheel</b> camera distance</span>
-    <span class="desk-only"><b>Left click</b> guns</span><span class="desk-only"><b>Right click</b> or <kbd>F</kbd> heavy weapons</span>
-    <span class="desk-only"><kbd>Shift</kbd> gadget (nitro, repair)</span><span class="desk-only"><kbd>G</kbd> garage (start and results)</span>
-    <span class="desk-only">Ram walls to smash through</span><span class="desk-only"><kbd>M</kbd> sound &nbsp; <kbd>Esc</kbd> pause, main menu</span>
-    <span class="touch-only"><b>Left thumb</b> push the way to drive</span><span class="touch-only"><b>Fire</b> the guns aim for you</span>
-    <span class="touch-only"><b>Rockets</b> heavy weapons</span><span class="touch-only"><b>Drift</b> handbrake turn</span>
-    <span class="touch-only">Ram walls to smash through</span><span class="touch-only">Garage from the start and results cards</span>
-  </div>
-  <div class="row"><button class="alt" id="menu-home">Back</button><button class="alt" id="menu-learn">How to play</button><button class="go" id="go">Start the brawl</button></div>
   <div class="note" id="menu-note"></div>
+  <div class="row brief-row"><button class="alt" id="menu-home">Back</button><button class="go" id="go">Start</button></div>
   <div id="online" hidden>
     <div class="on-l">Play online</div>
     <div class="on-row"><input id="on-name" maxlength="16" placeholder="Your name" aria-label="Your name"><button class="alt" id="on-quick">Play online</button><button class="alt" id="on-new">With friends</button><input id="on-code" maxlength="4" placeholder="Code" aria-label="Room code"><button class="alt" id="on-join">Join</button></div>

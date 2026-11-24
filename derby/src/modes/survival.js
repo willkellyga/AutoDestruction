@@ -189,6 +189,7 @@ export function makeSurvival(G) {
 
   return {
     go: 'Survive',
+    get tip() { lvId = levelId(); LV = SURVIVAL_LEVELS[lvId]; const b = bestOf(); return [LV.note, b ? `Your best here${lvId === 'normal' ? '' : ' on ' + LV.name}: ${clockText(b)}.` : ''].filter(Boolean).join(' '); },
     get note() { lvId = levelId(); LV = SURVIVAL_LEVELS[lvId]; const b = bestOf(); return 'The dead are overrunning the base and there are more every minute. One car, no second chances: outlast everyone.' + (LV.note ? ' ' + LV.note : '') + (b ? ` Your best here${lvId === 'normal' ? '' : ' on ' + LV.name}: ${clockText(b)}.` : ''); },
     levels: {
       list: Object.entries(SURVIVAL_LEVELS).map(([id, L]) => [id, L.name]),
