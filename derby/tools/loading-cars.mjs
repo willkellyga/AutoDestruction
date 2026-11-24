@@ -3,21 +3,21 @@
 //   npm run build && node derby/tools/loading-cars.mjs && npm run build
 // It opens the built page in headless Chromium (Playwright, which isn't one of the game's packages: install it with
 // npm i -g playwright if it isn't there) and calls partart.js's side() for each build below.
-// `me` is the starter car, shown until a player's own car has been drawn on their device (main.js keepLoadCar keeps
-// theirs); the rival is one of `foes`, picked at random each time.
+// The two cars on the screen are two different ones of BUILDS, picked at random each time.
 import { createRequire } from 'node:module';
 import { writeFileSync } from 'node:fs';
 const here = new URL('.', import.meta.url).pathname;
 const { chromium } = createRequire(import.meta.url)('playwright');
-const BUILDS = {
-  me: {},
-  foes: [
-    { body: 'bruiser', paint: 'maroon', trim: 'sand', pattern: 'plain', primary: 'minigun', front: 'spikes', armour: 'light' },
-    { body: 'viper', paint: 'teal', trim: 'white', pattern: 'stripes', primary: 'mg', roof: 'twin', front: 'bumper', wheels: 'slicks' },
-    { body: 'hauler', paint: 'green', trim: 'black', pattern: 'camo', primary: 'scatter', front: 'plow', armour: 'medium', wheels: 'offroad' },
-    { body: 'duchess', paint: 'purple', trim: 'silver', pattern: 'flames', primary: 'flamer', front: 'saws', engine: 'blower' },
-  ],
-};
+const BUILDS = [
+  {},   // the starter car
+  { body: 'kingpin', paint: 'blue', trim: 'white', pattern: 'flames', primary: 'minigun', roof: 'rack', front: 'saws', wheels: 'monster', door: 'guns' },
+  { body: 'jackal', paint: 'lime', trim: 'black', pattern: 'checker', primary: 'scatter', front: 'spikes', wheels: 'offroad' },
+  { body: 'stiletto', paint: 'red', trim: 'white', pattern: 'stripes', primary: 'minigun', roof: 'twin', wheels: 'slicks' },
+  { body: 'bruiser', paint: 'maroon', trim: 'sand', pattern: 'plain', primary: 'minigun', front: 'spikes', armour: 'light' },
+  { body: 'viper', paint: 'teal', trim: 'white', pattern: 'stripes', primary: 'mg', roof: 'twin', front: 'bumper', wheels: 'slicks' },
+  { body: 'hauler', paint: 'green', trim: 'black', pattern: 'camo', primary: 'scatter', front: 'plow', armour: 'medium', wheels: 'offroad' },
+  { body: 'duchess', paint: 'purple', trim: 'silver', pattern: 'flames', primary: 'flamer', front: 'saws', engine: 'blower' },
+];
 const b = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
 const p = await b.newPage();
 p.on('pageerror', (e) => console.log('page error:', e.message));
@@ -27,8 +27,8 @@ const draw = (L) => p.evaluate((L) => {
   const { STARTER } = window.__derby, S = { ...(STARTER || window.__derby.save.load), ...L, webp: true };
   return window.__derby.art.side(S);
 }, L);
-const out = { me: await draw(BUILDS.me), foes: [] };
-for (const f of BUILDS.foes) out.foes.push(await draw(f));
+const out = [];
+for (const L of BUILDS) out.push(await draw(L));
 await b.close();
 const json = JSON.stringify(out);
 writeFileSync(here + '../src/loadcars.json', json + '\n');

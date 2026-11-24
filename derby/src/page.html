@@ -767,16 +767,16 @@ body.racing.touch #hint { top: 128px; }
 (function () {
   var L = document.getElementById('loading'), F = document.getElementById('ld-fill'), W = document.getElementById('ld-what'), P = document.getElementById('ld-pct');
   if (!L || !F) return;
-  // the cars: yours as main.js last drew it on this device (keepLoadCar), or the starter car; the rival one of a few.
-  // Each is the game's own model seen from the side (partart.js side(), tools/loading-cars.mjs): the car without its
-  // near wheels, one wheel to spin, and where the wheels and the gun are on the picture. Every picture is at the same
-  // scale, so a truck is bigger than a car: the stage is STAGE picture pixels across (and 0.3 of that high). Both cars'
-  // bottoms are 12% up; yours starts 4% in from the left, the rival ends 4% in from the right.
+  // the cars: two different ones of a few, picked at random each time (yours on the left, the rival mirrored on the
+  // right). Each is the game's own model seen from the side (partart.js side(), drawn ahead of time by
+  // tools/loading-cars.mjs): the car without its near wheels, one wheel to spin, and where the wheels and the gun are
+  // on the picture. Every picture is at the same scale, so a truck is bigger than a car: the stage is STAGE picture
+  // pixels across (and 0.3 of that high). Both cars' bottoms are 12% up; yours starts 4% in from the left, the rival
+  // ends 4% in from the right.
   var CARS = /*@loadcars*/null, STAGE = 1300;
-  if (CARS) {
-    var mine = null; try { mine = JSON.parse(localStorage.getItem('ad-load-car') || 'null'); } catch (e) { /* the starter */ }
-    if (!mine || !mine.body || !mine.meta || !mine.meta.w) mine = CARS.me;
-    var foe = CARS.foes[Math.floor(Math.random() * CARS.foes.length)];
+  if (CARS && CARS.length > 1) {
+    var i1 = Math.floor(Math.random() * CARS.length), i2 = (i1 + 1 + Math.floor(Math.random() * (CARS.length - 1))) % CARS.length;
+    var mine = CARS[i1], foe = CARS[i2];
     var pc = function (n) { return (n * 100).toFixed(2) + '%'; };
     // a car's box on the stage, in % of the stage's width (x, w) and height (y, h)
     // (both drawn smaller together when the pair is too tall for the stage, or too long to leave a gap between them)
