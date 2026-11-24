@@ -14,10 +14,17 @@
 import * as THREE from 'three';
 import { WX, WZ, M, K, MAT_R, MAT_G, MAT_B, SOFT, CARRY, TOUGH, KIND, SHAPE, FLAM, BURN, CHARP, begin, set, box, walls, ctx, place, rnd, setSeed } from '../../../src/world.js';
 import { face, text, textW, disc } from '../../../src/kit.js';
-import { PACK } from '../../../units/src/pack.js';
+import { armyFoot } from '../hazards.js';
 import { canvasFor, finish, makeGridNav, pickSpot, gridRadar } from './common.js';
 
-const nav = makeGridNav();
+// the tanks and helicopters (Monster Mayhem's models, units/src/vehicles.js; run by hazards.js 'army'): a helicopter out
+// on the north-west apron and one on the helipad, three tanks in a row on the motor pool's slab. They aren't voxels, so
+// the route grid is told where they stand.
+const ARMY = [
+  { type: 'heli', x: 124, z: 104, yaw: 0 }, { type: 'heli', x: 438, z: 134, yaw: -Math.PI / 2 },
+  { type: 'tank', x: 306, z: 304, yaw: Math.PI }, { type: 'tank', x: 340, z: 308, yaw: Math.PI }, { type: 'tank', x: 374, z: 304, yaw: Math.PI },
+];
+const nav = makeGridNav({ also: (x, z) => ARMY.some((u) => armyFoot(u, x, z, 1)) });
 const radarGrid = gridRadar(nav);
 
 // ---- the plan (town voxels; x east, z south) ------------------------------------------------------------------------
@@ -71,9 +78,6 @@ function materials() {
   def(BAG, 'BAG', 0xa69a6c, 1.0, 1, 0.5, K.CLOTH, 3, 0.2, 2, 0.2);
   def(BAG_D, 'BAG_D', 0x8b7f57, 1.0, 1, 0.5, K.CLOTH, 3, 0.2, 2, 0.2);
 }
-// camouflage blotches over a box, from a hash of the voxel
-const hash = (x, y, z, s = 0) => { let h = (Math.imul(x, 73856093) ^ Math.imul(y, 19349663) ^ Math.imul(z, 83492791) ^ Math.imul(s, 2654435761)) >>> 0; h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0; return (h & 0xffff) / 65536; };
-const camo = (x, y, z) => (hash(x >> 2, y >> 1, z >> 2, 5) < 0.3 ? OLIVE_D : OLIVE);
 
 // ---- the wall, the gates and the wire ---------------------------------------------------------------------------------
 // One straight stretch of wall, xa..xb by za..zb, in concrete panels with darker joints, a painted band and a cap,
@@ -210,32 +214,6 @@ function fuelTank(cx, cz, r, h) {
   for (let y = 1; y <= h + 1; y++) { set(cx - r - 1, y, cz - 1, M.DARK); set(cx - r - 1, y, cz + 1, M.DARK); if (y % 2 === 0) set(cx - r - 1, y, cz, M.DARK); }
 }
 
-// ---- military vehicles: the CC0 pack's tank and helicopter, scaled and painted --------------------------------------
-// The pack models are one colour; paint(x, y, z) picks a material from where a cube sits in the model. The nose is the
-// model's z = 0 end; `dir` is which way it points ('n' -z, 's' +z, 'w' -x, 'e' +x). Each is one body that blows up
-// once enough of it is gone (a fuel voxel hidden in the middle goes up at once if a blow reaches it).
-const MODELS = {};
-function model(name) {
-  if (MODELS[name]) return MODELS[name];
-  const P = PACK[name], [X, Y, Z] = P.size, g = new Uint8Array(X * Y * Z);
-  for (let i = 0; i < P.cubes.length; i += 3) g[(P.cubes[i + 2] * Y + P.cubes[i + 1]) * X + P.cubes[i]] = 1;
-  return (MODELS[name] = { X, Y, Z, at: (x, y, z) => x >= 0 && y >= 0 && z >= 0 && x < X && y < Y && z < Z && g[(z * Y + y) * X + x] });
-}
-function stamp(name, cx, cz, dir, s, paint, title, explosive) {
-  const m = model(name), b = begin(title, 'vehicle', false); b.explosive = explosive;
-  const nx = Math.round(m.X * s), ny = Math.round(m.Y * s), nz = Math.round(m.Z * s);
-  for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
-    const mx = Math.floor((i + 0.5) / s), my = Math.floor((j + 0.5) / s), mz = Math.floor((k + 0.5) / s);
-    if (!m.at(mx, my, mz)) continue;
-    const u = i - nx / 2, v = k - nz / 2;
-    const [dx, dz] = dir === 'n' ? [u, v] : dir === 's' ? [-u, -v] : dir === 'w' ? [v, -u] : [-v, u];
-    set(Math.floor(cx + dx), j, Math.floor(cz + dz), paint(mx, my, mz, m));
-  }
-  set(Math.floor(cx), Math.max(1, Math.round(ny * 0.35)), Math.floor(cz), M.FUEL);
-}
-const tankPaint = (mx, my, mz) => (my <= 1 ? M.DARK : my === 2 ? M.METAL : mx >= 5 && mx <= 8 && my >= 7 && my <= 8 && mz < 14 ? M.STEEL : my >= 10 ? M.DARK : camo(mx, my, mz));
-const heliPaint = (a, b) => (mx, my, mz) => (my >= 8 || my <= 1 ? M.DARK : mz >= 24 && my >= 3 && my <= 5 ? M.GLASS : mz <= 1 && my >= 3 ? M.DARK : (mz >> 1) % 5 === 0 ? b : a);
-
 // ---- the water tower over the barracks: legs wide enough apart to drive between, braced above a car's roof ----------
 function waterTower(cx, cz) {
   begin('Water tower', 'tower', true);
@@ -271,20 +249,17 @@ function build() {
   const sign = face('f', GX - GATE - 4, S0 - 3, GX + GATE + 4, S0 - 3), name = 'CAMP DEADFALL';
   text(sign, name, ((sign.W - textW(name)) >> 1), 21, 1, M.LIT_Y);
 
-  // north-west: a helicopter out on the apron, in the open
-  stamp('heli', (APRON.x0 + APRON.x1) / 2, (APRON.z0 + APRON.z1) / 2 + 2, 's', 2, heliPaint(OLIVE, OLIVE_D), 'Helicopter', 10);
+  // north-west: the apron, open (a helicopter stands on it: ARMY)
 
   // north-east: headquarters, the parade square and its flag, the radio mast and the helipad
   headquarters(HQ); flag((HQ.x0 + HQ.x1) >> 1, HQ.z1 + 24); mast(HQ.x1 + 16, HQ.z0 + 6);
-  stamp('heli', PAD.x, PAD.z, 'w', 2, heliPaint(M.STEEL, M.DARK), 'Helicopter', 10);
   begin('Windsock', 'prop', false); box(PAD.x + 30, 0, PAD.z - 22, PAD.x + 30, 14, PAD.z - 22, M.DARK); for (let t = 1; t <= 6; t++) box(PAD.x + 30 + t, 13 - (t >> 2), PAD.z - 22, PAD.x + 30 + t, 14 - (t >> 2), PAD.z - 22, (t >> 1) & 1 ? M.TRIM : M.SIGN);
 
   // south-west: the barracks huts and the water tower
   for (const [a, b, cz] of HUTS) quonset(a, b, cz);
   waterTower(WTOWER[0], WTOWER[1]);
 
-  // south-east: three tanks parked in a row on the motor pool's slab, and the fuel farm
-  for (const [i, x] of [306, 340, 374].entries()) stamp('tank', x, 300 + (i & 1) * 4, 'n', 1.25, tankPaint, 'Tank', 9);
+  // south-east: the motor pool's slab (its tanks: ARMY) and the fuel farm
   for (const [x, z] of TANKS) fuelTank(x, z, 9, 18);
 
   // the night's fires and beacons
@@ -512,6 +487,7 @@ export default {
     wind: [0.22, -0.06],                      // which way the smoke leans, a share of its height
   },
   build, ground,
+  hazards: [{ kind: 'army', units: ARMY }],
   // the open ground's grain, ruts and thrown dirt, the hard ground's grain and rubber, and all of it wet from the storm
   // (ground.js, dirt.js)
   groundDetail: { soft: 'dirt', hard: true, wet: 0.6 },
