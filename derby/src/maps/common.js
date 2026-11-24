@@ -52,12 +52,12 @@ export function finish() {
 // one cost more, so routes keep a car's width off walls. The grid is checked again a few rows a frame, so walls that
 // get knocked down open up. waypoint() gives the next point to drive at on the way to (tx, tz): the furthest point of
 // the found route that can be seen straight from the car.
-export function makeGridNav({ cell = 4, maxNodes = 6000, every = 0.6, side = 3 } = {}) {   // side: how wide a line to a waypoint must be clear
+export function makeGridNav({ cell = 4, maxNodes = 6000, every = 0.6, side = 3, also = null } = {}) {   // side: how wide a line to a waypoint must be clear; also(x, z): what else stands there that isn't voxels
   const NX = Math.ceil(WX / cell), NZ = Math.ceil(WZ / cell), N = NX * NZ;
   const blocked = new Uint8Array(N), near = new Uint8Array(N);
   const cellBlocked = (i, k) => {
     const x0 = i * cell, z0 = k * cell;
-    for (let x = x0; x < x0 + cell; x += 2) for (let z = z0; z < z0 + cell; z += 2) if (solid(x, 2, z) || solid(x, 4, z)) return 1;
+    for (let x = x0; x < x0 + cell; x += 2) for (let z = z0; z < z0 + cell; z += 2) if (solid(x, 2, z) || solid(x, 4, z) || (also && also(x, z))) return 1;
     return 0;
   };
   let row = 0;
@@ -105,6 +105,12 @@ export function makeGridNav({ cell = 4, maxNodes = 6000, every = 0.6, side = 3 }
     const out = []; for (let n = best; n >= 0; n = from[n]) { out.push(n); if (n === a) break; }
     return out.length > 1 ? out : null;
   }
+  // the line from (x0, z0) to (x1, z1) misses what `also` says stands there (every 3 voxels, a car's width either side)
+  const alsoClear = (x0, z0, x1, z1) => {
+    const d = Math.hypot(x1 - x0, z1 - z0), n = Math.ceil(d / 3), sx = -(z1 - z0) / (d || 1) * side, sz = (x1 - x0) / (d || 1) * side;
+    for (let i = 1; i <= n; i++) { const t = i / n, x = x0 + (x1 - x0) * t, z = z0 + (z1 - z0) * t; if (also(x, z) || also(x + sx, z + sz) || also(x - sx, z - sz)) return false; }
+    return true;
+  };
   const centre = (n, o) => { o.x = (n % NX + 0.5) * cell; o.z = (((n / NX) | 0) + 0.5) * cell; return o; };
   const _c = { x: 0, z: 0 };
   return {
@@ -124,7 +130,7 @@ export function makeGridNav({ cell = 4, maxNodes = 6000, every = 0.6, side = 3 }
       for (let i = 0; i < st.path.length - 1; i++) {
         centre(st.path[i], _c);
         if (Math.hypot(_c.x - c.x, _c.z - c.z) > 80) continue;
-        if (lineClear(c.x, c.z, _c.x, _c.z, 3, side)) { pick = st.path[i]; break; }
+        if (lineClear(c.x, c.z, _c.x, _c.z, 3, side) && (!also || alsoClear(c.x, c.z, _c.x, _c.z))) { pick = st.path[i]; break; }
       }
       return centre(pick, out);
     },
