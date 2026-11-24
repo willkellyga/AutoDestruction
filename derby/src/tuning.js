@@ -37,9 +37,22 @@ export const DRIFT = {
   stop: 0.5,          // ... and with the wheel straight, when it stops the car
   // how loose each set of tyres lets the back go (rearGrip is divided by it): more is a bigger angle
   tyres: { street: 1, slicks: 0.7, offroad: 1.2, monster: 1.3 },
-  // a slide held at more than `angle` radians for `after` seconds gives a short burst when it ends (twice as long
-  // after `after2`): this much more top speed and pull, fading over its last 0.3 s
-  boost: { angle: 0.3, after: 1.0, after2: 2.0, time: 0.7, topK: 1.14, accelK: 1.8 },
+  // A slide held past `angle` radians charges a boost that fires when the slide ends (let go of the handbrake). The
+  // longer it is held the bigger it is: three levels, reached after `at` seconds of sliding, each shown by the sparks
+  // off the back wheels changing colour (`rgb`) and the meter on the HUD. A burst kicks the car forwards at once by
+  // `kick` of its top speed, then gives `topK` more top speed and `accelK` more pull for `time` seconds, fading over
+  // the last 0.4 s. [old: one level at 1 s and one at 2 s, no kick, 1.14 top for 0.7 / 1.4 s]
+  boost: {
+    angle: 0.2,         // radians off the line (about 11 degrees) for the slide to count
+    slide: 0.55,        // how far out the back must be (0 to 1)
+    at: [0.6, 1.4, 2.4],
+    kick: [0.12, 0.2, 0.3],
+    time: [0.9, 1.5, 2.2],
+    topK: [1.18, 1.28, 1.4],
+    accelK: [2.0, 2.4, 2.8],
+    rgb: [[1, 0.85, 0.3], [1, 0.42, 0.08], [0.35, 0.62, 1]],   // yellow, orange, blue
+    fov: [4, 7, 10],    // degrees the view widens for a moment as it fires
+  },
   camSwing: 0.25,     // share of the slide angle the chase camera swings round towards the way the car is going ...
   camFollow: 1.8,     // ... and how much quicker it keeps up with the car while sliding (it follows at 2.6 a second)
   marks: 1100,        // skid mark pieces kept on the ground (half on phones); the oldest fade out as new ones go down
@@ -105,6 +118,39 @@ export const AI = {
   infight: 0.25,      // share of the time a rival picks on another rival instead of the player
   ramRange: 46,       // closer than this they floor it and ram
   mend: 0.45,         // below this share of their health they make for a repair kit, on maps that have them (pickups.js)
+  view: 0.95,         // they only shoot at what is in front of them: this far either side of straight ahead (radians;
+                      // about what the player's camera shows), or ...
+  close: 22,          // ... closer than this, where a car alongside is in plain sight anyway
+};
+
+// ---- the arena's difficulty (modes/brawl.js, picked on the start card like the race's) ----------------------------
+// Each level scales the rivals' AI numbers above: `aim` their wobble, `reaction` how long they take to open fire,
+// `view` how wide they look, `dmg` / `hp` / `ram` what their guns do, how much armour they get and how hard they ram,
+// `turn` how fast their guns swing round. `prize` scales the scrap for the place.
+export const BRAWL_LEVELS = {
+  easy: { name: 'Easy', aim: 1.7, reaction: 2, view: 0.75, dmg: 0.65, hp: 0.8, ram: 0.7, turn: 0.6, prize: 0.75,
+    note: 'Easy: the rivals are slow on the trigger, miss a lot and break sooner.' },
+  normal: { name: 'Normal', aim: 1, reaction: 1, view: 1, dmg: 1, hp: 1, ram: 1, turn: 1, prize: 1, note: '' },
+  hard: { name: 'Hard', aim: 0.55, reaction: 0.55, view: 1.2, dmg: 1.35, hp: 1.3, ram: 1.25, turn: 1.4, prize: 1.5,
+    note: 'Hard: the rivals shoot straight, hit hard and take more to wreck. Pays 1.5x.' },
+};
+const AI0 = { ...AI };
+// set the rivals' numbers for a level (the arena calls it as the match starts; every other mode leaves them as they are)
+export function useAILevel(L) {
+  AI.aimErr = AI0.aimErr * L.aim; AI.reaction = AI0.reaction * L.reaction; AI.view = AI0.view * L.view;
+  AI.dmg = AI0.dmg * L.dmg; AI.hp = AI0.hp * L.hp; AI.ram = AI0.ram * L.ram; AI.turretTurn = AI0.turretTurn * L.turn;
+}
+
+// ---- zombie survival's difficulty (modes/survival.js) ----------------------------------------------------------
+// `count` scales how many of the dead there are on the base at once, `rate` how fast they come in, `speed` their pace,
+// `dmg` how hard they claw, `breach` how long until they break through the walls. `prize` scales the scrap at the end.
+// Each level keeps its own best time.
+export const SURVIVAL_LEVELS = {
+  easy: { name: 'Easy', count: 0.7, rate: 0.7, speed: 0.85, dmg: 0.55, breach: 1.5, prize: 0.75,
+    note: 'Easy: fewer of them, slower, weaker claws, and the walls hold longer.' },
+  normal: { name: 'Normal', count: 1, rate: 1, speed: 1, dmg: 1, breach: 1, prize: 1, note: '' },
+  hard: { name: 'Hard', count: 1.25, rate: 1.35, speed: 1.12, dmg: 1.45, breach: 0.7, prize: 1.5,
+    note: 'Hard: more of them, faster, clawing harder, and the walls come down sooner. Pays 1.5x.' },
 };
 
 // ---- the race's difficulty (modes/race.js, picked on the start card) ---------------------------------------------

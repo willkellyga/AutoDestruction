@@ -1,7 +1,7 @@
 // The rival drivers. Each picks a target (mostly the player, sometimes another rival; in the arena's free-for-all, any
 // car), drives the map's routes towards it (the town's street grid, or the route-finder on open maps), cuts straight
 // across once it has a clear run (through a wall if it is going fast enough), shoots once its gun is on and it can
-// see, and rams when close. When it is stuck it backs out and tries the other way. On a map with pickups, a hurt rival
+// see in front of it, and rams when close. When it is stuck it backs out and tries the other way. On a map with pickups, a hurt rival
 // makes for a repair kit (still shooting at its target on the way), and any rival takes a pickup it is about to drive
 // past.
 import { solid } from '../../src/world.js';
@@ -69,15 +69,18 @@ export function makeDriver(car) {
     if (!b.target || b.target.dead || b.pickT <= 0) { b.target = pick(all, player); b.pickT = 3 + Math.random() * 3; }
     const T = b.target; if (!T) { car.throttle = 0; return; }
     const dx = T.x - car.x, dz = T.z - car.z, d = Math.hypot(dx, dz);
-    const sees = d < AI.see && clearLine(car.x, car.z, T.x, T.z, 4);
+    // a clear run at it (for the driving), and whether it can see it (for the shooting): in front, the way the player's
+    // camera shows what is ahead of their car, or right alongside. Nobody shoots at a car behind them that they never saw.
+    const clear = d < AI.see && clearLine(car.x, car.z, T.x, T.z, 4);
+    const sees = clear && (d < AI.close || Math.abs(wrap(Math.atan2(dx, dz) - car.yaw)) < AI.view);
     // where to drive: to a pickup it wants (looked at again every half second), else straight at the target with a
     // clear run, else along the streets
     b.pkT = (b.pkT || 0) - dt;
-    if (b.pkT <= 0) { b.pkT = 0.5; b.pk = pickupFor(car, car.hp < car.maxHp * AI.mend) || (FFA && !sees && d > 200 ? forage(all, d) : null); }
+    if (b.pkT <= 0) { b.pkT = 0.5; b.pk = pickupFor(car, car.hp < car.maxHp * AI.mend) || (FFA && !clear && d > 200 ? forage(all, d) : null); }
     if (b.pk && !b.pk.up) b.pk = null;
     let gx, gz;
     if (b.pk) { if (clearLine(car.x, car.z, b.pk.x, b.pk.z, 4)) { gx = b.pk.x; gz = b.pk.z; } else { MAP.waypoint(car, b.pk.x, b.pk.z, b.wp); gx = b.wp.x; gz = b.wp.z; } }
-    else if (sees || d < 30) { gx = T.x; gz = T.z; }
+    else if (clear || d < 30) { gx = T.x; gz = T.z; }
     else {
       // (in the free-for-all a target far off is gone after by way of the middle of the pit, where the fighting is)
       let tx = T.x, tz = T.z; if (FFA && MAP.pit && d > 260) { tx = (tx + MAP.pit.x) / 2; tz = (tz + MAP.pit.z) / 2; }
@@ -97,7 +100,7 @@ export function makeDriver(car) {
       car.brake = Math.abs(off) > 1.1 && sp > 55 ? 0.6 : 0;
       car.drift = Math.abs(off) > 0.9 && sp > 50;
       // feel ahead for walls when not out to smash one
-      if (!(sees && sp > 40)) {
+      if (!(clear && sp > 40)) {
         const s = Math.sin(car.yaw), c = Math.cos(car.yaw), look = 14 + Math.abs(sp) * 0.35;
         const hit = (a) => solid(Math.floor(car.x + Math.sin(car.yaw + a) * look), 3, Math.floor(car.z + Math.cos(car.yaw + a) * look));
         if (hit(0)) { const l = hit(0.45), r = hit(-0.45); if (l && !r) car.steer = -1; else if (r && !l) car.steer = 1; }

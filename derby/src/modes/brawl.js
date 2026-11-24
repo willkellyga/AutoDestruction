@@ -5,7 +5,7 @@
 // the press, the flames) counts for whoever hit that car last, if they hit it in the last few seconds.
 // At the end a card ranks everyone and pays scrap by place, on top of the 100 a wreck that is paid as they happen.
 // See waves.js for what a mode is made of.
-import { ROUND } from '../tuning.js';
+import { ROUND, BRAWL_LEVELS, useAILevel } from '../tuning.js';
 
 export const BRAWL = {
   rivals: 7,
@@ -28,6 +28,10 @@ export function makeBrawl(G) {
   const NET = () => G.net, CARS = () => (G.net ? G.net.players.length + G.net.bots : BRAWL.rivals + 1);
   // the seats' spots, spread round the pit: each player's, then the bots'
   const seatAt = (k) => { const S = G.MAP.spots; if (!S || !S.length) return null; const p = S[[0, 3, 7, 6, 1, 4, 8, 5][k % 8] % S.length]; return { x: p.x, z: p.z, yaw: p.yaw }; };
+  // the difficulty (the start card's buttons): the save's, or Normal. Online rounds are always Normal
+  const levels = () => (G.save.levels && typeof G.save.levels === 'object' ? G.save.levels : (G.save.levels = {}));
+  const levelId = () => (BRAWL_LEVELS[levels().brawl] ? levels().brawl : 'normal');
+  let LV = BRAWL_LEVELS.normal;
   let phase = 'wait', left = LIMIT, you = null, warned = 0;
   const rows = new Map();     // name -> { name, me, wrecks, deaths }
   const back = [];            // wrecked rivals waiting to come back: { load, t }
@@ -53,14 +57,20 @@ export function makeBrawl(G) {
     if (me.wrecks) lines.push(`Your wrecks paid +${me.wrecks * 100} scrap as they happened`);
     const top = order.filter((r) => r.wrecks === order[0].wrecks);
     const title = mine === 1 ? (top.length > 1 ? 'Joint winner!' : 'You win!') : `${ord(mine)} place`;
-    G.over(title, lines, BRAWL.place[Math.min(BRAWL.place.length - 1, mine - 1)]);
+    G.over(title, lines, Math.round(BRAWL.place[Math.min(BRAWL.place.length - 1, mine - 1)] * LV.prize));
   }
 
   return {
     go: 'Start the match',
-    note: 'Free-for-all: you and seven rival cars in the pit for three minutes, everyone against everyone. Wrecked cars are back in three seconds. Most wrecks wins.',
+    get note() { const n = BRAWL_LEVELS[levelId()].note; return `Free-for-all: you and seven rival cars in the pit for three minutes, everyone against everyone. Wrecked cars are back in three seconds. Most wrecks wins.${n ? ' ' + n : ''}`; },
+    levels: {
+      list: Object.entries(BRAWL_LEVELS).map(([id, L]) => [id, L.name]),
+      get: levelId,
+      set(id) { if (!BRAWL_LEVELS[id]) return; levels().brawl = id; G.keepSave(); },
+    },
     start() {
       const net = NET(), RIVALS = net ? (net.host ? net.bots : 0) : BRAWL.rivals;
+      LV = net ? BRAWL_LEVELS.normal : BRAWL_LEVELS[levelId()]; useAILevel(LV);   // (before the rivals are made: their armour)
       G.hint(null); phase = 'run'; left = LIMIT - (net && net.lateBy ? net.lateBy : 0); warned = 0;
       you = G.player; row('You', true); if (you) shield(you);
       const humans = net ? net.players.length : 1;
