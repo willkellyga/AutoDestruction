@@ -14,7 +14,10 @@ Every clip here was cut from Sonniss's free **GDC Game Audio Bundles** (https://
 | `servo.mp3` | fitting a part in the garage, the repair kit | Epic Stock Media, Tower Defense: ROBTMvmt |
 | `start.mp3` | the engine starting at the start of a round | 344 Audio: Bass Jump Start Drop 3 |
 | `door.mp3` | opening the garage | SoundBits: Ford Mustang door |
-| `engine_loop.wav` | the engines (loop, pitched by speed) | SoundBits: Ford Mustang, Driving at Slow Speed (13.0 to 15.2 s, crossfaded) |
+| `engine_loop.wav` | the Stock and Turbo engines (loop, pitched by the revs) | SoundBits: Ford Mustang, Driving at Slow Speed (13.0 to 15.2 s, crossfaded) |
+| `engine_v8.wav` | the Big V8 and Supercharger (loop) | 2023 bundle part 5: Ford Crown Victoria - t6 - ONBRD - STEADY RPMS - Drive - ENGINE - Left - DPA4061 (82.4 to 84.9 s, crossfaded) |
+| `engine_diesel.wav` | the Big diesel (loop) | 2023 bundle part 4: Dodge Ram Diesel - t6 - ONBRD - STEADY RPMS - Start Drive - ENGINE - Left - MKH8020 (167.2 to 169.7 s, crossfaded) |
+| `engine_jet.wav` | the Jet turbine, under its whine (loop) | 2020 bundle: ferrari_488_t9_onbrd_drive_steady_RPMs_exhaust_left_RE50 (24.3 s on, slowed to 0.62, crossfaded) |
 | `skid_loop.wav` | tyres sliding (loop) | Tire Skids on Gravel (24.6 to 26.8 s, crossfaded) |
 | `ui_click.mp3`, `ui_tab.mp3`, `ui_open.mp3` | garage buttons, tabs, opening | Kalimba 3 Up; Woosh Sweep Slide; Cartoon Pull Swoosh |
 | `ui_equip.mp3`, `ui_coin.mp3`, `ui_go.mp3` | fitting a part, buying, starting | Epic Stock Media: Power Up Bright; Coin Flip; Game Entry Happy Short |

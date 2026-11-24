@@ -15,6 +15,27 @@ export const CRASH = {
   kick: 1.0,        // how hard cars bounce off each other
 };
 
+// ---- the engines' note (enginesound.js) -----------------------------------------------------------------------------
+// The engine loop's pitch follows the revs, and the revs follow a gearbox: they climb through each gear, drop as it
+// shifts up, and sit in the upper middle of the range at top speed (not at the redline, which is a buzz). rpm runs 0
+// (idle) to 1 (redline); k is the car's speed over its top speed.
+export const ENGINE_NOTE = {
+  gears: [4, 1.96, 1.26, 0.74],   // revs per k in each gear: shifts at about a fifth, half and two thirds of top speed,
+                                  // and top gear at top speed holds 0.74
+  up: 0.88, down: 0.4,   // shift up at this many revs, back down below this
+  shift: 0.16,           // seconds off the gas for a shift up (the note dips)
+  dip: 0.3,              // how far off the gas a shift takes it (0 all the way)
+  idle: 0.16,            // the revs sitting still
+  launch: 0.5,           // the revs pulling away with the gas down (the clutch slipping)
+  climb: 6, drop: 3.5, snap: 14,   // how fast the revs rise, fall off the gas, and fall in a shift
+  rate: [0.62, 0.95],    // playback rate = rate[0] + rpm x rate[1] (x the engine part's pitch)
+  vol: [0.36, 0.2, 0.3], // volume = vol[0] + rpm x vol[1] + on-the-gas x vol[2]
+  tone: [700, 7500],     // a low-pass on the loop: muffled at idle off the gas, open at high revs on it (Hz)
+  lift: 0.03,            // off the gas the note sags this much
+  boost: 0.08,           // nitro lifts the note
+  spool: 1.6,            // the jet turbine (no gears): how fast it winds up
+};
+
 // ---- the road's sounds (roadsound.js) ------------------------------------------------------------------------------
 // One set of driving sounds for every mode (tyres, scrapes, knocks, wind, pass-bys, landings, a hurt engine), mixed
 // for each: `ROAD_MIX.all` holds the shared numbers and each mode (a map's `mode`) changes only what it needs.

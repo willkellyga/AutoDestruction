@@ -30,6 +30,7 @@ import { makeSpecials } from './specials.js';
 import { makeCrumple } from './crumple.js';
 import { makeSounds, fetchClips } from './audio.js';
 import { makeRoadSound } from './roadsound.js';
+import { makeEngineSound } from './enginesound.js';
 import { bank as sfxBank, count as sfxCount } from './sfxfiles.js';
 import { makePickups } from './pickups.js';
 import { makeHazards } from './hazards.js';
@@ -148,7 +149,7 @@ function initAudio() {
   audioMix.init();
   if (engine || !sfx.init()) return;
   // the player's engine and tyres, and the two nearest rivals' engines, on loops
-  engine = { me: sfx.loop('engine_loop'), rivals: [sfx.loop('engine_loop'), sfx.loop('engine_loop')], spin: sfx.loop('mini_spin'), saw: sfx.loop('saw_loop'), hum: sfx.loop('arc_hum'), flame: sfx.loop('flame_loop'), jet: sfx.loop('mini_spin') };
+  engine = { note: makeEngineSound({ sfx }), spin: sfx.loop('mini_spin'), saw: sfx.loop('saw_loop'), hum: sfx.loop('arc_hum'), flame: sfx.loop('flame_loop'), jet: sfx.loop('mini_spin') };
 }
 function sound(name, vol = 1, x, y, z) {
   audioMix.on = !muted;
@@ -1698,8 +1699,7 @@ function step(dt) {
     const sp = Math.abs(player.fwd), on = !muted && (live || test || game.state === 'garage') && !player.dead, k = clamp(sp / player.spec.top, 0, 1.4);
     sfx.listen(player.x, player.z, cam.yaw);
     const rev = game.revT > 0 ? Math.sin(Math.min(1, game.revT / 1.4) * Math.PI) : 0;   // an engine tried in the garage: a rev
-    const E = PARTS.engine[player.load.engine] || {}, pitch = E.pitch || 1;
-    engine.me.set(on ? 0.5 + 0.35 * Math.max(Math.abs(player.throttle), rev) : 0, (0.72 + k * 1.05 + (player.boostT > 0 ? 0.22 : 0) + rev * 0.9) * pitch, player.x, player.z);
+    const E = PARTS.engine[player.load.engine] || {};
     engine.jet.set(on && E.whine ? 0.22 + 0.3 * Math.max(Math.abs(player.throttle), rev) : 0, 1.3 + k * 0.9 + rev * 0.8, player.x, player.z);
     road.step(dt, player, cars, on && game.state !== 'garage');   // the tyres, scrapes, wind and the rest (roadsound.js)
     const near = live ? cars.filter((c) => c.rival && !c.dead).sort((a, b) => Math.hypot(a.x - player.x, a.z - player.z) - Math.hypot(b.x - player.x, b.z - player.z)) : [];
@@ -1711,7 +1711,7 @@ function step(dt) {
     // a flamethrower going: the player's, or else the nearest one
     const fl = player.flameT > 0 && !player.dead ? player : cars.filter((c) => c.flameT > 0 && !c.dead).sort((a, b) => Math.hypot(a.x - player.x, a.z - player.z) - Math.hypot(b.x - player.x, b.z - player.z))[0];
     engine.flame.set(!muted && fl ? (fl === player ? 0.8 : 0.6) : 0, fl === player ? 1 : 0.92, fl ? fl.x : player.x, fl ? fl.z : player.z);
-    engine.rivals.forEach((L, i) => { const c = near[i]; if (!c) L.set(0); else L.set(0.45 + 0.3 * Math.abs(c.throttle), (0.68 + clamp(Math.abs(c.fwd) / c.spec.top, 0, 1.3) * 0.95) * ((PARTS.engine[c.load.engine] || {}).pitch || 1), c.x, c.z); });
+    engine.note.step(dt, player, near, on, rev);   // the engines' note, through the gears (enginesound.js)
   }
   document.body.classList.toggle('in-garage', game.state === 'garage');
   document.body.classList.toggle('at-home', !!game.home);
@@ -1737,4 +1737,4 @@ if (net) net.ready_();
   else if (net || brief || /[?&](room|online|map)=/.test(location.search)) $('menu').hidden = false; else showHome();
 }
 requestAnimationFrame((t) => { last = t; frame(t); });
-window.__derby = { art, STARTER, net, specials, crumple, cube, room, gcam, garageLight, startTest, endTest, tryPart: (s, k) => onTry(s, k), dummies, renderer, mapLook, touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH, picked }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, pauseOn, pauseOff, toHome, setPlay, sfx, audioMix, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop, road };
+window.__derby = { art, STARTER, net, specials, crumple, cube, room, gcam, garageLight, startTest, endTest, tryPart: (s, k) => onTry(s, k), dummies, renderer, mapLook, touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH, picked }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, pauseOn, pauseOff, toHome, setPlay, sfx, audioMix, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop, road, engine: () => engine };
