@@ -58,7 +58,7 @@ export class Vehicle {
     this.smashT = 0; this.scrape = 0; this.spinA = 0; this.firing = 0;
     // drifting (see handbrake()): how far the back is out, the handbrake's braking, how long a slide has been held, the
     // burst after one, the slip angle, how hard the tyres skid, and how loose this car's tyres let the back go
-    this.drift = false; this.slide = 0; this.hbBrake = 0; this.driftT = 0; this.miniT = 0; this.slipA = 0; this.skid = 0;
+    this.drift = false; this.slide = 0; this.hbBrake = 0; this.driftT = 0; this.miniT = 0; this.miniLvl = 0; this.kick = 0; this.driftLvl = 0; this.slipA = 0; this.skid = 0;
     this.loose = DRIFT.tyres[load.wheels] || 1;
   }
   get speed() { return Math.hypot(this.vx, this.vz); }
@@ -75,6 +75,7 @@ export class Vehicle {
     let vf = this.vx * sy + this.vz * cy, vs = this.vx * cy - this.vz * sy;   // forwards, and sideways to the left
     if (this.dead) { this.throttle = 0; this.steer = 0; this.brake = 1; }
     const d = this.handbrake(dt, vf, vs, hooks);
+    if (this.kick) { vf = Math.max(vf, 0) + this.kick; this.kick = 0; }   // a drift boost firing: a shove forwards
     // in the air (the jump jets): it falls, and the wheels can't drive or steer it much till it lands
     const air = this.y > 0.3;
     if (this.y > 0 || this.vy > 0) {
@@ -88,8 +89,8 @@ export class Vehicle {
     // rough ground (a map's grass and gravel: MAP.surface gives 0 on the road up to 1) holds a car back and makes it
     // slide; off-road and monster tyres hardly feel it (S.rough)
     const rough = MAP.surface ? MAP.surface(this.x, this.z) * S.rough : 0;
-    const mini = this.miniT > 0 ? Math.min(1, this.miniT / 0.3) : 0;   // a drift's burst, fading over its last 0.3 s
-    const top = S.top * this.boost * (1 - 0.45 * rough) * (1 + (DRIFT.boost.topK - 1) * mini), acc = S.accel * this.accelK * (1 + (DRIFT.boost.accelK - 1) * mini);
+    const mini = this.miniT > 0 ? Math.min(1, this.miniT / 0.4) : 0, ml = Math.max(0, this.miniLvl - 1);   // a drift's burst, fading over its last 0.4 s
+    const top = S.top * this.boost * (1 - 0.45 * rough) * (1 + (DRIFT.boost.topK[ml] - 1) * mini), acc = S.accel * this.accelK * (1 + (DRIFT.boost.accelK[ml] - 1) * mini);
     const vEng = d > 0 ? Math.hypot(vf, vs) : vf;   // sliding, the engine pulls against the whole speed
     if (t > 0) vf += (vf < 0 ? acc * 2.2 : acc * (1 - Math.max(0, vEng) / top * 0.7)) * t * dt;
     else if (t < 0) vf += (vf > 0 ? -S.accel * 2.2 : -S.accel * 0.8 * (1 + vf / S.back)) * -t * dt;
@@ -143,12 +144,22 @@ export class Vehicle {
     const reach = go ? clamp((vf - D.minSpeed * 0.5) / (D.minSpeed * 0.5), 0, 1) : 0;
     this.slide += clamp(reach - this.slide, -dt / D.recover, dt / D.kickIn);
     this.hbBrake = !hb ? 0 : go ? D.drag : D.stop;
-    // a slide held at an angle counts towards a burst; when it ends, the burst
-    if (reach > 0) { if (this.slide > 0.7 && Math.abs(Math.atan2(vs, Math.max(1, vf))) > D.boost.angle) this.driftT += dt; }
-    else if (this.driftT > 0) {
-      const lvl = this.driftT >= D.boost.after2 ? 2 : this.driftT >= D.boost.after ? 1 : 0;
-      if (lvl && vf > D.minSpeed * 0.8) { this.miniT = D.boost.time * lvl; if (hooks && hooks.drift) hooks.drift(this, lvl); }
-      this.driftT = 0;
+    // a slide held at an angle charges a burst (three levels, DRIFT.boost.at); when it ends, the burst fires
+    const B = D.boost;
+    if (hb && (reach > 0 || this.slide > 0.25)) {
+      if (reach > 0 && this.slide > B.slide && Math.abs(Math.atan2(vs, Math.max(1, vf))) > B.angle) {
+        this.driftT += dt;
+        const lvl = B.at[2] <= this.driftT ? 3 : B.at[1] <= this.driftT ? 2 : B.at[0] <= this.driftT ? 1 : 0;
+        if (lvl > this.driftLvl) { this.driftLvl = lvl; if (hooks && hooks.driftUp) hooks.driftUp(this, lvl); }
+      }
+    } else if (this.driftT > 0) {
+      const lvl = this.driftLvl;
+      if (lvl && vf > 6) {
+        this.miniT = B.time[lvl - 1]; this.miniLvl = lvl;
+        this.kick = Math.max(0, Math.min(this.spec.top * B.kick[lvl - 1], this.spec.top * B.topK[lvl - 1] - vf));
+        if (hooks && hooks.drift) hooks.drift(this, lvl);
+      }
+      this.driftT = 0; this.driftLvl = 0;
     }
     return this.slide;
   }

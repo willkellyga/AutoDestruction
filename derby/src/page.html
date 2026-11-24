@@ -73,9 +73,15 @@ body.in-garage #touch, body.in-garage #cross { display: none; }
 #drift b { display: block; font: var(--head-w) var(--head-st) calc(22px * var(--head-k)) var(--f-head); text-transform: uppercase; letter-spacing: 0.05em; transition: transform 0.15s, color 0.15s; }
 #drift i { display: block; width: 130px; height: 7px; margin: 4px auto 0; background: rgba(0,0,0,0.45); border: 1px solid var(--edge); border-radius: 4px; overflow: hidden; transform: skewX(-12deg); }
 #drift s { display: block; height: 100%; width: 0; background: #fff7ea; text-decoration: none; }
-#drift.lv1 b { color: var(--hot); } #drift.lv1 s { background: var(--hot); }
-#drift.lv2 b { color: #ff7a3a; } #drift.lv2 s { background: #ff7a3a; }
-#drift.boost b { color: var(--hot); transform: scale(1.25); -webkit-text-stroke: 1px #2a1a0a; } #drift.boost s { background: var(--hot); }
+#drift i { position: relative; }
+#drift u { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: rgba(255,255,255,0.55); }
+#drift.lv1 b { color: #ffd84d; } #drift.lv1 s { background: #ffd84d; }
+#drift.lv2 b { color: #ff7a2a; } #drift.lv2 s { background: #ff7a2a; }
+#drift.lv3 b { color: #5aa0ff; } #drift.lv3 s { background: #5aa0ff; box-shadow: 0 0 8px #5aa0ff; }
+#drift.lv3:not(.boost) b { animation: drift-hum 0.18s ease-in-out infinite alternate; }
+@keyframes drift-hum { from { transform: scale(1); } to { transform: scale(1.08); } }
+#drift.boost b { -webkit-text-stroke: 1px #2a1a0a; animation: drift-pop 0.5s ease-out; transform: scale(1.25); }
+@keyframes drift-pop { 0% { transform: scale(0.8); } 35% { transform: scale(1.6); } 100% { transform: scale(1.25); } }
 #banner { left: 50%; top: 36%; transform: translate(-50%, -50%) scale(0.9); text-align: center; opacity: 0; transition: opacity 0.25s, transform 0.25s; }
 #banner.on { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 #banner b { display: block; font-family: var(--f-logo); font-weight: 400; font-size: 64px; color: var(--hot); text-transform: uppercase; text-shadow: 0 4px 0 var(--tar), 0 8px 18px rgba(0,0,0,0.5); }

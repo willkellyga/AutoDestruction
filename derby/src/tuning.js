@@ -37,9 +37,22 @@ export const DRIFT = {
   stop: 0.5,          // ... and with the wheel straight, when it stops the car
   // how loose each set of tyres lets the back go (rearGrip is divided by it): more is a bigger angle
   tyres: { street: 1, slicks: 0.7, offroad: 1.2, monster: 1.3 },
-  // a slide held at more than `angle` radians for `after` seconds gives a short burst when it ends (twice as long
-  // after `after2`): this much more top speed and pull, fading over its last 0.3 s
-  boost: { angle: 0.3, after: 1.0, after2: 2.0, time: 0.7, topK: 1.14, accelK: 1.8 },
+  // A slide held past `angle` radians charges a boost that fires when the slide ends (let go of the handbrake). The
+  // longer it is held the bigger it is: three levels, reached after `at` seconds of sliding, each shown by the sparks
+  // off the back wheels changing colour (`rgb`) and the meter on the HUD. A burst kicks the car forwards at once by
+  // `kick` of its top speed, then gives `topK` more top speed and `accelK` more pull for `time` seconds, fading over
+  // the last 0.4 s. [old: one level at 1 s and one at 2 s, no kick, 1.14 top for 0.7 / 1.4 s]
+  boost: {
+    angle: 0.2,         // radians off the line (about 11 degrees) for the slide to count
+    slide: 0.55,        // how far out the back must be (0 to 1)
+    at: [0.6, 1.4, 2.4],
+    kick: [0.12, 0.2, 0.3],
+    time: [0.9, 1.5, 2.2],
+    topK: [1.18, 1.28, 1.4],
+    accelK: [2.0, 2.4, 2.8],
+    rgb: [[1, 0.85, 0.3], [1, 0.42, 0.08], [0.35, 0.62, 1]],   // yellow, orange, blue
+    fov: [4, 7, 10],    // degrees the view widens for a moment as it fires
+  },
   camSwing: 0.25,     // share of the slide angle the chase camera swings round towards the way the car is going ...
   camFollow: 1.8,     // ... and how much quicker it keeps up with the car while sliding (it follows at 2.6 a second)
   marks: 1100,        // skid mark pieces kept on the ground (half on phones); the oldest fade out as new ones go down
