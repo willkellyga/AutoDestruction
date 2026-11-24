@@ -1460,7 +1460,9 @@ function drivePlayer(dt) {
 const ray = new THREE.Raycaster(), _ndc = new THREE.Vector2(), _o = new THREE.Vector3(), _dir = new THREE.Vector3(), _tgt = new THREE.Vector3();
 function aimRay() {
   // through the middle of the screen when the mouse is captured, else through the pointer
-  if (cam.locked || !cam.mx) _ndc.set(0, 0.2);   // the crosshair sits a little above the middle, clear of the car else _ndc.set(cam.mx / canvas.clientWidth * 2 - 1, -(cam.my / canvas.clientHeight * 2 - 1));
+  // (the crosshair sits a little above the middle, clear of the car; on a touch screen it stays there too)
+  if (cam.locked || !cam.mx || TOUCH) _ndc.set(0, 0.2);
+  else _ndc.set(cam.mx / canvas.clientWidth * 2 - 1, -(cam.my / canvas.clientHeight * 2 - 1));
   ray.setFromCamera(_ndc, camera); _o.copy(ray.ray.origin); _dir.copy(ray.ray.direction);
   const p = new THREE.Vector3();
   for (let t = 4; t < 520; t += 1) {
