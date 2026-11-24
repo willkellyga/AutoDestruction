@@ -99,7 +99,7 @@ export function makeTrack({ pts, halfW = 24, step = 2, WX = 512, WZ = 416, reach
         if (d < bd) { bd = d; best = i; }
       }
       // far from every sample near the hint (put back somewhere else, or across a crossing): look everywhere
-      if (bd > (halfW * 2.2) * (halfW * 2.2)) best = -1;
+      if (bd > (halfW * 2.2) * (halfW * 2.2)) { best = -1; bd = 1e18; }   // (bd too: else the search below can't beat the hint's own best, and finds nothing)
     }
     if (best < 0) {
       const c = cell(x, z);
