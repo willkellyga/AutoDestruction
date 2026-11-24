@@ -638,7 +638,7 @@ function drawRadar() {
   const B = MAP.radarBox || [0, 0, WX, WZ], s = 150 / Math.max(B[2] - B[0], B[3] - B[1]), w = WX * s, h = WZ * s;
   const R = radar, ox = (150 - (B[2] - B[0]) * s) / 2 - B[0] * s, oy = (150 - (B[3] - B[1]) * s) / 2 - B[1] * s;
   R.clearRect(0, 0, 150, 150);
-  R.fillStyle = 'rgba(20,24,28,0.55)'; R.fillRect(ox, oy, w, h);
+  R.fillStyle = 'rgba(14,15,18,0.5)'; R.fillRect(ox, oy, w, h);   // (on the box's own dark backing: page.html #radar)
   MAP.radar(R, s, ox, oy, w, h);
   if (mode.radar) mode.radar(R, s, ox, oy, w, h);
   for (const c of cars) {
@@ -668,8 +668,69 @@ function drawHud() {
   $('gad').hidden = !every;
   if (every) { $('gad-fill').style.width = `${(1 - player.gadgetT / every) * 100}%`; $('gad').classList.toggle('ready', player.gadgetT <= 0); }
   const [top, sub, count] = mode.hud(); $('wave').textContent = top; $('left').textContent = sub;
+  drawRaceHud();
   // the counter by the scrap: cars wrecked, unless the mode counts something else (survival counts zombies)
   $('kills-l').textContent = count ? count[0] : 'Wrecked'; $('kills').textContent = count ? count[1] : game.kills; $('scrap').textContent = Math.floor(game.scrap);
+}
+
+// the race panel (a mode with raceHud: modes/race.js): the place, big and coloured, with an arrow and a pop when it
+// changes; the lap ('Final lap' blinking red); the lap time; a strip of the whole race with every car on it; the car
+// to catch and the gap to it; and, where there's room, the order down the left with the gaps
+const RH = { place: 0, popT: 0, arrowT: 0, n: -1, laps: 0, rows: '' };
+const ordSuf = (n) => (n % 10 === 1 && n % 100 !== 11 ? 'st' : n % 10 === 2 && n % 100 !== 12 ? 'nd' : n % 10 === 3 && n % 100 !== 13 ? 'rd' : 'th');
+const lapClock = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`;
+const gapText = (g) => `${Math.abs(g).toFixed(1)}s`;
+function drawRaceHud() {
+  const d = mode.raceHud && game.state !== 'over' ? mode.raceHud() : null;
+  document.body.classList.toggle('racing', !!d);
+  $('racehud').hidden = !d; $('standings').hidden = !d;
+  if (!d) { RH.place = 0; return; }
+  const now = performance.now() / 1000;
+  if (RH.place && d.place !== RH.place && !d.count) {
+    $('rh-arrow').textContent = d.place < RH.place ? '▲' : '▼'; $('rh-arrow').className = d.place < RH.place ? 'up' : 'down';
+    $('rh-place').classList.add('pop'); RH.popT = now + 0.25; RH.arrowT = now + 1.6;
+  }
+  if (RH.popT && now > RH.popT) { $('rh-place').classList.remove('pop'); RH.popT = 0; }
+  if (RH.arrowT && now > RH.arrowT) { $('rh-arrow').className = ''; RH.arrowT = 0; }
+  RH.place = d.place;
+  $('rh-pos').textContent = d.place; $('rh-suf').textContent = ordSuf(d.place); $('rh-of').textContent = `/${d.of}`;
+  $('rh-place').className = `${d.place <= 3 ? 'p' + d.place : ''}${RH.popT ? ' pop' : ''}`;
+  $('rh-lap').textContent = d.finished ? 'Finished' : d.final ? 'Final lap' : `Lap ${d.lap}/${d.laps}`;
+  $('rh-lap').classList.toggle('final', d.final);
+  $('rh-time').textContent = lapClock(d.lapT);
+  $('rh-best').textContent = d.best ? `Best ${lapClock(d.best)}` : d.finished ? '' : `Race ${lapClock(d.total)}`;
+  // the strip: a tick at each lap, the flag at the end, a dot for each car
+  const strip = $('rh-strip');
+  if (RH.laps !== d.laps || RH.n !== d.strip.length) {
+    RH.laps = d.laps; RH.n = d.strip.length;
+    strip.innerHTML = '';
+    for (let k = 1; k <= d.laps; k++) { const t = document.createElement('i'); t.style.left = `${(k / d.laps) * 100}%`; strip.appendChild(t); }
+    for (let k = 0; k < RH.n; k++) strip.appendChild(document.createElement('s'));
+  }
+  const dots = strip.querySelectorAll('s');
+  d.strip.forEach((o, k) => { const el = dots[k]; el.style.left = `${o.k * 100}%`; el.className = o.me ? 'me' : o.dead ? 'dead' : o.remote ? 'net' : ''; });
+  // the car to catch (or, in front, the one chasing)
+  const at = d.order.findIndex((o) => o.me), ahead = d.order[at - 1], behind = d.order[at + 1];
+  let next = '';
+  if (d.finished) next = `${d.place === 1 ? 'You win!' : `${d.place}${ordSuf(d.place)} place`} · auto-drive`;
+  else if (d.closing) next = `Race ends in <em>${d.closing}</em>`;
+  else if (d.count) next = 'Get ready';
+  else if (ahead) next = `Catch <b></b>${ahead.gap != null ? ` <em>${gapText(ahead.gap)}</em>` : ''}`;
+  else if (behind) next = `In the lead${behind.gap != null ? ` by <em>${gapText(behind.gap)}</em>` : ''}`;
+  if (d.tow && !d.finished) next += '<span class="tow">Tow</span>';
+  if ($('rh-next').dataset.h !== next) { $('rh-next').dataset.h = next; $('rh-next').innerHTML = next; }
+  const nb = $('rh-next').querySelector('b'); if (nb && ahead) nb.textContent = ahead.name;
+  // the order, with the gaps (seconds ahead of, or behind, the player)
+  const rows = d.order.map((o, k) => `${k + 1}|${o.name}|${o.me ? 'me' : o.dead ? 'dead' : ''}|${o.me ? '' : o.gap == null ? '' : gapText(o.gap)}`).join(';');
+  if (rows !== RH.rows) {
+    RH.rows = rows; const box = $('standings'); box.innerHTML = ''; const near = Math.min(Math.max(at, 1), d.order.length - 2);
+    d.order.forEach((o, k) => {
+      const r = document.createElement('div'); r.className = (o.me ? 'me' : o.dead ? 'dead' : '') + (Math.abs(k - near) <= 1 ? ' near' : '');   // near: the three shown on a phone held upright
+      const b = document.createElement('b'), n = document.createElement('span'), g = document.createElement('em');
+      b.textContent = k + 1; n.textContent = o.me ? 'You' : o.name; g.textContent = o.me || o.gap == null ? '' : gapText(o.gap);
+      r.append(b, n, g); box.appendChild(r);
+    });
+  }
 }
 
 // ---- the round: the map's mode runs it (modes/) --------------------------------------------------------------------

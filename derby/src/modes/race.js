@@ -44,7 +44,7 @@ export function makeRace(G) {
 
   // a car joins the race (or comes back): its record follows it to its new car
   function join(car, name, me, slot) {
-    const r = { car, name, me, slot, i: -1, s: 0, lat: 0, draft: 0, tune: null, passed: 0, lapT0: 0, laps: [], best: 0, wrecks: 0, kills: 0, finished: false, finishT: 0, place: 0, downT: 0, wrongT: 0, lostT: 0, stuckT: 0, lastProg: 0, progress: 0, resets: 0 };
+    const r = { car, name, me, slot, i: -1, s: 0, lat: 0, draft: 0, tune: null, passed: 0, lapT0: 0, laps: [], best: 0, wrecks: 0, kills: 0, finished: false, finishT: 0, place: 0, downT: 0, wrongT: 0, lostT: 0, stuckT: 0, lastProg: 0, progress: 0, resets: 0, gateT: [0] };   // gateT[k]: race time it passed its k-th gate (the gaps)
     recs.push(r); byCar.set(car, r); locate(r, true);
     return r;
   }
@@ -52,6 +52,7 @@ export function makeRace(G) {
   // where the car is round the lap: the nearest sample (searched round the last one, so a car at the crossover stays
   // on its own half), how far along, and across
   function locate(r, fresh) {
+    if (!Number.isFinite(r.car.x) || !Number.isFinite(r.car.z)) return 0;   // (a car being rebuilt: keep where it was, or the places go wrong)
     const p = T.project(r.car.x, r.car.z, fresh ? -1 : r.i, 40);
     const prev = r.s; r.i = p.i; r.lat = p.lat; r.s = ((p.s % T.L) + T.L) % T.L;
     r.ox = fresh ? r.car.x : r.px; r.oz = fresh ? r.car.z : r.pz; r.px = r.car.x; r.pz = r.car.z;   // where it was, and is
@@ -222,7 +223,7 @@ export function makeRace(G) {
         // very inside of a tight corner has its nearest sample swing round the bend faster than a jump)
         const ng = (r.passed + 1) % NG, a = wrapS(gateS[ng] - (r.s - moved));
         if ((moved > 0 && moved < 30 && a > 0 && a <= moved) || through(r, ng)) {
-          r.passed++;
+          r.passed++; r.gateT[r.passed] = raceT;
           if (ng === 0) {
             const lapT = raceT - r.lapT0; r.lapT0 = raceT; r.laps.push(lapT); if (!r.best || lapT < r.best) r.best = lapT;
             const done = r.passed / NG;
@@ -231,7 +232,7 @@ export function makeRace(G) {
               if (closeT < 0) closeT = CLOSE;
               if (r.me) {
                 G.banner(r.place === 1 ? 'Winner!' : `${ord(r.place)} place`, clock(raceT)); G.sfx.play('ui_go', 1);
-                c.driver = makeRacer(c, race, { autopilot: true, pace: 0.8 }); doneT = AFTER; phase = 'done'; G.hint(null);
+                c.driver = makeRacer(c, race, { autopilot: true, pace: 0.97, grip: 0.86 });   // at the player's own speed (at 0.8 it felt like the car had slowed: kids' playtest) doneT = AFTER; phase = 'done'; G.hint(null);
               } else if (phase === 'race') G.toast(`${r.name} finished ${ord(r.place)}`, clock(raceT));
             } else if (r.me) {
               if (done === LAPS - 1) G.banner('Final lap', `Lap ${clock(lapT)}`); else G.toast(`Lap ${done} ${clock(lapT)}`, r.best === lapT ? 'Best lap' : `Best ${clock(r.best)}`);
@@ -288,12 +289,40 @@ export function makeRace(G) {
       const lap = Math.min(LAPS, Math.floor(me.passed / NG) + 1), closing = closeT >= 0 ? ` · ends in ${Math.ceil(closeT)}` : '';
       return [`Lap ${lap}/${LAPS}`, `${ord(place(me))} of ${n} · ${clock(raceT - me.lapT0)}${closing}${me.draft > 0.3 ? ' · Tow!' : ''}`];
     },
+    // the race panel (main.js drawRaceHud): the place, big; the lap; the lap times; the whole race as a strip with every
+    // car on it; and the order, with the gap in seconds to each car, timed at the last gate both have passed
+    raceHud() {
+      const me = recs.find((r) => r.me);
+      if (!me || phase === 'grid') return null;
+      const n = recs.length, total = LAPS * T.L;
+      const order = [...recs].sort((a, b) => (a.finished && b.finished ? a.finishT - b.finishT : a.finished ? -1 : b.finished ? 1 : b.progress - a.progress));
+      const gap = (o) => {   // seconds o is ahead of the player (minus: behind), or null before they share a gate
+        if (o === me) return null;
+        if (o.finished && me.finished) return me.finishT - o.finishT;
+        const k = Math.min(o.passed, me.passed);
+        if (k < 1 || o.gateT[k] === undefined || me.gateT[k] === undefined) return null;
+        // and, when one is through a gate the other hasn't reached yet, at least the time since (so a gap grows while
+        // the car behind is stuck, instead of waiting for the next gate)
+        if (o.passed > me.passed) return Math.max(me.gateT[k] - o.gateT[k], raceT - o.gateT[k + 1]);
+        if (me.passed > o.passed) return -Math.max(o.gateT[k] - me.gateT[k], raceT - me.gateT[k + 1]);
+        return me.gateT[k] - o.gateT[k];
+      };
+      const lap = Math.min(LAPS, Math.floor(me.passed / NG) + 1);
+      return {
+        count: phase === 'count', place: me.finished ? me.place : phase === 'count' ? order.indexOf(me) + 1 : place(me), of: n,
+        lap, laps: LAPS, final: lap === LAPS && !me.finished && phase !== 'count', finished: me.finished,
+        lapT: phase === 'count' ? 0 : me.finished ? me.finishT : raceT - me.lapT0, best: me.best, total: raceT,
+        tow: me.draft > 0.3, closing: closeT >= 0 && !me.finished ? Math.ceil(closeT) : 0,
+        order: order.map((o) => ({ name: o.name, me: o.me, gap: Number.isFinite(gap(o)) ? gap(o) : null, dead: o.car.dead, done: o.finished })),
+        strip: recs.map((o) => ({ k: clamp(o.finished ? 1 : o.progress / total, 0, 1), me: o.me, dead: o.car.dead, remote: !!o.remote })),
+      };
+    },
     garageOK: () => false,
     // online: what each car's device says about it (gates passed, its finishing time), and someone else's car coming in
     netState(c) { const r = byCar.get(c); return r ? [r.passed, r.finished ? Math.round(r.finishT * 100) / 100 : 0] : 0; },
     netTake(c, ex) {
       const r = byCar.get(c); if (!r || !Array.isArray(ex)) return;
-      r.passed = Math.max(r.passed, ex[0]);
+      while (r.passed < ex[0]) r.gateT[++r.passed] = raceT;
       if (ex[1] && !r.finished) { r.finished = true; r.finishT = ex[1]; r.place = ++finishers; if (closeT < 0) closeT = CLOSE; if (phase === 'race') G.toast(`${r.name} finished ${ord(r.place)}`, clock(r.finishT)); }
     },
     netCar(c, was) {

@@ -26,13 +26,13 @@ body.locked #view { cursor: none; }
 #speedo { right: 18px; bottom: 14px; text-align: right; }
 #speed { font-size: 46px; line-height: 1; }
 #speedo small { display: block; font-size: 12px; opacity: 0.8; }
-#score { right: 18px; top: 14px; text-align: right; }
+#score { right: 14px; top: 10px; text-align: right; padding: 3px 10px 5px; border-radius: 8px; background: rgba(14,15,18,0.8); box-shadow: 0 2px 10px rgba(0,0,0,0.35); }
 #score div { font-size: 15px; }
 #score b { font-size: 26px; color: var(--hot); }
 #wavebox { left: 50%; top: 12px; transform: translateX(-50%); text-align: center; }
 #wave { font-size: 22px; }
 #left { font-size: 13px; opacity: 0.85; }
-#radar { position: fixed; left: 14px; top: 14px; width: 150px; height: 150px; border-radius: 8px; border: 2px solid var(--edge); pointer-events: none; }
+#radar { position: fixed; left: 14px; top: 14px; width: 150px; height: 150px; border-radius: 8px; border: 2px solid var(--edge); pointer-events: none; background: rgba(14,15,18,0.8); box-shadow: 0 2px 10px rgba(0,0,0,0.35); }
 #cross { position: fixed; width: 30px; height: 30px; margin: -15px 0 0 -15px; pointer-events: none; border: 2px solid rgba(255,255,255,0.75); border-radius: 50%; box-shadow: 0 0 0 1px rgba(0,0,0,0.3); transition: border-color 0.1s, transform 0.1s; }
 #cross::after { content: ''; position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px; background: #fff; border-radius: 50%; }
 #cross.on { border-color: var(--hot); transform: scale(0.85); }
@@ -41,12 +41,12 @@ body.locked #view { cursor: none; }
 /* touch: a stick that appears where the left thumb lands, and buttons on the right */
 #touch { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
 #pad { position: absolute; left: 0; bottom: 0; width: 48%; height: 62%; pointer-events: auto; touch-action: none; }
-#stick { position: absolute; left: 120px; top: calc(100% - 130px); width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.35); background: rgba(0,0,0,0.18); pointer-events: none; opacity: 0.55; }
+#stick { position: absolute; left: 120px; top: calc(100% - 130px); width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.3); background: rgba(14,15,18,0.6); pointer-events: none; opacity: 0.7; }
 #stick.on { opacity: 1; }
-#knob { position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; margin: -27px 0 0 -27px; border-radius: 50%; background: rgba(255,255,255,0.8); box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
-.tbtn { position: absolute; pointer-events: auto; touch-action: none; border-radius: 50%; border: 3px solid rgba(255,255,255,0.55); background: rgba(20,22,26,0.45); color: #fff; font: var(--head-w) var(--head-st) calc(14px * var(--head-k)) var(--f-head); text-transform: uppercase; letter-spacing: 0.03em; text-shadow: 0 1px 0 rgba(0,0,0,0.5); padding: 0; }
+#knob { position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; margin: -27px 0 0 -27px; border-radius: 50%; background: rgba(242,239,230,0.85); box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+.tbtn { position: absolute; pointer-events: auto; touch-action: none; border-radius: 50%; border: 3px solid rgba(255,255,255,0.4); background: rgba(14,15,18,0.8); box-shadow: 0 2px 10px rgba(0,0,0,0.35); color: #fff; font: var(--head-w) var(--head-st) calc(14px * var(--head-k)) var(--f-head); text-transform: uppercase; letter-spacing: 0.03em; text-shadow: 0 1px 0 rgba(0,0,0,0.5); padding: 0; }
 .tbtn.down { background: rgba(255,194,26,0.55); border-color: var(--hot); }
-#t-fire { right: 26px; bottom: 34px; width: 104px; height: 104px; font-size: 18px; background: rgba(226,68,47,0.5); }
+#t-fire { right: 26px; bottom: 34px; width: 104px; height: 104px; font-size: 18px; border-color: var(--red); color: #ff8a7d; }
 #t-heavy { right: 142px; bottom: 26px; width: 78px; height: 78px; }
 #t-drift { right: 40px; bottom: 152px; width: 66px; height: 66px; font-size: 12px; }
 #t-boost { right: 128px; bottom: 120px; width: 66px; height: 66px; font-size: 12px; opacity: 0.6; }
@@ -239,7 +239,7 @@ body.touch #banner { top: 40%; }
   body.touch #radar { width: 86px; height: 86px; left: 10px; top: 10px; }
   body.touch #wave { font-size: 17px; } body.touch #left { font-size: 12px; }
   body.touch #wavebox { top: 10px; max-width: calc(100% - 220px); }
-  body.touch #score { right: 12px; top: 10px; } body.touch #score div { font-size: 12px; } body.touch #score b { font-size: 20px; }
+  body.touch #score { right: 8px; top: 6px; padding: 2px 8px 4px; } body.touch #score div { font-size: 12px; } body.touch #score b { font-size: 20px; }
   body.touch #bars { top: 104px; bottom: auto; width: calc(100% - 28px); }
   body.touch #hint { top: 150px; max-width: 86vw; }
   body.touch #banner b { font-size: 46px; }
@@ -512,9 +512,9 @@ body.as-online #online button.go { font-size: 20px; padding: 9px 22px; }
 #pause .note { max-width: 320px; margin: 0 auto 6px; }
 .p-col { display: grid; gap: 10px; width: min(300px, 80vw); margin: 14px auto 12px; } .p-col button { width: 100%; } .p-col button[hidden] { display: none; }
 #dead.under { visibility: hidden; }
-#pause-b { display: none; position: fixed; right: 18px; top: 88px; z-index: 5; width: 40px; height: 40px; border: 0; cursor: pointer; background: rgba(22,24,27,0.82); box-shadow: inset 0 0 0 2px rgba(255,255,255,0.2); align-items: center; justify-content: center; gap: 6px; --c: 8px; clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c)); }
+#pause-b { display: none; position: fixed; right: 18px; top: 98px; z-index: 5; width: 40px; height: 40px; border: 0; cursor: pointer; background: rgba(22,24,27,0.82); box-shadow: inset 0 0 0 2px rgba(255,255,255,0.2); align-items: center; justify-content: center; gap: 6px; --c: 8px; clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c)); }
 #pause-b i { width: 5px; height: 16px; background: var(--hot); }
-body.in-round #pause-b { display: flex; } body.touch #pause-b { right: 12px; top: 84px; width: 44px; height: 44px; }
+body.in-round #pause-b { display: flex; } body.touch #pause-b { right: 12px; top: 94px; width: 44px; height: 44px; }
 @media (max-width: 560px) { body.touch #pause-b { top: 64px; } }
 #pause { background: rgba(8,7,5,0.84); } body.paused #banner, body.paused #toast, body.paused #hint, body.paused #cross { visibility: hidden; }
 /* how to play: the first time in each mode (learn.js), three steps with a picture each */
@@ -574,12 +574,83 @@ body.learning #menu > div, body.learning #pause > div { visibility: hidden; }   
   .h-card:hover { transform: none; } .h-play button { font-size: 18px; padding: 8px 8px 6px; }
   .h-car { left: 12px; bottom: auto; top: 96px; } .h-car > b { font-size: 26px; } .h-car .g-rate { margin-top: 4px; } .h-car .g-class { width: 28px; height: 28px; font-size: 19px; } .h-car .g-num { font-size: 20px; }
 }
+
+/* the race panel (modes/race.js raceHud, main.js drawRaceHud): the place big and coloured, the lap, the lap time, the
+   whole race as a strip with every car on it, and the order down the left with the gap in seconds to each car */
+body.racing #wavebox { display: none; }
+#racehud { left: 50%; top: 8px; transform: translateX(-50%); width: min(400px, 46vw); text-align: center; padding: 4px 12px 6px; border-radius: 10px; background: rgba(14,15,18,0.8); box-shadow: 0 2px 10px rgba(0,0,0,0.35); }
+.rh-top { display: flex; align-items: center; justify-content: center; gap: 14px; }
+#rh-place { position: relative; display: flex; align-items: baseline; font-family: var(--f-logo); line-height: 0.9; color: var(--ink); transition: transform 0.18s; text-shadow: 0 3px 0 var(--tar), 0 6px 14px rgba(0,0,0,0.45); }
+#rh-place b { font-weight: 400; font-size: 64px; }
+#rh-place sup { font-size: 26px; align-self: flex-start; margin: 4px 0 0 2px; text-transform: uppercase; }
+#rh-place span { font-size: 24px; opacity: 0.75; margin-left: 4px; }
+#rh-place.p1 { color: var(--hot); } #rh-place.p2 { color: #dfe5ec; } #rh-place.p3 { color: #f0965a; }
+#rh-place.pop { transform: scale(1.22); }
+#rh-arrow { position: absolute; left: -22px; top: 10px; font: normal 900 22px var(--f-ui); opacity: 0; transition: opacity 0.3s; }
+#rh-arrow.up { opacity: 1; color: #6dff7a; } #rh-arrow.down { opacity: 1; color: var(--red); }
+.rh-lap { text-align: left; border-left: 2px solid var(--edge); padding-left: 12px; }
+#rh-lap { font: var(--head-w) var(--head-st) calc(26px * var(--head-k)) var(--f-head); text-transform: uppercase; letter-spacing: 0.03em; line-height: 1; }
+#rh-lap.final { color: var(--red); animation: rh-blink 0.9s steps(2, start) infinite; }
+@keyframes rh-blink { to { opacity: 0.45; } }
+#rh-time { font: 600 18px var(--f-ui); font-variant-numeric: tabular-nums; margin-top: 2px; }
+#rh-best { font-size: 13px; opacity: 0.85; font-variant-numeric: tabular-nums; }
+#rh-strip { position: relative; height: 8px; margin: 8px 6px 0; border-radius: 4px; background: rgba(255,255,255,0.12); box-shadow: 0 0 0 2px var(--edge); }
+#rh-strip i { position: absolute; top: -2px; width: 2px; height: 12px; background: rgba(255,255,255,0.4); }
+#rh-strip i:last-of-type { background: repeating-linear-gradient(180deg, #fff 0 3px, #111 3px 6px); width: 4px; margin-left: -4px; }
+#rh-strip s { position: absolute; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--red); box-shadow: 0 0 0 1.5px rgba(0,0,0,0.6); }
+#rh-strip s.dead { background: #888; } #rh-strip s.net { background: #4ad6ff; }
+#rh-strip s.me { width: 16px; height: 16px; margin: -8px 0 0 -8px; background: #ffb33a; box-shadow: 0 0 0 2px #fff, 0 0 8px rgba(255,179,58,0.8); z-index: 1; }
+#rh-next { margin-top: 6px; font-size: 15px; font-weight: 600; min-height: 18px; }
+#rh-next em { font-style: normal; color: var(--hot); font-variant-numeric: tabular-nums; }
+#rh-next .tow { display: inline-block; margin-left: 8px; padding: 0 7px; border-radius: 4px; background: #3fae4c; color: #fff; font: var(--head-w) 14px var(--f-head); letter-spacing: 0.06em; text-transform: uppercase; }
+#standings { left: 14px; top: 180px; min-width: 188px; font-size: 15px; }
+#standings div { display: flex; gap: 8px; align-items: center; padding: 3px 10px 3px 6px; margin-bottom: 3px; border-radius: 6px; background: rgba(14,15,18,0.82); border-left: 4px solid var(--red); }
+#standings div.me { background: #ffb33a; color: var(--tar); border-left-color: #fff; font-weight: 700; text-shadow: none; }
+#standings div.dead { color: #9da3aa; border-left-color: #666; }
+#standings b { width: 16px; text-align: right; font: var(--head-w) 17px var(--f-head); }
+#standings span { flex: 1; white-space: nowrap; }
+#standings em { font-style: normal; font-variant-numeric: tabular-nums; opacity: 0.95; font-size: 14px; }
+body.touch #standings { top: 128px; font-size: 14px; min-width: 170px; }
+body.racing.touch #hint { top: 128px; }
+@media (max-height: 640px), (max-width: 700px) { #standings { display: none; } }
+@media (max-height: 500px) {
+  #racehud { top: 4px; padding: 2px 10px 4px; } #rh-place b { font-size: 46px; } #rh-place sup { font-size: 19px; } #rh-place span { font-size: 18px; }
+  #rh-lap { font-size: 20px; } #rh-time { font-size: 15px; } #rh-best { display: none; } #rh-strip { margin-top: 5px; } #rh-next { font-size: 13px; margin-top: 4px; }
+  body.racing.touch #hint { top: 96px; }
+}
+/* the armour and the speed on the same dark backing as the rest of the HUD */
+#bars { box-sizing: border-box; padding: 6px 12px 9px; border-radius: 8px; background: rgba(14,15,18,0.8); box-shadow: 0 2px 10px rgba(0,0,0,0.35); }
+#bars { left: 14px; bottom: 14px; }
+#speedo { right: 14px; bottom: 14px; padding: 2px 12px 6px; border-radius: 8px; background: rgba(14,15,18,0.8); box-shadow: 0 2px 10px rgba(0,0,0,0.35); }
+#labels { opacity: 1; }
+/* a phone held upright, racing: slim, so the road ahead shows. One dark bar across the top (place, lap, the race strip,
+   the car to catch) with the pause button beside it, a small radar under it on the right, and the armour bar under it on the left.
+   No lap times, order or Wrecked / Scrap (scrap won still shows as a toast) */
+@media (orientation: portrait) {
+  body.racing.touch #racehud { top: 6px; left: 8px; right: 60px; width: auto; min-width: 0; transform: none; padding: 3px 10px 6px; }
+  body.racing.touch .rh-top { gap: 12px; }
+  body.racing.touch #rh-place b { font-size: 46px; } body.racing.touch #rh-place sup { font-size: 19px; } body.racing.touch #rh-place span { font-size: 18px; }
+  body.racing.touch .rh-lap { padding-left: 10px; }
+  body.racing.touch #rh-lap { font-size: 24px; } body.racing.touch #rh-time, body.racing.touch #rh-best { display: none; }
+  body.racing.touch #rh-strip { margin: 6px 4px 0; } body.racing.touch #rh-next { display: block; font-size: 14px; margin-top: 5px; min-height: 17px; }
+  body.racing.touch #pause-b { top: 6px; right: 8px; }
+  body.racing.touch #radar { top: 108px; left: auto; right: 8px; width: 84px; height: 84px; opacity: 0.88; }
+  body.racing.touch #standings, body.racing.touch #score { display: none; }
+  body.racing.touch #bars { top: 108px; bottom: auto; left: 8px; right: 100px; width: auto; transform: none; padding: 5px 10px 6px; }
+  body.racing.touch #labels { display: none; }
+  body.racing.touch #hp { height: 16px; } body.racing.touch #hp-text { font-size: 14px; line-height: 16px; }
+  body.racing.touch #sec, body.racing.touch #gad { height: 6px; margin-top: 4px; }
+  body.racing.touch #hint { top: 200px; }
+  body.racing.touch #toast { top: 24%; }
+}
 </style>
 <canvas id="view"></canvas>
 <canvas id="radar" width="150" height="150"></canvas>
 <div id="tags"></div>
 <div id="cross"></div>
 <div class="hud" id="wavebox"><div id="wave" class="big">Wave 1</div><div id="left"></div></div>
+<div class="hud" id="racehud" hidden><div class="rh-top"><div id="rh-place"><i id="rh-arrow"></i><b id="rh-pos">1</b><sup id="rh-suf">st</sup><span id="rh-of">/6</span></div><div class="rh-lap"><div id="rh-lap">Lap 1/3</div><div id="rh-time">0:00.0</div><div id="rh-best"></div></div></div><div id="rh-strip"></div><div id="rh-next"></div></div>
+<div class="hud" id="standings" hidden></div>
 <div class="hud" id="score"><div><span id="kills-l">Wrecked</span> <b id="kills">0</b></div><div>Scrap <b id="scrap">0</b></div></div>
 <div class="hud" id="bars"><div id="labels"><span class="big">Armour</span><span id="sec-name">Rockets</span></div><div id="hp"><div id="hp-fill"></div><span id="hp-text">160</span></div><div id="sec"><div id="sec-fill"></div></div><div id="gad" hidden><div id="gad-fill"></div></div></div>
 <div class="hud" id="speedo"><span id="speed" class="big">0</span><small>km/h</small></div>
