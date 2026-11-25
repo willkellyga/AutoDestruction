@@ -371,11 +371,21 @@ function lamps() {
   for (let i = r0; i <= r1; i += wall) { const k = T.at(i); for (const side of [1, -1]) L.push([X[k] + TZ[k] * side * (W[k] - 1.2), H[k] + 11, Z[k] - TX[k] * side * (W[k] - 1.2), AMBER, 1.5, side > 0 ? [X[k], Z[k], W[k] - 0.5, 14, TX[k], TZ[k], H[k]] : null, null]); }
   return (LAMPS = L);
 }
+// Lantern Alley's lanterns: [x, y, z] each, along both sides just outside the barriers
+let LANTERNS = null;
+function lanterns() {
+  if (LANTERNS) return LANTERNS;
+  const a = COURSE[ALLEY.leg], b = COURSE[ALLEY.leg + 1], len = Math.hypot(b[0] - a[0], b[1] - a[1]), ux = (b[0] - a[0]) / len, uz = (b[1] - a[1]) / len, L = [];
+  for (let t = 50; t < len - 50; t += 6) for (const sd of [1, -1]) { const o = 13 + 6.5; L.push([a[0] + ux * t + uz * sd * o, 11 + ((t / 6) & 1) * 0.6, a[1] + uz * t - ux * sd * o]); }
+  return (LANTERNS = L);
+}
 // The other glows, and the coloured light they throw on the road: { at, rgb, size, pool: [x, z, radius, height] }
 let GLOWS = null;
 function glows() {
   if (GLOWS) return GLOWS;
   const L = [], RED = [2.6, 0.5, 0.3], GOLD = [2.4, 1.6, 0.6];
+  // Lantern Alley: a red lantern every six voxels each side, hung out from the houses over the pavement
+  for (const [x, y, z] of lanterns()) L.push({ at: [x, y, z], rgb: RED, size: 2.6, pool: null });
   // the Thunder Gate: its lantern, and the floodlights at the feet of its bays
   L.push({ at: [GATE.x, 24, GATE.z + 6, ], rgb: RED, size: 9, pool: [GATE.x, GATE.z + 6, 30, 0] });
   for (const s of [-1, 1]) for (const dz of [-3, 15]) L.push({ at: [GATE.x + s * 33, 4, GATE.z + dz], rgb: GOLD, size: 5, pool: [GATE.x + s * 33, GATE.z + dz, 16, 0] });
@@ -389,6 +399,8 @@ function stones() {
   if (STONES) return STONES;
   const L = [], lift = BIG.find((b) => b[0] === 'Bay Wheel')[9];
   for (const [x0, z0, x1, z1] of HALLS) L.push([x0, 0, z0, x1, lift - 2, z1, CONC2], [x0 - 1.5, lift - 2, z0 - 1.5, x1 + 1.5, lift, z1 + 1.5, CONC]);
+  // the lanterns, and the line each side they hang from
+  for (const [x, y, z] of lanterns()) L.push([x - 0.8, y - 1.2, z - 0.8, x + 0.8, y + 1.2, z + 0.8, [1.0, 0.22, 0.12]], [x - 0.5, y + 1.2, z - 0.5, x + 0.5, y + 1.6, z + 0.5, POST]);
   for (const [, , , , , , post] of lamps()) {
     if (!post) continue;
     const [x, z, y, nx, nz] = post;
@@ -508,6 +520,18 @@ function plan() {
       if (open(bx + qx, bz + qz, 40, 40)) { add(bx + qx, bz + qz, 40, 40); continue; }
       for (const sz of [32, 24, 16]) for (let oz = 0; oz + sz <= 40; oz += 8) for (let ox = 0; ox + sz <= 40; ox += 8) if (open(bx + qx + ox, bz + qz + oz, sz, sz)) add(bx + qx + ox, bz + qz + oz, sz, sz);
     }
+  }
+  // and past the map's edge: the city goes on to the horizon on every side but the bay, a block of 104 with a street
+  // of 24 between (as wide as the course: no small streets), taller the further out, and tallest west (Shinjuku) and
+  // over the bay (the waterfront towers)
+  for (let bz = -728; bz < WZ + 728; bz += 104) for (let bx = -728; bx < WX + 728; bx += 104) {
+    if (bx > -88 && bz > -88 && bx < WX + 8 && bz < WZ + 8) continue;
+    const out = Math.hypot(Math.max(-bx, 0, bx - WX), Math.max(-bz, 0, bz - WZ)); if (out > 700) continue;
+    let dry = true; for (const [a, b] of [[0, 0], [80, 0], [0, 80], [80, 80], [40, 40]]) if (wet(bx + a, bz + b)) dry = false; if (!dry) continue;
+    const r = R(), west = bx < 0 ? 1 : 0, tall = 48 + out * 0.18 + r * 70 + west * 60, glassy = R();
+    const style = () => (glassy < 0.4 ? 'glass' : glassy < 0.65 ? 'lime' : glassy < 0.85 ? 'tan' : 'brown');
+    if (r < 0.3) boxes.push({ x0: bx, z0: bz, w: 80, d: 80, h: tall * 1.3, style: style(), seed: 1 + boxes.length, plain: true });
+    else for (const [qx, qz] of [[0, 0], [48, 0], [0, 48], [48, 48]]) if (R() < 0.85) boxes.push({ x0: bx + qx, z0: bz + qz, w: 32, d: 32, h: tall * (0.6 + R() * 0.6), style: style(), seed: 1 + boxes.length, plain: true });
   }
   return (PLAN = { lots, boxes });
 }
@@ -701,7 +725,7 @@ export default {
     const s = P('Tunnel').roofBox;
     return [
       { kind: 'custom', make: (api) => { makeRoads(api.scene, course().T, course().parts.map((p) => ({ ...p, skip: near }))); } },
-      { kind: 'custom', make: (api) => { dressBridges(api.scene, course().T, [{ part: P('Rainbow Bridge'), kind: 'truss' }]); api.scene.add(stoneMesh()); } },
+      { kind: 'custom', make: (api) => { dressBridges(api.scene, course().T, [{ part: P('Rainbow Bridge'), kind: 'stone', white: true }]); api.scene.add(stoneMesh()); } },
       { kind: 'custom', make: (api) => { for (const m of MODELS) { const g = statueMesh(m.vol, m.k, { glow: LIT[m.name][2], greedy: true }); floodlit(g, LIT[m.name]); g.position.set(m.x, m.y, m.z); g.rotation.y = m.turn; g.name = m.name; api.scene.add(g); } } },
       { kind: 'custom', make: (api) => {
         const made = ALLEY.vols.map((v) => { const g = statueMesh(v, 1, { glow: [2.6, 2.1, 1.2], greedy: true }); floodlit(g, [[0.5, 0.36, 0.22], [2.1, 1.5, 0.7, 0.6]]); return g; });
