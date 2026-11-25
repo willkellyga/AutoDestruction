@@ -191,10 +191,13 @@ const THINGS = [
   ...[[MOUNT.top, 'red']].flatMap(([T, neon]) => [[T.x0 + 1, T.z0 + 1], [T.x1 - 1, T.z0 + 1], [T.x0 + 1, T.z1 - 1], [T.x1 - 1, T.z1 - 1]].map(([x, z], i) => thing('marker', x, z, 0, { lift: T.h, neon, ph: -0.2 - i * 0.17 }))),
   // a truss over each way in to the bus jump, its name in lights
   ...[BUS.x0 - BUS.run - 6, BUS.x1 + BUS.run + 6].map((x) => thing('truss', x, BUS.z, E, { span: 46, name: 'BUS JUMP' })),
-  // flame cannons beside the lips and on the mountain's table (PYRO: the custom hazard below fires them)
-  ...[[BUS.x0 - 2, -1], [BUS.x0 - 2, 1], [BUS.x1 + 2, -1], [BUS.x1 + 2, 1]].map(([x, k]) => thing('pyro', x, BUS.z + k * (BUS.half + 6.5), 0, { jump: 'bus' })),
-  ...LANES.flatMap((L) => [[L.x0 - 2, -1], [L.x1 + 2, 1]].map(([x, k]) => thing('pyro', x, L.z + k * (L.half + 6.5), 0, { jump: 'lane' }))),
-  thing('pyro', CX, MOUNT.z0 + 4, 0, { lift: MOUNT.h, jump: 'mount' }), thing('pyro', CX, MOUNT.z1 - 4, 0, { lift: MOUNT.h, jump: 'mount' }),
+  // flame cannons down both sides of every jump, from the foot of each ramp to its lip, and round the mountain (PYRO:
+  // the custom hazard below lights a jump's whole set at a take-off, the fire running out from where the car left).
+  // Will, 2026-11-25, of the steelworks' and then "Let's do the same on hammerdown": more of them, burning longer.
+  ...[BUS.x0 - BUS.run + 2, BUS.x0 - 18, BUS.x0 - 2, BUS.x1 + 2, BUS.x1 + 18, BUS.x1 + BUS.run - 2].flatMap((x) => [-1, 1].map((k) => thing('pyro', x, BUS.z + k * (BUS.half + 6.5), 0, { jump: 'bus' }))),
+  ...LANES.flatMap((L, li) => [L.x0 - 2, (L.x0 + L.x1) / 2, L.x1 + 2].flatMap((x) => [-1, 1].map((k) => thing('pyro', x, L.z + k * (L.half + 6.5), 0, { jump: 'lane' + li })))),
+  ...[MOUNT.x0 + 5, (MOUNT.x0 + CX) / 2, CX, (MOUNT.x1 + CX) / 2, MOUNT.x1 - 5].flatMap((x) => [MOUNT.z0 + 4, MOUNT.z1 - 4].map((z) => thing('pyro', x, z, 0, { lift: MOUNT.h, jump: 'mount' }))),
+  ...[MOUNT.x0 - MOUNT.run + 2, MOUNT.x1 + MOUNT.run - 2].flatMap((x) => [MOUNT.z0 - 6.5, MOUNT.z1 + 6.5].map((z) => thing('pyro', x, z, 0, { jump: 'mount' }))),
   // what a car scatters: cones along the last of each run at the mountain. (Will,
   // 2026-11-24: "the arena feels too crowded ... remove some of the superficial decorations like those monster truck
   // statues". Gone: the show trucks on their containers, the giant tyres, the trusses over the rollers and the crush
@@ -886,7 +889,7 @@ export default {
     { kind: 'custom', make(api) {
       for (const o of THINGS) o.dead = false;
       stalls = makeStalls(api, THINGS, POWER, quarter, [WX, WZ], { heap: wreckage, bots: true });
-      moves = makeArenaMoves(api, { pyros: THINGS.filter((o) => o.kind === 'pyro') });
+      moves = makeArenaMoves(api, { pyros: THINGS.filter((o) => o.kind === 'pyro'), burn: 2.2, reach: 26, rate: 0.42, air: 0.08, ripple: 0.004 });
       return { step(dt) { stalls.step(dt); moves.step(dt); } };
     } },
     { kind: 'bounds', x: CX, z: CZ, ...WALL },
