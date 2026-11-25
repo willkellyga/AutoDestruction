@@ -16,7 +16,11 @@
 // maps/roads.js's, and the course is shut in the whole way round, so only what stands beside it is voxels.
 import * as THREE from 'three';
 import { WX, WZ, M, place, ctx, setSeed, set, put, box, walls, begin, LOC, vehicles } from '../../../src/world.js';
-import { face, text, textW } from '../../../src/kit.js';
+import { face, text, textW, disc } from '../../../src/kit.js';
+import { hipRoof } from '../../../src/tokyo_kit.js';
+import { SHIBA, SENSO, PALACE, STATION, WHEEL, shibatower, soratower, sensoji, palace, station, baywheel } from '../../../src/tokyo_landmarks.js';
+import { METRO, metrohall, mayutower, flamehall } from '../../../src/tokyo_skyline.js';
+import { grabModel, statueMesh } from './statue.js';
 import { makeWater } from './water.js';
 import { canvasFor, finish, pickSpot, GK } from './common.js';
 import { makeTrack, streetLoop, racingLine } from './racetrack.js';
@@ -36,19 +40,41 @@ const hump = (d, a, b, c, e) => (d <= a || d >= e ? 0 : d < b ? ramp((d - a) / (
 // park south of that, the port along the bay and the Scramble in the south-west corner.
 const RIVER = { x0: 790, x1: 870 };                                  // the Sumida
 const BAY = { x0: 612, x1: 892, z0: 792, cut: 40 };                  // Tokyo Bay: its north-west corner is cut off on the slant
-const MOAT = { x0: 326, z0: 362, x1: 534, z1: 558, w: 13 };          // the palace's: a ring of water this wide
+const MOAT = { x0: 326, z0: 356, x1: 534, z1: 564, w: 24 };          // the palace's: a ring of water this wide
+const QUAY = { x: 890, z: 195, r: 45 };                              // the round quay the Sora Tower stands on, out into the river
 const POND = { x: 300, z: 170, rx: 46, rz: 24 };                     // Ueno's
-const wet = (x, z) => (x >= RIVER.x0 && x < RIVER.x1 && z < BAY.z0 + 8) || (z >= BAY.z0 && x < BAY.x1 && x >= BAY.x0 + Math.max(0, BAY.z0 + BAY.cut - z));
+const onQuay = (x, z) => (x - QUAY.x) ** 2 + (z - QUAY.z) ** 2 < QUAY.r * QUAY.r;
+const wet = (x, z) => !onQuay(x, z) && (x >= RIVER.x0 && x < RIVER.x1 && z < BAY.z0 + 8 || (z >= BAY.z0 && x < BAY.x1 && x >= BAY.x0 + Math.max(0, BAY.z0 + BAY.cut - z)));
 const inMoat = (x, z) => x >= MOAT.x0 && x < MOAT.x1 && z >= MOAT.z0 && z < MOAT.z1 && !(x >= MOAT.x0 + MOAT.w && x < MOAT.x1 - MOAT.w && z >= MOAT.z0 + MOAT.w && z < MOAT.z1 - MOAT.w);
 const inPond = (x, z) => ((x - POND.x) / POND.rx) ** 2 + ((z - POND.z) / POND.rz) ** 2 < 1;
 const land = (x, z) => !wet(x, z);
 // the grounds nothing is built on but what belongs there: [x0, z0, x1, z1]
-const UENO = [186, 124, 404, 218], PALACE_G = [318, 354, 542, 566], TOWER_G = [344, 674, 516, 846], TEMPLE_G = [636, 20, 776, 240];
-const STATION_G = [598, 360, 786, 560], SORA_G = [874, 136, 944, 236], WHEEL_G = [874, 826, 1024, 916], PORT_G = [440, 858, 612, 1024];
+const UENO = [186, 124, 404, 218], PALACE_G = [322, 352, 538, 568], TOWER_G = [344, 674, 516, 846], TEMPLE_G = [636, 0, 776, 240];
+const STATION_G = [598, 360, 790, 560], SORA_G = [845, 150, 935, 240], WHEEL_G = [862, 830, 1024, 906], PORT_G = [440, 858, 612, 1024];
 const inBox = (b, x, z) => x >= b[0] && x < b[2] && z >= b[1] && z < b[3];
 // where the ground is green and the barriers stone: the park, the palace and the tower's park
 const leafy = (x, z) => inBox(UENO, x, z) || inBox(PALACE_G, x, z) || inBox(TOWER_G, x, z);
 const inPark = (x, z) => leafy(x, z) || inBox(TEMPLE_G, x, z) || inBox(STATION_G, x, z) || inBox(SORA_G, x, z) || inBox(WHEEL_G, x, z) || inBox(PORT_G, x, z);
+
+// The great buildings. The engine builds them small (for a game seen from high up); beside this road they would look
+// like models of themselves, so, as in Capital Circuit, each is built once by the engine's own kit, copied out of the
+// world and drawn as a model at one and a half to two times the size. Nothing reaches them: the course is shut in.
+// [name, builder, the engine's lot, how tall to copy, facing (0 north, 1 east, 2 south, 3 west), times bigger, the
+// middle of its ground here (x, z), turned (radians), lifted]
+const BIG = [
+  ['Shiba Tower', shibatower, SHIBA.S, 200, 0, 2, 430, 760],          // astride the road: the course runs between its legs
+  ['Sora Tower', soratower, 40, 256, 0, 2, QUAY.x, QUAY.z],           // in the crook of the bend after the red bridge
+  ['Senso-ji', sensoji, SENSO.S, 100, 0, 2, 705, 84, Math.PI],        // the main hall, at the top of the lane, facing down it
+  ['Palace', palace, PALACE.S, 90, 1, 1.75, 430, 460],                // inside the moat, its bridge toward the station
+  ['Tokyo Station', station, STATION.S, 64, 3, 1.5, 699, 460],        // its long brick front on the moat road
+  ['Bay Wheel', baywheel, WHEEL.S, 84, 0, 2, 945, 868, 0, 28],        // astride the road on two halls, the road through its legs
+  ['Metro Hall', metrohall, METRO.S, 204, 1, 1.5, 44, 356],           // Shinjuku, beside the flyover
+  ['Mayu Tower', mayutower, 42, 172, 0, 2, 216, 440],
+  ['Flame Hall', flamehall, 44, 64, 3, 2, 898, 296],
+];
+const PAGODA = { x: 648, z: 142 };       // Senso-ji's five storeys, taken out of the temple's model to stand beside the lane
+const GATE = { x: 705, z: 188 };         // the Thunder Gate, astride the lane (voxels: see thunderGate)
+const HALLS = [[881, 846, 913, 890], [977, 846, 1009, 890]];   // what the wheel stands on, either side of the road, as high as it is lifted
 
 // ---- the course ----------------------------------------------------------------------------------------------------
 // each corner [x, z, radius of the curve round it]; a leg is the run from one corner to the next, numbered by its first
@@ -60,8 +86,8 @@ const COURSE = [
   [590, 250, 60],        //  3  half left, Electric Town
   [705, 250, 40],        //  4  left, through the Thunder Gate and up the lane
   [705, 120, 40],        //  5  right, in front of the main hall, and the red bridge over the Sumida
-  [945, 120, 75],        //  6  right, round the foot of the Sora Tower, then up onto the expressway
-  [945, 420, 80],        //  7  half right, out over the river
+  [965, 120, 75],        //  6  right, round the foot of the Sora Tower, then up onto the expressway
+  [965, 420, 80],        //  7  half right, out over the river
   [830, 535, 80],        //  8  half left, down the middle of it
   [830, 690, 70],        //  9  half left, off it onto Bay Island
   [945, 805, 60],        // 10  half right, under the Bay Wheel
@@ -91,7 +117,7 @@ function widthAt(leg, x, z) {
     case 11: return x > 590 ? 22 : 28;                  // the Rainbow Bridge, the port
     case 12: return 26;                                 // the Shiba Tower
     case 13: return 28;                                 // the moat
-    case 14: return 40;                                 // the station's plaza
+    case 14: return 28;                                 // the station's front
     case 15: return 28;
     case 16: return z < 560 ? 26 : 20;                  // the moat's west side, the tunnel
     case 17: return 40;                                 // the Scramble
@@ -255,9 +281,44 @@ function gantryNS(lineZ, x0, x1, names, y) {
   }
   box(xc - 13, y - 4, z1 - 1, xc + 13, y - 1, z1, M.DARK);
 }
-// what stands beside and over the course as a drawn model, each [x0, y0, z0, x1, y1, z1, colour]
+// The Thunder Gate, astride the lane at the road's own scale and in voxels, so it can be shot at and driven into: a bay
+// either side of the road, the great beam across, a tiled roof over all of it, and the red lantern hung in the middle.
+function thunderGate(cx, z0) {
+  const OP = 26, BAY = 14, z1 = z0 + 11, TOP = 34, x0 = cx - OP - BAY, x1 = cx + OP + BAY - 1;
+  begin('Thunder Gate', 'monument');
+  for (const s of [-1, 1]) {
+    const a0 = s > 0 ? cx + OP : x0, a1 = a0 + BAY - 1;
+    box(a0 - 1, 0, z0 - 1, a1 + 1, 1, z1 + 1, M.STONE);
+    walls(a0, 2, z0, a1, TOP - 1, z1, M.VERMIL);
+    for (const a of [a0, a1 - 1]) for (const b of [z0, z1 - 1]) box(a, 2, b, a + 1, TOP - 1, b + 1, M.VERMIL);
+    for (let y = 6; y <= TOP - 7; y++) {
+      for (let a = a0 + 2; a <= a1 - 2; a++) { set(a, y, z0, (a + y) & 1 ? M.DARK : M.ROOF_G); set(a, y, z1, M.PL_W); }
+      for (let b = z0 + 2; b <= z1 - 2; b++) { set(a0, y, b, M.PL_W); set(a1, y, b, M.PL_W); }
+    }
+    for (const y of [5, TOP - 6]) { box(a0, y, z0, a1, y, z0, M.BRASS); box(a0, y, z1, a1, y, z1, M.BRASS); }
+  }
+  box(x0, TOP, z0, x1, TOP + 3, z1, M.VERMIL);
+  for (const b of [z0, z1]) { box(cx - OP, TOP - 3, b, cx + OP - 1, TOP - 1, b, M.VERMIL); box(cx - OP, TOP - 4, b, cx + OP - 1, TOP - 4, b, M.BRASS); }
+  box(cx - 8, TOP - 2, z0 - 1, cx + 7, TOP + 4, z0 - 1, M.DARK); box(cx - 8, TOP - 2, z1 + 1, cx + 7, TOP + 4, z1 + 1, M.DARK);
+  for (const b of [z0 - 2, z1 + 2]) for (const [a, y, w, h] of [[-6, 3, 3, 1], [-6, 0, 1, 3], [-4, 0, 1, 2], [-1, 0, 1, 4], [-2, 2, 3, 1], [2, 0, 3, 1], [2, 2, 3, 1], [3, 0, 1, 4], [5, 3, 1, 1]]) box(cx + a, TOP - 1 + y, b, cx + a + w - 1, TOP - 1 + y + h - 1, b, M.BRASS);
+  hipRoof(x0, z0, x1, z1, TOP + 4, 7, M.ROOF_S, M.ROOF_D, 2);
+  // the lantern: red paper between black hoops, a brass foot
+  const lz = (z0 + z1 + 1) >> 1, Y0 = 19, Y1 = TOP - 5;
+  box(cx - 1, Y1, lz - 1, cx, TOP - 1, lz, M.DARK);
+  for (let y = Y0; y <= Y1; y++) { const e = Math.min(y - Y0, Y1 - y); disc(cx, lz, y, e === 0 ? 4 : e === 1 ? 5 : 6, e < 2 ? M.DARK : M.CAR_A); }
+  disc(cx, lz, Y0 - 1, 3, M.BRASS);
+  for (let y = Y0 + 3; y <= Y1 - 3; y++) for (const a of [-1, 0]) if (y % 3) { set(cx + a, y, lz - 6, M.DARK); set(cx + a, y, lz + 5, M.DARK); }
+}
+// what stands beside and over the course as a drawn model, each [x0, y0, z0, x1, y1, z1, colour]: the two halls the
+// wheel stands on
+const CONC = [0.5, 0.5, 0.53], CONC2 = [0.36, 0.36, 0.4];
 let STONES = null;
-function stones() { return STONES || (STONES = []); }
+function stones() {
+  if (STONES) return STONES;
+  const L = [], lift = BIG.find((b) => b[0] === 'Bay Wheel')[9];
+  for (const [x0, z0, x1, z1] of HALLS) L.push([x0, 0, z0, x1, lift - 2, z1, CONC2], [x0 - 1.5, lift - 2, z0 - 1.5, x1 + 1.5, lift, z1 + 1.5, CONC]);
+  return (STONES = L);
+}
 function stoneMesh() {
   const pos = [], col = [], nor = [], idx = [];
   const quad = (P, n, c) => { const i = pos.length / 3; pos.push(...P); for (let k = 0; k < 4; k++) { nor.push(...n); col.push(...c); } idx.push(i, i + 1, i + 2, i, i + 2, i + 3); };
@@ -279,9 +340,31 @@ let PLAN = null;
 function plan() { return PLAN || (PLAN = { lots: [], boxes: [] }); }
 const MODELS = [];
 function build() {
+  for (const [name, make, S, NY, f, k, x, z, turn, lift] of BIG) MODELS.push({ name, vol: grabModel(make, S, NY, 16, 16, f, 2), k, x, z, y: lift || 0, turn: turn || 0 });
+  // Senso-ji: its hall stands at the top of the lane; the pagoda is taken out to stand on its own beside the lane; the
+  // gate and the court's lanterns go (the gate is built at the road's scale, in voxels)
+  {
+    const v = MODELS.find((m) => m.name === 'Senso-ji').vol, { S, NY, m } = v, PS = 24, pm = new Uint8Array(PS * NY * PS);
+    for (let y = 0; y < NY; y++) for (let z = 0; z < PS; z++) for (let x = 0; x < PS; x++) pm[(y * PS + z) * PS + x] = m[(y * S + z + 18) * S + x + 1];
+    for (let y = 0; y < NY; y++) for (let z = 0; z < 42; z++) m.fill(0, (y * S + z) * S, (y * S + z) * S + S);
+    v.trees = [];
+    MODELS.push({ name: 'Pagoda', vol: { S: PS, NY, m: pm, ped: 0, trees: [] }, k: 2, x: PAGODA.x, z: PAGODA.z, y: 0, turn: 0 });
+  }
+  // the Bay Wheel: only the wheel and its legs are kept (the road runs under it); and the Shiba Tower's hall, lamp and
+  // benches go from between its feet (the road runs there)
+  {
+    const { S, NY, m } = MODELS.find((q) => q.name === 'Bay Wheel').vol;
+    for (let y = 0; y < NY; y++) for (let z = 0; z < S; z++) for (let x = 0; x < S; x++) if (y < 2 || z < 36 || z > 49) m[(y * S + z) * S + x] = 0;
+  }
+  {
+    const v = MODELS.find((q) => q.name === 'Shiba Tower').vol, { S, m } = v;
+    for (let y = 0; y <= 20; y++) for (let z = 0; z < S; z++) for (let x = 28; x < 58; x++) m[(y * S + z) * S + x] = 0;
+  }
   plan();
   place(0, 0, -1); ctx.L = 3; ctx.lot = -1; setSeed(5115);
   barriers();
+  place(0, 0, -1); ctx.L = 3; ctx.lot = -1;
+  thunderGate(GATE.x, GATE.z);
   place(0, 0, -1); ctx.L = 3; ctx.lot = -1;
   vehicles.length = 0;   // nothing parked along the road
   gantryNS(LINE_Z, LINE_X - 33, LINE_X + 33, ['MIDNIGHT TOKYO', 'TOKYO GP'], GANTRY_Y);
@@ -344,6 +427,8 @@ function paint() {
   g.strokeStyle = '#5c5a58'; g.lineWidth = 4 * GK; g.lineJoin = 'round';
   g.beginPath(); g.moveTo(RIVER.x0 * GK, -40 * GK); g.lineTo(RIVER.x0 * GK, BAY.z0 * GK); g.lineTo((BAY.x0 + BAY.cut) * GK, BAY.z0 * GK); g.lineTo(BAY.x0 * GK, (BAY.z0 + BAY.cut) * GK); g.lineTo(BAY.x0 * GK, (WZ + 40) * GK); g.stroke();
   g.beginPath(); g.moveTo(RIVER.x1 * GK, -40 * GK); g.lineTo(RIVER.x1 * GK, BAY.z0 * GK); g.lineTo(BAY.x1 * GK, BAY.z0 * GK); g.lineTo(BAY.x1 * GK, (WZ + 40) * GK); g.stroke();
+  g.fillStyle = '#5c5a58'; g.beginPath(); g.arc(QUAY.x * GK, QUAY.z * GK, (QUAY.r + 2) * GK, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#9a968c'; g.beginPath(); g.arc(QUAY.x * GK, QUAY.z * GK, QUAY.r * GK, 0, Math.PI * 2); g.fill();
   // the course, on the ground only: the decks and the cut have their own road (roads.js), so they get no room here
   // (but under the foot of each slope the ground's road carries on, FOOT up, so nothing shows through at the seam)
   const WLp = T.WL.slice(), WRp = T.WR.slice();
@@ -394,6 +479,7 @@ export default {
     return [
       { kind: 'custom', make: (api) => { makeRoads(api.scene, course().T, course().parts.map((p) => ({ ...p, skip: near }))); } },
       { kind: 'custom', make: (api) => { dressBridges(api.scene, course().T, [{ part: P('Rainbow Bridge'), kind: 'truss' }]); api.scene.add(stoneMesh()); } },
+      { kind: 'custom', make: (api) => { for (const m of MODELS) { const g = statueMesh(m.vol, m.k, { glow: [1.5, 1.4, 1.1], greedy: true }); g.position.set(m.x, m.y, m.z); g.rotation.y = m.turn; g.name = m.name; api.scene.add(g); } } },
       { kind: 'custom', make: (api) => makeWater(api.scene, { x0: -1024, z0: -1024, span: 3072, sun: new THREE.Vector3(0.3, 0.8, 0.5), sky: 0x24304a, glint: 0xffffff, isWater: (x, z) => wet(x, z) || inMoat(x, z) || inPond(x, z), pools: [] }) },
       { kind: 'covered', x0: s[0], z0: s[1], x1: s[2], z1: s[3], dim: 0.5 },
     ];
