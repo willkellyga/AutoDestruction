@@ -15,10 +15,13 @@ const STYLES = {
   glass: { wall: '#3d4853', glass: '#7fb2c6', lit: '#f4f0d4', span: '#566572', trim: '#2f3840', wx: [1, 7], wy: [3, 11], lights: 0.22, cap: [0.2, 0.24, 0.28] },
   brick: { wall: '#9a5644', glass: '#2b3340', lit: '#ffd078', span: '#9a5644', trim: '#d9cfbe', wx: [2, 5], wy: [3, 9], lights: 0.3, cap: [0.8, 0.76, 0.68] },
   tan: { wall: '#c2966a', glass: '#33404e', lit: '#ffd88a', span: '#b08658', trim: '#e6dcc6', wx: [2, 6], wy: [3, 9], lights: 0.3, cap: [0.82, 0.78, 0.68] },
+  marble: { wall: '#e2dccd', glass: '#3f4c5a', lit: '#ffe6ac', span: '#d3ccbb', trim: '#f1ede2', wx: [2, 5], wy: [2, 10], lights: 0.25, cap: [0.86, 0.84, 0.78] },
   brown: { wall: '#6f4c3e', glass: '#232a34', lit: '#ffc66a', span: '#5e3f33', trim: '#3a2a24', wx: [2, 5], wy: [2, 9], lights: 0.26, cap: [0.3, 0.22, 0.19] },
 };
 
-function pictures(st, seed) {
+// by day no window is lit: the ones that would be show the sky in their glass instead
+const DAYGLASS = '#93aec4';
+function pictures(st, seed, day) {
   const cv = document.createElement('canvas'), ev = document.createElement('canvas'); cv.width = ev.width = TW; cv.height = ev.height = TH;
   const g = cv.getContext('2d'), e = ev.getContext('2d');
   let s = seed; const r = () => { s = (s * 1664525 + 1013904223) | 0; return ((s >>> 8) & 0xffff) / 65536; };
@@ -29,13 +32,13 @@ function pictures(st, seed) {
     for (let y = 0; y < FLOOR; y++) for (let x = 0; x < BAY; x++) {
       const X = b * BAY + x, Y = fl * FLOOR + y, inX = x >= st.wx[0] && x <= st.wx[1], inY = y >= st.wy[0] && y <= st.wy[1];
       let col = st.wall;
-      if (inX && inY) col = on ? st.lit : st.glass;
+      if (inX && inY) col = on ? (day ? DAYGLASS : st.lit) : st.glass;
       else if (inX && y < st.wy[0]) col = y === st.wy[0] - 1 ? st.trim : st.span;   // the spandrel under a window, a sill along its top
       else if (y === FLOOR - 1 && st === STYLES.glass) col = st.trim;
       px(g, X, Y, col);
       // a voxel's worth of grain, as the voxel buildings have
       const n = r(); px(g, X, Y, n < 0.5 ? '#000' : '#fff', inX && inY ? (on ? 0.05 : 0.1) * Math.abs(n - 0.5) * 2 + (!on && y > st.wy[1] - 2 ? 0.06 : 0) : 0.13 * Math.abs(n - 0.5) * 2);
-      if (inX && inY && on) px(e, X, Y, st.lit, dim ? 0.55 : 1);
+      if (inX && inY && on && !day) px(e, X, Y, st.lit, dim ? 0.55 : 1);
     }
   }
   const tex = (c) => { const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.magFilter = THREE.NearestFilter; t.minFilter = THREE.LinearMipmapLinearFilter; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; };
@@ -43,7 +46,7 @@ function pictures(st, seed) {
 }
 
 // the street floor: eight bays of shop fronts (a lit window under an awning, a dark one, a door), a sign band over them
-function shopPictures() {
+function shopPictures(day) {
   const cv = document.createElement('canvas'), ev = document.createElement('canvas'); cv.width = ev.width = TW; cv.height = ev.height = FLOOR;
   const g = cv.getContext('2d'), e = ev.getContext('2d');
   let s = 4711; const r = () => { s = (s * 1664525 + 1013904223) | 0; return ((s >>> 8) & 0xffff) / 65536; };
@@ -59,17 +62,19 @@ function shopPictures() {
       else if (x === 0 || x === 7) col = '#4a4640';                                   // a pier between shops
       else if (kind === 'door') { col = x >= 3 && x <= 4 ? (y < 7 ? '#1c2026' : '#4a4640') : '#5b4a3c'; }
       else if (y < 2) col = '#4a4640';                                                // the stall riser under a window
-      else if (kind === 'lit') { col = y < 4 && r() < 0.5 ? '#c98f3e' : '#ffd98a'; glow = y < 4 ? 0.6 : 1; }   // (things in the window)
+      else if (kind === 'lit') { col = y < 4 && r() < 0.5 ? '#c98f3e' : day ? '#7f98ab' : '#ffd98a'; glow = y < 4 ? 0.6 : 1; }   // (things in the window)
       else col = '#1e2630';
       px(g, X, y, col); const n = r(); px(g, X, y, n < 0.5 ? '#000' : '#fff', 0.1 * Math.abs(n - 0.5) * 2);
-      if (glow) px(e, X, y, col, glow);
+      if (glow && !day) px(e, X, y, col, glow);
     }
   }
   const tex = (c) => { const t = new THREE.CanvasTexture(c); t.wrapS = THREE.RepeatWrapping; t.wrapT = THREE.ClampToEdgeWrapping; t.magFilter = THREE.NearestFilter; t.minFilter = THREE.LinearMipmapLinearFilter; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; };
   return [tex(cv), tex(ev)];
 }
 
-export function makeBlocks(scene, list) {
+// list: [{ x0, z0, w, d, h, style, seed, plain }] (plain: no shop fronts along the street: an office or a ministry);
+// day: no window lit
+export function makeBlocks(scene, list, { day = false } = {}) {
   const bufs = {}, plain = { pos: [], col: [], nor: [], idx: [] };
   const buf = (k) => bufs[k] || (bufs[k] = { pos: [], uv: [], col: [], nor: [], idx: [] });
   const quad = (b, P, n, col, uv) => {
@@ -102,7 +107,9 @@ export function makeBlocks(scene, list) {
       const top = Math.round(floors * k) * FLOOR;
       walls(b, x0, z0, x1, z1, y, top, tint, ou, ov);
       box(x0 - 1, z0 - 1, x1 + 1, z1 + 1, top, top + 2, st.cap, ROOF);   // a cornice, and the roof
-      if (i === 0) { walls(shop, x0 - 0.3, z0 - 0.3, x1 + 0.3, z1 + 0.3, 0, FLOOR, WHITE, ou, 0, FLOOR); box(x0 - 0.8, z0 - 0.8, x1 + 0.8, z1 + 0.8, 12, 13.5, st.cap); }   // shop fronts along the street, under a band
+      if (i === 0 && !B.plain) { walls(shop, x0 - 0.3, z0 - 0.3, x1 + 0.3, z1 + 0.3, 0, FLOOR, WHITE, ou, 0, FLOOR); box(x0 - 0.8, z0 - 0.8, x1 + 0.8, z1 + 0.8, 12, 13.5, st.cap); }   // shop fronts along the street, under a band
+      else if (i === 0) { box(x0 - 0.7, z0 - 0.7, x1 + 0.7, z1 + 0.7, 0, 2, st.cap.map((v) => v * 0.82)); box(x0 - 0.6, z0 - 0.6, x1 + 0.6, z1 + 0.6, 12, 13, st.cap); }   // an office or a ministry: a plinth, and a course over the ground floor
+      if (i === cut.length - 1) box(x0 - 0.4, z0 - 0.4, x1 + 0.4, z1 + 0.4, top + 2, top + 3.5, st.cap.map((v) => v * 0.9), ROOF);   // a parapet over the cornice
       y = top; if (i < cut.length - 1) { x0 += BAY; z0 += BAY; x1 -= BAY; z1 -= BAY; }
     });
     // on the roof: a bulkhead, and a water tank on the brick ones or a mast on a tall tower
@@ -121,8 +128,8 @@ export function makeBlocks(scene, list) {
     const m = new THREE.Mesh(g, mat); m.castShadow = false; m.receiveShadow = false; m.matrixAutoUpdate = false; m.updateMatrix(); m.frustumCulled = false; m.name = 'city blocks'; scene.add(m); out.push(m);
   };
   let n = 0;
-  for (const k in bufs) { const [map, emissiveMap] = pictures(STYLES[k], 101 + 37 * n++); mesh(bufs[k], new THREE.MeshLambertMaterial({ map, emissiveMap, emissive: 0xffffff, emissiveIntensity: 1.25, vertexColors: true })); }
-  { const [map, emissiveMap] = shopPictures(); mesh(shop, new THREE.MeshLambertMaterial({ map, emissiveMap, emissive: 0xffffff, emissiveIntensity: 1.3, vertexColors: true })); }
+  for (const k in bufs) { const [map, emissiveMap] = pictures(STYLES[k], 101 + 37 * n++, day); mesh(bufs[k], new THREE.MeshLambertMaterial({ map, emissiveMap, emissive: 0xffffff, emissiveIntensity: 1.25, vertexColors: true })); }
+  { const [map, emissiveMap] = shopPictures(day); mesh(shop, new THREE.MeshLambertMaterial({ map, emissiveMap, emissive: 0xffffff, emissiveIntensity: 1.3, vertexColors: true })); }
   mesh(plain, new THREE.MeshLambertMaterial({ vertexColors: true }));
   return { meshes: out, tris: out.reduce((a, m) => a + m.geometry.index.count / 3, 0) };
 }

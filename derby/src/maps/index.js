@@ -27,17 +27,21 @@ import crumble from './crumble.js';
 import bowtie from './bowtie.js';
 import fair from './fair.js';
 import empire from './empire.js';
+import capital from './capital.js';
 
-const ALL = [town, manhattan, base, fair, arena, crumble, bowtie, empire];
+const ALL = [town, manhattan, base, fair, arena, crumble, bowtie, empire, capital];
 // The start card: three ways to play, in this order. The rest (Crumbletown's waves, its race and the bow-tie) are
 // still there by address: ?map=town, ?map=crumble, ?map=bowtie.
 export const MAPS = [manhattan, base, fair, arena];
 // the maps of one mode that share a card: Zombie Survival's two (the card's map row picks; online picks for you)
+// A preview page (one that sets window.__AD_PREVIEW_TRACKS to a track's id before the game loads) opens the Race's stage
+// select on that track the first time (main.js lastMap).
+export const PREVIEW = (typeof window !== 'undefined' && window.__AD_PREVIEW_TRACKS) || null;
 export const SHARED = { survival: [base, fair] };
 // The stage select (main.js): a solo player picks a map of the mode from these picture cards, by the mode's name, and the
 // line under each card's name. Their pictures are src/stages.json (node derby/tools/stage-shots.mjs). A map here loads
 // without ?map= in the address, like the start card's.
-export const STAGES = { race: [manhattan, empire], survival: [base, fair], brawl: [arena] };
+export const STAGES = { race: [manhattan, empire, capital], survival: [base, fair], brawl: [arena] };
 export const TAGS = {
   race: '4 laps · river sweeps and towers', empire: '3 laps · bridges, the subway, Lady Liberty', capital: '3 laps · the Capitol, the Mall, the Metro',
   base: 'Army base · a storm at night', fair: 'County fair · the lights are failing', arena: 'Derby pit · traps round the edge',

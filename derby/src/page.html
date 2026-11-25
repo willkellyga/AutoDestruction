@@ -594,7 +594,7 @@ body:has(#menu:not([hidden])) :is(.hud, #radar, #tags) { visibility: hidden; }  
 .st-head { position: absolute; left: 22px; top: 18px; right: 22px; display: flex; align-items: center; gap: 18px; }
 .st-head button.alt { font-size: 16px; padding: 9px 18px; }
 .st-ttl { text-align: left; } .st-t { font: 400 clamp(28px, 4.4vw, 48px)/1 var(--f-logo); text-transform: uppercase; text-shadow: 0 4px 0 var(--tar); margin-top: 2px; }
-.st-cards { display: flex; justify-content: center; gap: clamp(12px, 2vw, 26px); padding: 0 24px; margin-top: 46px; }
+.st-cards { display: flex; justify-content: center; gap: clamp(12px, 2vw, 26px); padding: 0 24px; margin-top: 60px; }
 .st-card { --w: clamp(170px, 24vw, 330px); position: relative; width: var(--w); aspect-ratio: 4 / 5; padding: 0; border: 0; cursor: pointer; color: var(--ink); background: #111; overflow: hidden;
   transform: skewX(-9deg); box-shadow: 0 14px 30px rgba(0,0,0,0.5); transition: transform 0.15s, box-shadow 0.15s, filter 0.15s; filter: brightness(0.72) saturate(0.8); }
 .st-card img { position: absolute; top: 0; left: -22%; width: 144%; height: 100%; object-fit: cover; transform: skewX(9deg); pointer-events: none; }
@@ -618,7 +618,7 @@ body:has(#menu:not([hidden])) :is(.hud, #radar, #tags) { visibility: hidden; }  
 @media (max-height: 520px) {
   #stages { gap: 8px; padding: 10px; }
   .st-head { left: 12px; top: 8px; gap: 12px; } .st-head button.alt { font-size: 13px; padding: 6px 12px; } .st-t { font-size: 24px; } #stages .brief-k { font-size: 11px; }
-  .st-cards { margin-top: 34px; } .st-card { --w: min(25vw, 46vh); } .st-card b { font-size: 17px; } .st-card small { font-size: 11px; } .st-card .st-lab { padding: 8px 10px 8px 16px; }
+  .st-cards { margin-top: 46px; } .st-card { --w: min(24vw, 42vh); } .st-card b { font-size: 17px; } .st-card small { font-size: 11px; } .st-card .st-lab { padding: 8px 10px 8px 16px; }
   #stages .levels span { font-size: 13px; } #stages .levels button { font-size: calc(14px * var(--head-k)); padding: 5px 14px; }
   #stages #st-note { display: block; font-size: 12px; margin: 0; } #stages button.go { font-size: 18px; padding: 8px 28px; min-width: 180px; }
 }

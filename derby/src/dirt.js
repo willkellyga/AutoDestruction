@@ -435,7 +435,7 @@ export function makeDirt({ scene, camera, renderer, floor, MAP, mobile }) {
     if (sp > 14 && !c.dead) {
       const fast = clamp((sp - 14) / 60, 0, 1);
       for (let k = 0; k < W.length; k++) {
-        const w = W[k], x = c.x + w.x * co + w.z * s, z = c.z - w.x * s + w.z * co, T = st.w[k], wet = floor.wetAt(x, z);
+        const w = W[k], x = c.x + w.x * co + w.z * s, z = c.z - w.x * s + w.z * co, T = st.w[k], wet = MAP.wetAt ? Math.max(floor.wetAt(x, z), MAP.wetAt(x, z)) : floor.wetAt(x, z);   // (a map can have water standing on its road: maps/capital.js's pool)
         if (wet > 0.3) {
           const c0 = onDirt && floor.dirtAt(x, z) > 0.5 ? dirtCol(x, z) : WATER, m = c0 === WATER ? 1 : 0.55, sd = w.x > 0 ? 1 : -1, ox = co * sd, oz = -s * sd;
           const n = take(T, 'p', 200 * wet * fast * K, dt);
