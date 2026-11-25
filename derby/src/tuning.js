@@ -28,7 +28,7 @@ export const ENGINE_NOTE = {
   idle: 0.16,            // the revs sitting still
   launch: 0.5,           // the revs pulling away with the gas down (the clutch slipping)
   climb: 6, drop: 3.5, snap: 14,   // how fast the revs rise, fall off the gas, and fall in a shift
-  rate: [0.62, 0.95],    // playback rate = rate[0] + rpm x rate[1] (x the engine part's pitch)
+  rate: [0.62, 1.22],    // playback rate = rate[0] + rpm x rate[1] (x the engine part's pitch): idle 0.82, top speed 1.52
   vol: [0.36, 0.2, 0.3], // volume = vol[0] + rpm x vol[1] + on-the-gas x vol[2]
   tone: [700, 7500],     // a low-pass on the loop: muffled at idle off the gas, open at high revs on it (Hz)
   lift: 0.03,            // off the gas the note sags this much
