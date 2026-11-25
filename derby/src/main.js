@@ -111,7 +111,7 @@ const floor = makeGround({ scene, renderer, MAP, mobile: MOBILE });   // the map
 }
 const backdrop = MAP.backdrop ? makeBackdrop({ scene, map: MAP, mobile: MOBILE, viewH: () => renderer.domElement.height, follow: () => player }) : null;
 initSim(scene);
-const drifts = makeDrift({ scene, camera, mobile: MOBILE, el: $('drift'), soft: floor.dirtAt });   // skid marks, tyre smoke, the drift meter
+const drifts = makeDrift({ scene, camera, mobile: MOBILE, el: $('drift'), soft: MAP.dirtAt ? (x, z) => (MAP.dirtAt(x, z) ? 1 : floor.dirtAt(x, z)) : floor.dirtAt });   // skid marks, tyre smoke, the drift meter (none on dirt, a map's own stretch of it too)
 const dirt = makeDirt({ scene, camera, renderer, floor, MAP, mobile: MOBILE });   // ruts, rooster tails, dust and clods off the wheels
 const streaks = MAP.mode === 'race' ? makeStreaks({ scene, mobile: MOBILE }) : null;   // the air rushing past, flat out
 look.detail.value = 1; look.dusk.value = 0;
@@ -776,7 +776,7 @@ function over(title, lines = [], scrap = 0, more = null) {
   $('dead').hidden = true;
   $('over-t').textContent = title;
   $('over-l').innerHTML = ''; for (const l of [...lines, ...(scrap ? [`+${Math.round(scrap)} scrap`] : [])]) { const d = document.createElement('div'); d.textContent = l; $('over-l').appendChild(d); }
-  setTimeout(() => { if (game.state === 'over') { $('over').hidden = false; if (document.exitPointerLock) document.exitPointerLock(); } }, 1600);
+  setTimeout(() => { if (game.state === 'over') { $('over').hidden = false; $('banner').classList.remove('on'); if (document.exitPointerLock) document.exitPointerLock(); } }, 1600);
 }
 function overGo() {
   const m = overMore; if (!m || game.state !== 'over' || $('over').hidden) return;
