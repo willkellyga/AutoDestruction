@@ -247,18 +247,49 @@ export function hallShell(X, H) {
   }
   return lamps;
 }
+// More steel in the hall (into X): cross bracing in every other bay of the long walls, ties along the hall between
+// the trusses' bottom chords, a pipe run along the north wall, and a catwalk along each long side hung from the trusses.
+export function hallSteel(X, H, C = {}) {
+  const { x0, x1, z0, z1, eave, bay } = H, zm = (z0 + z1) / 2, n = Math.round((x1 - x0) / bay), w = (x1 - x0) / n;
+  for (let i = 0; i < n; i += 2) for (const [z, sg] of [[z0 + 2.5, 1], [z1 - 2.5, -1]]) {
+    const a = x0 + i * w, b = a + w;
+    X.beam([a, 64, z], [b, eave - 38, z], 1.4, RUST_D); X.beam([b, 64, z], [a, eave - 38, z], 1.4, RUST_D); X.B((a + b) / 2 - 2, (64 + eave - 38) / 2 - 2, z - 0.9, (a + b) / 2 + 2, (64 + eave - 38) / 2 + 2, z + 0.9, STEEL_D);
+    X.beam([a, eave - 20, z + sg * 3], [a, eave - 3, z + sg * 26], 1.6, RUST_D); X.beam([b, eave - 20, z + sg * 3], [b, eave - 3, z + sg * 26], 1.6, RUST_D);   // knee braces up to the trusses
+  }
+  for (const f of [0.18, 0.5, 0.82]) { const z = z0 + (z1 - z0) * f; X.B(x0, eave - 3.4, z - 1, x1, eave - 1, z + 1, STEEL_D); X.B(x0, eave - 9, z - 0.6, x1, eave - 8, z + 0.6, RUST_D); for (let x = x0; x < x1 - 1; x += bay) { X.beam([x, eave - 8.5, z], [x + bay / 2, eave - 2, z], 1, RUST_D); X.beam([x + bay / 2, eave - 2, z], [x + bay, eave - 8.5, z], 1, RUST_D); } }
+  X.B(x0, 66, z0 + 9, x1, 71, z0 + 14, RUST); for (let x = x0 + 12; x < x1; x += 60) { X.B(x, 65.4, z0 + 8.4, x + 2, 71.6, z0 + 14.6, DARK); X.B(x + 0.4, 71, z0 + 4, x + 1.6, 72, z0 + 10, STEEL_D); }
+  X.B(x0, 88, z1 - 13, x1, 91, z1 - 10, STEEL); X.B(x0, 84, z1 - 12.5, x1, 86, z1 - 10.5, RUST);
+  for (const z of C.walks || []) {
+    const y = C.walkY || 108;
+    X.B(x0, y, z - 4, x1, y + 1, z + 4, STEEL_D); X.stripes(x0, y - 0.3, z - 4.3, x1, y + 0.5, z - 4, Math.round((x1 - x0) / 12)); X.stripes(x0, y - 0.3, z + 4, x1, y + 0.5, z + 4.3, Math.round((x1 - x0) / 12));
+    for (const s of [-4, 3.6]) { X.B(x0, y + 5, z + s, x1, y + 5.6, z + s + 0.4, YELLOW); X.B(x0, y + 2.8, z + s, x1, y + 3.2, z + s + 0.4, YELLOW_D); }
+    for (let x = x0; x <= x1; x += bay / 2) { for (const s of [-4, 3.6]) X.B(x - 0.3, y + 1, z + s, x + 0.3, y + 5.6, z + s + 0.4, YELLOW_D); }
+    for (let x = x0; x <= x1 + 1; x += bay * 2) for (const s of [-4.4, 3.8]) X.B(x - 0.4, y, z + s, x + 0.4, eave - 2, z + s + 0.6, STEEL_D);   // hangers up to the trusses
+    for (let x = x0 + bay; x < x1; x += bay * 2) X.L(x - 0.8, y - 1.2, z - 0.8, x + 0.8, y, z + 0.8, AMBER, 0.8);
+  }
+}
+// A pendant lamp (into X) hung from the roof over (x, z), its mouth at y: the rod, a wide shade, the lamp in it.
+export function pendant(X, x, y, z, top) {
+  X.B(x - 0.5, y + 6, z - 0.5, x + 0.5, top, z + 0.5, DARK);
+  X.B(x - 2, y + 5, z - 2, x + 2, y + 7, z + 2, STEEL_D); X.B(x - 4, y + 3, z - 4, x + 4, y + 5, z + 4, DARK); X.B(x - 6, y + 1, z - 6, x + 6, y + 3, z + 6, DARK); X.B(x - 7.5, y, z - 7.5, x + 7.5, y + 1, z + 7.5, YELLOW_D);
+  X.L(x - 5.5, y - 0.3, z - 5.5, x + 5.5, y + 0.9, z + 5.5, [3.0, 2.5, 1.7]);
+}
 // The crane's bridge across the hall, about its own middle along x (it travels along x): two box girders from wall to
-// wall at the rails' height, the end trucks on the rails, and the trolley over `S.z` with its drum and lamps.
+// wall at the rails' height, the end trucks on the rails, and a trolley over each of `S.zs` with its drum and lamps
+// (S.hook: a hook block hanging that far under it, for a crane with no ladle).
 export function bridgeGeo(S) {
   const X = makeBoxes(), y = 0, z0 = S.z0 + 5, z1 = S.z1 - 5;
   for (const x of [-7, 4]) { X.B(x, y + 1, z0, x + 3, y + 9, z1, YELLOW); X.B(x - 0.3, y + 0.4, z0, x + 3.3, y + 1, z1, YELLOW_D); X.B(x - 0.3, y + 9, z0, x + 3.3, y + 9.6, z1, YELLOW_D); }
   for (let z = z0 + 20; z < z1 - 10; z += 44) { X.B(-4, y + 3, z, 4, y + 5, z + 1.6, STEEL_D); X.stripes(-7.2, y + 2, z + 6, -6.9, y + 8, z + 26, 5, true); X.stripes(6.9, y + 2, z + 6, 7.2, y + 8, z + 26, 5, true); }
   for (const z of [z0 - 1, z1 - 5]) { X.B(-13, y, z, 13, y + 6, z + 6, STEEL_D); X.stripes(-13, y + 1.5, z - 0.2, 13, y + 4.5, z + 6.2, 8); for (const x of [-11, 9]) X.B(x, y - 2.4, z + 1, x + 2, y, z + 5, DARK); }
-  // the trolley: a frame across the girders, the hoist's drum, a cab beside it, lamps underneath
-  X.B(-9, y + 9.6, S.z - 9, 9, y + 12, S.z + 9, STEEL_D); X.B(-5, y + 12, S.z - 6, 5, y + 18, S.z + 6, RUST); X.B(-6, y + 13, S.z - 3, 6, y + 17, S.z + 3, DARK);
-  X.B(-3, y - 4, S.z - 3, 3, y + 1, S.z + 3, DARK);
-  X.B(7.2, y - 9, S.z - 20, 13.2, y + 1, S.z - 11, YELLOW_D); X.B(7, y - 7, S.z - 19.6, 13.4, y - 3, S.z - 11.4, BLACK); X.L(7.6, y - 6.6, S.z - 20.1, 12.8, y - 3.4, S.z - 19.9, LAMP, 0.35);
-  for (const [x, z] of [[-8, S.z - 8], [8, S.z - 8], [-8, S.z + 8], [8, S.z + 8]]) X.L(x - 0.8, y - 0.9, z - 0.8, x + 0.8, y + 0.4, z + 0.8, AMBER);
+  // a trolley over each ladle: a frame across the girders, the hoist's drum, lamps underneath; a cab beside the first
+  (S.zs || [S.z]).forEach((tz, i) => {
+    X.B(-9, y + 9.6, tz - 9, 9, y + 12, tz + 9, STEEL_D); X.B(-5, y + 12, tz - 6, 5, y + 18, tz + 6, RUST); X.B(-6, y + 13, tz - 3, 6, y + 17, tz + 3, DARK);
+    X.B(-3, y - 4, tz - 3, 3, y + 1, tz + 3, DARK);
+    if (!i) { X.B(7.2, y - 9, tz - 20, 13.2, y + 1, tz - 11, YELLOW_D); X.B(7, y - 7, tz - 19.6, 13.4, y - 3, tz - 11.4, BLACK); X.L(7.6, y - 6.6, tz - 20.1, 12.8, y - 3.4, tz - 19.9, LAMP, 0.35); }
+    for (const [x, z] of [[-8, tz - 8], [8, tz - 8], [-8, tz + 8], [8, tz + 8]]) X.L(x - 0.8, y - 0.9, z - 0.8, x + 0.8, y + 0.4, z + 0.8, AMBER);
+    if (S.hook) { X.B(-0.6, y - S.hook, tz - 0.6, 0.6, y - 4, tz + 0.6, STEEL_D); X.B(-3.5, y - S.hook - 7, tz - 2.5, 3.5, y - S.hook, tz + 2.5, YELLOW); X.stripes(-3.6, y - S.hook - 5, tz - 2.6, 3.6, y - S.hook - 2, tz + 2.6, 4); X.B(-1, y - S.hook - 11, tz - 1, 1, y - S.hook - 7, tz + 1, DARK); X.B(-1, y - S.hook - 12, tz - 1, 3, y - S.hook - 11, tz + 1, DARK); }
+  });
   return X.geos();
 }
 // A furnace behind the wall (into X), its front toward +z turned by `flip` (-1: toward -z): a stepped stack in bands,

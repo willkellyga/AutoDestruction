@@ -10,6 +10,7 @@
 //            bone's place, to be turned as the robot works: { name: group } comes back in `limbs`
 //     drop   bones whose parts are left out (an arm not yet fitted)
 //     scale  how big (1: some 70 voxels tall)
+//     ownGlow  his lamps and eyes get a material of their own (`litMat` comes back), so they can be dimmed and lit
 //   Returns { root, limbs, places, tris }: root faces +z; places are where each bone is, scaled, from his feet.
 import * as THREE from 'three';
 import { buildMarshal } from '../../rivals/src/marshal.js';
@@ -42,7 +43,8 @@ function merge(parts, k = 1) {
   return out;
 }
 
-export function makeBot({ skin, stage, pose = {}, cuts = [], drop = [], eyes = 2.2, scale = 1 } = {}) {
+export function makeBot({ skin, stage, pose = {}, cuts = [], drop = [], eyes = 2.2, scale = 1, ownGlow = false } = {}) {
+  const litMat = ownGlow ? new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false }) : glowMat();   // (his own: its colour dims and lights all his lamps)
   const cr = buildMarshal(stage, skin), B = cr.bones;
   for (const [name, [rx, ry, rz]] of Object.entries(pose)) { const b = B[name]; if (!b) continue; b.rotation.x += rx; b.rotation.y += ry; b.rotation.z += rz; }
   cr.root.position.set(0, 0, 0); cr.root.rotation.set(0, 0, 0); cr.root.scale.setScalar(1);
@@ -76,7 +78,7 @@ export function makeBot({ skin, stage, pose = {}, cuts = [], drop = [], eyes = 2
   let tris = 0;
   for (const [id, parts] of sets) {
     const [key, lit] = id.split('|');
-    const geo = merge(parts, lit ? eyes : 1), mesh = new THREE.Mesh(geo, lit ? glowMat() : paintMat());
+    const geo = merge(parts, lit ? eyes : 1), mesh = new THREE.Mesh(geo, lit ? litMat : paintMat());
     mesh.castShadow = false; mesh.receiveShadow = false; tris += geo.index.count / 3;
     groupOf(key).add(mesh);
   }
@@ -86,5 +88,5 @@ export function makeBot({ skin, stage, pose = {}, cuts = [], drop = [], eyes = 2
   const at = (name) => { const b = B[name]; return b ? _v.setFromMatrixPosition(b.matrixWorld).toArray() : [0, 0, 0]; };
   const places = {}; for (const name of Object.keys(B)) places[name] = at(name).map((v) => v * scale);   // (as he stands, scaled)
   root.scale.setScalar(scale);
-  return { root, limbs, places, tris };
+  return { root, limbs, places, tris, litMat };
 }

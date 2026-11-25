@@ -18,8 +18,8 @@
 //   the traps    the pour     the furnace robot at the north wall tips his crucible and the runner fills with steel
 //                             from end to end for a few seconds: it burns what stands in it. Two plate bridges cross
 //                             it, and the jump.
-//                the ladle    hangs from the travelling crane over the north-east and swings across under it as the
-//                             crane runs up and down the hall: it bats a car across the floor.
+//                the ladles   two hang from the travelling crane over the east half and swing across under it, out
+//                             of step, as the crane runs up and down the hall: they bat a car across the floor.
 //                the smith    the robot at the west wall brings his hammer down on the forge plate.
 //                the line     the rolling line: no harm in it, it carries a car where it is going.
 //   the robots   Monster Mayhem's robot, three of him (steelbots.js): Steeljaw pours, Jackhammer the builder is the
@@ -63,25 +63,32 @@ const slabRoofs = (n) => (u, v) => { const a = (u * n) % 1; return a < 0.07 || a
 const coilRoofs = (u) => { const a = (u * 4) % 1 - 0.5; return -10 * a * a; };
 // ---- the traps ---------------------------------------------------------------------------------------------------------
 // the crane's bridge runs from x0 to x1; the ladle hangs `len` under the trolley over z and swings across (along z)
-const LADLE = { x0: 580, x1: 790, z: 410, y: HALL.rail, rail: HALL.rail, len: HALL.rail - 2.6, r: 9, speed: 8, hall: HALL, wild: 'ladle', phase: 1.1 };
+// (Will, 2026-11-25: "maybe ... a second ladel". It hangs from the same bridge, over the south-east, out of step with
+// the first: still one line across the hall to watch, and the west half as open as it was. At z 680 it is low only
+// from z 661 to 699, so a car coming off the rolling line (z 619..645) is clear of it.)
+const LADLE = { x0: 580, x1: 790, z: 410, y: HALL.rail, rail: HALL.rail, len: HALL.rail - 2.6, r: 9, speed: 8, hall: HALL, wild: 'ladle',
+  ladles: [{ z: 410, phase: 1.1 }, { z: 680, phase: 1.1 + Math.PI * 0.62 }] };
 const LADLE_REACH = 38;   // (how far either side of the trolley it swings when it is loose)
 const POUR = { ...CH, bridges: BRIDGES, wild: 'pour', first: 12, skip: (z) => z > JUMP.z0 - 6 && z < JUMP.z1 + 6 };
 // the forge plate: where the smith's hammer comes down (the test steel-bots.js checks it against the robot's arm)
 const FORGE = { x: 233, z: 512, r: 13, reach: 30, wild: 'hammer', out: [1, 0], first: 7 };
 FORGE.lamps = [0, 1, 2, 3, 4, 5].map((k) => { const a = -1.05 + k * 0.42; return [FORGE.x + Math.cos(a) * 19, FORGE.z + Math.sin(a) * 19]; });
-const WORKS = { hall: HALL, scale: 1.5, furnaces: [[396, 258], [628, 258]], pourer: { x: 512, z: 252 }, smith: { x: 142, z: 476, shaft: 40 }, built: { x: 876, z: 512, skin: 'toy' } };
+const WORKS = { hall: HALL, scale: 1.5, furnaces: [[396, 258], [628, 258]], pourer: { x: 512, z: 252 }, smith: { x: 142, z: 476, shaft: 40 }, built: { x: 876, z: 512, skin: 'toy' },
+  // pendant lamps over the floor (none where the smith's hammer goes up), a catwalk along each long side, a second crane parked in the west
+  lamps: [236, 374, 512, 650, 788].flatMap((x) => [372, 512, 652].map((z) => [x, z])).filter(([x, z]) => !(x === 236 && z === 512)), lampY: 100,
+  walks: [330, 694], walkY: 108, parked: { x: 318, zs: [566], hook: 24 }, smithBusy: () => FORGE.danger };
 
 // ---- pickups -------------------------------------------------------------------------------------------------------------
 // The strike hangs over the runner between the kickers' lips: only a car in the air takes it. A nitro hangs over the
 // coils the same way. Repair kits where it is risky: on the forge plate, under the crane, at the runner's foot.
 const SUPER = { kind: 'super', x: (JUMP.x0 + JUMP.x1) / 2, z: CZ, air: JUMP.lip + 0.5, rivals: false };
 const PICKUP_SPOTS = [
-  SUPER, { kind: 'repair', x: FORGE.x, z: FORGE.z }, { kind: 'repair', x: 686, z: LADLE.z }, { kind: 'repair', x: 560, z: 700 }, { kind: 'repair', x: 452, z: 322 },
+  SUPER, { kind: 'repair', x: FORGE.x, z: FORGE.z }, { kind: 'repair', x: 686, z: 410 }, { kind: 'repair', x: 560, z: 700 }, { kind: 'repair', x: 452, z: 322 },
   { kind: 'nitro', x: (LANE.x0 + LANE.x1) / 2, z: LANE.z }, { kind: 'nitro', x: (COIL.x0 + COIL.x1) / 2, z: COIL.z, air: COIL.lip - COIL.roof, rivals: false }, { kind: 'nitro', x: 812, z: 512 },
   { kind: 'ammo', x: (ROLL.x0 + ROLL.x1) / 2, z: (ROLL.z0 + ROLL.z1) / 2 }, { kind: 'ammo', x: 236, z: 352 }, { kind: 'ammo', x: 790, z: 676 }, { kind: 'ammo', x: 786, z: 344 }, { kind: 'ammo', x: 250, z: 690 },
   { kind: 'scrap', x: 512, z: 348, rivals: false }, { kind: 'scrap', x: 512, z: 676, rivals: false },   // (bait in the runner, for you alone)
 ];
-const BARRELS = { kind: 'barrels', spots: [{ x: 760, z: 650 }, { x: 766, z: 655 }, { x: 758, z: 658 }, { x: 264, z: 366 }, { x: 270, z: 361 }, { x: 262, z: 358 }] };
+const BARRELS = { kind: 'barrels', spots: [{ x: 822, z: 566 }, { x: 828, z: 571 }, { x: 820, z: 575 }, { x: 264, z: 366 }, { x: 270, z: 361 }, { x: 262, z: 358 }] };
 // boost strips: one on each run at the jump (ending fifty short of its lip), one into the rollers from the east
 const BOOSTS = [
   { kind: 'boost', x0: 372, z0: 505, x1: 442, z1: 519, yaw: E, to: [JUMP.x0 - JUMP.run - 3, JUMP.z0, JUMP.x0 - JUMP.run - 3, JUMP.z1] },
@@ -95,7 +102,7 @@ const SHOW = { kind: 'show', first: 35, every: 45, time: 15, events: [
 ], onEvent: () => { if (!SUPER.up) SUPER.t = Math.min(SUPER.t ?? 1, 1); if (moves) moves.salute(); } };
 // where cars come in, each facing the middle, clear of the traps
 const SPOTS = [
-  [250, 420], [470, 334], [600, 334], [700, 332], [812, 470], [780, 566], [760, 690], [640, 690], [570, 580], [452, 574],
+  [250, 420], [470, 334], [600, 334], [700, 332], [812, 470], [776, 552], [730, 570], [650, 566], [570, 580], [452, 574],
   [300, 570], [330, 468], [640, 470], [420, 700], [300, 694], [250, 600],
 ].map(([x, z, yaw]) => ({ x, z, yaw: yaw ?? Math.atan2(CX - x, CZ - z) }));
 
@@ -242,14 +249,14 @@ function paint() {
   }
   g.textAlign = 'center'; g.textBaseline = 'middle';
   // under the crane: a bay marked out in stripes, the ladle's path across it at each end and in the middle, the word
-  { const x0 = LADLE.x0 - 16, x1 = LADLE.x1 + 16, z0 = LADLE.z - LADLE_REACH, z1 = LADLE.z + LADLE_REACH;
+  for (const LD of LADLE.ladles) { const x0 = LADLE.x0 - 16, x1 = LADLE.x1 + 16, z0 = LD.z - LADLE_REACH, z1 = LD.z + LADLE_REACH;
     g.fillStyle = 'rgba(210,120,24,0.1)'; g.fillRect(x0, z0, x1 - x0, z1 - z0);
     stripes(g, x0, z0 - 2, x1 - x0, 2, 5, true); stripes(g, x0, z1, x1 - x0, 2, 5, true);
     g.strokeStyle = 'rgba(226,176,42,0.55)'; g.lineWidth = 1; g.setLineDash([3, 3]);
     for (let x = LADLE.x0; x <= LADLE.x1; x += 35) { g.beginPath(); g.moveTo(x, z0 + 4); g.lineTo(x, z1 - 4); g.stroke(); }
     g.setLineDash([]);
     g.font = 'bold 13px "Arial Black", Impact, sans-serif'; g.fillStyle = 'rgba(226,176,42,0.5)';
-    for (const x of [(x0 + LADLE.x0 + LADLE.x1 + x1) / 4 - 26, (x0 + LADLE.x0 + LADLE.x1 + x1) / 4 + 80]) { g.fillText('OVERHEAD', x, LADLE.z - 16); g.fillText('LADLE', x, LADLE.z + 16); }
+    for (const x of [(x0 + LADLE.x0 + LADLE.x1 + x1) / 4 - 26, (x0 + LADLE.x0 + LADLE.x1 + x1) / 4 + 80]) { g.fillText('OVERHEAD', x, LD.z - 16); g.fillText('LADLE', x, LD.z + 16); }
   }
   // the forge plate: steel, a striped ring, the reach of the blow dashed in red, the word
   g.fillStyle = 'rgba(120,24,18,0.3)'; g.beginPath(); g.arc(FORGE.x, FORGE.z, FORGE.reach, 0, TAU); g.fill();
@@ -329,7 +336,7 @@ function makeZones() {
   const where = (f) => { const o = []; for (let i = 0; i < NC; i++) if (!nav.blocked[i] && f(cellX(i), cellZ(i))) o.push(i); return o; };
   zones = {
     runner: where((x, z) => x > CH.x0 - 5 && x < CH.x1 + 5 && !BRIDGES.some(([a, b]) => z > a + 2 && z < b - 2)),
-    ladle: where((x, z) => x > LADLE.x0 - 22 && x < LADLE.x1 + 22 && Math.abs(z - LADLE.z) < 32),
+    ladle: where((x, z) => x > LADLE.x0 - 22 && x < LADLE.x1 + 22 && LADLE.ladles.some((l) => Math.abs(z - l.z) < 32)),
     forge: where((x, z) => Math.hypot(x - FORGE.x, z - FORGE.z) < FORGE.reach - 4),
   };
 }
@@ -390,7 +397,7 @@ export default {
   build() { ctx.L = 2; seed = 1234567; ring(); finish(); },
   ground: () => { seed = 7654321; return paint(); },
   floor: (x, z) => DIRT.floor(x, z), floorMesh: () => DIRT.mesh(), ledges: true,
-  spawn: { x: 600, z: 690, yaw: Math.atan2(CX - 600, CZ - 690) },
+  spawn: { x: 600, z: 566, yaw: Math.atan2(CX - 600, CZ - 566) },
   spots: SPOTS,
   pit: { x: CX, z: CZ },
   waypoint, runClear,
@@ -404,11 +411,11 @@ export default {
     tone: { haze: 0x1c130e, fog: [300, 1700], exposure: 1.06, hemi: [0x8f755f, 0x35221a, 0.9], flood: [0xffeedb, 2.6], fill: [0xff9c58, 0.9, [-0.15, 0.5, -0.85]] } },
   // the works first (the traps move its parts), then the traps, then the bounds
   hazards: [
-    { kind: 'custom', make(api) {
+    { kind: 'custom', make(api, S) {
       for (const o of THINGS) o.dead = false;
       stalls = makeStalls(api, THINGS, POWER, () => 0, [WX, WZ], { heap: wreckage, bots: true });
       moves = makeArenaMoves(api, { pyros: THINGS.filter((o) => o.kind === 'pyro') });
-      works = makeWorks(api, { ...WORKS, dress });
+      works = makeWorks(api, { ...WORKS, dress }, S);
       FORGE.arm = works.arm; FORGE.at = works.at;
       return { step(dt) { stalls.step(dt); moves.step(dt); works.tip(POUR.tip || 0, !!POUR.pouring); works.step(dt); } };
     } },
@@ -436,10 +443,11 @@ export default {
     R.restore();
     gridR(R, s, ox, oy, w, h);
     // the crane's bay, the bridge across it and the ladle
-    R.strokeStyle = 'rgba(255,200,60,0.3)'; R.lineWidth = 1; R.strokeRect(X(LADLE.x0 - 14), Y(LADLE.z - LADLE_REACH), (LADLE.x1 - LADLE.x0 + 28) * s, 2 * LADLE_REACH * s);
-    if (LADLE.x !== undefined) {
-      R.strokeStyle = 'rgba(255,200,60,0.6)'; R.beginPath(); R.moveTo(X(LADLE.x), Y(LADLE.z - LADLE_REACH)); R.lineTo(X(LADLE.x), Y(LADLE.z + LADLE_REACH)); R.stroke();
-      R.fillStyle = LADLE.low ? 'rgba(255,90,40,1)' : 'rgba(255,170,60,0.85)'; R.beginPath(); R.arc(X(LADLE.x), Y(LADLE.z + LADLE.s), LADLE.low ? 3.2 : 2.4, 0, TAU); R.fill();
+    for (const l of LADLE.ladles) {
+      R.strokeStyle = 'rgba(255,200,60,0.3)'; R.lineWidth = 1; R.strokeRect(X(LADLE.x0 - 14), Y(l.z - LADLE_REACH), (LADLE.x1 - LADLE.x0 + 28) * s, 2 * LADLE_REACH * s);
+      if (LADLE.x === undefined || !l.head) continue;
+      R.strokeStyle = 'rgba(255,200,60,0.6)'; R.beginPath(); R.moveTo(X(LADLE.x), Y(l.z - LADLE_REACH)); R.lineTo(X(LADLE.x), Y(l.z + LADLE_REACH)); R.stroke();
+      R.fillStyle = l.low ? 'rgba(255,90,40,1)' : 'rgba(255,170,60,0.85)'; R.beginPath(); R.arc(X(LADLE.x), Y(l.z + l.s), l.low ? 3.2 : 2.4, 0, TAU); R.fill();
     }
     // the forge plate: red as the hammer lands, blinking as it is about to
     R.fillStyle = FORGE.low ? 'rgba(255,60,40,0.9)' : FORGE.danger && blink ? 'rgba(255,230,90,0.9)' : 'rgba(255,200,40,0.4)';

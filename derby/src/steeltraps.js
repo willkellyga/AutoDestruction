@@ -14,7 +14,7 @@
 import * as THREE from 'three';
 import { TRAP } from './hazards.js';
 import { fire, sparks, dust, dustWave, puff, ring } from '../../src/sim.js';
-import { ladleGeo, crucibleGeo, sledgeGeo, bridgeGeo, makeBoxes, hallShell, furnace, cradle, steelMat, steelLit, HOT, WARM, WELD } from './steelkit.js';
+import { ladleGeo, crucibleGeo, sledgeGeo, bridgeGeo, makeBoxes, hallShell, hallSteel, pendant, furnace, cradle, steelMat, steelLit, HOT, WARM, WELD } from './steelkit.js';
 import { makeBot } from './steelbots.js';
 
 const TAU = Math.PI * 2, clamp = (v, a, b) => Math.max(a, Math.min(b, v)), ease = (t) => t * t * (3 - 2 * t);
@@ -37,17 +37,23 @@ function floorGlow(r, rgb) {
 const airborne = (api, c) => c.y - (api.MAP.floor ? api.MAP.floor(c.x, c.z, c.y) : 0) > 1.6;
 
 // ---- the ladle ----------------------------------------------------------------------------------------------------------
+// G.ladles: [{ z, phase }], one or more on the one bridge (each swings about its own z, in its own time); the first is
+// also G.s, G.low and G.head, and each has its own s, low and head.
 export function makeLadle(api, G, S) {
   const L = G.len, R = G.r ?? 9, DMG = G.dmg ?? 26, A0 = G.amp ?? 0.62, A1 = G.wildAmp ?? 0.86, PER = G.period ?? 5.2;
+  const LS = G.ladles || (G.ladles = [{ z: G.z, phase: G.phase ?? 0 }]);
   const bridge = new THREE.Group(); bridge.position.set(G.x0, G.rail, 0); api.scene.add(bridge);
-  kitMeshes(bridgeGeo({ z0: G.hall.z0, z1: G.hall.z1, z: G.z }), bridge);
-  const pivot = new THREE.Group(); pivot.position.set(0, G.y - G.rail, G.z); bridge.add(pivot);
-  const swing = new THREE.Group(); pivot.add(swing);
-  const [body] = kitMeshes(ladleGeo(L), swing, true); body.castShadow = true;
-  const glow = floorGlow(26, [1.5, 0.6, 0.12]); api.scene.add(glow);
-  let ph = G.phase ?? 0, amp = A0, dir = 1, wait = 0, clock = 0, toastT = 0, creak = 0;
-  const hitAt = new WeakMap();
-  G.x = G.x0; G.s = 0; G.low = false; G.head = { x: G.x0, z: G.z };
+  kitMeshes(bridgeGeo({ z0: G.hall.z0, z1: G.hall.z1, zs: LS.map((l) => l.z) }), bridge);
+  const geo = ladleGeo(L);
+  for (const l of LS) {
+    const pivot = new THREE.Group(); pivot.position.set(0, G.y - G.rail, l.z); bridge.add(pivot);
+    l.swing = new THREE.Group(); pivot.add(l.swing);
+    const [body] = kitMeshes(geo, l.swing, true); body.castShadow = true;
+    l.glow = floorGlow(26, [1.5, 0.6, 0.12]); api.scene.add(l.glow);
+    l.ph = l.phase ?? 0; l.creak = 0; l.s = 0; l.low = false; l.head = { x: G.x0, z: l.z }; l.hitAt = new WeakMap();
+  }
+  let amp = A0, dir = 1, wait = 0, clock = 0, toastT = 0;
+  G.x = G.x0; G.s = 0; G.low = false; G.head = LS[0].head;
   return {
     step(dt, live) {
       clock += dt;
@@ -56,30 +62,35 @@ export function makeLadle(api, G, S) {
       if (wait > 0) wait -= dt;
       else { G.x += dir * (wild ? G.speed * 1.8 : G.speed) * dt; if (G.x > G.x1) { G.x = G.x1; dir = -1; wait = wild ? 0.4 : 1.6; } else if (G.x < G.x0) { G.x = G.x0; dir = 1; wait = wild ? 0.4 : 1.6; } }
       amp += ((wild ? A1 : A0) - amp) * Math.min(1, dt * 0.8);
-      const w = TAU / (wild ? PER * 0.85 : PER); ph += dt * w;
-      const th = amp * Math.sin(ph), dth = amp * Math.cos(ph) * w;
-      const s = L * Math.sin(th), by = G.y - L * Math.cos(th), speed = Math.abs(dth) * L, hx = G.x, hz = G.z + s;
-      bridge.position.x = G.x; swing.rotation.x = -th;
-      G.s = s; G.low = by < 5.5; G.head.x = hx; G.head.z = hz; G.th = th;
-      glow.position.x = hx; glow.position.z = hz; const k = clamp(1.25 - by / 16, 0.25, 1); glow.scale.setScalar(0.7 + 0.5 * (1 - k)); glow.material.opacity = 0.75 * k;
-      if ((creak -= dt) <= 0 && Math.abs(th) > amp * 0.96) { creak = PER * 0.4; api.sound('creak', 0.5, hx, G.y, G.z); }
-      if (G.low && Math.random() < dt * 9 * TRAP.busy(api)) sparks(hx + (Math.random() - 0.5) * R, by + 3, hz + (Math.random() - 0.5) * R, 2, 1, 0.6, 0.2, 9);
-      if (!live || speed < 6) return;
-      for (const c of api.cars) {
-        if (c.gone || by > c.top - 0.3 || by + 22 < c.y) continue;
-        TRAP.ends(c, _e);
-        let hit = Math.hypot(c.x - hx, c.z - hz) < R + c.wide;
-        for (const [ex, ez] of _e) if (Math.hypot(ex - hx, ez - hz) < R + c.wide * 0.8) hit = true;
-        if (!hit || !TRAP.fresh(hitAt, c, clock, 1)) continue;
-        const sd = Math.sign(dth) || 1, f = Math.max(38, speed * 1.2);
-        TRAP.knock(c, dir * (wait > 0 ? 0 : 6), sd * f, 0.42);
-        if (c.dead) continue;
-        api.damage(c, DMG * (0.6 + 0.4 * Math.min(1, speed / 42)), null);
-        sparks(c.x, 4, c.z - sd * c.wide, Math.round(30 * TRAP.busy(api)), 1, 0.7, 0.3, 32); fire(c.x, 4, c.z, Math.round(5 * TRAP.busy(api)), 3);
-        api.sound('c.clang', 1.2, hx, 4, hz); api.sfx.play('crunch_heavy', 1, hx, hz, { gap: 0.1 }); api.sound('c.thud', 1, hx, 2, hz);
-        TRAP.shake(api, 0.8, hx, hz);
-        if (c === api.player && clock > toastT) { toastT = clock + 4; api.toast('Clocked by the ladle!', 'It swings across under the crane: watch its glow on the floor'); }
+      const w = TAU / (wild ? PER * 0.85 : PER);
+      bridge.position.x = G.x;
+      for (const l of LS) {
+        l.ph += dt * w;
+        const th = amp * Math.sin(l.ph), dth = amp * Math.cos(l.ph) * w;
+        const s = L * Math.sin(th), by = G.y - L * Math.cos(th), speed = Math.abs(dth) * L, hx = G.x, hz = l.z + s;
+        l.swing.rotation.x = -th;
+        l.s = s; l.low = by < 5.5; l.head.x = hx; l.head.z = hz;
+        const glow = l.glow; glow.position.x = hx; glow.position.z = hz; const k = clamp(1.25 - by / 16, 0.25, 1); glow.scale.setScalar(0.7 + 0.5 * (1 - k)); glow.material.opacity = 0.75 * k;
+        if ((l.creak -= dt) <= 0 && Math.abs(th) > amp * 0.96) { l.creak = PER * 0.4; api.sound('creak', 0.5, hx, G.y, l.z); }
+        if (l.low && Math.random() < dt * 9 * TRAP.busy(api)) sparks(hx + (Math.random() - 0.5) * R, by + 3, hz + (Math.random() - 0.5) * R, 2, 1, 0.6, 0.2, 9);
+        if (!live || speed < 6) continue;
+        for (const c of api.cars) {
+          if (c.gone || by > c.top - 0.3 || by + 22 < c.y) continue;
+          TRAP.ends(c, _e);
+          let hit = Math.hypot(c.x - hx, c.z - hz) < R + c.wide;
+          for (const [ex, ez] of _e) if (Math.hypot(ex - hx, ez - hz) < R + c.wide * 0.8) hit = true;
+          if (!hit || !TRAP.fresh(l.hitAt, c, clock, 1)) continue;
+          const sd = Math.sign(dth) || 1, f = Math.max(38, speed * 1.2);
+          TRAP.knock(c, dir * (wait > 0 ? 0 : 6), sd * f, 0.42);
+          if (c.dead) continue;
+          api.damage(c, DMG * (0.6 + 0.4 * Math.min(1, speed / 42)), null);
+          sparks(c.x, 4, c.z - sd * c.wide, Math.round(30 * TRAP.busy(api)), 1, 0.7, 0.3, 32); fire(c.x, 4, c.z, Math.round(5 * TRAP.busy(api)), 3);
+          api.sound('c.clang', 1.2, hx, 4, hz); api.sfx.play('crunch_heavy', 1, hx, hz, { gap: 0.1 }); api.sound('c.thud', 1, hx, 2, hz);
+          TRAP.shake(api, 0.8, hx, hz);
+          if (c === api.player && clock > toastT) { toastT = clock + 4; api.toast('Clocked by the ladle!', 'They swing across under the crane: watch their glow on the floor'); }
+        }
       }
+      G.s = LS[0].s; G.low = LS.some((l) => l.low);
     },
   };
 }
@@ -218,10 +229,34 @@ export function makeSmith(api, F, S) {
 //      banks: [[x, y, z]] (the floodlights' frames) }
 // Returns { step(dt), tip(k) (the crucible, 0 to 1), arm(k), at(v) (the smith's: makeSmith's handles), lip: [x, y, z]
 // (where the crucible's stream leaves it), welds }.
-export function makeWorks(api, W) {
+export function makeWorks(api, W, S = {}) {
   const scene = api.scene, H = W.hall;
   const X = makeBoxes();
   hallShell(X, H);
+  hallSteel(X, H, { walks: W.walks, walkY: W.walkY });
+  // the pendant lamps over the floor: each a fitting in the hall's mesh, a soft beam down from it and a pool of light
+  // on the floor under it (the beams are one mesh and the pools another)
+  if (W.lamps && W.lamps.length) {
+    const LY = W.lampY ?? 100, run = (H.z1 - H.z0) / 2 + 6, zm = (H.z0 + H.z1) / 2, SEG = 14, R0 = 5, R1 = 21;
+    const bp = [], bc = [], bi = [], pp = [], pu = [], pi = [];
+    for (const [x, z] of W.lamps) {
+      pendant(X, x, LY, z, H.eave + (H.ridge - H.eave) * (1 - Math.abs(z - zm) / run) + 1);
+      for (const sh of [0.45, 0.72, 1]) {   // (three shells, one inside the next, so a beam is soft at its edge)
+        const at = bp.length / 3;
+        for (let k = 0; k <= SEG; k++) { const a = k / SEG * TAU, c = Math.cos(a), sn = Math.sin(a); bp.push(x + c * R0 * sh, LY, z + sn * R0 * sh, x + c * R1 * sh, 0.3, z + sn * R1 * sh); bc.push(0.0095, 0.0078, 0.0048, 0.0012, 0.001, 0.0006); if (k < SEG) { const i = at + k * 2; bi.push(i, i + 1, i + 3, i, i + 3, i + 2); } }
+      }
+      const q = pp.length / 3, PR = 46; pp.push(x - PR, 0.13, z - PR, x + PR, 0.13, z - PR, x + PR, 0.13, z + PR, x - PR, 0.13, z + PR); pu.push(0, 0, 1, 0, 1, 1, 0, 1); pi.push(q, q + 2, q + 1, q, q + 3, q + 2);
+    }
+    const bg = new THREE.BufferGeometry(); bg.setAttribute('position', new THREE.Float32BufferAttribute(bp, 3)); bg.setAttribute('color', new THREE.Float32BufferAttribute(bc, 3)); bg.setIndex(bi);
+    const beams = new THREE.Mesh(bg, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false, fog: false }));
+    beams.frustumCulled = false; beams.renderOrder = 3; scene.add(beams);
+    const pg = new THREE.BufferGeometry(); pg.setAttribute('position', new THREE.Float32BufferAttribute(pp, 3)); pg.setAttribute('uv', new THREE.Float32BufferAttribute(pu, 2)); pg.setIndex(pi);
+    floorGlow(1, [1, 1, 1]);   // (makes the shared glow picture)
+    const pools = new THREE.Mesh(pg, new THREE.MeshBasicMaterial({ map: glowTex, color: new THREE.Color(0.42, 0.33, 0.2), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }));
+    pools.frustumCulled = false; pools.renderOrder = 2; scene.add(pools);
+  }
+  // a second crane parked along the hall, its hook up
+  if (W.parked) { const g = new THREE.Group(); g.position.set(W.parked.x, H.rail, 0); scene.add(g); kitMeshes(bridgeGeo({ z0: H.z0, z1: H.z1, zs: W.parked.zs, hook: W.parked.hook }), g); }
   for (const [x, z] of W.furnaces) furnace(X, x, z, H.ridge - 14, 1);
   const SC = W.scale ?? 1;
   cradle(X, W.built.x, W.built.z, 34 * SC, 84 * SC, SC);
@@ -230,7 +265,7 @@ export function makeWorks(api, W) {
   hp.matrixAutoUpdate = hl.matrixAutoUpdate = false; hp.frustumCulled = hl.frustumCulled = false; hp.receiveShadow = false;
 
   // the furnace robot (Steeljaw): his arms forward, the crucible between his fists
-  const pourer = makeBot({ skin: 'mecha', scale: SC, pose: { armL: [-0.52, 0, 0], armR: [-0.52, 0, 0], neck1: [0.25, 0, 0], head: [0.2, 0, 0], spine2: [0.06, 0, 0] } });
+  const pourer = makeBot({ skin: 'mecha', scale: SC, cuts: ['head'], pose: { armL: [-0.52, 0, 0], armR: [-0.52, 0, 0], neck1: [0.25, 0, 0], head: [0.2, 0, 0], spine2: [0.06, 0, 0] } });
   pourer.root.position.set(W.pourer.x, 0, W.pourer.z); scene.add(pourer.root);
   const fl = pourer.places.ramL, fr = pourer.places.ramR, grip = Math.abs(fl[0] - fr[0]) / 2;
   const cru = new THREE.Group(); cru.position.set(W.pourer.x + (fl[0] + fr[0]) / 2, (fl[1] + fr[1]) / 2 + SC, W.pourer.z + (fl[2] + fr[2]) / 2 + 2.5 * SC); cru.scale.setScalar(SC); scene.add(cru);
@@ -242,7 +277,7 @@ export function makeWorks(api, W) {
   const splash = floorGlow(20, [1.6, 0.6, 0.12]); splash.position.set(lip[0], 0.14, lip[2] + 3); splash.visible = false; scene.add(splash);
 
   // the smith (Jackhammer): his right arm is cut loose at the shoulder and swings the hammer
-  const smith = makeBot({ skin: 'builder', scale: SC, cuts: ['armR'], pose: { armL: [-0.25, 0, 0.12], spine1: [0.1, 0, 0], spine2: [0.1, 0, 0], neck1: [0.2, 0, 0], head: [0.15, -0.2, 0] } });
+  const smith = makeBot({ skin: 'builder', scale: SC, cuts: ['armR', 'head'], pose: { armL: [-0.25, 0, 0.12], spine1: [0.1, 0, 0], spine2: [0.1, 0, 0], neck1: [0.2, 0, 0], head: [0.15, -0.2, 0] } });
   smith.root.position.set(W.smith.x, 0, W.smith.z); smith.root.rotation.y = Math.PI / 2; scene.add(smith.root);
   const arm = smith.limbs.armR, arm0 = arm.rotation.x;
   const sledge = new THREE.Group(), SL = W.smith.shaft ?? 40;
@@ -259,7 +294,8 @@ export function makeWorks(api, W) {
   const headAt = new THREE.Vector3();
 
   // the robot being built (Sprocket's shell, unlit): no shoulder pods yet, his left arm on the hoist beside him
-  const built = makeBot({ skin: W.built.skin || 'toy', scale: SC, cuts: ['armL'], drop: ['podL', 'podR', 'jaw'], eyes: 0.06, pose: { armR: [0.08, 0, -0.06] } });
+  const built = makeBot({ skin: W.built.skin || 'toy', scale: SC, cuts: ['armL', 'head'], drop: ['podL', 'podR', 'jaw'], ownGlow: true, pose: { armR: [0.08, 0, -0.06] } });
+  built.litMat.color.setScalar(0.03);   // (not switched on yet: a show event wakes him for as long as it lasts)
   built.root.position.set(W.built.x, 0, W.built.z); built.root.rotation.y = -Math.PI / 2; scene.add(built.root);
   { const g = built.limbs.armL; g.position.x += 22; g.position.y += 20; g.position.z -= 4; g.rotation.z = -0.5; g.rotation.x = 0.35; }
   // the welders' arcs: a flicker of blue-white at three joints, and sparks falling from them
@@ -272,14 +308,30 @@ export function makeWorks(api, W) {
   // the floodlights' frames in the hall's corners
   if (W.banks) { const Xb = makeBoxes(); for (const [x, y, z] of W.banks) { Xb.B(x - 7, y - 4, z - 7, x + 7, y + 4, z + 7, 0x22252a); Xb.L(x - 6, y - 4.4, z - 6, x + 6, y - 4, z + 6, [2.6, 2.5, 2.3]); } kitMeshes(Xb.geos(), scene); }
 
-  let tipK = 0, pouring = false, clock = 0;
+  // Their heads follow the fight: Steeljaw and the smith watch the player's car (or the middle of the floor), as far
+  // round as a neck goes; Sprocket only while he is awake.
+  const _q = new THREE.Quaternion(), UP = new THREE.Vector3(0, 1, 0);
+  const heads = [[pourer, W.pourer, 0, 0.9], [smith, W.smith, Math.PI / 2, 0.75], [built, W.built, -Math.PI / 2, 0.8]].map(([bot, at, yaw, max]) => ({ g: bot.limbs.head, q0: bot.limbs.head.quaternion.clone(), x: at.x, z: at.z, yaw, max, a: 0 }));
+  const look = (h, dt, on = true) => {
+    const p = api.player, tx = p && !p.dead && !p.gone ? p.x : 512, tz = p && !p.dead && !p.gone ? p.z : 512;
+    let want = 0; if (on) { want = Math.atan2(tx - h.x, tz - h.z) - h.yaw; want = clamp(Math.atan2(Math.sin(want), Math.cos(want)), -h.max, h.max); }
+    h.a += (want - h.a) * Math.min(1, dt * 1.6);
+    h.g.quaternion.copy(h.q0).premultiply(_q.setFromAxisAngle(UP, h.a));
+  };
+  let tipK = 0, pouring = false, clock = 0, awake = 0, wakeT = 0;
   return {
+    heads: () => heads.map((h) => +h.a.toFixed(2)), awake: () => awake,
     lip, tris: pourer.tris + smith.tris + built.tris + hall.paint.index.count / 3,
     tip(k, on) { tipK = k; pouring = on; },
     arm(k) { arm.rotation.x = arm0 + DOWNA + (UPA - DOWNA) * k; },
     at(v) { arm.updateWorldMatrix(true, true); return v.set(0, -1, SL - 1).applyMatrix4(sledge.matrixWorld); },
     step(dt) {
       clock += dt;
+      look(heads[0], dt, tipK < 0.2); look(heads[1], dt, !W.smithBusy || !W.smithBusy());   // (each looks to his work while he is at it)
+      // Sprocket: his lamps stutter on as an event starts, burn while it lasts and die away after it
+      const on = !!S.event; if (on && wakeT === 0) api.sound('laser', 0.5, W.built.x, 60, W.built.z);
+      wakeT = on ? wakeT + dt : 0; awake += ((on ? 1 : 0) - awake) * Math.min(1, dt * (on ? 3 : 0.8));
+      built.litMat.color.setScalar(0.03 + awake * (on && wakeT < 1.3 && Math.random() < 0.45 ? 0.1 : 1.1)); look(heads[2], dt, on);
       cru.rotation.x = ease(clamp(tipK, 0, 1)) * 1.02;
       const run = pouring || tipK > 0.82;
       stream.visible = splash.visible = run;
