@@ -15,14 +15,14 @@ import raceCapital from '../assets/music/race-capital.mp3';
 
 const TRACKS = {
   theme: { name: 'Main theme', clip: theme, start: 0.5, len: 42.36723, level: 0.42 },
-  deadfall: { name: 'Camp Deadfall', clip: deadfall, start: 0.5, len: 32.71338, level: 0.38 },   // Camp Deadfall's rounds
+  deadfall: { name: 'Camp Deadfall', clip: deadfall, start: 0.5, len: 32.71338, level: 0.38 },   // Camp Deadfall and Dead Man's Fair (Will, 2026-11-25)
   race: { name: 'New York', clip: raceNyc, start: 0.5, len: 55.18617, level: 0.38 },   // the New York races: Manhattan Circuit and Empire City
   tokyo: { name: 'Tokyo', clip: raceTokyo, start: 0.5, len: 33.10006, level: 0.38 },   // Midnight Tokyo
   capital: { name: 'Washington', clip: raceCapital, start: 0.5, len: 31.19606, level: 0.38 },   // Capital Circuit
   arena: { name: 'Arena', clip: arena, start: 0.5, len: 42.65592, level: 0.38 },   // every free-for-all arena (Will, 2026-11-25: one song for the arenas)
 };
 // each map's round track (maps without one are quiet in a round)
-export const MAP_TRACK = { base: 'deadfall', race: 'race', empire: 'race', tokyo: 'tokyo', capital: 'capital' };
+export const MAP_TRACK = { base: 'deadfall', fair: 'deadfall', race: 'race', empire: 'race', tokyo: 'tokyo', capital: 'capital' };
 // a mode's track, for its maps that have none of their own
 export const MODE_TRACK = { brawl: 'arena' };
 export function roundTrack(map) { return MAP_TRACK[map.id] || MODE_TRACK[map.mode] || null; }
