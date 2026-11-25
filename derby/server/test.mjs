@@ -47,7 +47,7 @@ try {
   // (short waits: AD_WAIT etc. below)
   const a = [1, 2].map((i) => new Client('r' + i, 'Racer' + i, 'lobby', { key: 'k' + i, room: 'quick:race', touch: i === 1 }));
   await a[0].ready; const go1 = await a[0].until('go', 1000);
-  ok(go1 && ['empire', 'capital'].includes(go1.map) && go1.bots === 5 && go1.host === 'r1', 'the first racer is sent go at once, with 5 bots for now');
+  ok(go1 && ['empire', 'capital', 'tokyo'].includes(go1.map) && go1.bots === 5 && go1.host === 'r1', 'the first racer is sent go at once, with 5 bots for now');
   await a[1].ready; const go2 = await a[1].until('go', 1000);
   ok(go2 && go2.round === go1.round && go2.bots === 4, 'the second racer gets go for the same round (4 bots now)');
   const z = new Client('z1', 'Zed', 'lobby', { room: 'quick:base' }); await z.ready;
@@ -56,7 +56,7 @@ try {
   const g = a.map((c) => new Client(c.id, c.id, 'game', { key: 'k' + c.id.slice(1), round: go1.round, fresh: true }));
   await Promise.all(g.map((c) => c.ready));
   const w = await g[0].until('welcome');
-  ok(w && w.players.length === 2 && w.players[0].slot === 0 && ['empire', 'capital'].includes(w.map) && w.startIn > 0, 'welcome lists the players and their seats, and when it starts');
+  ok(w && w.players.length === 2 && w.players[0].slot === 0 && ['empire', 'capital', 'tokyo'].includes(w.map) && w.startIn > 0, 'welcome lists the players and their seats, and when it starts');
   ok(w && w.host === 'r2', 'a computer that came second hosts before the phone that came first');
   g.forEach((c) => c.send({ t: 'ready' }));
   ok(!(await g[0].until('begin', 300)), 'everyone loaded, but the countdown is not out: no begin yet');

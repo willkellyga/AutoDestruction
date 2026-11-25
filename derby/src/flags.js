@@ -7,7 +7,7 @@
 // The meshing worker (src/mesh-worker.js, started by src/sim.js) is bundled with the same define and has its own copy of
 // the world, so it has to agree: sim.js names it 'mm-map=city' for any city, and on New York this renames that
 // 'mm-map=nyc', which the worker's banner (build.mjs) reads to set the flag on its side.
-export const NYC_MAPS = ['race', 'empire', 'capital', 'arena'];   // the maps built on New York's world (maps/manhattan.js, maps/empire.js, maps/capital.js, maps/arena.js)
+export const NYC_MAPS = ['race', 'empire', 'capital', 'tokyo', 'arena'];   // the maps built on New York's world (maps/manhattan.js, maps/empire.js, maps/capital.js, maps/tokyo.js, maps/arena.js)
 const KEY = 'ad-map';
 // The map: the address's ?map= first (any map, the hidden ones too), then the one kept from the start card. The start
 // card has three (maps/index.js); a new player starts in the arena, and a choice kept from when Crumbletown was on the

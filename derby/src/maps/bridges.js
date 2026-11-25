@@ -1,6 +1,6 @@
 // What makes a deck a bridge (maps/empire.js): towers, cables and trusses over a road that roads.js has already drawn.
 // Two kinds, both our own takes on the kind:
-//   'stone'  a suspension bridge: two stone towers with an arch over the road, a cable each side hung from their tops,
+//   'stone'  a suspension bridge (`white`: its towers painted white, as Tokyo's is): two stone towers with an arch over the road, a cable each side hung from their tops,
 //            hangers down to the deck and stays fanning out from the towers, a lamp at the head of every hanger
 //   'truss'  a steel cantilever bridge: a truss each side of the road, rising to a peak over each pier and dipping
 //            between, braced across overhead where it is high enough to clear the chase camera
@@ -9,7 +9,9 @@
 // dressBridges(scene, T, list): list of { part, kind } with part as roads.js takes it ({ i0, n, H, half }).
 import * as THREE from 'three';
 
-const STONE = [0.6, 0.53, 0.44], STONE3 = [0.54, 0.47, 0.39], STONE2 = [0.7, 0.64, 0.55], CABLE = [0.2, 0.2, 0.22], STEEL = [0.44, 0.33, 0.25], STEEL2 = [0.36, 0.27, 0.21];
+let STONE, STONE3, STONE2;
+const STONES = [[0.6, 0.53, 0.44], [0.54, 0.47, 0.39], [0.7, 0.64, 0.55]], WHITES = [[0.84, 0.85, 0.86], [0.76, 0.78, 0.8], [0.9, 0.9, 0.9]];
+const CABLE = [0.2, 0.2, 0.22], STEEL = [0.44, 0.33, 0.25], STEEL2 = [0.36, 0.27, 0.21];
 const CLEAR = 34;   // nothing crosses over the road lower than this above it (the chase camera rides about 25 up)
 
 export function dressBridges(scene, T, list) {
@@ -28,7 +30,8 @@ export function dressBridges(scene, T, list) {
     const ring = (p) => [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => [p[0] + _u.x * a + _v.x * b, p[1] + _u.y * a + _v.y * b, p[2] + _u.z * a + _v.z * b]);
     hull(buf, ring(p0), ring(p1), col, false);
   };
-  for (const { part, kind } of list) {
+  for (const { part, kind, white } of list) {
+    [STONE, STONE3, STONE2] = white ? WHITES : STONES;
     const { i0, n, H, half } = part, L = n * T.STEP;
     // the deck's own frame: s along it from its start, l to the left of it
     const at = (s) => {
