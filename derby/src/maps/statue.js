@@ -22,7 +22,21 @@ export function grabStatue(x0, z0, facing = 0) {
   return { S, NY, m, ped: LIBERTY.PED };
 }
 
-export function statueMesh(vol, scale = 2) {
+// Any of the engine's buildings, taken the same way to be drawn bigger than it is built (maps/capital.js): `make` builds it
+// on a lot S across at (x0, z0), which must be bare, turned to `facing`; the voxels up to NY are copied and taken out.
+// Its mesh rounds every corner (ped 0), as the statue's figure is.
+export function grabModel(make, S, NY, x0, z0, facing = 0, L = 2, o = {}, seed = 1791) {
+  const m = new Uint8Array(S * NY * S);
+  setSeed(seed); ctx.lot = -1; ctx.L = L;
+  place(x0, z0, facing, S); make(LOC, LOC, L, o); place(0, 0, -1); ctx.L = 3;
+  for (let y = 0; y < NY; y++) for (let z = 0; z < S; z++) for (let x = 0; x < S; x++) {
+    const i = idx(x0 + x, y, z0 + z), v = voxAt(i);
+    if (v) { m[(y * S + z) * S + x] = v; setVox(i, 0); }
+  }
+  return { S, NY, m, ped: 0 };
+}
+
+export function statueMesh(vol, scale = 2, { glow = [3.2, 2.5, 0.9], greedy = false } = {}) {
   const { S, NY, m, ped } = vol, F = 2, FS = S * F, FY = NY * F, f = new Uint8Array(FS * FY * FS);
   const at = (x, y, z) => (x < 0 || z < 0 || y < 0 || x >= S || z >= S || y >= NY ? 0 : m[(y * S + z) * S + x]);
   // the air outside her, found from the edge of the box: faces are drawn only against it (the pedestal is hollow)
@@ -54,7 +68,34 @@ export function statueMesh(vol, scale = 2) {
   const SIDES = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
   const quad = (P, I, c) => { const b = P.length / 3; P.push(...c); I.push(b, b + 1, b + 2, b, b + 2, b + 3); };
   const H0 = FS / 2;
-  for (const [sx, sy, sz] of SIDES) {
+  // (greedy: a building's flat walls, drawn in the biggest rectangles of one material that cover them, a slice at a
+  // time; the grain a voxel has is then put back by the material, below)
+  if (greedy) for (const [sx, sy, sz] of SIDES) {
+    const NS = sy ? FY : FS, NU = FS, NV = sy ? FS : FY, mask = new Uint8Array(NU * NV);
+    for (let b = 0; b < NS; b++) {
+      let any = false;
+      for (let v = 0; v < NV; v++) for (let u = 0; u < NU; u++) {
+        const x = sx ? b : u, y = sy ? b : v, z = sx ? u : sy ? v : b, m0 = f[(y * FS + z) * FS + x];
+        const show = m0 && open(x + sx, y + sy, z + sz) ? m0 : 0; mask[v * NU + u] = show; if (show) any = true;
+      }
+      if (!any) continue;
+      for (let v = 0; v < NV; v++) for (let u = 0; u < NU; u++) {
+        const mat = mask[v * NU + u]; if (!mat) continue;
+        let w = 1; while (u + w < NU && mask[v * NU + u + w] === mat) w++;
+        let h = 1; grow: for (; v + h < NV; h++) for (let k = 0; k < w; k++) if (mask[(v + h) * NU + u + k] !== mat) break grow;
+        for (let j = 0; j < h; j++) mask.fill(0, (v + j) * NU + u, (v + j) * NU + u + w);
+        const a0 = u, a1 = u + w, v0 = v, v1 = v + h, B = b + (sx + sy + sz > 0 ? 1 : 0);
+        let c;
+        if (sx) c = sx < 0 ? [B, v0, a1, B, v1, a1, B, v1, a0, B, v0, a0] : [B, v0, a0, B, v1, a0, B, v1, a1, B, v0, a1];
+        else if (sz) c = sz < 0 ? [a0, v0, B, a0, v1, B, a1, v1, B, a1, v0, B] : [a1, v0, B, a1, v1, B, a0, v1, B, a0, v0, B];
+        else c = sy > 0 ? [a0, B, v0, a0, B, v1, a1, B, v1, a1, B, v0] : [a0, B, v0, a1, B, v0, a1, B, v1, a0, B, v1];
+        for (let k = 0; k < 12; k += 3) { c[k] -= H0; c[k + 2] -= H0; }
+        if (KIND[mat] === K.LIT) quad(gpos, gind, c);
+        else { quad(pos, ind, c); for (let k = 0; k < 4; k++) { col.push(MAT_R[mat], MAT_G[mat], MAT_B[mat]); nor.push(sx, sy, sz); } }
+      }
+    }
+  }
+  else for (const [sx, sy, sz] of SIDES) {
     const along = sx ? 2 : 0;   // the run goes along z for the east and west faces, along x for the rest
     const n1 = FS;
     for (let y = 0; y < FY; y++) for (let b = 0; b < FS; b++) {
@@ -85,10 +126,16 @@ export function statueMesh(vol, scale = 2) {
   const grp = new THREE.Group(), k = scale / F;
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); g.setIndex(ind);
-  const body = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true })); body.castShadow = false; body.receiveShadow = false; grp.add(body);
+  const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  if (greedy) mat.onBeforeCompile = (sh) => {   // each small cube a shade of its own, as the world's voxels are
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vCell;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvCell = position - normal * 0.5;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vCell;')
+      .replace('#include <color_fragment>', '#include <color_fragment>\n{ vec3 c = floor(vCell + 0.001); float h = fract(sin(dot(mod(c, 97.0), vec3(12.9898, 78.233, 37.719))) * 43758.5453); diffuseColor.rgb *= 0.9 + 0.16 * h; }');
+  };
+  const body = new THREE.Mesh(g, mat); body.castShadow = false; body.receiveShadow = false; grp.add(body);
   if (gind.length) {
     const gg = new THREE.BufferGeometry(); gg.setAttribute('position', new THREE.Float32BufferAttribute(gpos, 3)); gg.setIndex(gind);
-    grp.add(new THREE.Mesh(gg, new THREE.MeshBasicMaterial({ color: new THREE.Color(3.2, 2.5, 0.9), toneMapped: false })));
+    grp.add(new THREE.Mesh(gg, new THREE.MeshBasicMaterial({ color: new THREE.Color(...glow), toneMapped: false })));
   }
   grp.scale.setScalar(k); grp.userData.tris = (ind.length + gind.length) / 3; grp.userData.top = FY * k;
   return grp;
