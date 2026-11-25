@@ -9,7 +9,6 @@ const here = new URL('.', import.meta.url).pathname;
 const { chromium } = createRequire(import.meta.url)('playwright');
 // where to stand and what to look at, in voxels (y up); `car` parks the player's car there for the shot
 export const SHOTS = {
-  race: { from: [0, 0, 0], at: [0, 0, 0], auto: true },
   empire: { auto: true },
   capital: { auto: true },
   base: { auto: true },
