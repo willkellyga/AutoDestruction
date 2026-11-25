@@ -1,6 +1,6 @@
 // The game's music: the main theme loops on the home screen, in the garage and shop, and on a mode's start card (Will,
 // 2026-11-24: once you're back in the home zone the music shouldn't switch). In a round the map's own track plays, where
-// it has one (Camp Deadfall, the New York races and the arenas so far), and the theme fades out.
+// it has one (Camp Deadfall, the New York and Tokyo races and the arenas so far), and the theme fades out.
 // Every track is an original made in Will's Suno account (derby/assets/music/CREDITS.md). Each file is the loop plus
 // half a second either side: the loop runs from a track's start for its len seconds, both cut on a drum hit, and the bars just
 // after the start already hold a short crossfade from the bars after the end, so going round has no seam. The spare
@@ -10,15 +10,17 @@ import theme from '../assets/music/theme.mp3';
 import deadfall from '../assets/music/deadfall.mp3';
 import raceNyc from '../assets/music/race-nyc.mp3';
 import arena from '../assets/music/arena.mp3';
+import raceTokyo from '../assets/music/race-tokyo.mp3';
 
 const TRACKS = {
   theme: { clip: theme, start: 0.5, len: 42.36723, level: 0.42 },
   deadfall: { clip: deadfall, start: 0.5, len: 32.71338, level: 0.38 },   // Camp Deadfall's rounds
   race: { clip: raceNyc, start: 0.5, len: 55.18617, level: 0.38 },   // the New York races: Manhattan Circuit and Empire City
+  tokyo: { clip: raceTokyo, start: 0.5, len: 33.10006, level: 0.38 },   // Midnight Tokyo
   arena: { clip: arena, start: 0.5, len: 42.65592, level: 0.38 },   // every free-for-all arena (Will, 2026-11-25: one song for the arenas)
 };
 // each map's round track (maps without one are quiet in a round)
-export const MAP_TRACK = { base: 'deadfall', race: 'race', empire: 'race' };
+export const MAP_TRACK = { base: 'deadfall', race: 'race', empire: 'race', tokyo: 'tokyo' };
 // a mode's track, for its maps that have none of their own
 export const MODE_TRACK = { brawl: 'arena' };
 export function roundTrack(map) { return MAP_TRACK[map.id] || MODE_TRACK[map.mode] || null; }
