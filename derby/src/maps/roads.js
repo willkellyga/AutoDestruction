@@ -100,7 +100,17 @@ export function makeRoads(scene, T, parts) {
     scene.add(m); out.push(m); return m;
   };
   mesh(road, new THREE.MeshLambertMaterial({ map: roadTexture(), side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }), true);
-  mesh(body, new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }), true);
+  // (the concrete has the voxels' grain, a cube to a voxel, and a joint every four up: beside the voxel barriers a
+  // flat grey reads as something not yet built)
+  const conc = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  conc.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vRoadW;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvRoadW = position - normal * 0.02;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vRoadW;').replace('#include <color_fragment>', `#include <color_fragment>
+  { vec3 rc = floor(vRoadW), rb = floor(vRoadW / vec3(8.0, 4.0, 8.0));
+    float rg = fract(sin(dot(rc, vec3(12.9898, 78.233, 37.719))) * 43758.5453), rp = fract(sin(dot(rb, vec3(41.3, 17.7, 29.1))) * 24634.63);
+    diffuseColor.rgb *= (0.9 + 0.16 * rg) * (0.94 + 0.1 * rp) * (fract(vRoadW.y / 4.0) < 0.25 ? 0.9 : 1.0); }`);
+  };
+  mesh(body, conc, true);
   mesh(glow, new THREE.MeshBasicMaterial({ color: new THREE.Color(2.4, 2.2, 1.7), toneMapped: false, side: THREE.DoubleSide }), false);
   return out;
 }

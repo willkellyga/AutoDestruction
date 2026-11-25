@@ -574,7 +574,7 @@ export default {
       { kind: 'custom', make: (api) => { makeRoads(api.scene, course().T, course().parts.map((p) => ({ ...p, skip: near }))); } },
       { kind: 'custom', make: (api) => { const p = P('Subway'), i = p.i0 + p.open[0]; STATION = makeStation(api.scene, { x: course().T.X[i], w: course().W[i], z0: p.openZ[0], z1: p.openZ[1], y0: p.h, y1: p.roofY }); } },
       { kind: 'custom', make: (api) => { makeBlocks(api.scene, [...plan().boxes, { x0: 272, z0: 480, w: 40, d: 16, h: 132, style: 'glass', seed: 9 }]); } },
-      { kind: 'custom', make: (api) => { makeGrove(api.scene, GROVE); } },
+      { kind: 'custom', make: (api) => { api.MAP.grove = makeGrove(api, GROVE); } },
       { kind: 'custom', make: (api) => { const far = harborLand(api.MAP.backdrop).land, inMap = (x, z) => x >= 0 && z >= 0 && x < WX && z < WZ; return makeWater(api.scene, { x0: -1024, z0: -1024, span: 3072, sun: DUSK.sun, isWater: (x, z) => (inMap(x, z) ? !land(x, z) || ((x - POND.x) / POND.rx) ** 2 + ((z - POND.z) / POND.rz) ** 2 < 1 : far(x, z) < 0), pools: [[POND.x - POND.rx - 4, POND.z - POND.rz - 4, POND.x + POND.rx + 4, POND.z + POND.rz + 4, 1.06]] }); } },
       { kind: 'custom', make: (api) => makeScreens(api.scene, screens()) },
       { kind: 'steam', pts: steamPts() },

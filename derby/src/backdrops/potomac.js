@@ -60,6 +60,53 @@ vec4 bdLands(vec2 p) {
 const GRID = 132, STREET = 20;   // a block and the street's half width
 const STONE = [0xd9d2c0, 0xcbc1ab, 0xe2ddd0, 0xb9b1a2, 0xc7b79a, 0xa9a59c].map(lin), BRICK = [0x9c5b48, 0x8a4f40, 0xb07a5c].map(lin);
 
+// The city's buildings past the map, as plain data. Low, under the height limit: 50 to 100, a little more downtown
+// (north of the White House). A block is one building, two or four, in stone, some in brick; one in ten is a square
+// of grass and trees (L.green(x, z) says where the woods are, and capital.js plants them); over the rivers, houses in
+// rows on some of the blocks, the rest left to the woods. `near`: the ones within NEAR of the course, for the map to
+// draw with a front on every side (maps/blocks.js; Will, 2026-11-24: "buildings look like placeholders"), each
+// { x0, z0, w, d, h, style, seed, plain } in whole bays and floors; `far`: the rest, boxes for the backdrop.
+const NEAR = 1000;
+let CITY = null;
+export function potomacCity(L) {
+  if (CITY && CITY.L === L) return CITY;
+  const W = L.world, REACH = L.reach, [cx0, cz0, cx1, cz1] = L.course, DOWN = L.downtown, { lands } = potomacLand(L);
+  let s = (L.seed * 2654435761) | 0; const rand = () => { s = (s * 1664525 + 1013904223) | 0; return ((s >>> 8) & 0xffff) / 65536; };
+  const nearC = (x, z) => Math.hypot(Math.max(cx0 - x, 0, x - cx1), Math.max(cz0 - z, 0, z - cz1));
+  const farC = (x, z) => Math.max(Math.hypot(x - cx0, z - cz0), Math.hypot(x - cx1, z - cz0), Math.hypot(x - cx0, z - cz1), Math.hypot(x - cx1, z - cz1));
+  const inMap = (x, z, m = 0) => x > W[0] - m && x < W[2] + m && z > W[1] - m && z < W[3] + m;
+  const clearOf = (x, z, r) => (L.keep || []).every(([kx, kz, kr]) => Math.hypot(x - kx, z - kz) > kr + r);
+  const near = [], far = []; let blocks = 0;
+  const STYLE = ['lime', 'marble', 'tan', 'lime', 'marble', 'glass'];
+  const put = (x, z, w, d, h, dn, brick, home) => {
+    if (dn > NEAR) { far.push({ x, z, w, d, h, brick, home }); return; }
+    const bw = Math.max(16, Math.round(w / 8) * 8), bd = Math.max(16, Math.round(d / 8) * 8), q = rand();
+    near.push({ x0: Math.round(x - bw / 2), z0: Math.round(z - bd / 2), w: bw, d: bd, h: Math.max(2, Math.round(h / 12)) * 12, style: home ? (brick ? 'brick' : 'tan') : brick ? (q < 0.6 ? 'brick' : 'brown') : STYLE[Math.floor(q * STYLE.length)], seed: 7000 + near.length, plain: home || rand() < 0.6 });
+  };
+  for (let gz = Math.floor(-2300 / GRID) * GRID; gz < 3300; gz += GRID) for (let gx = Math.floor(-2300 / GRID) * GRID; gx < 3300; gx += GRID) {
+    const x0 = gx + STREET + 6, x1 = gx + GRID - STREET - 6, z0 = gz + STREET + 6, z1 = gz + GRID - STREET - 6, mx = gx + GRID / 2, mz = gz + GRID / 2;
+    if (inMap(mx, mz, GRID / 2 - 8) || farC(mx, mz) > REACH) continue;
+    const ls = [[x0, z0], [x1, z0], [x0, z1], [x1, z1]].map(([x, z]) => lands(x, z));
+    const city = ls.every((l) => l[0] > 12), other = !city && ls.every((l) => Math.max(l[2], l[3]) > 16);
+    if (!city && !other) continue;
+    if (L.green(mx, mz) || !clearOf(mx, mz, GRID * 0.7)) continue;
+    const dn = nearC(mx, mz), w = x1 - x0, d = z1 - z0;
+    if (other) {
+      if (rand() < 0.55) continue;
+      for (let a = x0 + 10; a < x1 - 8; a += 30) for (const e of [-1, 1]) { if (rand() < 0.3) continue; put(a, mz + e * d / 4, 20 + rand() * 6, d / 2 - 14, 16 + rand() * 14, dn, rand() < 0.5, true); }
+      continue;
+    }
+    blocks++;
+    const up = 1 + (DOWN.k - 1) * clamp(1 - Math.hypot(mx - DOWN.x, mz - DOWN.z) / DOWN.r, 0, 1);
+    const H = () => (52 + rand() * 44) * up, one = (x, z, bw, bd, h) => put(x, z, bw, bd, h, dn, rand() < 0.2, false);
+    const r = rand();
+    if (dn > 1000 || r < 0.4) one(mx, mz, w * (0.82 + rand() * 0.14), d * (0.82 + rand() * 0.14), H());
+    else if (r < 0.75) { const ax = rand() < 0.5; for (const e of [-1, 1]) one(ax ? mx + e * w / 4 : mx, ax ? mz : mz + e * d / 4, (ax ? w / 2 : w) * 0.88, (ax ? d : d / 2) * 0.88, H()); }
+    else for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { if (rand() < 0.12) continue; one(mx + sx * w / 4, mz + sz * d / 4, w / 2 * 0.84, d / 2 * 0.84, H() * 0.85); }
+  }
+  return (CITY = { L, near, far, blocks });
+}
+
 export function potomac(kit) {
   const { L, rand, pick, add, blink, tower } = kit;
   const W = L.world, REACH = L.reach;
@@ -90,33 +137,12 @@ vec3 bdPlainLight(vec3 w) { return vec3(0.0); }
   }
 
   // ---- the city: every block north and east of the map that is on its land ------------------------------------------
-  // Low, under the height limit: 50 to 100, a little more downtown (north of the White House). A block is one building,
-  // two or four, in stone, some in brick; one in ten is a square of grass and trees (L.green(x, z) says where the woods
-  // are, and capital.js plants them).
-  const DOWN = L.downtown;
-  let blocks = 0;
-  for (let gz = Math.floor(-2300 / GRID) * GRID; gz < 3300; gz += GRID) for (let gx = Math.floor(-2300 / GRID) * GRID; gx < 3300; gx += GRID) {
-    const x0 = gx + STREET + 6, x1 = gx + GRID - STREET - 6, z0 = gz + STREET + 6, z1 = gz + GRID - STREET - 6, mx = gx + GRID / 2, mz = gz + GRID / 2;
-    if (inMap(mx, mz, GRID / 2 - 8) || far(mx, mz) > REACH) continue;
-    const ls = [[x0, z0], [x1, z0], [x0, z1], [x1, z1]].map(([x, z]) => lands(x, z));
-    const city = ls.every((l) => l[0] > 12), other = !city && ls.every((l) => Math.max(l[2], l[3]) > 16);
-    if (!city && !other) continue;
-    if (L.green(mx, mz) || !clearOf(mx, mz, GRID * 0.7)) continue;
-    const dn = near(mx, mz), w = x1 - x0, d = z1 - z0;
-    if (other) {
-      // Virginia and the far bank: houses in rows on some of the blocks, the rest left to the woods
-      if (rand() < 0.55) continue;
-      for (let a = x0 + 10; a < x1 - 8; a += 30) for (const s of [-1, 1]) { if (rand() < 0.3) continue; add(2, a, 0, mz + s * d / 4, 20 + rand() * 6, 16 + rand() * 14, d / 2 - 14, 0, 1, pick(rand() < 0.5 ? HOMES : BRICK), 0.15); }
-      continue;
-    }
-    blocks++;
-    const up = 1 + (DOWN.k - 1) * clamp(1 - Math.hypot(mx - DOWN.x, mz - DOWN.z) / DOWN.r, 0, 1);
-    const H = () => (52 + rand() * 44) * up, col = () => (rand() < 0.2 ? pick(BRICK) : pick(STONE));
-    const one = (x, z, bw, bd, h) => { add(0, x, 0, z, bw, h, bd, 0, rand() < 0.55 ? 1 : 0, col(), 0.2); if (rand() < 0.5) add(1, x + (rand() - 0.5) * bw * 0.3, h, z + (rand() - 0.5) * bd * 0.3, bw * 0.3, 6 + rand() * 6, bd * 0.3, 0, 2, lin(0x8f8c84)); };
-    const r = rand();
-    if (dn > 1000 || r < 0.4) one(mx, mz, w * (0.82 + rand() * 0.14), d * (0.82 + rand() * 0.14), H());
-    else if (r < 0.75) { const ax = rand() < 0.5; for (const s of [-1, 1]) one(ax ? mx + s * w / 4 : mx, ax ? mz : mz + s * d / 4, (ax ? w / 2 : w) * 0.88, (ax ? d : d / 2) * 0.88, H()); }
-    else for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { if (rand() < 0.12) continue; one(mx + sx * w / 4, mz + sz * d / 4, w / 2 * 0.84, d / 2 * 0.84, H() * 0.85); }
+  // (potomacCity, below: the ones near the course are drawn by the map, with fronts; the rest are boxes here)
+  const CITY = potomacCity(L), blocks = CITY.blocks;
+  for (const B of CITY.far) {
+    if (B.home) { add(2, B.x, 0, B.z, B.w, B.h, B.d, 0, 1, pick(B.brick ? BRICK : HOMES), 0.15); continue; }
+    add(0, B.x, 0, B.z, B.w, B.h, B.d, 0, rand() < 0.55 ? 1 : 0, B.brick ? pick(BRICK) : pick(STONE), 0.2);
+    if (rand() < 0.5) add(1, B.x + (rand() - 0.5) * B.w * 0.3, B.h, B.z + (rand() - 0.5) * B.d * 0.3, B.w * 0.3, 6 + rand() * 6, B.d * 0.3, 0, 2, lin(0x8f8c84));
   }
 
   // ---- the towers across the river (no height limit there), and the ones down it ------------------------------------

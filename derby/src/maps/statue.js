@@ -8,7 +8,7 @@
 // At twice the size each voxel is cut in eight, and the corners of the figure's rounds are taken off and filled in
 // (layer by layer, as the kit draws her), so she is rounder than a blown-up copy would be.
 import * as THREE from 'three';
-import { idx, voxAt, setVox, place, ctx, setSeed, LOC, MAT_R, MAT_G, MAT_B, KIND, K } from '../../../src/world.js';
+import { idx, voxAt, setVox, ownerAt, bodies, place, ctx, setSeed, LOC, MAT_R, MAT_G, MAT_B, KIND, K } from '../../../src/world.js';
 import { liberty, LIBERTY } from '../../../src/nyc_landmarks.js';
 
 export function grabStatue(x0, z0, facing = 0) {
@@ -29,11 +29,18 @@ export function grabModel(make, S, NY, x0, z0, facing = 0, L = 2, o = {}, seed =
   const m = new Uint8Array(S * NY * S);
   setSeed(seed); ctx.lot = -1; ctx.L = L;
   place(x0, z0, facing, S); make(LOC, LOC, L, o); place(0, 0, -1); ctx.L = 3;
+  // (its trees are left out of the copy: drawn bigger they would be trees in great cubes. `trees` says where each
+  // stood, [x, z, cherry] from the lot's corner, for the map to stand one of its own there, maps/trees.js)
+  const foot = new Map();
   for (let y = 0; y < NY; y++) for (let z = 0; z < S; z++) for (let x = 0; x < S; x++) {
     const i = idx(x0 + x, y, z0 + z), v = voxAt(i);
-    if (v) { m[(y * S + z) * S + x] = v; setVox(i, 0); }
+    if (!v) continue;
+    const id = ownerAt(i), B = bodies[id];
+    if (B && B.kind === 'tree') { if (y === 2) { const f = foot.get(id) || [0, 0, 0, /cherry/i.test(B.name) ? 1 : 0]; f[0] += x + 0.5; f[1] += z + 0.5; f[2]++; foot.set(id, f); } }
+    else m[(y * S + z) * S + x] = v;
+    setVox(i, 0);
   }
-  return { S, NY, m, ped: 0 };
+  return { S, NY, m, ped: 0, trees: [...foot.values()].map(([x, z, n, c]) => [x / n, z / n, c]) };
 }
 
 export function statueMesh(vol, scale = 2, { glow = [3.2, 2.5, 0.9], greedy = false } = {}) {

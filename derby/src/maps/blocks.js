@@ -108,6 +108,8 @@ export function makeBlocks(scene, list, { day = false } = {}) {
       walls(b, x0, z0, x1, z1, y, top, tint, ou, ov);
       box(x0 - 1, z0 - 1, x1 + 1, z1 + 1, top, top + 2, st.cap, ROOF);   // a cornice, and the roof
       if (i === 0 && !B.plain) { walls(shop, x0 - 0.3, z0 - 0.3, x1 + 0.3, z1 + 0.3, 0, FLOOR, WHITE, ou, 0, FLOOR); box(x0 - 0.8, z0 - 0.8, x1 + 0.8, z1 + 0.8, 12, 13.5, st.cap); }   // shop fronts along the street, under a band
+      else if (i === 0) { box(x0 - 0.7, z0 - 0.7, x1 + 0.7, z1 + 0.7, 0, 2, st.cap.map((v) => v * 0.82)); box(x0 - 0.6, z0 - 0.6, x1 + 0.6, z1 + 0.6, 12, 13, st.cap); }   // an office or a ministry: a plinth, and a course over the ground floor
+      if (i === cut.length - 1) box(x0 - 0.4, z0 - 0.4, x1 + 0.4, z1 + 0.4, top + 2, top + 3.5, st.cap.map((v) => v * 0.9), ROOF);   // a parapet over the cornice
       y = top; if (i < cut.length - 1) { x0 += BAY; z0 += BAY; x1 -= BAY; z1 -= BAY; }
     });
     // on the roof: a bulkhead, and a water tank on the brick ones or a mast on a tall tower

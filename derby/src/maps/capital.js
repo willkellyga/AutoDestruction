@@ -31,10 +31,10 @@ import { fedblock, dcoffice, temple, dcgrove } from '../../../src/dc_kit.js';
 import { WHITEHOUSE, CAPITOL, LINCOLN, JEFFERSON, CASTLE, PENTAGON, whitehouse, capitol, lincoln, jefferson, castle, pentagon, wmonument } from '../../../src/dc_landmarks.js';
 import { grabModel, statueMesh } from './statue.js';
 import { makeBlocks } from './blocks.js';
-import { plantTree, makeGrove } from './trees.js';
+import { makeGrove } from './trees.js';
 import { makeWater } from './water.js';
 import { SPRING } from '../looks/spring.js';
-import { potomacLand } from '../backdrops/potomac.js';
+import { potomacLand, potomacCity } from '../backdrops/potomac.js';
 import { canvasFor, finish, pickSpot, GK } from './common.js';
 import { makeTrack, streetLoop, racingLine } from './racetrack.js';
 import { gantry, gatesFor, gridFor, paintCourse, grassOf, surfaceAt, radarCourse } from './circuit.js';
@@ -453,14 +453,13 @@ function stoneMesh() {
 }
 
 // The trees. Elms in rows down both sides of the Mall, cherries in blossom round the Tidal Basin and down the point,
-// woods along Rock Creek and over Virginia, and trees about the parks and the great buildings' grounds. The ones
-// beside the course are voxels (plantTree); the rest are drawn models (GROVE), and so are the woods past the map's
-// edge (FAR), from the backdrop's own shores. The Monument's knoll and the middle of the Mall are kept clear.
+// woods along Rock Creek and over Virginia, and trees about the parks and the great buildings' grounds. All of them
+// are drawn models (maps/trees.js: GROVE on the map, FAR in the woods past its edge, from the backdrop's own shores),
+// a voxel to a cube close to the camera. The Monument's knoll and the middle of the Mall are kept clear.
 const GROVE = [], FAR = [], MODELS = [];
 function trees() {
   let s = 7717; const R = () => { s = (s * 1664525 + 1013904223) | 0; return ((s >>> 8) & 0xffff) / 65536; };
-  const { used } = masks();
-  const by = (x, z, r) => { for (let a = 0; a < 8; a++) { const X = Math.round(x + Math.cos(a * 0.785) * r), Z = Math.round(z + Math.sin(a * 0.785) * r); if (X >= 0 && Z >= 0 && X < WX && Z < WZ && used[Z * WX + X]) return true; } return false; };
+  const { used } = masks(), near = (x, z, r) => { for (let a = 0; a < 8; a++) { const X = Math.round(x + Math.cos(a * 0.785) * r), Z = Math.round(z + Math.sin(a * 0.785) * r); if (X >= 0 && Z >= 0 && X < WX && Z < WZ && used[Z * WX + X]) return true; } return false; };
   for (const [x0, y0, z0, x1, , z1] of stones()) if (y0 === 0) take(Math.floor(x0) - 7, Math.floor(z0) - 7, Math.ceil(x1) + 7, Math.ceil(z1) + 7);   // (no tree up through the bridge)
   take(164, 198, 304, 228);
   let n = 0;
@@ -468,12 +467,20 @@ function trees() {
     x = Math.round(x); z = Math.round(z);
     if (!free(x - 11, z - 11, x + 11, z + 11, true) || Math.hypot(x - KNOLL.x, z - KNOLL.z) < KNOLL.r + 8 || inPool(x, z)) return;
     take(x - 5, z - 5, x + 5, z + 5); n++;
-    if (by(x, z, 24) || by(x, z, 38)) plantTree(x, z, 900 + n * 7 + x, size, kind); else GROVE.push([x + 0.5, z + 0.5, size * 1.08, R() * 6.28, kind]);
+    GROVE.push([x + 0.5, z + 0.5, size * 1.08, R() * 6.28, kind]);
   };
+  // where the great buildings' own trees stood (they are left out of the models: statue.js), one of ours, to the
+  // model's scale
+  for (const m of MODELS) for (const [lx, lz, cherry] of m.vol.trees) {
+    const a = (lx - m.vol.S / 2) * m.k, b = (lz - m.vol.S / 2) * m.k, c = Math.cos(m.turn), sn = Math.sin(m.turn), x = Math.round(m.x + a * c + b * sn), z = Math.round(m.z - a * sn + b * c);
+    if (x < 12 || z < 12 || x >= WX - 12 || z >= WZ - 12 || near(x, z, 9)) continue;
+    take(x - 5, z - 5, x + 5, z + 5); n++;
+    GROVE.push([x + 0.5, z + 0.5, cherry ? 0.9 + R() * 0.2 : 0.6 * m.k + R() * 0.15, R() * 6.28, cherry]);
+  }
   // the Mall's elms: two rows a side, from the Capitol's lawn to the Lincoln Memorial
   for (let x = 282; x < 762; x += 26) for (const z of [536, 624, 510, 650]) tree(x + (R() - 0.5) * 3, z + (R() - 0.5) * 3, 1.2 + R() * 0.2);
   // the cherries: two rings round the Tidal Basin
-  for (const [out, step] of [[13, 19], [34, 25]]) { const rx = BASIN.rx + out, rz = BASIN.rz + out, m = Math.round(Math.PI * (rx + rz) / step); for (let k = 0; k < m; k++) { const a = (k + R() * 0.3) / m * Math.PI * 2; tree(BASIN.x + Math.cos(a) * rx, BASIN.z + Math.sin(a) * rz, 0.78 + R() * 0.14, 1); } }
+  for (const [out, step] of [[13, 19], [34, 25]]) { const rx = BASIN.rx + out, rz = BASIN.rz + out, m = Math.round(Math.PI * (rx + rz) / step); for (let k = 0; k < m; k++) { const a = (k + R() * 0.3) / m * Math.PI * 2; tree(BASIN.x + Math.cos(a) * rx, BASIN.z + Math.sin(a) * rz, 0.9 + R() * 0.2, 1); } }
   // and everywhere else that is green
   for (let gz = 20; gz < WZ - 16; gz += 30) for (let gx = 20; gx < WX - 16; gx += 30) {
     const x = gx + (R() - 0.5) * 18, z = gz + (R() - 0.5) * 18, r = R(), k = R();
@@ -481,19 +488,19 @@ function trees() {
     const creek = x >= 166 && x < 318 && z >= 98 && z < 300, mall = z > 474 && z < 690 && x > 270 && x < 765;
     if (mall && z > 500 && z < 660) continue;
     const nearBasin = Math.hypot(x - BASIN.x, (z - BASIN.z) * 1.3) < 190 || (z > 860 && x > 430 && x < 740);
-    if (r > (creek ? 0.95 : virginia(x, z) ? 0.6 : leafy(x, z) ? 0.42 : 0.3)) continue;
-    tree(x, z, nearBasin ? 0.8 + k * 0.15 : 1 + k * 0.35, nearBasin && k < 0.75 ? 1 : 0);
+    if (r > (creek ? 0.95 : virginia(x, z) ? 0.75 : leafy(x, z) ? 0.6 : 0.45)) continue;
+    tree(x, z, nearBasin ? 0.88 + k * 0.2 : 1 + k * 0.35, nearBasin && k < 0.75 ? 1 : 0);
   }
   // past the map's edge: woods over Virginia and the far bank, along Rock Creek going north, and blossom down the point
   const { lands } = potomacLand(BACKDROP);
-  for (let gz = -1300; gz < 2400; gz += 62) for (let gx = -1500; gx < 2400; gx += 62) {
-    const x = gx + (R() - 0.5) * 40, z = gz + (R() - 0.5) * 40, r = R(), k = R();
+  for (let gz = -1300; gz < 2400; gz += 54) for (let gx = -1500; gx < 2400; gx += 54) {
+    const x = gx + (R() - 0.5) * 34, z = gz + (R() - 0.5) * 34, r = R(), k = R();
     if (x > -8 && z > -8 && x < WX + 8 && z < WZ + 8) continue;
     if (Math.hypot(Math.max(100 - x, 0, x - 1000), Math.max(40 - z, 0, z - 1000)) > 1250) continue;
     if (BACKDROP.keep.some(([kx, kz, kr]) => Math.hypot(x - kx, z - kz) < kr) || BACKDROP.towers.some((t) => Math.hypot(x - t.x, z - t.z) < t.r * 0.8)) continue;
     const l = lands(x, z), wild = Math.max(l[2], l[3]) > 16, point = l[1] > 12, creek = l[0] > 16 && BACKDROP.green(x, z);
     if (!(wild && r < 0.62) && !(point && r < 0.7) && !(creek && r < 0.9)) continue;
-    FAR.push([x, z, point ? 1.5 + k * 0.4 : 1.9 + k * 0.9, k * 6.28, point && k < 0.7 ? 1 : 0]);
+    FAR.push([x, z, point ? (k < 0.7 ? 0.85 + k * 0.3 : 1.2 + k * 0.3) : 1.3 + k * 0.6, k * 6.28, point && k < 0.7 ? 1 : 0]);
   }
 }
 function build() {
@@ -593,7 +600,7 @@ function paint() {
     const sx = -SPRING.sun.x / SPRING.sun.y, sz = -SPRING.sun.z / SPRING.sun.y;
     g.beginPath();
     const quad = (x0, z0, x1, z1, hw) => { const l = Math.hypot(x1 - x0, z1 - z0) || 1, px = -(z1 - z0) / l * hw, pz = (x1 - x0) / l * hw, ex = (x1 - x0) / l * hw, ez = (z1 - z0) / l * hw; g.moveTo((x0 - ex + px) * GK, (z0 - ez + pz) * GK); g.lineTo((x1 + ex + px) * GK, (z1 + ez + pz) * GK); g.lineTo((x1 + ex - px) * GK, (z1 + ez - pz) * GK); g.lineTo((x0 - ex - px) * GK, (z0 - ez - pz) * GK); g.closePath(); };
-    for (const [x, z, size, , kind] of GROVE) { const h = (kind ? 26 : 30) * size, r = 9 * size; g.moveTo((x + sx * h + r) * GK, (z + sz * h) * GK); g.ellipse((x + sx * h) * GK, (z + sz * h) * GK, r * GK, r * 0.8 * GK, 0, 0, Math.PI * 2); quad(x, z, x + sx * h, z + sz * h, 1.2); }
+    for (const [x, z, size, , kind] of GROVE) { const h = (kind ? 13 : 30) * size, r = (kind ? 14 : 12) * size; g.moveTo((x + sx * h + r) * GK, (z + sz * h) * GK); g.ellipse((x + sx * h) * GK, (z + sz * h) * GK, r * GK, r * 0.8 * GK, 0, 0, Math.PI * 2); quad(x, z, x + sx * h, z + sz * h, 1.2); }
     for (const b of plan().boxes) { const h = Math.max(2, Math.round(b.h / 12)) * 12, dx = sx * h, dz = sz * h; for (const [ax, az, bx, bz] of [[b.x0, b.z0, b.x0 + b.w, b.z0], [b.x0, b.z0, b.x0, b.z0 + b.d], [b.x0 + b.w, b.z0 + b.d, b.x0 + b.w, b.z0], [b.x0 + b.w, b.z0 + b.d, b.x0, b.z0 + b.d]]) { g.moveTo(ax * GK, az * GK); g.lineTo(bx * GK, bz * GK); g.lineTo((bx + dx) * GK, (bz + dz) * GK); g.lineTo((ax + dx) * GK, (az + dz) * GK); g.closePath(); } g.rect((b.x0 + dx) * GK, (b.z0 + dz) * GK, b.w * GK, b.d * GK); }
     for (const [x0, y0, z0, x1, y1, z1] of stones()) { const dx = sx * y1, dz = sz * y1; if (y0 > 0) { if (y1 - y0 > 3 && x1 - x0 > 3) g.rect((x0 + dx) * GK, (z0 + dz) * GK, (x1 - x0) * GK, (z1 - z0) * GK); } else if (x1 - x0 > 3) quad((x0 + x1) / 2, (z0 + z1) / 2, (x0 + x1) / 2 + dx, (z0 + z1) / 2 + dz, (x1 - x0 + z1 - z0) / 4); }
     for (const m of MODELS) {
@@ -674,8 +681,8 @@ export default {
       { kind: 'custom', make: (api) => { dressBridges(api.scene, course().T, [{ part: P('14th Street Bridge'), kind: 'truss' }]); api.scene.add(stoneMesh()); } },
       { kind: 'custom', make: (api) => { const p = P('Metro'), T = course().T, i = T.at(p.i0 + p.open[0]); makeStation(api.scene, { x: T.X[i], w: course().W[i], z0: p.openZ[0], z1: p.openZ[1], y0: p.h, y1: p.roofY, name: 'SMITHSONIAN', style: 'vault' }); } },
       { kind: 'el', x: COURSE[14][0] - 18 - 10.5, z0: P('Metro').openZ[0] - 56, z1: P('Metro').openZ[1] + 56, ground: true, y: P('Metro').h, every: 7, speed: 64, see: 130, model: 'commuter', paint: 'blue' },
-      { kind: 'custom', make: (api) => { makeBlocks(api.scene, plan().boxes, { day: true }); } },
-      { kind: 'custom', make: (api) => { makeGrove(api.scene, GROVE, 2, { clump: 342 }); makeGrove(api.scene, FAR, 1, { clump: 900, cube: 4 }); } },
+      { kind: 'custom', make: (api) => { makeBlocks(api.scene, [...plan().boxes, ...potomacCity(BACKDROP).near], { day: true }); } },
+      { kind: 'custom', make: (api) => { api.MAP.grove = makeGrove(api, [...GROVE, ...FAR]); } },
       { kind: 'custom', make: (api) => { const far = potomacLand(BACKDROP).land, inMap = (x, z) => x >= 0 && z >= 0 && x < WX && z < WZ; return makeWater(api.scene, { x0: -1024, z0: -1024, span: 3072, sun: SPRING.sun, sky: 0xbcd6ee, glint: 0xffffff, isWater: (x, z) => (inMap(x, z) ? !land(x, z) || inPool(x, z) : far(x, z) < 0), pools: [[POOL.x0, POOL.z0, POOL.x1, POOL.z1, 0.55]] }); } },
       { kind: 'covered', x0: s[0], z0: s[1], x1: s[2], z1: s[3], dim: 0.5 },
     ];
