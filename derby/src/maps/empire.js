@@ -446,7 +446,7 @@ function floorMesh() {
 let grassy = null;
 const PHONE = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0 && !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
 function paint() {
-  const { T, grid, line } = full(), { on } = course(), C = canvasFor('#4e8fa6', 4411), { cv, g } = C;
+  const { T, grid, line } = full(), { on, H } = course(), FOOT = 3, C = canvasFor('#4e8fa6', 4411), { cv, g } = C;
   const rr = (x0, z0, x1, z1, r) => { g.moveTo((x0 + r) * GK, z0 * GK); g.arcTo(x1 * GK, z0 * GK, x1 * GK, z1 * GK, r * GK); g.arcTo(x1 * GK, z1 * GK, x0 * GK, z1 * GK, r * GK); g.arcTo(x0 * GK, z1 * GK, x0 * GK, z0 * GK, r * GK); g.arcTo(x0 * GK, z0 * GK, x1 * GK, z0 * GK, r * GK); g.closePath(); };
   const landPath = () => {
     g.beginPath();
@@ -457,14 +457,19 @@ function paint() {
   g.lineJoin = 'round';
   landPath(); g.strokeStyle = 'rgba(120,176,190,0.55)'; g.lineWidth = 14 * GK; g.stroke();
   landPath(); g.strokeStyle = '#6f6a60'; g.lineWidth = 5 * GK; g.stroke();
-  landPath(); g.fillStyle = '#c8c1b1'; g.fill();
+  landPath(); g.fillStyle = '#8b8984'; g.fill();   // (a mid grey: Will, 2026-11-24, of the pale stone it was, "too white, they need to be a darker grey")
   g.save(); landPath(); g.clip();
-  C.speckle(0, 0, WX, WZ, 90000, ['rgba(255,250,235,0.16)', 'rgba(60,56,50,0.13)']);
-  // the streets of the city off the course, a grid of them (the cheap blocks stand between)
-  g.fillStyle = '#50545c';
+  C.speckle(0, 0, WX, WZ, 90000, ['rgba(235,232,224,0.12)', 'rgba(40,38,34,0.14)']);
+  // The city off the course stands on pavement: slabs, a joint every eight, and the walks between the blocks (where
+  // side streets were painted once) in a slightly lighter grey with a kerb line either side. No street is painted beside the
+  // course (Will, 2026-11-24: "our road and cars are much bigger than those roads, so it ruins the perspective. It
+  // would look better if those were side walks").
+  g.fillStyle = 'rgba(40,38,34,0.2)';
+  for (let v = 0; v < WX; v += 8) { C.rect(v - 0.15, 0, v + 0.15, WZ); C.rect(0, v - 0.15, WX, v + 0.15); }
+  g.fillStyle = 'rgba(176,174,166,0.3)';
   for (let v = 8; v < WX; v += 104) { C.rect(v - 8, 0, v + 8, WZ); C.rect(0, v - 8, WX, v + 8); }
-  g.fillStyle = 'rgba(230,207,120,0.5)';
-  for (let v = 8; v < WX; v += 104) for (let a = 0; a < WX; a += 12) { C.rect(v - 0.3, a, v + 0.3, a + 6); C.rect(a, v - 0.3, a + 6, v + 0.3); }
+  g.fillStyle = 'rgba(46,44,40,0.4)';
+  for (let v = 8; v < WX; v += 104) for (const e of [-8, 8]) { C.rect(v + e - 0.25, 0, v + e + 0.25, WZ); C.rect(0, v + e - 0.25, WX, v + e + 0.25); }
   // the park: grass, a pond, paths
   g.fillStyle = '#74a65e'; C.rect(PARK.x0, PARK.z0, PARK.x1, PARK.z1);
   C.speckle(PARK.x0, PARK.z0, PARK.x1, PARK.z1, 46000, ['rgba(92,146,74,0.5)', 'rgba(146,192,108,0.45)', 'rgba(170,190,110,0.25)']);
@@ -480,11 +485,13 @@ function paint() {
   g.fillStyle = '#74a65e'; g.beginPath(); rr(BATTERY.x0 + 3, BATTERY.z0 + 3, BATTERY.x1 - 3, BATTERY.z1 - 3, 16); g.fill();
   C.speckle(BATTERY.x0, BATTERY.z0, BATTERY.x1, BATTERY.z1, 9000, ['rgba(92,146,74,0.5)', 'rgba(146,192,108,0.45)']);
   // Times Square's plaza: pale paving round the grid
-  g.fillStyle = '#d6cdb8'; C.rect(300, LINE_Z - 52, LINE_X + 30, LINE_Z + 52);
+  g.fillStyle = '#a3a19a'; C.rect(300, LINE_Z - 52, LINE_X + 30, LINE_Z + 52);
   g.restore();
   // the course, on the ground only: the decks and the cut have their own road (roads.js), so they get no room here
   const WLp = T.WL.slice(), WRp = T.WR.slice();
-  for (let i = 0; i < T.N; i++) if (on[i]) { WLp[i] = -1.4; WRp[i] = -1.4; }
+  // (but under the foot of each slope the ground's road carries on, FOOT up: where the deck's road starts a hair over
+  // it the grass showed through in a strip across the road. Will, 2026-11-24)
+  for (let i = 0; i < T.N; i++) if (on[i] && Math.abs(H[i]) > FOOT) { WLp[i] = -1.4; WRp[i] = -1.4; }
   paintCourse(g, { ...T, WL: WLp, WR: WRp }, grid, 62, line);
   grassy = grassOf(cv, true, T);
   if (!PHONE) return cv;
@@ -569,7 +576,7 @@ export default {
       { kind: 'custom', make: (api) => { makeRoads(api.scene, course().T, course().parts.map((p) => ({ ...p, skip: near }))); } },
       { kind: 'custom', make: (api) => { const p = P('Subway'), i = p.i0 + p.open[0]; STATION = makeStation(api.scene, { x: course().T.X[i], w: course().W[i], z0: p.openZ[0], z1: p.openZ[1], y0: p.h, y1: p.roofY }); } },
       { kind: 'custom', make: (api) => { makeBlocks(api.scene, [...plan().boxes, { x0: 272, z0: 480, w: 40, d: 16, h: 132, style: 'glass', seed: 9 }]); } },
-      { kind: 'custom', make: (api) => { makeGrove(api.scene, GROVE); } },
+      { kind: 'custom', make: (api) => { api.MAP.grove = makeGrove(api, GROVE); } },
       { kind: 'custom', make: (api) => { const far = harborLand(api.MAP.backdrop).land, inMap = (x, z) => x >= 0 && z >= 0 && x < WX && z < WZ; return makeWater(api.scene, { x0: -1024, z0: -1024, span: 3072, sun: DUSK.sun, isWater: (x, z) => (inMap(x, z) ? !land(x, z) || ((x - POND.x) / POND.rx) ** 2 + ((z - POND.z) / POND.rz) ** 2 < 1 : far(x, z) < 0), pools: [[POND.x - POND.rx - 4, POND.z - POND.rz - 4, POND.x + POND.rx + 4, POND.z + POND.rz + 4, 1.06]] }); } },
       { kind: 'custom', make: (api) => makeScreens(api.scene, screens()) },
       { kind: 'steam', pts: steamPts() },

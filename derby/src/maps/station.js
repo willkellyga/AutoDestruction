@@ -6,6 +6,8 @@
 //
 // makeStation(scene, { x, w, z0, z1, y0, y1, name }): a tunnel along z, its middle at x and w each side, the station
 // from z0 to z1, the road at y0 and the roof's underside at y1. The platform is on the high x side.
+// `style: 'vault'` is Washington's Metro (maps/capital.js): bare concrete in coffers in place of the tiles, the name on
+// a brown band, a red-brown platform with a pale edge.
 import * as THREE from 'three';
 
 const PLAT = 18, BAY = 20, UP = 3, REPEAT = 48;
@@ -27,7 +29,28 @@ function tiles(name) {
   return t;
 }
 
-export function makeStation(scene, { x, w, z0, z1, y0, y1, name = 'LIBERTY ST' }) {
+// the vault's concrete: coffers, deep panels in rows, and the station's name on a brown band along the wall
+function coffers(name) {
+  const cv = document.createElement('canvas'); cv.width = 512; cv.height = 256;
+  const g = cv.getContext('2d');
+  g.fillStyle = '#b3a998'; g.fillRect(0, 0, 512, 256);
+  let s = 177; const r = () => { s = (s * 1664525 + 1013904223) | 0; return ((s >>> 8) & 0xffff) / 65536; };
+  for (let y = 0; y < 256; y += 64) for (let x = 0; x < 512; x += 64) {
+    g.fillStyle = '#8f8676'; g.fillRect(x + 6, y + 6, 52, 52);                       // the panel's sloping sides
+    g.fillStyle = '#6f675a'; g.fillRect(x + 12, y + 12, 40, 40);                     // its back
+    g.fillStyle = 'rgba(0,0,0,0.22)'; g.fillRect(x + 6, y + 6, 52, 5); g.fillRect(x + 6, y + 6, 5, 52);   // in shadow along the top and one side
+    g.fillStyle = 'rgba(255,250,235,0.16)'; g.fillRect(x + 6, y + 53, 52, 5);
+  }
+  g.fillStyle = '#4a3528'; g.fillRect(0, 168, 512, 34); g.fillStyle = '#e9e4d6'; g.fillRect(0, 166, 512, 2); g.fillRect(0, 202, 512, 2);
+  g.fillStyle = '#f4f1e6'; g.font = 'bold 24px Helvetica, Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(name, 256, 186);
+  g.fillStyle = '#7a756a'; g.fillRect(0, 232, 512, 24);                             // a granite base
+  for (let i = 0; i < 1400; i++) { g.fillStyle = r() < 0.5 ? 'rgba(40,36,30,0.06)' : 'rgba(255,250,240,0.05)'; g.fillRect((r() * 512) | 0, (r() * 256) | 0, 3, 2); }
+  const t = new THREE.CanvasTexture(cv); t.wrapS = THREE.RepeatWrapping; t.wrapT = THREE.ClampToEdgeWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  return t;
+}
+
+export function makeStation(scene, { x, w, z0, z1, y0, y1, name = 'LIBERTY ST', style }) {
+  const vault = style === 'vault';
   const body = { pos: [], col: [], idx: [] }, wall = { pos: [], uv: [], idx: [] }, glow = { pos: [], idx: [] };
   const quad = (buf, a, b, c, d, col, uv) => {
     const n = buf.pos.length / 3; buf.pos.push(...a, ...b, ...c, ...d);
@@ -42,7 +65,7 @@ export function makeStation(scene, { x, w, z0, z1, y0, y1, name = 'LIBERTY ST' }
   // a tiled wall: along z at one x, or across x at one z
   const tiledZ = (X, ya, yb, f = 1) => quad(wall, [X, ya, z0], [X, ya, z1], [X, yb, z1], [X, yb, z0], null, [f * z0 / REPEAT, 0, f * z1 / REPEAT, 0, f * z1 / REPEAT, 1, f * z0 / REPEAT, 1]);   // (f -1: read from the other side)
   const tiledX = (Z, xa, xb, ya, yb) => quad(wall, [xa, ya, Z], [xb, ya, Z], [xb, yb, Z], [xa, yb, Z], null, [0.02, 0, 0.02 + (xb - xa) / REPEAT * 0.4, 0, 0.02 + (xb - xa) / REPEAT * 0.4, 1, 0.02, 1]);
-  const CONC = [0.5, 0.5, 0.48], EDGE = [0.86, 0.68, 0.16], FACE = [0.26, 0.26, 0.28], DARK = [0.13, 0.13, 0.15], POST = [0.17, 0.3, 0.36], BED = [0.19, 0.18, 0.17], WOOD = [0.36, 0.22, 0.12], BLACK = [0.01, 0.01, 0.012];
+  const CONC = vault ? [0.4, 0.24, 0.19] : [0.5, 0.5, 0.48], EDGE = vault ? [0.8, 0.8, 0.76] : [0.86, 0.68, 0.16], FACE = [0.26, 0.26, 0.28], DARK = vault ? [0.3, 0.28, 0.25] : [0.13, 0.13, 0.15], POST = vault ? [0.5, 0.47, 0.42] : [0.17, 0.3, 0.36], BED = [0.19, 0.18, 0.17], WOOD = [0.36, 0.22, 0.12], BLACK = [0.01, 0.01, 0.012];
   // ---- the platform side ----
   const E0 = x + w, E1 = E0 + PLAT, py = y0 + UP;
   quad(body, [E0, py, z0], [E0, py, z1], [E1, py, z1], [E1, py, z0], CONC);
@@ -72,7 +95,7 @@ export function makeStation(scene, { x, w, z0, z1, y0, y1, name = 'LIBERTY ST' }
     const m = new THREE.Mesh(g, mat); m.castShadow = false; m.receiveShadow = false; m.matrixAutoUpdate = false; m.updateMatrix(); scene.add(m); out.push(m);
   };
   mesh(body, new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }));
-  mesh(wall, new THREE.MeshBasicMaterial({ map: tiles(name), color: new THREE.Color(0.78, 0.76, 0.7), side: THREE.DoubleSide }));
+  mesh(wall, new THREE.MeshBasicMaterial({ map: vault ? coffers(name) : tiles(name), color: new THREE.Color(0.78, 0.76, 0.7), side: THREE.DoubleSide }));
   mesh(glow, new THREE.MeshBasicMaterial({ color: new THREE.Color(2.6, 2.4, 1.9), toneMapped: false, side: THREE.DoubleSide }));
   return { track: x - w - BAY / 2 - 0.5, meshes: out };
 }

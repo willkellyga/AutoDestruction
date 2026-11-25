@@ -44,7 +44,12 @@ export function makeHeights() {
           const x = Math.floor(cx + TZ[i] * l), z = Math.floor(cz - TX[i] * l);
           if (x < 0 || z < 0 || x >= WX || z >= WZ) continue;
           const c = z * WX + x, past = Math.abs(l) - w;
-          if (past <= 0) { A[c] = h; railHi[c] = NaN; continue; }
+          if (past <= 0) {
+            A[c] = h;
+            // (a deck over a cut: the cut's wall stays a wall to what is down in it, and stops short of the deck)
+            if (kind === 'deck' && railHi[c] === railHi[c] && railLo[c] < h - ON - 3) railHi[c] = Math.min(railHi[c], h - ON); else railHi[c] = NaN;
+            continue;
+          }
           if (kind === 'hill') {
             const f = past <= flat ? 1 : 1 - (past - flat) / fade, v = h * f * f * (3 - 2 * f);
             if (Math.abs(v) > Math.abs(A[c])) A[c] = v;

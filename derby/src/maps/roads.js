@@ -13,18 +13,20 @@
 import * as THREE from 'three';
 
 const CONC = [0.5, 0.49, 0.46], PALE = [0.62, 0.61, 0.57], DARK = [0.2, 0.2, 0.21], TILE = [0.66, 0.67, 0.62], STEEL = [0.24, 0.3, 0.3];
+const ASPHALT = '#4d515b';   // (the ground's '#474b54' as its shader shows it)
 const REPEAT = 40;   // voxels of road to one picture of it
 
+// (the same asphalt as the course has on the ground, circuit.js paintCourse: its colour as the ground shows it, a fine
+// grain, the wheels' two bands only just darker, a pale edge and nothing down the middle, so that a car going up onto
+// a bridge stays on one road: Will, 2026-11-24, "the asphalt should be more consistent")
 function roadTexture() {
   const cv = document.createElement('canvas'); cv.width = cv.height = 256;
   const g = cv.getContext('2d');
-  g.fillStyle = '#474b54'; g.fillRect(0, 0, 256, 256);
+  g.fillStyle = ASPHALT; g.fillRect(0, 0, 256, 256);
   let s = 9; const r = () => { s = (s * 1664525 + 1013904223) | 0; return ((s >>> 8) & 0xffff) / 65536; };
-  for (let i = 0; i < 2600; i++) { g.fillStyle = r() < 0.5 ? 'rgba(30,32,38,0.25)' : 'rgba(120,124,134,0.16)'; g.fillRect((r() * 256) | 0, (r() * 256) | 0, 2, 2); }
-  g.fillStyle = 'rgba(8,8,10,0.16)'; g.fillRect(70, 0, 22, 256); g.fillRect(164, 0, 22, 256);   // where the wheels run
-  g.fillStyle = '#eee8da'; g.fillRect(5, 0, 5, 256); g.fillRect(246, 0, 5, 256);                // a line along each edge
-  g.fillStyle = '#e6cf78'; g.fillRect(126, 20, 4, 130);                                         // and a broken one down the middle
-  g.fillStyle = 'rgba(16,16,18,0.55)'; g.fillRect(0, 251, 256, 3);                              // a joint across
+  for (let i = 0; i < 9000; i++) { g.fillStyle = r() < 0.5 ? 'rgba(20,22,28,0.2)' : 'rgba(190,194,204,0.13)'; g.fillRect((r() * 256) | 0, (r() * 256) | 0, 1, 1); }
+  g.fillStyle = 'rgba(8,8,10,0.07)'; g.fillRect(96, 0, 18, 256); g.fillRect(142, 0, 18, 256);   // where the wheels run
+  g.fillStyle = '#eee8da'; g.fillRect(4, 0, 6, 256); g.fillRect(246, 0, 6, 256);                // a line along each edge
   const t = new THREE.CanvasTexture(cv); t.wrapS = THREE.ClampToEdgeWrapping; t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
   return t;
 }
@@ -100,7 +102,17 @@ export function makeRoads(scene, T, parts) {
     scene.add(m); out.push(m); return m;
   };
   mesh(road, new THREE.MeshLambertMaterial({ map: roadTexture(), side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }), true);
-  mesh(body, new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }), true);
+  // (the concrete has the voxels' grain, a cube to a voxel, and a joint every four up: beside the voxel barriers a
+  // flat grey reads as something not yet built)
+  const conc = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  conc.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vRoadW;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvRoadW = position - normal * 0.02;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vRoadW;').replace('#include <color_fragment>', `#include <color_fragment>
+  { vec3 rc = floor(vRoadW), rb = floor(vRoadW / vec3(8.0, 4.0, 8.0));
+    float rg = fract(sin(dot(rc, vec3(12.9898, 78.233, 37.719))) * 43758.5453), rp = fract(sin(dot(rb, vec3(41.3, 17.7, 29.1))) * 24634.63);
+    diffuseColor.rgb *= (0.9 + 0.16 * rg) * (0.94 + 0.1 * rp) * (fract(vRoadW.y / 4.0) < 0.25 ? 0.9 : 1.0); }`);
+  };
+  mesh(body, conc, true);
   mesh(glow, new THREE.MeshBasicMaterial({ color: new THREE.Color(2.4, 2.2, 1.7), toneMapped: false, side: THREE.DoubleSide }), false);
   return out;
 }
