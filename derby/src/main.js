@@ -24,7 +24,7 @@ import { MODES } from './modes/index.js';
 import { CRASH, ROUND, AI, DRIFT, BUILDINGS, CAM, RACE, SURVIVAL_LEVELS, BRAWL_LEVELS } from './tuning.js';
 import { build as buildKeepOut } from './keepout.js';
 import { toughen, boom, chipAt, fuelBlast } from './sturdy.js';
-import { PARTS, PAINTS, STARTER, loadSave, keepSave, rivalBuild, RIVAL_NAMES, statsOf } from './parts.js';
+import { PARTS, PAINTS, STARTER, loadSave, keepSave, forgetSave, rivalBuild, RIVAL_NAMES, statsOf } from './parts.js';
 import { makeGarage, rating, classOf, GADGET, gadgetIcon } from './garage.js';
 import { makeGarageRoom } from './garageroom.js';
 import { makePartArt } from './partart.js';
@@ -35,7 +35,7 @@ import { makeMusic, roundTrack, RADIO, trackName } from './music.js';
 import { makeRoadSound } from './roadsound.js';
 import { makeEngineSound } from './enginesound.js';
 import { bank as sfxBank, count as sfxCount } from './sfxfiles.js';
-import { makePickups } from './pickups.js';
+import { makePickups, PICKUPS } from './pickups.js';
 import { makeHazards } from './hazards.js';
 import { makeQuality } from './quality.js';
 import { startReports } from './report.js';
@@ -47,6 +47,8 @@ import { makeDirt } from './dirt.js';
 import { makeStreaks } from './streaks.js';
 import { makeNet, makeLobby, serverUrl, quickPlay } from './net.js';
 import { makeLearn } from './learn.js';
+import { nextPart, firstBonus, barHtml } from './goal.js';
+import { makeCoach } from './coach.js';
 import { onLeave, leavePage, leaving } from './leave.js';
 
 const $ = (id) => document.getElementById(id);
@@ -193,6 +195,7 @@ room.parkOnLift(mats);   // (a car up on the lift in the workshop)
 const game = { state: 'menu', time: 0, wave: 0, kills: 0, deaths: 0, shake: 0, slow: 1, banner: 0, nextWave: 0, killTimes: [] };
 // scrap, the parts bought and the build are kept in this browser (parts.js)
 const save = loadSave();
+fetchClips();   // (the sounds, asked for before the map is built so they come in while it builds: the loading screen no longer waits for them)
 Object.defineProperty(game, 'scrap', { get: () => save.scrap, set: (v) => { save.scrap = v; } });
 let savedT = 0;
 const fakeMon = { x: -9999, y: 0, z: -9999, S: 1, hp: 1e9, maxHp: 1e9, chargeT: 0, hurtT: 0, yaw: 0 };
@@ -329,6 +332,7 @@ function wreck(c, who) {
   if (c === player) {
     game.deaths++; keepSave(save);
     const r = mode.playerDown();
+    sfx.play('wrecked', 1);   // (the player's car is wrecked: a power-down under the blast)
     if (r && r.respawn !== undefined) { game.state = 'dead'; game.deadT = r.respawn; $('dead').hidden = r.respawn <= 0.01; $('dead-garage').hidden = !!r.noGarage; game.noGarage = !!r.noGarage; $('dead-go').hidden = !!r.noSkip; }
     if (document.exitPointerLock && game.state === 'dead') document.exitPointerLock();
   }
@@ -632,7 +636,7 @@ function stepMines(dt) {
 // E (or Q): the gadget. Nitro is a burst of speed; the repair kit patches the car up.
 function gadget(c) {
   const G = c.gadget; if (!G || c.dead || c.gadgetT > 0) return;
-  useGadget(c, G);
+  useGadget(c, G); if (c === player) did.gadget = true;
   if (net && !c.remote && c.gadgetT > 0) net.gadget(c);   // the others see it go off too (and an oil slick is on every road)
 }
 function useGadget(c, G) {
@@ -678,7 +682,9 @@ function drawTags() {
   }
 }
 let toastT = 0;
-function toast(a, b) { if (!$('over').hidden) return;   // a late wreck message would sit over the results card
+function toast(a, b) { if (!$('over').hidden) return;
+  if (PICKUP_NAMES.has(a)) did.picked = true;   // (a pickup taken: the coach's tick, coach.js)
+   // a late wreck message would sit over the results card
   $('toast').innerHTML = `<b></b><span></span>`; $('toast').querySelector('b').textContent = a; $('toast').querySelector('span').textContent = b; $('toast').classList.add('on'); toastT = 2.2; }
 function banner(text, sub) { $('banner').querySelector('b').textContent = text; $('banner').querySelector('span').textContent = sub || ''; $('banner').classList.add('on'); game.banner = 2.4; }
 const radar = $('radar').getContext('2d');
@@ -819,9 +825,13 @@ function hint(html) { if (html) { $('hint').innerHTML = html; $('hint').classLis
 //   stats    tiles: [label, value, flag] (the flag in yellow: 'New record')
 //   pay      what paid this round, [label, scrap]; the card adds the wrecks (100 each, paid as they happen) and
 //            whatever else the round earned (`rest` names that line), and counts up the total
-let overMore = null;
+let overMore = null, overNext = null;
+// what the player has done this round, for the coach's popups (coach.js)
+const did = { moved: false, fired: false, heavy: false, drift: false, gadget: false, picked: false };
+const PICKUP_NAMES = new Set(Object.values(PICKUPS).map((k) => k.name));
+const coach = makeCoach({ el: $('coach'), save, keep: () => {}, touch: () => TOUCH });
 const el = (tag, cls, text) => { const d = document.createElement(tag); if (cls) d.className = cls; if (text !== undefined) d.textContent = text; return d; };
-function showResults(title, lines, scrap, sheet) {
+function showResults(title, lines, scrap, sheet, bonus = 0) {
   $('over-t').textContent = title;
   $('over-k').textContent = sheet.kicker || MAP.name || 'Round over';
   $('over-sub').textContent = sheet.sub || ''; $('over-sub').hidden = !sheet.sub;
@@ -848,13 +858,23 @@ function showResults(title, lines, scrap, sheet) {
   const earned = Math.max(0, Math.round(game.scrap - (game.scrap0 ?? game.scrap - scrap)));
   const pay = (sheet.pay || (scrap ? [['Prize', scrap]] : [])).filter((p) => p[1] > 0).map(([l, v]) => [l, Math.round(v)]);
   if (game.kills && !sheet.noWrecks) pay.push([`Wrecks × ${game.kills}`, game.kills * 100]);
-  const rest = earned - pay.reduce((a, p) => a + p[1], 0);
+  const rest = earned - bonus - pay.reduce((a, p) => a + p[1], 0);
   if (rest >= 1) pay.push([sheet.rest || 'Hits and stunts', rest]);
+  if (bonus > 0) pay.push(['First round bonus', bonus]);
   const P = $('over-pay'); P.innerHTML = ''; P.hidden = earned < 1;
   for (const [l, v] of pay) { const d = el('div'); d.append(el('span', '', l), el('span', '', `+${v}`)); P.append(d); }
   const tot = el('div', 'tot'), num = el('b', '', `+${earned}`); tot.append(el('span', '', 'Scrap earned'), num); P.append(tot);
   P.append(el('div', 'bank', `In the bank: ${Math.floor(game.scrap)}`));
-  return () => {   // (when the card comes up: the total runs up to what it is)
+  // the next part (goal.js): the bar runs from what was in the bank to what is now; once the scrap covers the part, the
+  // card's big button goes to the garage with it on the car (alone: online, the garage is on the start card)
+  const nx = nextPart(save), NB = $('over-next'), buy = !!(nx && nx.ready && !net && !overMore);
+  NB.hidden = !nx; overNext = buy ? nx : null;
+  if (nx) { NB.innerHTML = barHtml(nx, game.scrap - earned); NB.classList.toggle('ready', nx.ready); NB.disabled = !buy; }
+  $('over-buy').hidden = !buy; if (buy) { $('over-buy').textContent = `Buy the ${nx.part.name}`; $('over-go').className = 'alt'; }
+  $('over-garage').hidden = buy || !!net;
+  $('over').classList.toggle('buy', buy);
+  return () => {
+    setTimeout(() => { const s = NB.querySelector('s'); if (s) s.style.width = `${s.dataset.to}%`; }, 500);   // (when the card comes up: the total runs up to what it is)
     const t0 = performance.now(), tick = () => { const k = Math.min(1, (performance.now() - t0) / 900); num.textContent = `+${Math.round(earned * (1 - (1 - k) ** 3))}`; if (k < 1 && game.state === 'over') requestAnimationFrame(tick); else num.textContent = `+${earned}`; };
     if (earned > 0) requestAnimationFrame(tick);
   };
@@ -863,9 +883,12 @@ function over(title, lines = [], scrap = 0, more = null, sheet = null) {
   if (game.state === 'over') return;
   overMore = more; $('over').classList.toggle('more', !!more); $('over-go').className = more ? 'alt' : 'go';
   if (more) $('over-more').textContent = more.label || 'Keep going';
-  game.state = 'over'; game.scrap += scrap; keepSave(save); hint(null);
+  game.state = 'over'; game.scrap += scrap; hint(null);
+  // the first round ever pays a bonus, enough for the next part (goal.js); from here on this browser has played
+  const bonus = save.played ? 0 : firstBonus(save, game.scrap);
+  game.scrap += bonus; save.played = true; keepSave(save); coach.reset();
   $('dead').hidden = true;
-  const run = showResults(title, lines, scrap, sheet || {});
+  const run = showResults(title, lines, scrap, sheet || {}, bonus);
   setTimeout(() => { if (game.state === 'over') { $('over').hidden = false; $('banner').classList.remove('on'); run(); if (document.exitPointerLock) document.exitPointerLock(); } }, 1600);
 }
 function overGo() {
@@ -1291,6 +1314,10 @@ function playAgain() { if (net) net.bye(); goOnline(MAP.id); }
     for (const slot of Object.keys(PARTS)) save.owned[slot] = Object.keys(PARTS[slot]);
     keepSave(save); sfx.play('ui_coin', 0.7); toast('Everything unlocked', 'Every car and part is yours in the garage'); drawHome();
   });
+  // a preview page only (it sets window.__AD_NEW_PLAYER): start over as someone who has never played, to see the first
+  // visit again. Forgets this browser's save and loads the arena afresh.
+  $('home-fresh').hidden = !window.__AD_NEW_PLAYER;
+  $('home-fresh').addEventListener('click', () => { if (!game.home) return; forgetSave(); chooseMap('arena'); });
   for (const c of HOME_CARDS) {
     const b = document.createElement('button'); b.className = 'h-card ' + (c.garage ? 'garage' : c.map);
     b.innerHTML = `<small></small><b></b><span></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${c.icon}"/></svg>`;
@@ -1311,6 +1338,8 @@ function lastMap(id) {
 function drawHome() {
   const st = statsOf(save.load), r = rating(st), body = PARTS.body[save.load.body] || {};
   $('home-scrap').textContent = Math.round(save.scrap);
+  const nx = nextPart(save), hb = $('home-next'); hb.hidden = !nx;
+  if (nx) { hb.innerHTML = barHtml(nx); hb.classList.toggle('ready', nx.ready); }
   const all = Object.keys(PARTS).every((s) => Object.keys(PARTS[s]).every((k) => (save.owned[s] || []).includes(k)));
   $('home-unlock').disabled = all; $('home-unlock').textContent = all ? 'All unlocked' : 'Unlock all';
   for (const b of $('home-play').querySelectorAll('button')) b.classList.toggle('on', b.dataset.p === playAs);
@@ -1464,6 +1493,16 @@ function openGarage(from) {
   document.querySelector('#garage .g-drive').textContent = from === 'home' || game.ended ? 'Done' : 'Drive';
   garage.open();
 }
+// to the garage for the next part (goal.js): its tab open, the part on the car and working, so one more press buys it
+function shopFor(n, from) {
+  if (!n || net) return;
+  if (from === 'over') { $('over').hidden = true; game.ended = true; }
+  openGarage(from);
+  if (game.state === 'garage' && garage.open_) garage.goTo(n.slot, n.key);
+}
+$('home-next').addEventListener('click', () => { if (game.home) shopFor(nextPart(save), 'home'); });
+$('over-next').addEventListener('click', () => { if (overNext && game.state === 'over') shopFor(overNext, 'over'); });
+$('over-buy').addEventListener('click', () => { if (overNext && game.state === 'over') shopFor(overNext, 'over'); });
 function leaveGarage() {
   garage.close(); keepSave(save);
   tryer.slot = null; bolt = null; game.revT = 0; game.boostT = 0;
@@ -1475,6 +1514,21 @@ function leaveGarage() {
   if (from === 'break' && mode.afterGarage) mode.afterGarage();
   sfx.play('start', 0.9); lockMouse();
 }
+// The first visit (nothing saved, no round ever finished here): no home screen, no map to pick, no card to read. The
+// arena is already built behind the loading screen, so one click, key or tap starts a gentle round in it, with the
+// controls over the game for its first seconds; the home screen comes after the results (Will, 2026-11-25: drop new
+// players into a mode first. The one press is what lets the browser hand over the sound, the mouse and the whole screen).
+function firstVisit() {
+  const F = $('first'); F.hidden = false; game.state = 'menu';
+  const go = (e) => {
+    if (F.hidden || game.state !== 'menu') return;
+    if (e.type === 'keydown' && (e.metaKey || e.ctrlKey || e.altKey || /^(Tab|Escape|F\d+)$/.test(e.code))) return;
+    e.preventDefault(); F.hidden = true; removeEventListener('keydown', go, true);
+    game.firstRound = true;   // (this round only, gentler than Easy: tuning.js BRAWL_FIRST, read by modes/brawl.js)
+    startGame();
+  };
+  F.addEventListener('click', go); addEventListener('keydown', go, true);
+}
 // auto: the round started by itself (online, net.js begin), not from a click. The browser only hands the mouse over on a
 // click, so the first click on the game takes it (Will's online playtest, 2026-11-24: the refusal had switched the
 // mouse lock off for good, and the gun stayed pointing straight ahead)
@@ -1482,6 +1536,7 @@ function startGame(auto) {
   learn.dismiss();   // (online, the round can start while the how-to-play card is still up)
   initAudio(); $('menu').hidden = true; game.state = 'play';
   game.scrap0 = save.scrap;   // (what the round earns is shown on the results card)
+  for (const k in did) did[k] = false; coach.reset();
   // phones and tablets: the whole screen for the round, where the browser allows it (a tap on Start counts as asking)
   const root = document.documentElement;
   if (MOBILE && root.requestFullscreen && !document.fullscreenElement) { try { root.requestFullscreen({ navigationUI: 'hide' }).catch(() => {}); } catch (err) { /* not allowed here */ } }
@@ -1905,6 +1960,13 @@ function step(dt) {
       if (game.deadT <= 0) { $('dead').hidden = true; game.state = 'play'; spawnPlayer(); }
     }
     if (live) mode.step(dt);
+    // the coach's popups (coach.js), while the player is driving
+    if (game.state === 'play' && player && !player.dead) {
+      const hv = player.guns.find((g) => g.group === 1), gk = gadgetKey(player.gadget);
+      did.moved = did.moved || Math.abs(player.speed) > 12; did.fired = did.fired || mouse.b0 || touch.fire; did.heavy = did.heavy || mouse.b2 || touch.heavy;
+      did.drift = did.drift || (player.drift && Math.abs(player.speed) > 15);
+      coach.step(dt, did, { heavyName: hv ? (hv.g.mine ? 'Mine' : hv.g.fx === 'cannon' ? 'Cannon' : 'Rockets') : null, gadgetName: gk ? (GADGET[gk] || {}).label || PARTS.gadget[gk].name : null, pickups: !!(MAP.pickups && MAP.pickups.length) });
+    } else if (game.state === 'dead' && coach.showing) coach.reset();   // (not over the Wrecked card: it comes back after)
     if ((savedT += dt) > 15) { savedT = 0; keepSave(save); }
   }
   if (game.state === 'garage' || test) stepDummies(dt);
@@ -1946,7 +2008,7 @@ function step(dt) {
     engine.hum.set(on && arcG ? (arcG.t <= 0 ? 0.35 : 0.12) : 0, arcG && arcG.t <= 0 ? 1 : 0.8, player.x, player.z);
     // a flamethrower going: the player's, or else the nearest one
     const fl = player.flameT > 0 && !player.dead ? player : cars.filter((c) => c.flameT > 0 && !c.dead).sort((a, b) => Math.hypot(a.x - player.x, a.z - player.z) - Math.hypot(b.x - player.x, b.z - player.z))[0];
-    engine.flame.set(!muted && fl ? (fl === player ? 0.8 : 0.6) : 0, fl === player ? 1 : 0.92, fl ? fl.x : player.x, fl ? fl.z : player.z);
+    engine.flame.set(!muted && fl ? (fl === player ? 0.8 : 0.6) : 0, fl === player ? 0.86 : 0.8, fl ? fl.x : player.x, fl ? fl.z : player.z);
     engine.note.step(dt, player, near, on, rev);   // the engines' note, through the gears (enginesound.js)
   }
   document.body.classList.toggle('in-garage', game.state === 'garage');
@@ -1958,8 +2020,8 @@ function step(dt) {
 $('hint').addEventListener('click', () => { if (/take the mouse/.test($('hint').innerHTML)) { lockMouse(true); return; } if (game.state === 'play' && mode.garageOK()) openGarage('break'); else if (game.state === 'play' && mode.resetPlayer) mode.resetPlayer(); });
 spawnPlayer();
 followSun(player.x, player.z);
-// the loading screen (page.html) stays until the sounds are in too (or a few seconds more), then goes once a frame is drawn
-fetchClips(); music.fetchMusic();
+// the loading screen (page.html) goes once a frame is drawn; the sounds were asked for at the top and play as they arrive
+music.fetchMusic();
 if (window.__adLoad) window.__adLoad.built(() => sfxCount); else { const l = $('loading'); if (l) l.hidden = true; }
 // online: the map is built, so this page is ready for the round (it starts by itself: net.js)
 if (net) net.ready_();
@@ -1970,7 +2032,8 @@ if (net) net.ready_();
   const quickLink = !net && /[?&]online=quick/.test(location.search) && lobby && MAPS.some((m) => m.id === MAP.id);
   if (!net) cardAs(/[?&]room=/.test(location.search) ? 'friends' : brief === 'online' || brief === 'friends' ? brief : brief ? 'solo' : 'both');
   if (quickLink) goOnline(MAP.id);
-  else if (net || brief || /[?&](room|online|map)=/.test(location.search)) $('menu').hidden = false; else showHome();
+  else if (net || brief || /[?&](room|online|map)=/.test(location.search)) $('menu').hidden = false;
+  else if (!save.played && MAP.mode === 'brawl') firstVisit(); else showHome();
 }
 requestAnimationFrame((t) => { last = t; frame(t); });
-window.__derby = { art, STARTER, net, specials, crumple, cube, room, gcam, garageLight, startTest, endTest, tryPart: (s, k) => onTry(s, k), dummies, renderer, mapLook, touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH, picked }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, pauseOn, pauseOff, toHome, setPlay, sfx, music, audioMix, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop, keep, road, engine: () => engine };
+window.__derby = { art, STARTER, net, specials, crumple, cube, room, gcam, garageLight, startTest, endTest, tryPart: (s, k) => onTry(s, k), dummies, renderer, mapLook, touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH, picked }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, firstVisit, shopFor, nextPart, pauseOn, pauseOff, toHome, setPlay, sfx, music, audioMix, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop, keep, road, engine: () => engine };

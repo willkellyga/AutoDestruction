@@ -144,13 +144,17 @@ const KEY = 'auto-destruction-save-1';
 export function loadSave() {
   let s = null;
   try { s = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { s = null; }
-  if (!s || !s.load) s = { scrap: START_SCRAP, owned: FREE, load: { ...STARTER } };
+  // (played: a round has been finished in this browser. A save from before this was kept has, by now)
+  if (!s || !s.load) s = { scrap: START_SCRAP, owned: FREE, load: { ...STARTER }, played: false }; else if (s.played === undefined) s.played = true;
+  // (the coach's popups, coach.js: a save from before them knows the basics)
+  if (!s.taught || typeof s.taught !== 'object') s.taught = s.played ? { drive: 1, fire: 1, heavy: 1, drift: 1, glow: 1 } : {};
   for (const slot of Object.keys(PARTS)) { s.owned[slot] = Array.from(new Set([...(s.owned[slot] || []), ...FREE[slot]])); if (!PARTS[slot][s.load[slot]]) s.load[slot] = STARTER[slot]; }
   if (!PAINTS[s.load.paint]) s.load.paint = STARTER.paint;
   if (!PAINTS[s.load.trim]) s.load.trim = STARTER.trim;
   if (!PATTERNS[s.load.pattern]) s.load.pattern = 'plain';
   return s;
 }
+export function forgetSave() { try { localStorage.removeItem(KEY); } catch (e) { /* nothing kept */ } }
 export function keepSave(s) { try { localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) { /* not kept */ } }
 
 // the rivals' builds: better parts as the waves go on

@@ -5,7 +5,7 @@
 // the press, the flames) counts for whoever hit that car last, if they hit it in the last few seconds.
 // At the end a card ranks everyone and pays scrap by place, on top of the 100 a wreck that is paid as they happen.
 // See waves.js for what a mode is made of.
-import { ROUND, BRAWL_LEVELS, useAILevel } from '../tuning.js';
+import { ROUND, BRAWL_LEVELS, BRAWL_FIRST, useAILevel } from '../tuning.js';
 import { PARTS } from '../parts.js';
 
 export const BRAWL = {
@@ -82,7 +82,7 @@ export function makeBrawl(G) {
     },
     start() {
       const net = NET(), RIVALS = net ? (net.host ? net.bots : 0) : BRAWL.rivals;
-      LV = net ? BRAWL_LEVELS.normal : BRAWL_LEVELS[levelId()]; useAILevel(LV);   // (before the rivals are made: their armour)
+      LV = net ? BRAWL_LEVELS.normal : G.game.firstRound ? BRAWL_FIRST : BRAWL_LEVELS[levelId()]; useAILevel(LV);   // (before the rivals are made: their armour)
       // (online the server keeps the clock: a page that came late or reloaded takes what is left on it)
       G.hint(null); phase = 'run'; left = net && net.clockLeft() > 0 ? net.clockLeft() : LIMIT - (net && net.lateBy ? net.lateBy : 0); warned = 0;
       you = G.player; row('You', true); if (you) shield(you);

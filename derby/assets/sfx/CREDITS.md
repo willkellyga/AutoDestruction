@@ -22,6 +22,7 @@ Every clip here was cut from Sonniss's free **GDC Game Audio Bundles** (https://
 | `ui_click.mp3`, `ui_tab.mp3`, `ui_open.mp3` | garage buttons, tabs, opening | Kalimba 3 Up; Woosh Sweep Slide; Cartoon Pull Swoosh |
 | `ui_equip.mp3`, `ui_coin.mp3`, `ui_go.mp3` | fitting a part, buying, starting | Epic Stock Media: Power Up Bright; Coin Flip; Game Entry Happy Short |
 | `vo_clear.mp3`, `vo_rampage.mp3` | wave cleared, three wrecks in six seconds | Announcer: Objective Completed; Monster Kill (laugh) |
+| `wrecked.mp3` | the player's car is wrecked | 344 Audio, Bass Drops & Downers Vol. 1: Bass Drop & Downer Fast 16, under a falling two-saw power-down made in code so it carries on small speakers |
 
 ### The weapons
 
@@ -49,7 +50,7 @@ The guns, the scattergun, the cannon and their mechanics are real recordings, on
 | `arc_zap.mp3` | the arc coil's bolt | IMA Arc: electric arc (0.12 to 0.62), electric buzz (2.0 to 2.5); ESM Elemental Mutation: Impact Electric Tonal (0.03 to 0.43); Dumais: WHIP Snap Crack (snap, 0.46 to 0.49) |
 | `arc_hum.wav` | the arc coil charged (loop) | IMA electric buzz (3.0 to 5.4); 344 Air Designed: Unidentified Encounter (28.0 to 30.4); IMA Arc: arc power-up (2.5 to 4.9) |
 | `crack.mp3` | a round passing close by | 2017 part 4, Gamemaster Audio, Bullet Impact Sounds: bullet_flyby_fast_05 (0.06 to 0.36) |
-| `flame_loop.wav` | the flamethrower burning (loop) | made in code, not recorded: shaped noise (a low roar and a hiss), a flutter, and crackle, filtered round the loop so it repeats without a seam |
+| `flame_loop.wav` | the flamethrower burning (loop) | made in code, not recorded: shaped noise (a low roar, rushing air and a soft hiss) built round the loop so it repeats without a seam, with only a slow waver. The first one fluttered seven times a second and read as gunfire (Will, 2026-11-25) |
 | `fair_organ.mp3` | the fairground organ by Dead Man's Fair's big wheel (loop) | our own music, not from the bundles: "Fairground Organ Waltz", made for the game with Suno (song 97a39db9-606c-478b-89f6-7326515b46a4), 6.236 to 22.530 s (sixteen bars), with half a second kept either side of the loop |
 
 The buildings coming down, glass and fire are Monster Mayhem's own clips (`src/sfx-bank.js`, credited in `assets/sfx/CREDITS.md`). The 2026 bundle has no gunfire, so the gun recordings come from the older bundle parts named above.
