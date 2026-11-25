@@ -29,8 +29,9 @@ import bowtie from './bowtie.js';
 import fair from './fair.js';
 import empire from './empire.js';
 import capital from './capital.js';
+import tokyo from './tokyo.js';
 
-const ALL = [town, manhattan, base, fair, arena, crumble, bowtie, empire, capital];
+const ALL = [town, manhattan, base, fair, arena, crumble, bowtie, empire, capital, tokyo];
 // The start card: three ways to play, in this order. The rest (Crumbletown's waves, its race and the bow-tie) are
 // still there by address: ?map=town, ?map=crumble, ?map=bowtie.
 export const MAPS = [empire, base, fair, arena];   // (Will, 2026-11-24: Empire City replaces Manhattan Circuit, still at ?map=race)
