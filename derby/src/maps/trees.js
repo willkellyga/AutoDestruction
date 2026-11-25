@@ -32,8 +32,10 @@ function grow(seed, k, kind) {
   };
   // the trunk: round, wider at the root, thinner toward the fork
   for (let y = 0; y <= th; y++) {
-    const rad = 0.9 + 0.45 * k - (0.25 + 0.2 * k) * y / th + (y < 2 ? 0.9 : 0), R = Math.ceil(rad);
-    for (let dz = -R; dz < R; dz++) for (let dx = -R; dx < R; dx++) if ((dx + 0.5) ** 2 + (dz + 0.5) ** 2 <= rad * rad) wood(C0 + dx, y, C0 + dz);
+    const rad = 0.9 + 0.45 * k - (0.25 + 0.2 * k) * y / th, R = Math.ceil(rad) + 1;
+    // (at the foot a root or two runs out, a voxel each, never a ring of them: Will, 2026-11-24, of a flared foot two
+    // voxels high, "it looks like pedestals")
+    for (let dz = -R; dz < R; dz++) for (let dx = -R; dx < R; dx++) { const d = (dx + 0.5) ** 2 + (dz + 0.5) ** 2; if (d <= rad * rad || (y === 0 && d <= (rad + 0.9) ** 2 && hash(dx, 1, dz, seed) < 0.3)) wood(C0 + dx, y, C0 + dz); }
   }
   // the boughs: each leaves the trunk at its own height and heading, climbs, bends over and forks twice
   const blobs = [], size = () => (3.3 + r() * 1.5) * (0.9 + 0.12 * k);

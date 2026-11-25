@@ -446,7 +446,7 @@ function floorMesh() {
 let grassy = null;
 const PHONE = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0 && !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
 function paint() {
-  const { T, grid, line } = full(), { on } = course(), C = canvasFor('#4e8fa6', 4411), { cv, g } = C;
+  const { T, grid, line } = full(), { on, H } = course(), FOOT = 3, C = canvasFor('#4e8fa6', 4411), { cv, g } = C;
   const rr = (x0, z0, x1, z1, r) => { g.moveTo((x0 + r) * GK, z0 * GK); g.arcTo(x1 * GK, z0 * GK, x1 * GK, z1 * GK, r * GK); g.arcTo(x1 * GK, z1 * GK, x0 * GK, z1 * GK, r * GK); g.arcTo(x0 * GK, z1 * GK, x0 * GK, z0 * GK, r * GK); g.arcTo(x0 * GK, z0 * GK, x1 * GK, z0 * GK, r * GK); g.closePath(); };
   const landPath = () => {
     g.beginPath();
@@ -489,7 +489,9 @@ function paint() {
   g.restore();
   // the course, on the ground only: the decks and the cut have their own road (roads.js), so they get no room here
   const WLp = T.WL.slice(), WRp = T.WR.slice();
-  for (let i = 0; i < T.N; i++) if (on[i]) { WLp[i] = -1.4; WRp[i] = -1.4; }
+  // (but under the foot of each slope the ground's road carries on, FOOT up: where the deck's road starts a hair over
+  // it the grass showed through in a strip across the road. Will, 2026-11-24)
+  for (let i = 0; i < T.N; i++) if (on[i] && Math.abs(H[i]) > FOOT) { WLp[i] = -1.4; WRp[i] = -1.4; }
   paintCourse(g, { ...T, WL: WLp, WR: WRp }, grid, 62, line);
   grassy = grassOf(cv, true, T);
   if (!PHONE) return cv;

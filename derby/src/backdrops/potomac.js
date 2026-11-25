@@ -104,7 +104,18 @@ export function potomacCity(L) {
     else if (r < 0.75) { const ax = rand() < 0.5; for (const e of [-1, 1]) one(ax ? mx + e * w / 4 : mx, ax ? mz : mz + e * d / 4, (ax ? w / 2 : w) * 0.88, (ax ? d : d / 2) * 0.88, H()); }
     else for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { if (rand() < 0.12) continue; one(mx + sx * w / 4, mz + sz * d / 4, w / 2 * 0.84, d / 2 * 0.84, H() * 0.85); }
   }
-  return (CITY = { L, near, far, blocks });
+  // the towers across the river and down it (no height limit there): glass and stone, each with its front too when it
+  // is near (as plain dark boxes they stood over the Pentagon like something not yet built)
+  const towers = [], TOWER = ['glass', 'lime', 'glass', 'marble', 'glass', 'tan'];
+  for (const T of L.towers || []) for (let k = 0; k < T.n; k++) {
+    const a = rand() * 6.283, rr = T.r * Math.sqrt(rand()), x = T.x + Math.cos(a) * rr * 0.7, z = T.z + Math.sin(a) * rr, w = 44 + rand() * 30, d = 44 + rand() * 30, h = T.h * (0.5 + 0.5 * rand()) * (1 - 0.4 * rr / T.r), q = rand();
+    if ((lands(x + 30, z)[2] < 24 && lands(x, z - 30)[3] < 24) || !clearOf(x, z, 50)) continue;
+    if (nearC(x, z) > NEAR) { towers.push({ x, z, w, d, h }); continue; }
+    const bw = Math.round(w / 8) * 8, bd = Math.round(d / 8) * 8, B = { x0: Math.round(x - bw / 2), z0: Math.round(z - bd / 2), w: bw, d: bd, h: Math.round(h / 12) * 12, style: TOWER[Math.floor(q * TOWER.length)], seed: 7000 + near.length, plain: true };
+    if (inMap(x, z, 60) || near.some((o) => B.x0 < o.x0 + o.w + 6 && o.x0 < B.x0 + bw + 6 && B.z0 < o.z0 + o.d + 6 && o.z0 < B.z0 + bd + 6)) continue;
+    near.push(B);
+  }
+  return (CITY = { L, near, far, towers, blocks });
 }
 
 export function potomac(kit) {
@@ -146,13 +157,7 @@ vec3 bdPlainLight(vec3 w) { return vec3(0.0); }
   }
 
   // ---- the towers across the river (no height limit there), and the ones down it ------------------------------------
-  for (const T of L.towers) {
-    for (let k = 0; k < T.n; k++) {
-      const a = rand() * 6.283, rr = T.r * Math.sqrt(rand()), x = T.x + Math.cos(a) * rr * 0.7, z = T.z + Math.sin(a) * rr;
-      if (lands(x + 30, z)[2] < 24 && lands(x, z - 30)[3] < 24) continue;
-      tower(x, z, 44 + rand() * 30, 44 + rand() * 30, T.h * (0.5 + 0.5 * rand()) * (1 - 0.4 * rr / T.r), true);
-    }
-  }
+  for (const B of CITY.towers) tower(B.x, B.z, B.w, B.d, B.h, true);   // (the near ones are the map's to draw, with fronts)
 
   // ---- the cathedral on its hill: a long nave, two west towers and a taller one over the crossing ---------------------
   {

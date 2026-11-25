@@ -30,6 +30,7 @@ import { shop } from '../../../src/buildings_a.js';
 import { fedblock, dcoffice, temple, dcgrove } from '../../../src/dc_kit.js';
 import { WHITEHOUSE, CAPITOL, LINCOLN, JEFFERSON, CASTLE, PENTAGON, whitehouse, capitol, lincoln, jefferson, castle, pentagon, wmonument } from '../../../src/dc_landmarks.js';
 import { grabModel, statueMesh } from './statue.js';
+import { pentagonMesh, underPentagon } from './pentagon.js';
 import { makeBlocks } from './blocks.js';
 import { makeGrove } from './trees.js';
 import { makeWater } from './water.js';
@@ -56,7 +57,7 @@ const VA = [[-10, 600], [50, 680], [167, 772], [262, 850], [330, 915], [340, 988
 const ANA = [[735, 1040], [770, 968], [1040, 952]];                                                                       // the Anacostia's: water south of it
 const BASIN = { x: 556, z: 792, rx: 76, rz: 42 };                  // the Tidal Basin
 const POOL = { x0: 312, z0: 552, x1: 424, z1: 608, dip: 1 };       // the Reflecting Pool: the road runs through it, a voxel down
-const KNOLL = { x: 540, z: 580, r: 104, h: 10 };                   // the Monument's
+const KNOLL = { x: 540, z: 580, r: 104, h: 10, flat: 22, base: 9 };                   // the Monument's
 const xAt = (P, z) => { if (z <= P[0][1]) return P[0][0]; for (let i = 1; i < P.length; i++) if (z <= P[i][1]) { const a = P[i - 1], b = P[i]; return a[0] + (b[0] - a[0]) * (z - a[1]) / (b[1] - a[1]); } return P[P.length - 1][0]; };
 const anaZ = (x) => (x < ANA[0][0] ? 1e9 : x < ANA[1][0] ? ANA[0][1] + (x - ANA[0][0]) * (ANA[1][1] - ANA[0][1]) / (ANA[1][0] - ANA[0][0]) : ANA[1][1] + (x - ANA[1][0]) * (ANA[2][1] - ANA[1][1]) / (ANA[2][0] - ANA[1][0]));
 const virginia = (x, z) => z >= VA[0][1] && x < xAt(VA, z);
@@ -209,7 +210,9 @@ function course() {
     return q;
   });
   // the Monument's knoll, and the pool's floor
-  const knoll = (x, z) => KNOLL.h * ramp(1 - Math.hypot(x - KNOLL.x, z - KNOLL.z) / KNOLL.r);
+  // (flat on top as far out as the ring of flags round the Monument stands, FLAT, so their poles reach the ground:
+  // Will, 2026-11-24, "floating flags")
+  const knoll = (x, z) => KNOLL.h * ramp(Math.min(1, (KNOLL.r - Math.hypot(x - KNOLL.x, z - KNOLL.z)) / (KNOLL.r - KNOLL.flat)));
   for (let i = 0; i < N; i++) {
     if (on[i]) continue;
     const k = knoll(X[i], Z[i]); if (k > 0.02) { H[i] = k; hilly[i] = 1; }
@@ -506,6 +509,9 @@ function trees() {
 function build() {
   // the great buildings first, on a bare corner of the map: built, copied, and taken out again
   for (const [name, make, S, NY, f, k, x0, z0, turn] of BIG) MODELS.push({ name, vol: grabModel(make, S, NY, 16, 16, f, 2), k, x: x0 + S * k / 2, z: z0 + S * k / 2, turn: turn || 0 });
+  // (the Pentagon's own walls are drawn by maps/pentagon.js: the engine's are taken out of its model, and kept only
+  // for the shadow painted on the ground; the flag and the court's pavilion stay)
+  { const v = MODELS.find((m) => m.name === 'Pentagon').vol, { S, NY, m } = v; v.full = m.slice(); for (let z = 0; z < S; z++) for (let x = 0; x < S; x++) if (underPentagon(x, z)) for (let y = 0; y < NY; y++) m[(y * S + z) * S + x] = 0; }
   plan();
   place(0, 0, -1); ctx.L = 3; ctx.lot = -1; setSeed(5115);
   barriers();
@@ -547,7 +553,7 @@ let grassy = null;
 const PHONE = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0 && !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
 const WATER = '#4d8fa8', LAWN = '#74a65e', PAVE = '#cfc9b9', GRAVEL = '#d9c9a2';
 function paint() {
-  const { T, grid, line } = full(), { on, leg } = course(), C = canvasFor(WATER, 4412), { cv, g } = C;
+  const { T, grid, line } = full(), { on, leg, H } = course(), FOOT = 3, C = canvasFor(WATER, 4412), { cv, g } = C;
   const poly = (pts) => { g.moveTo(pts[0][0] * GK, pts[0][1] * GK); for (const p of pts.slice(1)) g.lineTo(p[0] * GK, p[1] * GK); g.closePath(); };
   const oval = (x, z, rx, rz) => { g.moveTo((x + rx) * GK, z * GK); g.ellipse(x * GK, z * GK, rx * GK, rz * GK, 0, 0, Math.PI * 2); };
   const landPath = () => {
@@ -585,13 +591,39 @@ function paint() {
   g.restore();
   // the course, on the ground only: the decks and the cut have their own road (roads.js), so they get no room here
   const WLp = T.WL.slice(), WRp = T.WR.slice();
-  for (let i = 0; i < T.N; i++) if (on[i]) { WLp[i] = -1.4; WRp[i] = -1.4; }
+  // (but under the foot of each slope the ground's road carries on, FOOT up: where the deck's road starts a hair over
+  // it the grass showed through in a strip across the road. Will, 2026-11-24)
+  for (let i = 0; i < T.N; i++) if (on[i] && Math.abs(H[i]) > FOOT) { WLp[i] = -1.4; WRp[i] = -1.4; }
   paintCourse(g, { ...T, WL: WLp, WR: WRp }, grid, 62, line);
-  // the Mall's road is gravel, and the pool's is its floor, under the water
-  for (let i = 0; i < T.N; i++) {
-    const j = T.at(i + 1), pool = inPool(T.X[i], T.Z[i]) && inPool(T.X[j], T.Z[j]); if (!pool && !(leg[i] >= 6 && leg[i] <= 9)) continue;
-    const P = (k, l) => [(T.X[k] + T.TZ[k] * l) * GK, (T.Z[k] - T.TX[k] * l) * GK];
-    g.fillStyle = pool ? 'rgba(63,111,128,0.9)' : 'rgba(217,201,162,0.6)'; g.beginPath(); g.moveTo(...P(i, -T.WR[i])); g.lineTo(...P(i, T.WL[i])); g.lineTo(...P(j, T.WL[j])); g.lineTo(...P(j, -T.WR[j])); g.closePath(); g.fill();
+  // The pool's road is its floor, under the water.
+  const P = (k, l) => [(T.X[k] + T.TZ[k] * l) * GK, (T.Z[k] - T.TX[k] * l) * GK];
+  const band = (i, l0, l1, m0, m1, col) => { const j = T.at(i + 1); g.fillStyle = col; g.beginPath(); g.moveTo(...P(i, l0)); g.lineTo(...P(i, l1)); g.lineTo(...P(j, m1)); g.lineTo(...P(j, m0)); g.closePath(); g.fill(); };
+  for (let i = 0; i < T.N; i++) { const j = T.at(i + 1); if (inPool(T.X[i], T.Z[i]) && inPool(T.X[j], T.Z[j])) band(i, -T.WR[i], T.WL[i], -T.WR[j], T.WL[j], 'rgba(63,111,128,0.9)'); }
+  // The Mall's road is dirt and gravel, and reads as that: its own ground from edge to edge with nothing of the
+  // asphalt showing through (Will, 2026-11-24: "The dirt should read more like dirt sections"), darker and damper
+  // along the edges, two ruts where the wheels run, stones and clods all over, and at each end a spill of it carried
+  // out onto the asphalt, thinning.
+  {
+    let s = 4242; const r = () => { s = (s * 1664525 + 1013904223) | 0; return ((s >>> 8) & 0xffff) / 65536; };
+    const dirt = (i) => leg[i] >= 6 && leg[i] <= 9, SPILL = 9, off = line.off;
+    const share = new Float32Array(T.N);   // 1 on the dirt, falling away over SPILL samples past each end
+    for (let i = 0; i < T.N; i++) { if (dirt(i)) { share[i] = 1; continue; } for (let k = 1; k <= SPILL; k++) if (dirt(T.at(i + k)) || dirt(T.at(i - k))) { share[i] = (1 - k / (SPILL + 1)) ** 1.5; break; } }
+    for (let i = 0; i < T.N; i++) {
+      const a = share[i], j = T.at(i + 1); if (!a) continue;
+      band(i, -T.WR[i], T.WL[i], -T.WR[j], T.WL[j], `rgba(196,172,128,${(a === 1 ? 1 : a * 0.8).toFixed(3)})`);
+      if (a < 1) continue;
+      for (const sd of [1, -1]) { const w = sd > 0 ? T.WL : T.WR; band(i, sd * (w[i] - 5), sd * w[i], sd * (w[j] - 5), sd * w[j], 'rgba(142,116,78,0.3)'); band(i, sd * (w[i] - 2), sd * w[i], sd * (w[j] - 2), sd * w[j], 'rgba(120,98,64,0.3)'); }
+      band(i, off[i] - 5, off[i] + 5, off[j] - 5, off[j] + 5, 'rgba(150,124,84,0.22)');
+      for (const sd of [-2.6, 2.6]) band(i, off[i] + sd - 1.1, off[i] + sd + 1.1, off[j] + sd - 1.1, off[j] + sd + 1.1, 'rgba(112,90,58,0.34)');
+    }
+    const COL = ['rgba(104,84,56,0.5)', 'rgba(232,216,180,0.55)', 'rgba(150,128,92,0.45)', 'rgba(84,70,50,0.4)'];
+    for (let i = 0; i < T.N; i++) {
+      const a = share[i]; if (!a) continue;
+      for (let n = 0; n < 46 * a * a; n++) {
+        const l = -T.WR[i] + r() * (T.WL[i] + T.WR[i]), t = r() * T.STEP, [x, z] = P(i, l), big = r() < 0.12, d = (big ? 1 : 0.5) * GK;
+        g.fillStyle = COL[(r() * COL.length) | 0]; g.fillRect(Math.floor((x + T.TX[i] * t * GK) / d) * d, Math.floor((z + T.TZ[i] * t * GK) / d) * d, d, d);
+      }
+    }
   }
   // The shadows of what casts none of its own (the drawn trees, the cheap city and the great buildings, none of them
   // in the sun's shadow pass): painted, all at once so that where they cross they are no darker, the way the spring
@@ -604,7 +636,7 @@ function paint() {
     for (const b of plan().boxes) { const h = Math.max(2, Math.round(b.h / 12)) * 12, dx = sx * h, dz = sz * h; for (const [ax, az, bx, bz] of [[b.x0, b.z0, b.x0 + b.w, b.z0], [b.x0, b.z0, b.x0, b.z0 + b.d], [b.x0 + b.w, b.z0 + b.d, b.x0 + b.w, b.z0], [b.x0 + b.w, b.z0 + b.d, b.x0, b.z0 + b.d]]) { g.moveTo(ax * GK, az * GK); g.lineTo(bx * GK, bz * GK); g.lineTo((bx + dx) * GK, (bz + dz) * GK); g.lineTo((ax + dx) * GK, (az + dz) * GK); g.closePath(); } g.rect((b.x0 + dx) * GK, (b.z0 + dz) * GK, b.w * GK, b.d * GK); }
     for (const [x0, y0, z0, x1, y1, z1] of stones()) { const dx = sx * y1, dz = sz * y1; if (y0 > 0) { if (y1 - y0 > 3 && x1 - x0 > 3) g.rect((x0 + dx) * GK, (z0 + dz) * GK, (x1 - x0) * GK, (z1 - z0) * GK); } else if (x1 - x0 > 3) quad((x0 + x1) / 2, (z0 + z1) / 2, (x0 + x1) / 2 + dx, (z0 + z1) / 2 + dz, (x1 - x0 + z1 - z0) / 4); }
     for (const m of MODELS) {
-      const { S, NY, m: v } = m.vol, c = Math.cos(m.turn), sn = Math.sin(m.turn), y0 = m.name === 'Monument' ? KNOLL.h : 0;
+      const { S, NY } = m.vol, v = m.vol.full || m.vol.m, c = Math.cos(m.turn), sn = Math.sin(m.turn), y0 = m.name === 'Monument' ? KNOLL.base : 0;
       for (let z = 0; z < S; z += 2) for (let x = 0; x < S; x += 2) {
         let top = 0; for (let y = NY - 1; y > 0; y--) if (v[(y * S + z) * S + x]) { top = y + 1; break; }
         if (top < 3) continue;
@@ -677,7 +709,7 @@ export default {
     const s = P('Metro').roofBox;
     return [
       { kind: 'custom', make: (api) => { makeRoads(api.scene, course().T, course().parts.map((p) => ({ ...p, skip: near }))); } },
-      { kind: 'custom', make: (api) => { for (const m of MODELS) { const g = statueMesh(m.vol, m.k, { glow: [1.5, 1.4, 1.1], greedy: true }); g.position.set(m.x, m.name === 'Monument' ? KNOLL.h : 0, m.z); g.rotation.y = m.turn; g.name = m.name; api.scene.add(g); } } },
+      { kind: 'custom', make: (api) => { for (const m of MODELS) { const g = statueMesh(m.vol, m.k, { glow: [1.5, 1.4, 1.1], greedy: true }); g.position.set(m.x, m.name === 'Monument' ? KNOLL.base : 0, m.z); g.rotation.y = m.turn; g.name = m.name; api.scene.add(g); if (m.name === 'Pentagon') { const p = pentagonMesh(); p.position.set(m.x, 0, m.z); p.rotation.y = m.turn; p.name = 'Pentagon walls'; api.scene.add(p); } } } },
       { kind: 'custom', make: (api) => { dressBridges(api.scene, course().T, [{ part: P('14th Street Bridge'), kind: 'truss' }]); api.scene.add(stoneMesh()); } },
       { kind: 'custom', make: (api) => { const p = P('Metro'), T = course().T, i = T.at(p.i0 + p.open[0]); makeStation(api.scene, { x: T.X[i], w: course().W[i], z0: p.openZ[0], z1: p.openZ[1], y0: p.h, y1: p.roofY, name: 'SMITHSONIAN', style: 'vault' }); } },
       { kind: 'el', x: COURSE[14][0] - 18 - 10.5, z0: P('Metro').openZ[0] - 56, z1: P('Metro').openZ[1] + 56, ground: true, y: P('Metro').h, every: 7, speed: 64, see: 130, model: 'commuter', paint: 'blue' },
