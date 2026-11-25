@@ -16,7 +16,7 @@ export const SLOTS = [
   { key: 'armour', name: 'Armour', tip: 'More health, more weight.' },
   { key: 'wheels', name: 'Wheels', tip: 'Grip, speed and height.' },
   { key: 'engine', name: 'Engine', tip: 'More go.' },
-  { key: 'gadget', name: 'Gadget', tip: 'Shift to use.' },
+  { key: 'gadget', name: 'Gadget', tip: 'E to use.' },
   { key: 'paint', name: 'Paint', tip: 'Colours and patterns. Free.' },
 ];
 
@@ -93,11 +93,11 @@ export const PARTS = {
   },
   gadget: {
     none: { name: 'Nothing', desc: '', cost: 0, power: 0, mass: 0 },
-    nitro: { name: 'Nitro', desc: 'Shift for a burst of speed. Ram through anything.', cost: 300, power: 2, mass: 0.02, nitro: { time: 2.2, every: 7, topK: 1.45, accelK: 2.4 } },
-    repair: { name: 'Repair kit', desc: 'Shift to patch up 40 health. Once every 25 seconds.', cost: 400, power: 2, mass: 0.02, repair: { hp: 40, every: 25 } },
-    shield: { name: 'Shield', desc: 'Shift for four seconds when nothing can hurt you. Once every 20 seconds.', cost: 550, power: 3, mass: 0.03, shield: { time: 4, every: 20 } },
-    oil: { name: 'Oil slick', desc: 'Shift to pour a slick behind you. Whoever drives into it spins out.', cost: 300, power: 1, mass: 0.04, oil: { every: 8, life: 14, r: 9 } },
-    jump: { name: 'Jump jets', desc: 'Shift to leap over cars and come down on top of them.', cost: 450, power: 2, mass: 0.04, jump: { every: 6, vy: 34 } },
+    nitro: { name: 'Nitro', desc: 'E for a burst of speed. Ram through anything.', cost: 300, power: 2, mass: 0.02, nitro: { time: 2.2, every: 7, topK: 1.45, accelK: 2.4 } },
+    repair: { name: 'Repair kit', desc: 'E to patch up 40 health. Once every 25 seconds.', cost: 400, power: 2, mass: 0.02, repair: { hp: 40, every: 25 } },
+    shield: { name: 'Shield', desc: 'E for four seconds when nothing can hurt you. Once every 20 seconds.', cost: 550, power: 3, mass: 0.03, shield: { time: 4, every: 20 } },
+    oil: { name: 'Oil slick', desc: 'E to pour a slick behind you. Whoever drives into it spins out.', cost: 300, power: 1, mass: 0.04, oil: { every: 8, life: 14, r: 9 } },
+    jump: { name: 'Jump jets', desc: 'E to leap over cars and come down on top of them.', cost: 450, power: 2, mass: 0.04, jump: { every: 6, vy: 34 } },
   },
 };
 

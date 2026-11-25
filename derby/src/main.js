@@ -20,7 +20,7 @@ import { Vehicle, newFrame } from './vehicle.js';
 import { makeDriver, clearLine } from './ai.js';
 import { MAP, MAPS, SHARED, chooseMap } from './maps/index.js';
 import { MODES } from './modes/index.js';
-import { CRASH, ROUND, AI, DRIFT, BUILDINGS } from './tuning.js';
+import { CRASH, ROUND, AI, DRIFT, BUILDINGS, CAM } from './tuning.js';
 import { build as buildKeepOut } from './keepout.js';
 import { toughen, boom, chipAt, fuelBlast } from './sturdy.js';
 import { PARTS, PAINTS, STARTER, loadSave, keepSave, rivalBuild, RIVAL_NAMES, statsOf } from './parts.js';
@@ -597,7 +597,7 @@ function stepMines(dt) {
     try { boom(m.x, 1, m.z, m.g.wall, 0.5, { maxDebris: 160, fire: true }, BUILDINGS.shell); if (hit) { hit.vx *= 0.3; hit.vz *= 0.3; } } finally { by = was; splashK = null; }
   }
 }
-// Shift: the gadget. Nitro is a burst of speed; the repair kit patches the car up.
+// E (or Q): the gadget. Nitro is a burst of speed; the repair kit patches the car up.
 function gadget(c) {
   const G = c.gadget; if (!G || c.dead || c.gadgetT > 0) return;
   useGadget(c, G);
@@ -813,7 +813,7 @@ function spawnPlayer(at) {
   if (player && !player.dead) { player.dispose(); cars.splice(cars.indexOf(player), 1); }   // a fresh build in place of the old one
   player = addCar({ ...save.load, name: 'You' }, at, false);
   player.turretTurn = 10;
-  cam.yaw = at.yaw; cam.cx = player.x; cam.cz = player.z;
+  cam.yaw = at.yaw; cam.head = undefined; cam.cx = player.x; cam.cz = player.z;
   // the player's car always goes first in the list
   cars.splice(cars.indexOf(player), 1); cars.unshift(player);
 }
@@ -1096,7 +1096,7 @@ function startTest(load) {
   game.state = 'test'; game.testT = 30; game.testEnd = null; game.testLoad = { ...load };
   placePlayer(load, room.start); player.bounds = room.bounds;
   clearDummies(); for (const d of room.dummies) addDummy(d);
-  cam.yaw = player.yaw; cam.cx = player.x; cam.cz = player.z; cam.d = undefined; cam.p = undefined;
+  cam.yaw = player.yaw; cam.head = undefined; cam.cx = player.x; cam.cz = player.z; cam.d = undefined; cam.p = undefined;
   sfx.play('start', 0.9); setTimeout(() => sfx.play('ui_go', 0.8), 300); lockMouse();
   toast('Test drive', TOUCH ? 'Try the build on the targets' : 'WASD to drive, click to fire. G to come back');
 }
@@ -1141,7 +1141,7 @@ function outOfRoom() {
   specials.clearOffMap();
   garageLight(false);
   spawnPlayer(game.garageBack || null);
-  cam.yaw = player.yaw; cam.d = undefined; cam.p = undefined;
+  cam.yaw = player.yaw; cam.head = undefined; cam.d = undefined; cam.p = undefined;
 }
 // The home screen: the car turning on the turntable, and a card for each way to play and for the garage.
 const BRIEF = 'ad-brief';   // (kept across the page loading again on another map: straight to that mode's card)
@@ -1255,6 +1255,7 @@ function drawPause() {
   $('pause-note').textContent = net ? 'An online round cannot pause: the others play on, and your car is still out there.' : '';
   $('pause-again').hidden = !!net; $('pause-home').textContent = net ? 'Leave the round' : 'Main menu';
   $('pause-sound').textContent = muted ? 'Sound: off' : 'Sound: on';
+  $('pause-auto').textContent = autoFire ? 'Auto-fire: on' : 'Auto-fire: off';
 }
 function pauseOn() {
   if (game.paused || (game.state !== 'play' && game.state !== 'dead')) return;
@@ -1317,6 +1318,8 @@ function lockMouse(soft) { if (soft) cam.softAt = performance.now(); if (canvas.
 
 // ---- controls ------------------------------------------------------------------------------------------------------
 const keys = {};
+const AUTOFIRE = 'auto-destruction-autofire';
+let autoFire = true; try { autoFire = localStorage.getItem(AUTOFIRE) !== '0'; } catch (e) { /* on */ }
 const cam = { yaw: Math.PI, pitch: 0.3, dist: 36, locked: false, mx: 0, my: 0, cx: 0, cz: 0 };
 const mouse = { b0: false, b2: false };
 addEventListener('keydown', (e) => {
@@ -1324,12 +1327,12 @@ addEventListener('keydown', (e) => {
   if ((e.code === 'Escape' || e.code === 'KeyP') && (game.state === 'play' || game.state === 'dead')) { pauseOn(); return; }
   keys[e.code] = true; initAudio();
   if (e.code === 'KeyM') { muted = !muted; sfx.on = !muted; }
-  if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight') && game.state === 'play' && player) gadget(player);
+  // the gadget is E (or Q) since 2026-11-25; Shift drifts with Space, so the left hand drifts without leaving W A S D
+  if ((e.code === 'KeyE' || e.code === 'KeyQ') && !e.repeat && (game.state === 'play' || game.state === 'test') && player) gadget(player);
   if (e.code === 'KeyG' && game.home) openGarage('home');
   else if (e.code === 'KeyG' && (game.state === 'menu' || (game.state === 'dead' && !game.noGarage) || (game.state === 'play' && mode.garageOK()))) openGarage(game.state === 'play' ? 'break' : game.state);
   else if ((e.code === 'KeyG' || e.code === 'Escape') && game.state === 'garage' && !game.home) leaveGarage();
   else if ((e.code === 'KeyG' || e.code === 'Escape' || e.code === 'KeyT') && game.state === 'test') endTest();
-  if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight') && game.state === 'test' && player) gadget(player);
   if (e.code === 'KeyR' && game.state === 'play' && mode.resetPlayer) mode.resetPlayer();   // back on the track (the race)
   if ((e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'KeyC') && overMore && overGo()) e.preventDefault();   // the end card's Keep going (not a click on a focused button too)
   if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
@@ -1356,7 +1359,7 @@ addEventListener('mousemove', (e) => {
   if (cam.drag && game.state === 'garage') turnTable(e.clientX - cam.mx);
   cam.mx = e.clientX; cam.my = e.clientY;
   // the aim slows a little over a rival, so it is easier to stay on one
-  if (cam.locked) { const f = 1 - 0.35 * (cam.sticky || 0); cam.yaw -= e.movementX * 0.0026 * f; cam.pitch = clamp(cam.pitch + e.movementY * 0.0022 * f, 0.02, 0.75); }   // never down behind the car's back
+  if (cam.locked) { const f = 1 - 0.35 * (cam.sticky || 0); if (Math.abs(e.movementX) + Math.abs(e.movementY) > 2) cam.idle = 0; cam.yaw -= e.movementX * 0.0026 * f; cam.pitch = clamp(cam.pitch + e.movementY * 0.0022 * f, 0.02, 0.75); }   // never down behind the car's back
 });
 addEventListener('wheel', (e) => { cam.dist = clamp(cam.dist + Math.sign(e.deltaY) * 3, 20, 60); }, { passive: true });
 // the mode's how-to-play cards: on its start card, and again from the round's menu (learn.js)
@@ -1401,6 +1404,7 @@ $('pause-b').addEventListener('click', pauseOn);
 $('pause-go').addEventListener('click', pauseOff);
 $('pause-again').addEventListener('click', () => { pauseOff(); try { sessionStorage.setItem(BRIEF, 'solo'); } catch (e) { /* home */ } chooseMap(MAP.id); });
 $('pause-sound').addEventListener('click', () => { muted = !muted; sfx.on = !muted; audioMix.on = !muted; drawPause(); });
+$('pause-auto').addEventListener('click', () => { autoFire = !autoFire; try { localStorage.setItem(AUTOFIRE, autoFire ? '1' : '0'); } catch (e) { /* this visit only */ } drawPause(); });
 $('pause-home').addEventListener('click', toHome);
 $('over-garage').addEventListener('click', () => { $('over').hidden = true; game.ended = true; openGarage('over'); });
 $('menu-home').addEventListener('click', () => { if (game.state === 'menu') showHome(); });
@@ -1471,7 +1475,7 @@ function drivePlayer(dt) {
   const k = (a, b) => keys[a] || keys[b];
   c.throttle = (k('KeyW', 'ArrowUp') ? 1 : 0) - (k('KeyS', 'ArrowDown') ? 1 : 0);
   c.steer = (k('KeyA', 'ArrowLeft') ? 1 : 0) - (k('KeyD', 'ArrowRight') ? 1 : 0);
-  c.drift = !!keys.Space || touch.drift; c.brake = 0;   // the handbrake: a drift when steering, a brake when not (vehicle.js)
+  c.drift = !!(keys.Space || keys.ShiftLeft || keys.ShiftRight) || touch.drift; c.brake = 0;   // the handbrake: a drift when steering, a brake when not (vehicle.js)
   // the stick: the car turns to the way it is pushed (up the screen is straight ahead) and goes; pulled back, it reverses
   const m = Math.hypot(touch.sx, touch.sy);
   if (touch.id !== null && m > 0.2) {
@@ -1485,7 +1489,11 @@ function drivePlayer(dt) {
   }
   // a brake, not reverse, while still rolling forwards fast
   if (c.throttle < 0 && c.fwd > 12) { c.brake = 1; c.throttle = -0.2; }
-  guns(c, dt, [mouse.b0 || keys.KeyJ || touch.fire, mouse.b2 || keys.KeyF || keys.KeyK || touch.heavy]);
+  // auto-fire (PC, a switch on the pause menu, on unless turned off): the guns fire by themselves while the crosshair is
+  // on a rival (aimLock, aimFor), so drifting and steering never mean letting go of the trigger. The heavy weapons stay
+  // on the right click.
+  const auto = autoFire && !TOUCH && aimLock && !aimLock.dead;
+  guns(c, dt, [mouse.b0 || keys.KeyJ || touch.fire || auto, mouse.b2 || keys.KeyF || keys.KeyK || touch.heavy]);
 }
 
 // ---- camera and aiming -----------------------------------------------------------------------------------------
@@ -1580,11 +1588,27 @@ function aimFor(c, dt) {
 function stepCamera(dt) {
   const c = player; if (!c) return;
   if (game.state === 'garage') { garageCamera(dt); return; }
+  // in a drift it swings round a little towards where the car is going, and keeps up with the car's quicker turn
+  const want = c.yaw + c.slipA * c.slide * DRIFT.camSwing, pitch0 = tall ? 0.4 : 0.3;
   if (!cam.locked) {   // follow the car round its turns
-    // in a drift it swings round a little towards where the car is going, and keeps up with the car's quicker turn
-    const want = c.yaw + c.slipA * c.slide * DRIFT.camSwing;
     cam.yaw += wrap(want - cam.yaw) * Math.min(1, dt * (2.6 + DRIFT.camFollow * c.slide));
-    cam.pitch += ((tall ? 0.4 : 0.3) - cam.pitch) * Math.min(1, dt * 2);   // up behind the car, so the road ahead shows over its roof
+    cam.pitch += (pitch0 - cam.pitch) * Math.min(1, dt * 2);   // up behind the car, so the road ahead shows over its roof
+  } else {
+    // smart follow (Will, 2026-11-25: with the mouse on the camera, it never turned with the car, so in a drift the view
+    // stayed put and the corner was out of sight). The mouse's look is kept as a turn off the car's way: the view turns
+    // with the car, and a moment after the mouse goes still it eases back behind it. In a slide it looks further into
+    // the way the car is going, to see round the corner.
+    const head = want + c.slipA * c.slide * CAM.driftLook;
+    if (cam.head === undefined) cam.head = head;
+    const turn = wrap(head - cam.head); cam.head = head;
+    cam.yaw += clamp(turn, -CAM.carry * dt, CAM.carry * dt);   // (a spin after a hit doesn't whip the view round with it)
+    cam.idle = (cam.idle || 0) + dt;
+    const back = c.slide > 0.3 ? CAM.driftWait : CAM.wait;
+    if (cam.idle > back && !c.dead) {
+      const k = Math.min(1, (cam.idle - back) / CAM.ramp);   // (it starts slowly, so a short pause doesn't snap the aim)
+      cam.yaw += wrap(head - cam.yaw) * Math.min(1, dt * CAM.rate * k * (1 + c.slide));
+      cam.pitch += (pitch0 - cam.pitch) * Math.min(1, dt * CAM.rate * 0.6 * k);
+    }
   }
   cam.cx += (c.x - cam.cx) * Math.min(1, dt * 12); cam.cz += (c.z - cam.cz) * Math.min(1, dt * 12);
   const dist = cam.dist * (tall ? 1.2 : 1) * (1 + clamp(Math.abs(c.fwd) / 300, 0, 0.25));
