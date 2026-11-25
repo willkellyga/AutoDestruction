@@ -237,6 +237,9 @@ button:disabled { opacity: 0.6; cursor: default; }
 /* the results: a steel plate over the round, the place on a yellow tab, the standings, the tiles and what it paid */
 #over > .ov { position: relative; text-align: left; width: min(860px, 100%); max-width: none; padding: 8px 0 0; background: linear-gradient(180deg, #282c31, #131417); box-shadow: inset 0 0 0 2px rgba(255,255,255,0.1); --c: 20px; clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c)); }
 #over > .ov::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 8px; background: var(--stripes); }
+/* the wrecked card between cars: the same steel, smaller */
+#dead > div { position: relative; width: min(440px, 100%); padding: 30px 28px 24px; font-size: 18px; background: linear-gradient(180deg, #282c31, #131417); box-shadow: inset 0 0 0 2px rgba(255,255,255,0.1); --c: 16px; clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c)); }
+#dead > div::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 8px; background: var(--stripes); }
 .ov-head { display: flex; align-items: stretch; background: var(--tar); }
 .ov-badge { display: flex; align-items: flex-start; gap: 2px; background: var(--hot); color: var(--tar); padding: 8px 34px 4px 20px; clip-path: polygon(0 0, 100% 0, calc(100% - 24px) 100%, 0 100%); font-family: var(--f-logo); line-height: 1; }
 .ov-badge b { font-weight: 400; font-size: 70px; } .ov-badge b.w { font-size: 34px; align-self: center; text-transform: uppercase; } .ov-badge i { font-style: normal; font-size: 26px; margin-top: 8px; text-transform: uppercase; }
