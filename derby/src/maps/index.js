@@ -45,8 +45,9 @@ export const SHARED = { survival: [base, fair] };
 // line under each card's name. Their pictures are src/stages.json (node derby/tools/stage-shots.mjs). A map here loads
 // without ?map= in the address, like the start card's.
 // (a preview of a race not yet on the card puts it on the card, on that page only)
-const PREVIEWED = PREVIEW && [mapById(PREVIEW)].filter((m) => m && m.mode === 'race' && m !== empire && m !== capital);
-export const STAGES = { race: [empire, capital, ...(PREVIEWED || [])], survival: [base, fair], brawl: [arena] };
+const RACES = [empire, capital, tokyo];   // (Midnight Tokyo: on the card and in the online rotation from 2026-11-25)
+const PREVIEWED = PREVIEW && [mapById(PREVIEW)].filter((m) => m && m.mode === 'race' && !RACES.includes(m));
+export const STAGES = { race: [...RACES, ...(PREVIEWED || [])], survival: [base, fair], brawl: [arena] };
 export const TAGS = {
   empire: '3 laps · bridges, the subway, Lady Liberty', capital: '3 laps · the Capitol, the Mall, the Metro',
   tokyo: '3 laps at night · the flyover, the temple, the Rainbow Bridge',

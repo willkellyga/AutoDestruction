@@ -24,11 +24,11 @@ import crypto from 'node:crypto';
 const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 // the modes (the game's map ids), with how many cars a round has: players and bots together, and so the most players
 // and how long quick play's countdown is (from the first player in)
-export const MODES = { arena: { name: 'Arena', max: 8, wait: 10000 }, race: { name: 'Race', max: 6, wait: 15000 }, empire: { name: 'Race', max: 6, wait: 15000 }, capital: { name: 'Race', max: 6, wait: 15000 }, base: { name: 'Zombie Survival', max: 6, wait: 10000 }, fair: { name: 'Zombie Survival', max: 6, wait: 10000 } };
+export const MODES = { arena: { name: 'Arena', max: 8, wait: 10000 }, race: { name: 'Race', max: 6, wait: 15000 }, empire: { name: 'Race', max: 6, wait: 15000 }, capital: { name: 'Race', max: 6, wait: 15000 }, tokyo: { name: 'Race', max: 6, wait: 15000 }, base: { name: 'Zombie Survival', max: 6, wait: 10000 }, fair: { name: 'Zombie Survival', max: 6, wait: 10000 } };
 // A mode with more than one map: a round is played on one of them, picked at random as the round is made. The mode goes
 // by its first map's id (rooms, quick play and the lobby all say 'base' for Zombie Survival), and a page on any of its
 // maps that asks for a round (Play again on the fair) means that mode. AD_MAP=<id> holds the pick, for the tests.
-export const POOLS = { base: ['base', 'fair'], race: ['empire', 'capital'] };   // (the race: Empire City replaced Manhattan, 2026-11-24)
+export const POOLS = { base: ['base', 'fair'], race: ['empire', 'capital', 'tokyo'] };   // (the race: Empire City replaced Manhattan, 2026-11-24)
 const POOL_OF = {}; for (const m in POOLS) for (const id of POOLS[m]) POOL_OF[id] = m;
 const mapFor = (mode) => { const p = POOLS[mode]; if (!p) return mode; const hold = process.env.AD_MAP; return p.includes(hold) ? hold : p[Math.floor(Math.random() * p.length)]; };
 const MAX_SEATS = 8;      // the most players in a friends' room (a round takes as many as its mode has room for)
