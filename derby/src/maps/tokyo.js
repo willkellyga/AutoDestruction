@@ -513,6 +513,8 @@ function paint() {
   const WLp = T.WL.slice(), WRp = T.WR.slice();
   for (let i = 0; i < T.N; i++) if (on[i] && Math.abs(H[i]) > FOOT) { WLp[i] = -1.4; WRp[i] = -1.4; }
   paintCourse(g, { ...T, WL: WLp, WR: WRp }, grid, 62, line);
+  // over the tunnel's roof the pavement carries on (the course's own line would show as a seam)
+  { const t = P('Tunnel'); g.strokeStyle = PAVE; g.lineWidth = 6 * GK; g.lineCap = 'butt'; g.beginPath(); for (let k = t.roof[0] - 2; k <= t.roof[1] + 2; k++) { const i = T.at(t.i0 + k); k === t.roof[0] - 2 ? g.moveTo(T.X[i] * GK, T.Z[i] * GK) : g.lineTo(T.X[i] * GK, T.Z[i] * GK); } g.stroke(); }
   grassy = grassOf(cv, true, T);
   if (!PHONE) return cv;
   const half = document.createElement('canvas'); half.width = cv.width >> 1; half.height = cv.height >> 1;
