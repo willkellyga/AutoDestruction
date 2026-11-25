@@ -32,12 +32,21 @@ import capital from './capital.js';
 const ALL = [town, manhattan, base, fair, arena, crumble, bowtie, empire, capital];
 // The start card: three ways to play, in this order. The rest (Crumbletown's waves, its race and the bow-tie) are
 // still there by address: ?map=town, ?map=crumble, ?map=bowtie.
-export const MAPS = [manhattan, base, fair, arena];
+export const MAPS = [empire, base, fair, arena];   // (Will, 2026-11-24: Empire City replaces Manhattan Circuit, still at ?map=race)
+export const mapById = (id) => ALL.find((m) => m.id === id);
 // the maps of one mode that share a card: Zombie Survival's two (the card's map row picks; online picks for you)
-// A preview page (one that sets window.__AD_PREVIEW_TRACKS to a track's id before the game loads) also puts the race
-// tracks that are not on the card yet on the Race card's map row, and opens the Race on that track the first time.
+// A preview page (one that sets window.__AD_PREVIEW_TRACKS to a track's id before the game loads) opens the Race's stage
+// select on that track the first time (main.js lastMap).
 export const PREVIEW = (typeof window !== 'undefined' && window.__AD_PREVIEW_TRACKS) || null;
-export const SHARED = { survival: [base, fair], ...(PREVIEW ? { race: [manhattan, empire, capital] } : {}) };
+export const SHARED = { survival: [base, fair] };
+// The stage select (main.js): a solo player picks a map of the mode from these picture cards, by the mode's name, and the
+// line under each card's name. Their pictures are src/stages.json (node derby/tools/stage-shots.mjs). A map here loads
+// without ?map= in the address, like the start card's.
+export const STAGES = { race: [empire, capital], survival: [base, fair], brawl: [arena] };
+export const TAGS = {
+  empire: '3 laps · bridges, the subway, Lady Liberty', capital: '3 laps · the Capitol, the Mall, the Metro',
+  base: 'Army base · a storm at night', fair: 'County fair · the lights are failing', arena: 'Derby pit · traps round the edge',
+};
 const KEY = 'ad-map';
 export const MAP = ALL.find((m) => m.id === picked()) || arena;
 // load the page again on another map (one that is not on the card keeps its ?map= in the address, so Play again stays on
@@ -46,6 +55,6 @@ export function chooseMap(id) {
   try { sessionStorage.setItem(KEY, id); } catch (e) { /* fall through to the window's name */ }
   try { window.name = (window.name || '').replace(/ad-map=\w+;?/, '') + `ad-map=${id};`; } catch (e) { /* stays */ }
   let u = location.href.replace(/([?&])map=\w+&?/, '$1').replace(/[?&]$/, '');
-  if (!MAPS.some((m) => m.id === id) && !(PREVIEW && SHARED.race.some((m) => m.id === id))) u = u.replace(/(#|$)/, `${u.includes('?') ? '&' : '?'}map=${id}$1`);
+  if (!MAPS.some((m) => m.id === id) && !Object.values(STAGES).some((l) => l.some((m) => m.id === id))) u = u.replace(/(#|$)/, `${u.includes('?') ? '&' : '?'}map=${id}$1`);
   if (u !== location.href) location.replace(u); else location.reload();
 }

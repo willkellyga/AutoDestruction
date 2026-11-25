@@ -18,9 +18,10 @@ import { SFX_BANK, SFX_NORM } from '../../src/sfx-bank.js';
 import { makeFx, WEAPONS } from '../../units/src/fx.js';
 import { Vehicle, newFrame } from './vehicle.js';
 import { makeDriver, clearLine } from './ai.js';
-import { MAP, MAPS, SHARED, PREVIEW, chooseMap } from './maps/index.js';
+import { MAP, MAPS, SHARED, STAGES, TAGS, PREVIEW, mapById, chooseMap } from './maps/index.js';
+import STAGE_PICS from './stages.json';   // the stage select's pictures (tools/stage-shots.mjs)
 import { MODES } from './modes/index.js';
-import { CRASH, ROUND, AI, DRIFT, BUILDINGS, CAM } from './tuning.js';
+import { CRASH, ROUND, AI, DRIFT, BUILDINGS, CAM, RACE, SURVIVAL_LEVELS, BRAWL_LEVELS } from './tuning.js';
 import { build as buildKeepOut } from './keepout.js';
 import { toughen, boom, chipAt, fuelBlast } from './sturdy.js';
 import { PARTS, PAINTS, STARTER, loadSave, keepSave, rivalBuild, RIVAL_NAMES, statsOf } from './parts.js';
@@ -1192,7 +1193,7 @@ function outOfRoom() {
 // The home screen: the car turning on the turntable, and a card for each way to play and for the garage.
 const BRIEF = 'ad-brief';   // (kept across the page loading again on another map: straight to that mode's card)
 const HOME_CARDS = [
-  { map: 'race', k: 'Manhattan Circuit', t: 'Race', d: 'Laps of New York with the guns on', icon: 'M5 3h2v18H5zm3 1h4l1 1h6v9h-6l-1-1H8zm2 2v2h2V6zm4 1v2h2V7zm-2 1v2h2V8zm-2 2v2h2v-2zm4 1v2h2v-2z' },
+  { map: 'race', k: 'Two tracks', t: 'Race', d: 'Laps of New York and Washington with the guns on', icon: 'M5 3h2v18H5zm3 1h4l1 1h6v9h-6l-1-1H8zm2 2v2h2V6zm4 1v2h2V7zm-2 1v2h2V8zm-2 2v2h2v-2zm4 1v2h2v-2z' },
   { map: 'base', k: 'Two maps', t: 'Zombie Survival', d: 'Outlast the horde. Last car running wins', icon: 'M12 2a8 8 0 0 1 8 8c0 3-1.5 5-3 6v3h-2v-2h-2v2h-2v-2H9v2H7v-3c-1.5-1-3-3-3-6a8 8 0 0 1 8-8zM8.5 9a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm7 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM12 13l-1.2 2.5h2.4z' },
   { map: 'arena', k: 'Hammerdown Arena', t: 'Arena', d: 'Eight cars, three minutes, most wrecks wins', icon: 'M12 1l2.2 5.6L19 3.5l-1.6 5.6L23 10l-4.6 3.2L21 18.5l-5.6-1.3L14 23l-2-5-2 5-1.4-5.8L3 18.5l2.6-5.3L1 10l5.6-.9L5 3.5l4.8 3.1z' },
   { garage: true, k: 'Your car', t: 'Garage', d: 'Build it, arm it, paint it', icon: 'M21.7 6.3l-3.6 3.6-2.8-.7-.7-2.8 3.6-3.6a6 6 0 0 0-7.7 7.7L2.3 18.7a2.1 2.1 0 0 0 3 3l8.2-8.2a6 6 0 0 0 8.2-7.2z' },
@@ -1214,7 +1215,10 @@ function cardAs(a) {
   if ((a === 'online' || a === 'friends') && !lobby) a = 'solo';
   document.body.classList.toggle('as-solo', a === 'solo'); document.body.classList.toggle('as-online', a === 'online' || a === 'friends');
   const kind = { waves: 'Waves', race: 'Race', survival: 'Zombie Survival', brawl: 'Arena' }[MAP.mode] || MAP.mode;
-  $('brief-k').textContent = a === 'online' ? kind + ' · Online' : a === 'friends' ? kind + ' · Friends' : a === 'solo' ? kind + ' · Solo' : kind;
+  const lv = LEVELS[MAP.mode] && LEVELS[MAP.mode].list[levelOf(MAP.mode)];
+  $('brief-k').textContent = a === 'online' ? kind + ' · Online' : a === 'friends' ? kind + ' · Friends' : a === 'solo' ? kind + ' · Solo' + (lv ? ' · ' + lv.name : '') : kind;
+  $('menu-home').textContent = a === 'solo' && STAGES[MAP.mode] ? 'Back' : 'Main menu';
+  if (!net) $('menu-note').textContent = a === 'solo' && STAGES[MAP.mode] ? '' : mode.tip || '';   // (solo: the stage select said it)
   $('on-quick').hidden = a === 'friends';   // (Friends: the room's buttons only; quick play is the home screen's Online)
   $('on-quick').className = a === 'online' ? 'go' : 'alt'; $('on-quick').textContent = 'Play online';
 }
@@ -1245,7 +1249,7 @@ function playAgain() { if (net) net.bye(); goOnline(MAP.id); }
     b.innerHTML = `<small></small><b></b><span></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${c.icon}"/></svg>`;
     b.querySelector('small').textContent = c.k; b.querySelector('b').textContent = c.t; b.querySelector('span').textContent = c.d;
     if (c.map) b.dataset.map = c.map;
-    b.addEventListener('click', () => { if (!game.home) return; if (c.garage) openGarage('home'); else if (playAs === 'online') goOnline(c.map); else pickMode(lastMap(c.map)); });
+    b.addEventListener('click', () => { if (!game.home) return; if (c.garage) openGarage('home'); else if (playAs === 'online') goOnline(c.map); else if (playAs === 'solo' && STAGES[modeOf(c.map)]) showStages(modeOf(c.map)); else pickMode(lastMap(c.map)); });
     box.appendChild(b);
   }
 }
@@ -1253,9 +1257,9 @@ function playAgain() { if (net) net.bye(); goOnline(MAP.id); }
 // start card has a row to change map.
 const LAST = 'ad-last-';
 function lastMap(id) {
-  const m = MAPS.find((o) => o.id === id), list = m && SHARED[m.mode]; if (!list) return id;
+  const m = mapById(id), list = m && (STAGES[m.mode] || SHARED[m.mode]); if (!list) return id;
   let v = null; try { v = localStorage.getItem(LAST + m.mode); } catch (e) { /* the first */ }
-  return list.some((o) => o.id === v) ? v : list.some((o) => o.id === PREVIEW) ? PREVIEW : id;   // (a preview page opens on the track it is for)
+  return list.some((o) => o.id === v) ? v : list.some((o) => o.id === PREVIEW) ? PREVIEW : list.some((o) => o.id === id) ? id : list[0].id;   // (a preview page opens on the track it is for)
 }
 function drawHome() {
   const st = statsOf(save.load), r = rating(st), body = PARTS.body[save.load.body] || {};
@@ -1281,12 +1285,90 @@ function showHome() {
   $('menu').hidden = true; $('over').hidden = true; $('dead').hidden = true; $('hint').classList.remove('on');
   drawHome(); $('home').hidden = false;
 }
-// a way to play, picked on the home screen: its card (what it is, the controls, Start), on its own map
+// ---- the stage select (solo): a picture card for each map of the mode, the difficulty, and Start -----------------------
+// Picking a map no longer loads it at once (Will, 2026-11-25: "it instantly takes you to a loading screen, it's a little
+// jarring"): this screen comes first, over the workshop, and Start goes to the loading screen, then the mode's card.
+const modeOf = (id) => (mapById(id) || {}).mode;
+const MODE_NAME = { waves: 'Waves', race: 'Race', survival: 'Zombie Survival', brawl: 'Arena' };
+const PICK_WORD = { race: 'Pick a track', survival: 'Pick a map', brawl: 'Pick a map' };
+// each mode's difficulty, as kept in the save (the same places the modes read: modes/race.js, survival.js, brawl.js)
+const lvBox = () => (save.levels && typeof save.levels === 'object' ? save.levels : (save.levels = {}));
+const LEVELS = {
+  race: { list: RACE.levels, get: () => save.raceLevel, put: (id) => { save.raceLevel = id; } },
+  survival: { list: SURVIVAL_LEVELS, get: () => lvBox().survival, put: (id) => { lvBox().survival = id; } },
+  brawl: { list: BRAWL_LEVELS, get: () => lvBox().brawl, put: (id) => { lvBox().brawl = id; } },
+};
+const levelOf = (m) => { const L = LEVELS[m]; return L && L.list[L.get()] ? L.get() : 'normal'; };
+function setLevel(m, id) {
+  if (!LEVELS[m] || !LEVELS[m].list[id]) return;
+  if (m === MAP.mode && mode.levels) mode.levels.set(id); else { LEVELS[m].put(id); keepSave(save); }
+}
+const stage = { mode: null, pick: null };
+function bestText(m, lv) {   // Zombie Survival: the best time on that map at that difficulty (modes/survival.js keeps it)
+  const b = +((save.survivalBest || {})[lv === 'normal' ? m.id : `${m.id}-${lv}`]) || 0;
+  return b ? `Best ${Math.floor(b / 60)}:${String(Math.floor(b) % 60).padStart(2, '0')}` : '';
+}
+function drawStages() {
+  const m = stage.mode, lv = levelOf(m), L = LEVELS[m];
+  for (const b of $('st-cards').children) {
+    b.classList.toggle('on', b.dataset.id === stage.pick);
+    const best = b.querySelector('.st-best'); best.textContent = m === 'survival' ? bestText(STAGES[m].find((o) => o.id === b.dataset.id), lv) : '';
+  }
+  for (const b of $('st-levels').querySelectorAll('button')) b.classList.toggle('on', b.dataset.id === lv);
+  $('st-note').textContent = (L && L.list[lv] && L.list[lv].note) || '';
+}
+function showStages(m) {
+  const list = STAGES[m]; if (!list) return;
+  initAudio(); sfx.play('ui_open', 0.6);
+  stage.mode = m; stage.pick = lastMap(list[0].id);
+  if (!list.some((o) => o.id === stage.pick)) stage.pick = list[0].id;
+  if (!game.home) { intoRoom(); game.state = 'garage'; game.home = true; }   // (Back from the mode's card: the workshop again behind it)
+  $('home').hidden = true; $('menu').hidden = true; $('over').hidden = true; $('dead').hidden = true; $('hint').classList.remove('on');
+  $('st-k').textContent = MODE_NAME[m] + ' · Solo'; $('st-t').textContent = list.length > 1 ? PICK_WORD[m] : 'Ready to roll';
+  const box = $('st-cards'); box.textContent = '';
+  for (const o of list) {
+    const b = document.createElement('button'); b.className = 'st-card'; b.dataset.id = o.id;
+    b.innerHTML = '<img alt=""><span class="st-best"></span><span class="st-lab"><b></b><small></small></span>';
+    if (STAGE_PICS[o.id]) b.querySelector('img').src = STAGE_PICS[o.id];
+    b.querySelector('b').textContent = o.name; b.querySelector('small').textContent = TAGS[o.id] || '';
+    b.addEventListener('click', () => { if (stage.pick === o.id) { stageGo(); return; } stage.pick = o.id; sfx.play('ui_open', 0.35); drawStages(); });
+    box.appendChild(b);
+  }
+  const row = $('st-levels'); for (const b of row.querySelectorAll('button')) b.remove();
+  const L = LEVELS[m]; row.hidden = !L;
+  if (L) for (const [id, v] of Object.entries(L.list)) {
+    const b = document.createElement('button'); b.dataset.id = id; b.textContent = v.name;
+    b.addEventListener('click', () => { setLevel(m, id); sfx.play('ui_open', 0.35); drawStages(); });
+    row.appendChild(b);
+  }
+  drawStages(); $('stages').hidden = false;
+}
+function hideStages() { $('stages').hidden = true; stage.mode = null; }
+function stageGo() {
+  const id = stage.pick; if (!id) return;
+  try { localStorage.setItem(LAST + stage.mode, id); } catch (e) { /* this visit only */ }
+  hideStages(); pickMode(id);
+}
+$('st-go').addEventListener('click', stageGo);
+$('st-back').addEventListener('click', () => { sfx.play('ui_open', 0.4); hideStages(); showHome(); });
+addEventListener('keydown', (e) => {
+  if (!stage.mode || $('stages').hidden) return;
+  const list = STAGES[stage.mode], k = list.findIndex((o) => o.id === stage.pick);
+  if (e.code === 'Escape' || e.code === 'Backspace') { e.preventDefault(); hideStages(); showHome(); }
+  else if (e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Space') { e.preventDefault(); if (!e.repeat) stageGo(); }
+  else if (e.code === 'ArrowLeft' || e.code === 'ArrowRight' || e.code === 'KeyA' || e.code === 'KeyD') {
+    const d = e.code === 'ArrowLeft' || e.code === 'KeyA' ? -1 : 1; stage.pick = list[(k + d + list.length) % list.length].id; drawStages();
+  } else if (e.code === 'ArrowUp' || e.code === 'ArrowDown' || e.code === 'KeyW' || e.code === 'KeyS') {
+    const L = LEVELS[stage.mode]; if (!L) return; const ids = Object.keys(L.list), j = ids.indexOf(levelOf(stage.mode));
+    const n = ids[Math.max(0, Math.min(ids.length - 1, j + (e.code === 'ArrowUp' || e.code === 'KeyW' ? 1 : -1)))]; setLevel(stage.mode, n); drawStages();
+  }
+}, true);
+// a way to play, picked on the home screen (or the stage select): its card (what it is, the controls, Start), on its own map
 function pickMode(id) {
   initAudio(); sfx.play('ui_open', 0.7);
   if (id !== MAP.id || game.ended) {
     try { sessionStorage.setItem(BRIEF, playAs); } catch (e) { /* it lands on the home screen again */ }
-    $('home').hidden = true; if (window.__adLoad) window.__adLoad.again(((MAPS.find((m) => m.id === id) || {}).loading || [])[0]); else { const l = $('loading'); if (l) l.hidden = false; }
+    $('home').hidden = true; if (window.__adLoad) window.__adLoad.again(((mapById(id) || {}).loading || [])[0]); else { const l = $('loading'); if (l) l.hidden = false; }
     chooseMap(id); return;
   }
   outOfRoom();
@@ -1420,28 +1502,7 @@ $('pause-learn').addEventListener('click', () => learn.show());
 {
   $('brief-t').textContent = MAP.name;
   $('go').textContent = mode.go; $('menu-note').textContent = mode.tip || '';
-  // a mode with more than one map gets a row of buttons for them: the other map loads the page again on its own card
-  const maps = SHARED[MAP.mode];
-  if (maps && maps.includes(MAP)) {
-    const row = $('maprow'); row.hidden = false;
-    try { localStorage.setItem(LAST + MAP.mode, MAP.id); } catch (e) { /* this visit only */ }
-    for (const m of maps) {
-      const b = document.createElement('button'); b.textContent = m.name; b.className = m === MAP ? 'on' : '';
-      b.addEventListener('click', () => { if (m !== MAP && !net) pickMode(m.id); });
-      row.appendChild(b);
-    }
-  }
-  // a mode with difficulty levels (the race) gets a row of buttons for them, kept in the save
-  if (mode.levels) {
-    const row = $('levels'); row.hidden = false;
-    const show = () => { for (const b of row.querySelectorAll('button')) b.className = b.dataset.id === mode.levels.get() ? 'on' : ''; $('menu-note').textContent = mode.tip || ''; };
-    for (const [id, name] of mode.levels.list) {
-      const b = document.createElement('button'); b.dataset.id = id; b.textContent = name;
-      b.addEventListener('click', () => { mode.levels.set(id); show(); });
-      row.appendChild(b);
-    }
-    show();
-  }
+  // (the map and the difficulty are picked on the stage select before the map loads: showStages. The card says which.)
 }
 let lobby = null;
 $('over-go').addEventListener('click', () => { if (net && net.quick) playAgain(); else if (net) { net.bye(); location.href = net.lobby(); } else chooseMap(MAP.id); });
@@ -1454,12 +1515,12 @@ $('pause-sound').addEventListener('click', () => { muted = !muted; sfx.on = !mut
 $('pause-auto').addEventListener('click', () => { autoFire = !autoFire; try { localStorage.setItem(AUTOFIRE, autoFire ? '1' : '0'); } catch (e) { /* this visit only */ } drawPause(); });
 $('pause-home').addEventListener('click', toHome);
 $('over-garage').addEventListener('click', () => { $('over').hidden = true; game.ended = true; openGarage('over'); });
-$('menu-home').addEventListener('click', () => { if (game.state === 'menu') showHome(); });
+$('menu-home').addEventListener('click', () => { if (game.state !== 'menu') return; if (document.body.classList.contains('as-solo') && STAGES[MAP.mode]) showStages(MAP.mode); else showHome(); });
 // online (net.js): in a round, the start card is a Ready button for it; otherwise it has the lobby (Play online, With friends)
 if (net) {
   document.body.classList.add('online');
   $('brief-k').textContent = ({ waves: 'Waves', race: 'Race', survival: 'Zombie Survival', brawl: 'Arena' }[MAP.mode] || MAP.mode) + ' · Online';
-  for (const id of ['levels', 'maprow', 'menu-home', 'over-garage']) $(id).hidden = true;
+  for (const id of ['menu-home', 'over-garage']) $(id).hidden = true;
   // no Ready button: the map is built, so this page is ready (main.js's end), and the round starts by itself when the
   // countdown is out and everyone has loaded. The card shows how to play meanwhile, and how long is left.
   $('go').disabled = true; $('go').textContent = 'Loading...'; $('menu-note').textContent = 'Joining the round...';
