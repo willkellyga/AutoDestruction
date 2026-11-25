@@ -291,6 +291,7 @@ export function makeNet(o) {
     const was = c.yaw; c.yaw = wrapA(c.yaw + wrapA(n.yaw - c.yaw) * (1 - Math.exp(-14 * dt)));
     c.yawRate = dt > 0 ? wrapA(c.yaw - was) / dt : 0;
     c.y = c.y + ((n.y || 0) - (c.y || 0)) * (1 - Math.exp(-14 * dt));
+    if (o.MAP.floor) c.fy = o.MAP.floor(c.x, c.z, c.h);   // the road under it, where the map's road climbs (maps/heights.js)
     c.vx = n.vx; c.vz = n.vz;
     const fx = Math.sin(c.yaw), fz = Math.cos(c.yaw);
     c.fwd = c.vx * fx + c.vz * fz; c.speed = Math.hypot(c.vx, c.vz);

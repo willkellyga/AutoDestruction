@@ -16,6 +16,23 @@ import * as THREE from 'three';
 import { F, V3, DEG, lin, clamp, LAMP, SODIUM, POLE, MAST, HOMES } from './kit.js';
 import { flatGround } from './arena.js';
 
+// How far a point is into the land past the map (less than 0 in the water), from a layout's shores: for the backdrop
+// below, and for a map that wants to know where the water goes on past its edge (maps/water.js).
+export function harborLand(L) {
+  const W = L.world, SH = L.shores, [HZ0, HZ1] = SH.harlem, BK = SH.brooklyn, IS = SH.island, SO = SH.sound;
+  const N1 = (t) => { const i = Math.floor(t), f = t - i, u = f * f * (3 - 2 * f), h = (n) => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); }; return h(i) + (h(i + 1) - h(i)) * u; };
+  const wob = (t) => 22 * (N1(t * 0.006) - 0.5) + 8 * (N1(t * 0.021 + 7) - 0.5);
+  const bkW = (z) => BK.x + Math.max(0, z - W[3]) * BK.slope, bkS = (x) => BK.south + Math.max(0, x - BK.x - 90) * BK.fall + wob(x + 900) * 0.6;
+  const sound = (x, z) => Math.min(x - (SO.x + wob(z + 2300)), z - (SO.z0 + wob(x + 2900) * 0.7), SO.z1 + wob(x + 3700) * 0.7 - z);
+  const land = (x, z) => Math.min(-sound(x, z), Math.max(
+    SH.jersey + wob(z) - x,
+    Math.min(x - (SH.bronx + wob(z + 500) * 0.5), HZ0 - z),
+    Math.min(x - bkW(z), z - HZ1, bkS(x) - z),
+    Math.min(z - (IS.z + wob(x + 300)), IS.x + wob(z + 1700) - x),
+  ));
+  return { wob, bkW, bkS, land };
+}
+
 export function harbor(kit) {
   const { L, rand, pick, add, pt, pts, blink, tower, landmark } = kit;
   const W = L.world, SH = L.shores, REACH = L.reach, ST = L.streets;
@@ -29,16 +46,7 @@ export function harbor(kit) {
   // How far a point is into the land past the map (less than 0 in the water): the union of the far bank (west), the
   // Bronx (north of the Harlem River, east of its shore on the Hudson), Brooklyn and Queens (east of the East River,
   // south of the Harlem, down to their shore on the harbor) and the island across the harbor. The same in JS and GLSL.
-  const N1 = (t) => { const i = Math.floor(t), f = t - i, u = f * f * (3 - 2 * f), h = (n) => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); }; return h(i) + (h(i + 1) - h(i)) * u; };
-  const wob = (t) => 22 * (N1(t * 0.006) - 0.5) + 8 * (N1(t * 0.021 + 7) - 0.5);
-  const bkW = (z) => BK.x + Math.max(0, z - W[3]) * BK.slope, bkS = (x) => BK.south + Math.max(0, x - BK.x - 90) * BK.fall + wob(x + 900) * 0.6;
-  const sound = (x, z) => Math.min(x - (SO.x + wob(z + 2300)), z - (SO.z0 + wob(x + 2900) * 0.7), SO.z1 + wob(x + 3700) * 0.7 - z);
-  const land = (x, z) => Math.min(-sound(x, z), Math.max(
-    SH.jersey + wob(z) - x,
-    Math.min(x - (SH.bronx + wob(z + 500) * 0.5), HZ0 - z),
-    Math.min(x - bkW(z), z - HZ1, bkS(x) - z),
-    Math.min(z - (IS.z + wob(x + 300)), IS.x + wob(z + 1700) - x),
-  ));
+  const { wob, bkW, bkS, land } = harborLand(L);
   const WOB = `
 float bdN1(float t) { float i = floor(t), f = t - i, u = f * f * (3.0 - 2.0 * f); return mix(fract(sin(i * 127.1 + 311.7) * 43758.5453), fract(sin((i + 1.0) * 127.1 + 311.7) * 43758.5453), u); }
 float bdWob(float t) { return 22.0 * (bdN1(t * 0.006) - 0.5) + 8.0 * (bdN1(t * 0.021 + 7.0) - 0.5); }
