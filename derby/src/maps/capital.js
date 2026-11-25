@@ -342,8 +342,9 @@ function kitFor(d, R) {
 const KITS = { fedblock, dcoffice, temple, dcgrove, brownstone, rowhouse, haussmann, shop };
 // The great boards (maps/cityblocks.js; the pictures are maps/dcart.js FILMS), where a long straight looks at them: the
 // Grand Prix's past the end of the start straight, the Space Museum's at the far end of Constitution Avenue, and the Cherry
-// Blossom Festival's over the road itself (`over`: on legs either side of it) on the way up the Tidal Basin.
-const HEROES = [{ x: 770, z: 172, s: 3, film: 0, y: 30 }, { x: 212, z: 444, s: 1, film: 2, y: 30 }, { x: 660, z: 850, s: 2, film: 1, y: 38, over: true, great: true }];
+// Blossom Festival's over the road itself (`over`: on legs either side of it) on the way up the Tidal Basin. The last
+// two are the smaller size (`great`): a full one beside the Monument was more than the Mall's view could take.
+const HEROES = [{ x: 770, z: 172, s: 3, film: 0, y: 30 }, { x: 212, z: 444, s: 1, film: 2, y: 26, great: true }, { x: 660, z: 850, s: 2, film: 1, y: 38, over: true, great: true }];
 const CLOCK = { value: 0 };
 let PLAN = null;
 function plan() {
@@ -352,7 +353,7 @@ function plan() {
   let s = 20261125; const R = () => { s = (s * 1664525 + 1013904223) | 0; return ((s >>> 8) & 0xffff) / 65536; };
   for (const h of HEROES) {   // (their own ground, and the ground in front of them: nothing stands between a board and the road)
     if (h.over) { for (const o of [-29, 29]) take(h.x + o - 7, h.z - 9, h.x + o + 7, h.z + 7); continue; }
-    const w = h.s === 0 || h.s === 2 ? [76, 8] : [8, 76], o = h.open ?? 44, f = [[0, -o], [o, 0], [0, o], [-o, 0]][h.s];
+    const hw = h.great ? 52 : 76, w = h.s === 0 || h.s === 2 ? [hw, 8] : [8, hw], o = h.open ?? 44, f = [[0, -o], [o, 0], [0, o], [-o, 0]][h.s];
     take(h.x - w[0] + Math.min(0, f[0]), h.z - w[1] + Math.min(0, f[1]), h.x + w[0] + Math.max(0, f[0]), h.z + w[1] + Math.max(0, f[1]));
   }
   for (const f of FIXED) take(f[1] - 3, f[2] - 3, f[1] + f[3] + 2, f[2] + f[3] + 2);
