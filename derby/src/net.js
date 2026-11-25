@@ -28,7 +28,10 @@ export const ROUND = (Q.get('mp') || '').replace(/[^a-z0-9]/gi, '').slice(0, 16)
 const HOST0 = Q.get('h') || '';
 const ROOM = (Q.get('r') || '').replace(/[^A-Z]/gi, '').slice(0, 4).toUpperCase(), QUICK = Q.get('quick') === '1';
 const MODES = ['arena', 'race', 'base'];
-const MODE_NAME = { arena: 'Arena', race: 'Race', base: 'Zombie Survival', fair: 'Zombie Survival' };
+// a map that is one of a mode's maps goes by that mode (the relay's POOLS: the round's map is picked at random)
+const POOL_MODE = { fair: 'base', empire: 'race', capital: 'race' };
+const modeKey = (id) => POOL_MODE[id] || id;
+const MODE_NAME = { arena: 'Arena', race: 'Race', empire: 'Race', capital: 'Race', base: 'Zombie Survival', fair: 'Zombie Survival' };
 const SEND = 1 / 15;   // seconds between state messages
 const ZSEND = 0.15;    // and between the horde's, to each guest
 const ZRANGE = 260;    // the dead further than this from a guest's car are not sent to it
@@ -77,6 +80,7 @@ export const lobbyUrl = (map) => where(map, { room: ROOM });
 // ---- one tap: a quick room for this mode, and straight into its round -------------------------------------------
 // The relay sends `go` as soon as it has placed us; the page then loads on the round's map. fail(why) if it can't.
 export function quickPlay(mode, fail = () => {}) {
+  mode = modeKey(mode);
   const url = serverUrl(); if (!url || !MODES.includes(mode)) { fail('Online play needs the game server'); return false; }
   let ws, done = false;
   const stop = (why) => { if (done) return; done = true; clearTimeout(t); try { ws.close(); } catch (e) { /* gone */ } fail(why); };
@@ -96,7 +100,7 @@ export function quickPlay(mode, fail = () => {}) {
 export function makeLobby({ $, MAP, onOpen, onShut, onQuick, onFail }) {
   const url = serverUrl();
   const box = $('online'); if (!box) return null;
-  if (!url || ROUND || !MODES.includes(MAP.id)) { box.hidden = true; return null; }
+  if (!url || ROUND || !MODES.includes(modeKey(MAP.id))) { box.hidden = true; return null; }
   box.hidden = false;
   const nameEl = $('on-name'), panel = $('lobby'), list = $('lb-list'), title = $('lb-title'), sub = $('lb-sub'), startB = $('lb-start'), modesEl = $('lb-modes'), codeIn = $('on-code');
   nameEl.value = myName() || ('Driver ' + (100 + Math.floor(Math.random() * 900)));
