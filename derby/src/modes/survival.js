@@ -163,7 +163,17 @@ export function makeSurvival(G) {
     ];
     out = { won, place, time: clock, zombies: horde.byPlayer, bonus, timeScrap, best: beat };
     wonAt = paidT = clock;
-    G.over(won ? 'Last car standing!' : tie ? 'Out together' : 'Wrecked', lines, bonus + timeScrap, won && !G.net ? { label: 'Keep going', go: keepGoing } : null);
+    const sheet = {
+      kicker: `${G.MAP.name || 'Zombie Survival'} · results`, badge: tie ? '1st' : ORD[place - 1], sub: `${tie ? 'Shared 1st' : ORD[place - 1]} of ${total}`,
+      stats: [
+        ['Survived', clockText(clock), !best0 ? 'Your time to beat' : beat ? 'New best time!' : `Best ${clockText(best0)}`],
+        ['Zombies killed', String(horde.byPlayer)],
+        ['Place', `${tie ? '1st' : ORD[place - 1]} of ${total}`],
+        ['Difficulty', LV.name],
+      ],
+      pay: [[`${tie ? 'Shared 1st' : ORD[place - 1]} place`, bonus], ['Time survived', timeScrap], [`Zombies × ${horde.byPlayer}`, horde.byPlayer * HORDE.scrap]],
+    };
+    G.over(won ? 'Last car standing!' : tie ? 'Out together' : 'Wrecked', lines, bonus + timeScrap, won && !G.net ? { label: 'Keep going', go: keepGoing } : null, sheet);
   }
   // the win card's Keep going: the same round again, with the player the only car on the base
   function keepGoing() {
@@ -189,7 +199,17 @@ export function makeSurvival(G) {
       beat && best0 ? `Old best: ${clockText(best0)}` : bestLine(beat),
     ];
     out = { won: true, place: 1, time: clock, overtime: clock - wonAt, zombies: horde.byPlayer, scrap, best: beat, bestWas: best0 };
-    G.over(beat && best0 ? 'New best time!' : 'Overrun', lines, rest);
+    const sheet = {
+      kicker: `${G.MAP.name || 'Zombie Survival'} · results`, badge: '1st', sub: `Last car standing, then ${clockText(clock - wonAt)} more`,
+      stats: [
+        ['Survived', clockText(clock), beat && best0 ? `New best! Was ${clockText(best0)}` : beat ? 'Your time to beat' : `Best ${clockText(best0)}`],
+        ['Zombies killed', String(horde.byPlayer)],
+        ['On your own', clockText(clock - wonAt)],
+        ['Difficulty', LV.name],
+      ],
+      pay: [[`Zombies × ${horde.byPlayer}`, horde.byPlayer * HORDE.scrap]], rest: 'Time, place and hits',
+    };
+    G.over(beat && best0 ? 'New best time!' : 'Overrun', lines, rest, null, sheet);
   }
 
   return {

@@ -181,8 +181,28 @@ export function makeRace(G) {
     const still = (r) => { const d = me.finished && r !== me ? behind(r) : null; return d !== null ? `+${d.toFixed(1)} s` : `lap ${Math.min(LAPS, Math.floor(r.passed / NG) + 1)}`; };
     const lines = order.map((r) => `${ord(r.place)}  ${r.name}  ${r.finished ? clock(r.finishT) : still(r)}${r.wrecks ? ` (wrecked ${r.wrecks})` : ''}`);
     lines.push(`Best lap ${me.best ? clock(me.best) : '-'}  ·  You wrecked ${me.kills}  ·  ${LV.name}`);
-    const title = me.place === 1 ? 'You win!' : me.finished ? `${ord(me.place)} place` : 'Out of time';
-    G.over(title, lines, Math.round(PRIZE[me.place - 1] * LV.prize));
+    const title = me.place === 1 ? 'You win!' : !me.finished ? 'Out of time' : me.place <= 3 ? 'Podium finish' : 'Race finished';   // (the place itself is on the card's yellow tab)
+    // the best lap and the best race on this track, kept in the save: a new one is called out on the card
+    const id = G.MAP.id || 'race', all = G.save.raceBest || (G.save.raceBest = {}), was = all[id] || {}, now = { ...was };
+    const newLap = me.best > 0 && (!was.lap || me.best < was.lap), newRace = me.finished && (!was.race || me.finishT < was.race);
+    if (newLap) now.lap = me.best; if (newRace) now.race = me.finishT;
+    all[id] = now;
+    const carOf = (r) => (PARTS.body[r.car.load.body] || {}).name || '';
+    const prize = Math.round(PRIZE[me.place - 1] * LV.prize);
+    const sheet = {
+      kicker: `${G.MAP.name || 'Race'} · race results`, badge: ord(me.place),
+      sub: me.finished ? `Your time ${clock(me.finishT)}` : 'The race closed before you finished',
+      cols: ['Pos', 'Driver', 'Car', 'Time'],
+      rows: order.map((r) => ({ pos: r.place, name: r.name, me: r.me, car: carOf(r), value: r.finished ? clock(r.finishT) : still(r), out: !r.finished, note: r.wrecks ? `wrecked ${r.wrecks}` : '' })),
+      stats: [
+        ['Best lap', me.best ? clock(me.best) : '-', newLap && was.lap ? 'New record!' : !newLap && was.lap ? `Record ${clock(was.lap)}` : ''],
+        ['Race time', me.finished ? clock(me.finishT) : '-', newRace && was.race ? 'New record!' : !newRace && was.race ? `Record ${clock(was.race)}` : ''],
+        ['You wrecked', String(me.kills)],
+        ['Difficulty', LV.name],
+      ],
+      pay: [[`${ord(me.place)} place`, prize]],
+    };
+    G.over(title, lines, prize, null, sheet);
     phase = 'over';
   }
 
