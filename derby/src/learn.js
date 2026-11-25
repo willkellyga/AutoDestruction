@@ -34,8 +34,8 @@ const STEPS = {
   ],
   brawl: () => [
     ['clock', 'Most wrecks wins', 'Everyone against everyone until the clock runs out.'],
-    ['smash', 'Ram and shoot', 'Wreck as many cars as you can. Got wrecked? You\'re back in three seconds.'],
-    ['glow', 'Grab the glow', `${dot('#4be37a', 'fix')} ${dot('#45b4ff', 'speed')} ${dot('#ff8a2a', 'faster guns')}<br>Watch out for the hammers and the flames!`],
+    ['smash', 'Ram, shoot and jump', 'Wreck as many cars as you can. Land on a rival to crush it. Got wrecked? You\'re back in three seconds.'],
+    ['glow', 'Grab the glow', `${dot('#4be37a', 'fix')} ${dot('#45b4ff', 'speed')} ${dot('#ff8a2a', 'faster guns')}<br>The ${dot('#ff4fd8', 'strike')} hangs over the bus jump: fly to take it.<br>Watch out for the hammers and the flames!`],
   ],
   waves: () => [
     ['smash', 'Wreck each wave', 'Rival cars come in waves. Ram them and shoot them until they\'re all wrecked.'],

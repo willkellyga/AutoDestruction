@@ -13,7 +13,7 @@ export const SHOTS = {
   capital: { auto: true },
   base: { auto: true },
   fair: { auto: true },
-  arena: { auto: true },
+  arena: { from: [330, 20, 566], at: [520, 9, 470] },   // (the boost strip into the mountain, a crush lane either side)
 };
 const W = 640, H = 400;
 const only = process.argv.slice(2).filter((a) => !a.startsWith('-'));

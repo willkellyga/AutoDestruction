@@ -1,30 +1,46 @@
-// Hammerdown Arena: a demolition derby pit dressed as a television show, for the free-for-all (modes/brawl.js). It
-// stands on the big world (1024 by 1024: see ../flags.js) so the floor can be twice what it was, 672 by 440.
-//   - The middle is the pit: a wide bowl of churned mud with nothing in it, for ramming. Over it hangs the scoreboard,
-//     on cables from the four floodlight towers, with the clock and the leaders on all four faces (hazards.js).
+// Hammerdown Arena: a demolition derby pit with a monster truck show built in it, for the free-for-all (modes/brawl.js).
+// It stands on the big world (1024 by 1024: see ../flags.js); the floor is 672 by 440. Will (2026-11-24): "a Monster
+// Truck style arena and ring with crushed cars, jumps and other things".
+//   - The pit is full of dirt to drive on (../arenadirt.js gives the floor its heights: cars climb it and fly off it):
+//     the mountain in the middle (two tiers, a ramp at each end, a repair kit on top), a lane of ten crushed cars along
+//     each long side with a ramp at both ends, the bus jump east of the north lane (a kicker either end and four
+//     crushed buses in the gap) and three rollers west of the south lane. The way to the mountain from either end is
+//     clear, with a boost strip on it; two more strips run into the bus jump and the rollers. The Hammerdown strike
+//     hangs in the air over the buses: only a car flying the gap takes it. A car that comes down on another crushes it
+//     (specials.js).
+//   - The show's things (../arenakit.js, at the fair's level of detail: half a voxel a cube): the crushed cars and
+//     buses, striped bands on the lips and marker posts on the mountain's top, a truss with its name in lights over
+//     each way in to the bus jump, and bales and cones to scatter. Flame cannons by the lips fire when a car takes
+//     off (../arenamoves.js). Kept spare on purpose: the dirt and the traps are what fills the floor.
+//   - Over it hangs the scoreboard, on cables from the four floodlight towers, with the clock and the leaders on all
+//     four faces (hazards.js).
 //   - The ring round it is the derby's: concrete barriers along the straights (sponsor boards on them), walls of tyres
 //     round two corners with wrecked cars stacked three high behind them, and red and white concrete round the other
 //     two. (No catch fence on top: the chase camera of a car pinned to the wall sits behind the barrier, and a fence's
 //     thin rails slip between the points main.js tests for walls, so it would look through bars.)
-//   - The set pieces are round the edge, so the pit stays open: the sweeper in the north-west corner (three blades
-//     turning low over the floor under the big screen, the Hammerdown strike in its still eye, scrap among its blades);
-//     a hammer swinging out from the wall at the middle of each long side, from a gantry reaching out over the floor,
-//     with a repair kit under it; flame jets round the north-east and south-west corners, firing in turns, with an
-//     overcharge in each; the press at the west end, fed by a conveyor belt either side along the wall (a repair kit
-//     under it), with the announcer's booth above; the magnet at the east end, hung from a crane over the fuel depot,
-//     that drags cars in among the barrels round its nitro; and the boneyard in the south-east corner, loose wrecks and
-//     tyres to hide among, barrels, a nitro and an overcharge.
-//   - Boost strips on the long sides launch a car from the wall into the pit.
+//   - The traps are round the edge, on flat ground (hazards.js runs them, ../arenatraps.js models them): the sweeper in
+//     the north-west corner (three blades turning low over the floor under the big screen, an overcharge in its still
+//     eye, scrap among its blades); a hammer swinging out from the wall at the middle of each long side, from a gantry
+//     reaching out over the floor, with a repair kit under it; flame jets round the north-east and south-west corners,
+//     firing in turns, with an overcharge in each; the press at the west end, fed by a conveyor belt either side along
+//     the wall (a repair kit under it), with the announcer's booth above; the magnet at the east end, hung from a crane
+//     over the fuel depot, that drags cars in among the barrels round its nitro; and the boneyard in the south-east
+//     corner, loose wrecks and tyres to hide among, barrels, a nitro and an overcharge.
 //   - Every so often the announcer calls an event ("Hammer time!", "Fire in the hole!", "Spin cycle!"): for fifteen
-//     seconds one set of hazards goes wild, and the strike drops in the eye.
+//     seconds one set of traps goes wild, the cannons fire a salute, and the strike is hung over the bus jump.
 //   - Grandstands along both long sides, the booth and the depot at the ends, the floodlights in the corners.
-// derby/docs/arena.md has the research behind the set pieces and how each is used. Rivals find their way with the route
-// grid (which shuts over each hazard while it is dangerous), keep clear of the hazards as they drive (hazards.js), and go
-// for the pickups when hurt (pickups.js, ai.js); in the free-for-all a far target is gone after by way of the pit.
+// derby/docs/arena.md has the research behind the traps and how each is used. Rivals find their way with the route grid
+// (which shuts over each trap while it is dangerous, and over the dirt's steep sides), keep clear of the traps as they
+// drive (hazards.js), and go for the pickups when hurt (pickups.js, ai.js); in the free-for-all a far target is gone
+// after by way of the pit.
 import { WX, WZ, M, set, box, walls, begin, ctx } from '../../../src/world.js';
 import { face, text, textW, disc } from '../../../src/kit.js';
 import { makeGridNav, canvasFor, finish, pickSpot, gridRadar, lineClear, GK } from './common.js';
 import { PICKUPS } from '../pickups.js';
+import { makeDirt } from '../arenadirt.js';
+import { makeStalls } from '../fairstalls.js';
+import { wreckage } from '../arenakit.js';
+import { makeArenaMoves } from '../arenamoves.js';
 
 const TAU = Math.PI * 2;
 // Most of it is laid out twice: as drawn, and turned half way round the middle, so each long side has the same room.
@@ -47,14 +63,31 @@ const pick = (a) => a[Math.floor(rand() * a.length)];
 // ---- the live parts: where the pickups and hazards are (run by pickups.js and hazards.js) -----------------------
 // the sweeper's middle, in the north-west corner (far enough out of it that its frame's legs leave a lane all round)
 const SX = 306, SZ = 422;
-// Pickups sit where it is risky to go: the strike in the sweeper's eye, scrap among its blades, repair kits under the
-// hammers and the press, nitro under the magnet, in the boneyard and on the north and south sides, overcharge among the
-// flames and the wrecks: all round the edge, so the fights move about the floor.
-const SUPER = { kind: 'super', x: SX, z: SZ };
+// the dirt's measures (the pieces themselves are further down: DIRT)
+// (Will, 2026-11-24: "the big ramp in the middle is being blocked on either side by a ramp so that there isn't a lot of
+// runway". The bus jump and the rollers stood across the mountain's two ways in, 24 voxels from the feet of its ramps.
+// They lie along the long sides now, in line with the crush lanes, and the way to the mountain is clear from the
+// press to the tanker.)
+const BUS = { z: 420, half: 16, x0: 655, x1: 695, lip: 9.5, roof: 7, run: 34 };   // the buses' gap; a kicker `run` long either end
+const ROLL = { x0: 288, x1: 408, z0: 588, z1: 620 };
+const LANES = [{ z: 420, x0: 444 }, { z: 604, x0: 464 }].map((L) => ({ ...L, x1: L.x0 + 116, half: 11, n: 10 }));   // the rows of crushed cars
+const carRoofs = (n) => (u, v) => { const a = (u * n) % 1; return a < 0.07 || a > 0.93 ? -1.3 : (v < 0.22 || v > 0.8 ? -0.9 : 0.25); };
+// (The table's ramps start where the top's do and climb at the same rate, so up the middle it is one straight ramp
+// from the floor to the top's crest, sixteen up: a car that comes at it fast leaves the crest and flies the top. With
+// the table's ramp starting sooner, as it did, a fast car hopped at the table and reached the crest with nothing left.)
+const MOUNT = { x0: 467, x1: 557, z0: 476, z1: 548, h: 9, run: 32, top: { x0: 492, x1: 532, z0: 488, z1: 536, h: 16, run: 57 } };
+// Pickups sit where it is risky to go: an overcharge in the sweeper's eye, scrap among its blades, repair kits under the
+// hammers and the press, nitro under the magnet and in the boneyard, overcharge among the flames and the wrecks, all
+// round the edge; and on the dirt, a nitro on the crushed cars of each lane and an overcharge on the middle roller, so
+// the fights move about the floor and over the jumps.
+// The strike hangs over the bus jump, level with the kickers' lips: only a car in the air over the buses takes it (one
+// crawling over their roofs is too low), so the rivals are not sent for it. A repair kit on top of the mountain.
+const SUPER = { kind: 'super', x: (BUS.x0 + BUS.x1) / 2, z: BUS.z, air: BUS.lip - BUS.roof, rivals: false };
 const PICKUP_SPOTS = [
-  SUPER,
+  SUPER, { kind: 'ammo', x: SX, z: SZ }, { kind: 'repair', x: CX, z: CZ },
   { kind: 'repair', x: 512, z: 322 }, { kind: 'repair', x: 511, z: 701 }, { kind: 'repair', x: 196, z: 512 },
-  { kind: 'nitro', x: 800, z: 512 }, { kind: 'nitro', x: 771, z: 663 }, { kind: 'nitro', x: 452, z: 324 }, { kind: 'nitro', x: 571, z: 699 },
+  { kind: 'nitro', x: 800, z: 512 }, { kind: 'nitro', x: 771, z: 663 }, ...LANES.map((L) => ({ kind: 'nitro', x: (L.x0 + L.x1) / 2, z: L.z })),
+  { kind: 'ammo', x: (ROLL.x0 + ROLL.x1) / 2, z: (ROLL.z0 + ROLL.z1) / 2 },
   { kind: 'ammo', x: 795, z: 345 }, { kind: 'ammo', x: 228, z: 678 }, { kind: 'ammo', x: 806, z: 628 },
   { kind: 'scrap', x: SX + 30, z: SZ, rivals: false }, { kind: 'scrap', x: SX - 30, z: SZ, rivals: false },   // (bait for you alone)
 ];
@@ -91,17 +124,20 @@ const BARRELS = { kind: 'barrels', spots: [
   // drums among the boneyard's wrecks
   { x: 752, z: 676 }, { x: 757, z: 680 }, { x: 812, z: 664 }, { x: 790, z: 704 },
 ] };
-// boost strips from the wall out into the pit, two on each long side
+// boost strips: one at each end of the mountain's run, aimed at its ramp, and one into the bus jump and the rollers
+// (`to`: the mouth each aims at, for the chalk lane to it)
 const BOOSTS = [
-  { kind: 'boost', x0: 373, z0: 298, x1: 387, z1: 368, yaw: 0 }, { kind: 'boost', x0: 637, z0: 298, x1: 651, z1: 368, yaw: 0 },
-  { kind: 'boost', x0: 636, z0: 655, x1: 650, z1: 725, yaw: Math.PI }, { kind: 'boost', x0: 372, z0: 655, x1: 386, z1: 725, yaw: Math.PI },
+  { kind: 'boost', x0: 350, z0: 505, x1: 420, z1: 519, yaw: Math.PI / 2, to: [435, 488, 435, 536] },   // (its push lasts to the top's crest)
+  { kind: 'boost', x0: 603, z0: 505, x1: 673, z1: 519, yaw: -Math.PI / 2, to: [588, 488, 588, 536] },
+  { kind: 'boost', x0: 742, z0: 413, x1: 812, z1: 427, yaw: -Math.PI / 2 },
+  { kind: 'boost', x0: 218, z0: 597, x1: 278, z1: 611, yaw: Math.PI / 2 },
 ];
-// the announcer's events, in turn; each drops the strike in the eye if it is not there already
+// the announcer's events, in turn; each hangs the strike over the bus jump if it is not there already
 const SHOW = { kind: 'show', first: 35, every: 45, time: 15, events: [
-  { tag: 'hammer', name: 'HAMMER TIME!', sub: 'Nonstop hammers. A strike drops in the eye' },
-  { tag: 'fire', name: 'FIRE IN THE HOLE!', sub: 'Every flame jet lit. A strike drops in the eye' },
-  { tag: 'spin', name: 'SPIN CYCLE!', sub: 'Fast blades, live magnet. A strike drops in the eye' },
-], onEvent: () => { if (!SUPER.up) SUPER.t = Math.min(SUPER.t ?? 1, 1); } };
+  { tag: 'hammer', name: 'HAMMER TIME!', sub: 'Nonstop hammers. A strike hangs over the bus jump' },
+  { tag: 'fire', name: 'FIRE IN THE HOLE!', sub: 'Every flame jet lit. A strike hangs over the bus jump' },
+  { tag: 'spin', name: 'SPIN CYCLE!', sub: 'Fast blades, live magnet. A strike hangs over the bus jump' },
+], onEvent: () => { if (!SUPER.up) SUPER.t = Math.min(SUPER.t ?? 1, 1); if (moves) moves.salute(); } };
 // the floodlight towers, outside the four corners (x, z of a tower's corner: it is six across), and the scoreboard hung
 // from their tops over the middle of the pit
 const TOWERS = [[CX - IN - 106, CZ - IZ - 106], [CX + IN + 100, CZ - IZ - 106], [CX + IN + 100, CZ + IZ + 100], [CX - IN - 106, CZ + IZ + 100]];
@@ -112,9 +148,72 @@ const LEGS = [[-50, -50], [48, -50], [-50, 48], [48, 48]];
 // Where cars come in (the free-for-all takes the one furthest from everyone: modes/brawl.js): round the edge of the pit
 // and a few in it, each facing the middle, clear of the hazards.
 const SPOTS = [
-  [420, 345], [610, 345], [700, 350], [603, 678], [413, 678], [323, 673], [250, 590], [773, 433], [770, 595],
-  [420, 440], [604, 440], [420, 584], [604, 584], [512, 400], [512, 624], [330, 512], [694, 512],
-].map(([x, z]) => ({ x, z, yaw: Math.atan2(CX - x, CZ - z) }));
+  [430, 372], [594, 372], [700, 372], [594, 652], [430, 652], [323, 660], [250, 590], [300, 540], [250, 470],
+  [722, 466], [720, 590], [700, 512], [512, 454, Math.PI / 2], [512, 570, -Math.PI / 2],   // (the last two beside the mountain, facing along it)
+].map(([x, z, yaw]) => ({ x, z, yaw: yaw ?? Math.atan2(CX - x, CZ - z) }));
+
+// ---- the dirt (../arenadirt.js): what the trucks' show built in the pit --------------------------------------------
+//   the mountain     in the middle, two tiers: a ramp at each end up to a table nine up, and from it up to the top,
+//                    sixteen up. Its long sides fall straight off. A repair kit on the top: king of the hill.
+//                    The floor either end of it is clear for a run at it, with a boost strip on the way.
+//   the crush lanes  along both long sides: a ramp, ten crushed cars side by side to drive over, a ramp
+//   the bus jump     east of the north lane and in line with it: a kicker each end and four crushed buses in the
+//                    gap, a boost strip into it from the east. The Hammerdown strike hangs over the gap: only a car
+//                    in the air takes it.
+//   the rhythm lane  west of the south lane and in line with it: three rollers, a boost strip into them from the west
+// Up-ramps climb no faster than 0.3 (vehicle.js feels for walls a car's length ahead).
+const DIRT = makeDirt([
+  { x0: MOUNT.x0, x1: MOUNT.x1, z0: MOUNT.z0, z1: MOUNT.z1, h: MOUNT.h, w: MOUNT.run, e: MOUNT.run },
+  { x0: MOUNT.top.x0, x1: MOUNT.top.x1, z0: MOUNT.top.z0, z1: MOUNT.top.z1, h: MOUNT.top.h, w: MOUNT.top.run, e: MOUNT.top.run, skirt: 4 },
+  ...LANES.flatMap((L) => [
+    { x0: L.x0 - 3, x1: L.x0, z0: L.z - L.half, z1: L.z + L.half, h: 6.5, w: 24, e: 0 },
+    { kind: 'deck', x0: L.x0, x1: L.x1, z0: L.z - L.half, z1: L.z + L.half, h: 5, roof: carRoofs(L.n) },
+    { x0: L.x1, x1: L.x1 + 3, z0: L.z - L.half, z1: L.z + L.half, h: 6.5, w: 0, e: 24 },
+  ]),
+  { x0: BUS.x0 - 3, x1: BUS.x0, z0: BUS.z - BUS.half, z1: BUS.z + BUS.half, h: BUS.lip, w: BUS.run, e: 0 },
+  { kind: 'deck', x0: BUS.x0, x1: BUS.x1, z0: BUS.z - BUS.half + 1, z1: BUS.z + BUS.half - 1, h: BUS.roof, roof: (u) => { const a = (u * 4) % 1; return a < 0.06 || a > 0.94 ? -1.2 : 0; } },
+  { x0: BUS.x1, x1: BUS.x1 + 3, z0: BUS.z - BUS.half, z1: BUS.z + BUS.half, h: BUS.lip, w: 0, e: BUS.run },
+  { kind: 'rollers', ...ROLL, h: 4.5, humps: 3, axis: 'x', w: 0, e: 0 },
+]);
+
+// ---- the show's things (../arenakit.js; the fair's kit draws them, at half a voxel a cube) ---------------------------
+const E = Math.PI / 2;
+const thing = (kind, x, z, yaw = 0, more = {}) => ({ kind, x, z, yaw, name: '', neon: 'warm', ...more });
+const both = (list) => list.flatMap((o) => { const [x, z] = turn(o.x, o.z); return [o, { ...o, x: x + 1, z: z + 1, yaw: o.yaw + Math.PI, c: (o.c || 0) + 1 }]; });   // and the same turned half way round the middle
+const THINGS = [
+  // what the dirt's decks are: ten crushed cars across each lane, four crushed buses in the gap
+  ...LANES.flatMap((L, li) => Array.from({ length: L.n }, (_, i) => thing('crushed', L.x0 + (i + 0.5) * (L.x1 - L.x0) / L.n, L.z, (i + li) & 1 ? E : -E, { c: (i * 3 + li * 5) % 10, v: (i * 2 + li) % 3 }))),
+  ...[0, 1, 2, 3].map((i) => thing('bus', BUS.x0 + 5 + i * 10, BUS.z, i & 1 ? E : -E, { c: i })),
+  // the striped band along every lip
+  ...LANES.flatMap((L) => [thing('lip', L.x0 + 0.1, L.z, E, { w: 2 * L.half, lift: 6.5 }), thing('lip', L.x1 - 0.1, L.z, -E, { w: 2 * L.half, lift: 6.5 })]),
+  thing('lip', BUS.x0 + 0.1, BUS.z, E, { w: 2 * BUS.half, lift: BUS.lip }), thing('lip', BUS.x1 - 0.1, BUS.z, -E, { w: 2 * BUS.half, lift: BUS.lip }),
+  // marker posts at the corners of the mountain's top
+  ...[[MOUNT.top, 'red']].flatMap(([T, neon]) => [[T.x0 + 1, T.z0 + 1], [T.x1 - 1, T.z0 + 1], [T.x0 + 1, T.z1 - 1], [T.x1 - 1, T.z1 - 1]].map(([x, z], i) => thing('marker', x, z, 0, { lift: T.h, neon, ph: -0.2 - i * 0.17 }))),
+  // a truss over each way in to the bus jump, its name in lights
+  ...[BUS.x0 - BUS.run - 6, BUS.x1 + BUS.run + 6].map((x) => thing('truss', x, BUS.z, E, { span: 46, name: 'BUS JUMP' })),
+  // flame cannons beside the lips and on the mountain's table (PYRO: the custom hazard below fires them)
+  ...[[BUS.x0 - 2, -1], [BUS.x0 - 2, 1], [BUS.x1 + 2, -1], [BUS.x1 + 2, 1]].map(([x, k]) => thing('pyro', x, BUS.z + k * (BUS.half + 6.5), 0, { jump: 'bus' })),
+  ...LANES.flatMap((L) => [[L.x0 - 2, -1], [L.x1 + 2, 1]].map(([x, k]) => thing('pyro', x, L.z + k * (L.half + 6.5), 0, { jump: 'lane' }))),
+  thing('pyro', CX, MOUNT.z0 + 4, 0, { lift: MOUNT.h, jump: 'mount' }), thing('pyro', CX, MOUNT.z1 - 4, 0, { lift: MOUNT.h, jump: 'mount' }),
+  // what a car scatters: cones along the last of each run at the mountain. (Will,
+  // 2026-11-24: "the arena feels too crowded ... remove some of the superficial decorations like those monster truck
+  // statues". Gone: the show trucks on their containers, the giant tyres, the trusses over the rollers and the crush
+  // lanes, half the lanes' cannons, the table's marker posts, the tyre stacks at the ramps' feet, the bales and most
+  // of the cones.)
+  ...both([300, 318].flatMap((x) => [thing('cones', x, 496), thing('cones', x, 528)])),
+];
+// Where a car cannot drive straight through: the dirt's steep sides and what stands solid (two voxels a cell). The
+// rivals' straight runs at a target ask it (ai.js: the voxels' own line test sees neither).
+const SG = 2, SGX = Math.ceil(WX / SG), steepAt = new Uint8Array(SGX * Math.ceil(WZ / SG));
+for (let z = CZ - PIT.hz; z < CZ + PIT.hz; z += SG) for (let x = CX - PIT.hx; x < CX + PIT.hx; x += SG) if (DIRT.steep(x + 1, z + 1)) steepAt[(z / SG | 0) * SGX + (x / SG | 0)] = 1;
+function runClear(x0, z0, x1, z1) {
+  const n = Math.ceil(Math.hypot(x1 - x0, z1 - z0) / 2);
+  for (let k = 1; k < n; k++) { const f = k / n, x = x0 + (x1 - x0) * f, z = z0 + (z1 - z0) * f; if (steepAt[(z / SG | 0) * SGX + (x / SG | 0)] || (stalls && stalls.blocks(x | 0, z | 0))) return false; }
+  return true;
+}
+const POWER = { on: [1, 1, 1, 1], lit: [1, 1, 1, 1], rev: 0 };
+const quarter = (x, z) => (x < CX ? 0 : 1) + (z < CZ ? 0 : 2);
+let stalls = null, moves = null;   // (the custom hazard at the foot of the file makes them)
 
 // ---- building ----------------------------------------------------------------------------------------------------
 // The colours of the two sides: blue on the north, red on the south.
@@ -473,8 +572,8 @@ function paint() {
   c.mottle(0, 0, WX, WZ, 2, [[40, 38, 34, 0.2], [200, 196, 186, 0.15]]);
   // the floor: packed dirt, mottled, darker in a band along the foot of the ring
   g.save(); V(); roundRect(g, WALL); g.fillStyle = '#8a7152'; g.fill(); g.clip(); I();
-  const DIRT = [[60, 46, 32, 0.4], [170, 146, 112, 0.34], [104, 86, 62, 0.45]];
-  for (const [cell, k] of [[30, 0.8], [9, 0.85], [3, 0.9], [1.25, 0.75]]) c.mottle(176, 292, 848, 732, cell, DIRT.map(([r, gg, b, a]) => [r, gg, b, a * k]));
+  const SOIL = [[60, 46, 32, 0.4], [170, 146, 112, 0.34], [104, 86, 62, 0.45]];
+  for (const [cell, k] of [[30, 0.8], [9, 0.85], [3, 0.9], [1.25, 0.75]]) c.mottle(176, 292, 848, 732, cell, SOIL.map(([r, gg, b, a]) => [r, gg, b, a * k]));
   V();
   for (let k = 0; k < 6; k++) { g.strokeStyle = `rgba(30,24,18,${0.08 + k * 0.03})`; g.lineWidth = 2; roundRect(g, WALL, 11 - k * 2); g.stroke(); }
   // the pit: churned mud, fading in from the dirt at its edge, with wet patches, puddles and ruts
@@ -486,13 +585,16 @@ function paint() {
   V();
   for (let i = 0; i < 60; i++) {   // wet patches
     const x = CX + (rand() - 0.5) * 2 * (PIT.hx - 20), z = CZ + (rand() - 0.5) * 2 * (PIT.hz - 16), rx = 8 + rand() * 26, rz = 5 + rand() * 14, a = rand() * 3;
-    g.fillStyle = `rgba(36,26,18,${0.12 + rand() * 0.2})`; g.beginPath(); g.ellipse(x, z, rx, rz, a, 0, TAU); g.fill();
+    g.fillStyle = `rgba(36,26,18,${0.12 + rand() * 0.2})`;
+    if (DIRT.floor(x, z) > 0.2) continue;   // (none on the heaps)
+    g.beginPath(); g.ellipse(x, z, rx, rz, a, 0, TAU); g.fill();
     wets.push([x, z, rx, rz, a, 0.12]);
   }
   // puddles: dark water, a shade lighter in the middle (painted pale, with the sky in them, they glowed at night; the
   // floor's shader gives them their shine under the lights)
   for (let i = 0; i < 18; i++) {
     const x = CX + (rand() - 0.5) * 2 * (PIT.hx - 40), z = CZ + (rand() - 0.5) * 2 * (PIT.hz - 30), rx = 4 + rand() * 9, rz = 2.5 + rand() * 5, a = rand() * 3;
+    if (DIRT.floor(x, z) > 0.2 || DIRT.floor(x + rx, z) > 0.2 || DIRT.floor(x - rx, z) > 0.2 || DIRT.floor(x, z + rx) > 0.2 || DIRT.floor(x, z - rx) > 0.2) continue;
     g.fillStyle = 'rgba(34,32,30,0.62)'; g.beginPath(); g.ellipse(x, z, rx, rz, a, 0, TAU); g.fill();
     g.fillStyle = 'rgba(58,60,62,0.3)'; g.beginPath(); g.ellipse(x - rx * 0.2, z - rz * 0.2, rx * 0.55, rz * 0.4, a, 0, TAU); g.fill();
     wets.push([x, z, rx, rz, a, 0.25]);
@@ -506,9 +608,8 @@ function paint() {
     g.stroke();
   }
   g.restore();
-  // the show's name, painted across the pit both ways
-  g.font = 'bold 26px "Arial Black", Impact, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  for (const s of [0, 1]) { g.save(); g.translate(CX, CZ); g.rotate(s * Math.PI); g.fillStyle = 'rgba(232,228,218,0.17)'; g.fillText('HAMMERDOWN', 0, -52); g.restore(); }
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  paintDirt(g, c, V, I);
   g.restore(); V();
   // the sweeper's deck: a white ring, a yellow and black band, and the steel deck with the blades' track worn into it
   // and the eye a red and white target
@@ -557,12 +658,12 @@ function paint() {
     wets.push([x, z, rx, rz, a, 0.15]);
   }
   for (const p of BARRELS.spots) { g.strokeStyle = '#c23b2e'; g.lineWidth = 0.8; g.setLineDash([1.5, 1.5]); g.beginPath(); g.arc(p.x, p.z, 3.4, 0, TAU); g.stroke(); g.setLineDash([]); }
-  // the boost strips: blue, with chevrons pointing the way they push (into the pit)
+  // the boost strips: blue, with chevrons pointing the way they push (they lie along x)
   for (const b of BOOSTS) {
     g.fillStyle = '#1d3f6e'; g.fillRect(b.x0, b.z0, b.x1 - b.x0, b.z1 - b.z0);
-    const dir = Math.cos(b.yaw) > 0 ? 1 : -1, mx = (b.x0 + b.x1) / 2, hw = (b.x1 - b.x0) / 2 - 1.5;
+    const dir = Math.sin(b.yaw) > 0 ? 1 : -1, mz = (b.z0 + b.z1) / 2, hw = (b.z1 - b.z0) / 2 - 1.5;
     g.strokeStyle = '#5fc8ff'; g.lineWidth = 2;
-    for (let z = b.z0 + 6; z < b.z1 - 4; z += 9) { g.beginPath(); g.moveTo(mx - hw, z - dir * 4); g.lineTo(mx, z + dir * 2); g.lineTo(mx + hw, z - dir * 4); g.stroke(); }
+    for (let x = b.x0 + 6; x < b.x1 - 4; x += 9) { g.beginPath(); g.moveTo(x - dir * 4, mz - hw); g.lineTo(x + dir * 2, mz); g.lineTo(x - dir * 4, mz + hw); g.stroke(); }
   }
   // a ring under each pickup, in its colour, so you can see where one comes back
   for (const p of PICKUP_SPOTS) { const k = PICKUPS[p.kind]; g.strokeStyle = k.css; g.lineWidth = 1.1; g.beginPath(); g.arc(p.x, p.z, 6, 0, TAU); g.stroke(); g.globalAlpha = 0.25; g.fillStyle = k.css; g.fill(); g.globalAlpha = 1; }
@@ -582,6 +683,70 @@ function paint() {
   c.cv.width = c.cv.height = 1;
   return half;
 }
+// The dirt's paint: each heap in fresh clay (packed pale on top, dark down its sides), wheel tracks up and over it,
+// arrows up the ways on, a yellow line along every lip and a chalk one along every other edge to fall off, a chequered
+// border round the mountain's top, oil and shadow under the crushed cars and buses, and chalk lanes from the boost
+// strips to the jumps.
+function paintDirt(g, c, V, I) {
+  const CLAY = [[84, 56, 34, 0.5], [186, 146, 102, 0.34], [128, 92, 58, 0.45]];
+  g.lineCap = 'butt';
+  for (const p of DIRT.pieces) {
+    const w = p.x1 - p.x0, d = p.z1 - p.z0;
+    if (p.kind === 'deck') { g.fillStyle = 'rgba(14,12,10,0.72)'; g.fillRect(p.x0 - 1.5, p.z0 - 1.5, w + 3, d + 3); continue; }
+    const alongX = p.kind === 'rollers' ? p.axis === 'x' : p.w > p.skirt || p.e > p.skirt, ramp = (k) => p[k] > p.skirt;
+    g.save(); g.beginPath(); g.rect(p.bx0, p.bz0, p.bx1 - p.bx0, p.bz1 - p.bz0); g.clip();
+    g.fillStyle = '#6a4a2c'; g.fillRect(p.bx0, p.bz0, p.bx1 - p.bx0, p.bz1 - p.bz0);                      // its sides
+    g.fillStyle = '#93693f';                                                                              // its ramps
+    if (ramp('w')) g.fillRect(p.bx0, p.z0, p.w, d); if (ramp('e')) g.fillRect(p.x1, p.z0, p.e, d);
+    if (ramp('n')) g.fillRect(p.x0, p.bz0, w, p.n); if (ramp('s')) g.fillRect(p.x0, p.z1, w, p.s);
+    g.fillStyle = '#a27a4c'; g.fillRect(p.x0, p.z0, w, d);                                                // its top
+    I(); for (const [cell, k] of [[7, 0.8], [2.5, 0.9], [1.2, 0.7]]) c.mottle(p.bx0, p.bz0, p.bx1, p.bz1, cell, CLAY.map(([r, gg, b, a]) => [r, gg, b, a * k])); V();
+    if (p.kind === 'rollers') {
+      // the rollers: pale along each crest, dark and damp in each trough
+      for (let k = 0; k <= p.humps; k++) {
+        const t = p.z0 + d * k / p.humps, cr = p.z0 + d * (k + 0.5) / p.humps;
+        g.fillStyle = 'rgba(30,20,12,0.4)'; g.fillRect(p.x0, t - 4, w, 8);
+        if (k < p.humps) { g.fillStyle = 'rgba(220,190,150,0.3)'; g.fillRect(p.x0, cr - 5, w, 10); }
+      }
+    }
+    // wheel tracks, the way it is driven
+    for (let i = 0; i < (alongX ? d : w) * 1.1; i++) {
+      g.strokeStyle = `rgba(26,18,12,${0.08 + rand() * 0.2})`; g.lineWidth = 0.7 + rand() * 1.3; g.beginPath();
+      const at = rand(), j = (rand() - 0.5) * 5;
+      if (alongX) { const z = p.z0 + at * d; g.moveTo(p.bx0, z); g.bezierCurveTo(p.x0, z + j, p.x1, z - j, p.bx1, z + j * 0.5); }
+      else { const x = p.x0 + at * w; g.moveTo(x, p.bz0); g.bezierCurveTo(x + j, p.z0, x - j, p.z1, x + j * 0.5, p.bz1); }
+      g.stroke();
+    }
+    // arrows up each ramp
+    g.strokeStyle = 'rgba(238,232,214,0.5)'; g.lineWidth = 1.8; g.lineJoin = 'miter';
+    const arrow = (x, z, dx, dz, half) => { g.beginPath(); g.moveTo(x - dx * 5 - dz * half, z - dz * 5 - dx * half); g.lineTo(x, z); g.lineTo(x - dx * 5 + dz * half, z - dz * 5 + dx * half); g.stroke(); };
+    for (const f of [0.3, 0.55, 0.8]) {
+      if (ramp('w')) arrow(p.bx0 + p.w * f, p.z0 + d / 2, 1, 0, d * 0.3); if (ramp('e')) arrow(p.bx1 - p.e * f, p.z0 + d / 2, -1, 0, d * 0.3);
+      if (ramp('n')) arrow(p.x0 + w / 2, p.bz0 + p.n * f, 0, 1, w * 0.3); if (ramp('s')) arrow(p.x0 + w / 2, p.bz1 - p.s * f, 0, -1, w * 0.3);
+    }
+    g.restore();
+    if (p.kind === 'rollers') continue;
+    // its edges: yellow and black along a lip, chalk along a side to fall off
+    const edgeLine = (k, x0, z0, x1, z1) => {
+      if (ramp(k)) return;
+      if (p[k] === 0) { g.strokeStyle = '#1c1c1e'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(x0, z0); g.lineTo(x1, z1); g.stroke(); g.strokeStyle = '#e2b02a'; g.setLineDash([2, 2]); g.beginPath(); g.moveTo(x0, z0); g.lineTo(x1, z1); g.stroke(); g.setLineDash([]); }
+      else { g.strokeStyle = 'rgba(238,232,214,0.6)'; g.lineWidth = 0.8; g.beginPath(); g.moveTo(x0, z0); g.lineTo(x1, z1); g.stroke(); }
+    };
+    edgeLine('w', p.x0 + 0.8, p.z0, p.x0 + 0.8, p.z1); edgeLine('e', p.x1 - 0.8, p.z0, p.x1 - 0.8, p.z1);
+    edgeLine('n', p.x0, p.z0 + 0.8, p.x1, p.z0 + 0.8); edgeLine('s', p.x0, p.z1 - 0.8, p.x1, p.z1 - 0.8);
+  }
+  // the mountain's top: a chequered border, black and white
+  const T = MOUNT.top;
+  for (let x = T.x0 + 2; x < T.x1 - 2; x += 2) for (const [z, k] of [[T.z0 + 2, 0], [T.z0 + 4, 1], [T.z1 - 6, 0], [T.z1 - 4, 1]]) { g.fillStyle = (((x - T.x0) / 2 + k) & 1) ? 'rgba(236,232,222,0.85)' : 'rgba(22,22,24,0.85)'; g.fillRect(x, z, 2, 2); }
+  // chalk lanes from the mountain's boost strips to the feet of its ramps
+  g.strokeStyle = 'rgba(238,232,214,0.5)'; g.lineWidth = 1; g.setLineDash([5, 4]);
+  for (const b of BOOSTS) {
+    if (!b.to) continue;
+    const bx = b.to[0] > b.x1 ? b.x1 : b.x0;
+    g.beginPath(); g.moveTo(bx, b.z0); g.lineTo(b.to[0], b.to[1]); g.moveTo(bx, b.z1); g.lineTo(b.to[2], b.to[3]); g.stroke();
+  }
+  g.setLineDash([]); g.lineCap = 'round';
+}
 // the same test for a phone as main.js's
 const PHONE = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0 && !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
 
@@ -593,7 +758,7 @@ const PHONE = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0 &
 // car to its next waypoint must not cut across one either, as the route grid's own line test only sees voxels. (A
 // rival chasing a car in plain sight drives straight at it, and keeps clear of the hazards itself, by hazards.js's
 // steerClear.)
-const nav = makeGridNav({ cell: 4, maxNodes: 16000, side: 6 });
+const nav = makeGridNav({ cell: 4, maxNodes: 16000, side: 6, also: (x, z) => steepAt[(z / SG | 0) * SGX + (x / SG | 0)] === 1 || (!!stalls && stalls.blocks(x | 0, z | 0)) });
 const NC = nav.NX * nav.NZ, cellX = (i) => (i % nav.NX + 0.5) * nav.cell, cellZ = (i) => (Math.floor(i / nav.NX) + 0.5) * nav.cell;
 const dyn = new Uint8Array(NC), dynWas = new Uint8Array(NC), out = new Uint8Array(NC);
 for (let i = 0; i < NC; i++) out[i] = edge(cellX(i), cellZ(i), WALL) > -2 ? 1 : 0;
@@ -673,8 +838,8 @@ function waypoint(c, tx, tz, o) {
 }
 export default {
   id: 'arena', name: 'Hammerdown Arena', mode: 'brawl',
-  blurb: 'A demolition derby pit on television: a big mud bowl for ramming, ringed by tyre walls, concrete and stacked wrecks, with the traps round the edge: a sweeper, two hammers, flame jets, a press, a magnet and a strike in the eye.',
-  loading: ['Building the pit', 'Setting the sweeper, the hammers and the magnet'],
+  blurb: 'A monster truck show in a derby pit: a dirt mountain, rows of crushed cars, a bus jump with a strike hanging over it and rollers to fly off, with the traps round the edge: a sweeper, two hammers, flame jets, a press and a magnet.',
+  loading: ['Building the pit', 'Piling the dirt and crushing the cars', 'Setting the sweeper, the hammers and the magnet'],
   outer: 0x6e6b64,
   // The world past the stadium, at night (backdrop.js): the parking lot round it, the avenues out east and west, an
   // elevated road round the lot, the city beyond and the show's blimp. All of it is to look at; nothing of it is solid.
@@ -700,15 +865,17 @@ export default {
     finish();
   },
   ground: () => { seed = 7654321; return paint(); },
+  floor: (x, z) => DIRT.floor(x, z), floorMesh: () => DIRT.mesh(), ledges: true,   // the dirt's heights (../arenadirt.js; vehicle.js, ground.js)
   groundDetail: 'dirt',          // the floor's grain, ruts and thrown dirt (ground.js, dirt.js), over the ring's inside
   rutBox: [CX - WALL.hx, CZ - WALL.hz, CX + WALL.hx, CZ + WALL.hz],
   spawn: { x: 560, z: 668, yaw: Math.atan2(CX - 560, CZ - 668) },
   spots: SPOTS,      // (modes/brawl.js picks among them itself)
   pit: { x: CX, z: CZ },   // where the fighting is (ai.js)
-  waypoint,
+  waypoint, runClear,
   spawnPoint: (player, taken) => pickSpot(SPOTS, player, taken),
   step: routeStep,
   pickups: PICKUP_SPOTS,
+  stalls: () => stalls, moves: () => moves, dirt: DIRT,   // (for the tests)
   // the show runs at night (looks/night.js): the floodlights' banks of lamps, the ring (the light falls off toward its
   // walls), the searchlights outside and the crowd's cameras
   look: { kind: 'night', banks: BANKS, ring: { x: CX, z: CZ, ...WALL }, searchlights: SEARCH, crowd: crowdSpots() },
@@ -716,6 +883,12 @@ export default {
   // rockets have blown it open) and the keepouts (nothing can shove a car into the steel of the frame's legs, which it
   // could not dig out of)
   hazards: [SWEEP, ...HAMMERS, JETS, MAGNET, PRESS, ...BELTS, BARRELS, ...BOOSTS, SHOW, BOARD,
+    { kind: 'custom', make(api) {
+      for (const o of THINGS) o.dead = false;
+      stalls = makeStalls(api, THINGS, POWER, quarter, [WX, WZ], { heap: wreckage, bots: true });
+      moves = makeArenaMoves(api, { pyros: THINGS.filter((o) => o.kind === 'pyro') });
+      return { step(dt) { stalls.step(dt); moves.step(dt); } };
+    } },
     { kind: 'bounds', x: CX, z: CZ, ...WALL },
     ...LEGS.map(([a, b]) => ({ kind: 'keepout', x: SX + a + 1.5, z: SZ + b + 1.5, r: 1.9 }))],
   // the radar shows the ring and what is in it
@@ -728,6 +901,12 @@ export default {
     R.save(); R.translate(ox, oy); R.scale(s, s);
     R.fillStyle = 'rgba(120,96,70,0.35)'; roundRect(R, WALL); R.fill();
     R.fillStyle = 'rgba(80,60,42,0.45)'; roundRect(R, PIT, 6); R.fill();
+    // the dirt: its heaps pale (their tops paler), the crushed cars and buses yellow
+    for (const p of DIRT.pieces) {
+      if (p.kind === 'deck') { R.fillStyle = 'rgba(232,184,48,0.6)'; R.fillRect(p.x0, p.z0, p.x1 - p.x0, p.z1 - p.z0); continue; }
+      R.fillStyle = 'rgba(214,170,120,0.3)'; R.fillRect(p.bx0, p.bz0, p.bx1 - p.bx0, p.bz1 - p.bz0);
+      R.fillStyle = 'rgba(236,200,150,0.38)'; R.fillRect(p.x0, p.z0, p.x1 - p.x0, p.z1 - p.z0);
+    }
     R.lineWidth = 2 / s; R.strokeStyle = 'rgba(255,255,255,0.7)'; roundRect(R, WALL, -1.5); R.stroke();
     R.restore();
     gridR(R, s, ox, oy, w, h);

@@ -46,7 +46,7 @@ export const SHARED = { survival: [base, fair] };
 export const STAGES = { race: [empire, capital], survival: [base, fair], brawl: [arena] };
 export const TAGS = {
   empire: '3 laps · bridges, the subway, Lady Liberty', capital: '3 laps · the Capitol, the Mall, the Metro',
-  base: 'Army base · a storm at night', fair: 'County fair · the lights are failing', arena: 'Derby pit · traps round the edge',
+  base: 'Army base · a storm at night', fair: 'County fair · the lights are failing', arena: 'Monster truck show · jumps and traps',
 };
 const KEY = 'ad-map';
 export const MAP = ALL.find((m) => m.id === picked()) || arena;

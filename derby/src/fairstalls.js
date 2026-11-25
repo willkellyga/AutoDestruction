@@ -544,7 +544,7 @@ export function makeStalls(api, list, power, quarter, [WX, WZ], opts = {}) {
   function regrid() {
     grid.fill(0);
     for (const o of objs) {
-      if (o.dead) continue;
+      if (o.dead || (opts.bots && !o.solid)) continue;   // (where the rivals smash things too, what breaks is in nobody's way)
       const r = Math.sqrt(o.reach2), i0 = Math.max(0, Math.floor((o.x - r) / 2)), i1 = Math.min(GX - 1, Math.ceil((o.x + r) / 2)), j0 = Math.max(0, Math.floor((o.z - r) / 2)), j1 = Math.min(GZ - 1, Math.ceil((o.z + r) / 2));
       for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) if (inFoot(o, i * 2 + 1, j * 2 + 1, 1.2)) grid[j * GX + i] = 1;
     }
@@ -580,7 +580,7 @@ export function makeStalls(api, list, power, quarter, [WX, WZ], opts = {}) {
   const fuses = [];
   // shots strike them and blasts flatten them (main.js asks everything in `extras`). It is the players who wreck the
   // fair: a bot's shots only spark off a stall, and its blasts do a third as much
-  const mine = (c) => !!c && (c === api.player || !!c.remote);
+  const mine = opts.bots ? (c) => !!c : (c) => !!c && (c === api.player || !!c.remote);   // (opts.bots: in a derby the rivals wreck things too)
   api.extras.push({
     solid(x, y, z) { if (y < 0 || y > 56) return false; for (const o of objs) if (!o.dead && struck(o, x, y, z, 0.2)) return true; return false; },
     hit(p, dmg, owner, g, dir) {
@@ -623,7 +623,7 @@ export function makeStalls(api, list, power, quarter, [WX, WZ], opts = {}) {
     return true;
   }
   const RAM = { from: 9, k: 3, most: 110 };   // ramming what is tough: how hard a hit (voxels a second into it) starts to count, the damage for each one more, and the most one ram does (a car at full speed is near 100)
-  const SMASH = 9, SMASH_BOT = Infinity;   // how fast a car must be going to go through a stall and not bounce off it: a player's, and a bot's (never: it goes round)
+  const SMASH = 9, SMASH_BOT = opts.bots ? SMASH : Infinity;   // how fast a car must be going to go through a stall and not bounce off it: a player's, and a bot's (never: it goes round)
   return {
     objs, blocks, smash, mats: { paint: paintMat, lit: litMats },
     step(dt) {
@@ -637,6 +637,7 @@ export function makeStalls(api, list, power, quarter, [WX, WZ], opts = {}) {
         for (const o of objs) {
           if (o.dead) continue;
           const dx = c.x - o.x, dz = c.z - o.z; if (dx * dx + dz * dz > o.reach2 + 60) continue;
+          if (c.y > 1 && c.h > o.top) continue;   // (in the air, over it)
           let through = false;
           for (const b of o.foot) for (const [ex, ez] of _e) if (out(c, ex, ez, o, b)) through = true;
           if (through) {

@@ -55,6 +55,7 @@
 // Rivals keep clear of them through steerClear (for ai.js): each kind that can hurt says where it is dangerous and
 // when, and a rival bound through it is sent round (by the map's route grid, which the map blocks while it is on).
 import * as THREE from 'three';
+import { trapMat, sweeperHub, sweeperArm, sawGeo, hammerSwing, hammerAxle, pressSlab, pressRod, magnetBody, jetNozzle } from './arenatraps.js';
 import { fire, sparks, ring, dust, puff } from '../../src/sim.js';
 import { Unit } from '../../units/src/unit.js';
 import { TANK, HELI } from '../../units/src/vehicles.js';
@@ -212,11 +213,11 @@ function grates(api, h) {
 function press(api, h, S) {
   const WAIT = h.wait ?? 3.4, WARN = h.warn ?? 1.1, DROP = 0.16, DOWN = h.down ?? 1.1, RISE = h.rise ?? 1.6, HIGH = h.high ?? 24, THICK = 6, DMG = h.dmg ?? 75;
   const w = h.x1 - h.x0, d = h.z1 - h.z0, mx = (h.x0 + h.x1) / 2, mz = (h.z0 + h.z1) / 2;
-  const steel = steelMat(), side = new THREE.MeshStandardMaterial({ map: stripesTex([2, 1]), roughness: 0.6, metalness: 0.2 });
-  const slab = new THREE.Mesh(new THREE.BoxGeometry(w, THICK, d), [side, side, steel, steel, side, side]);
+  // (the slab and its rods are modelled in arenatraps.js)
+  const slab = new THREE.Mesh(pressSlab(w, THICK, d, (h.rods || [[mx, mz]]).map(([x, z]) => [x - mx, z - mz])), trapMat());
   slab.castShadow = true; slab.receiveShadow = true; api.scene.add(slab);
-  const rodMat = new THREE.MeshStandardMaterial({ color: 0xc3ccd6, roughness: 0.25, metalness: 0.9 });
-  const rods = (h.rods || [[mx, mz]]).map(([x, z]) => { const r = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.4, 1, 10), rodMat); r.position.set(x, 0, z); r.castShadow = true; api.scene.add(r); return r; });
+  const rodGeo = pressRod();
+  const rods = (h.rods || [[mx, mz]]).map(([x, z]) => { const r = new THREE.Mesh(rodGeo, trapMat()); r.position.set(x, 0, z); r.castShadow = true; api.scene.add(r); return r; });
   // the warning lamps along the slab's two long sides
   const [lampOff, lampOn] = lampMats();
   const lamps = [];
@@ -309,8 +310,15 @@ function press(api, h, S) {
 }
 
 // ---- barrels -------------------------------------------------------------------------------------------------------
+// What one going up does to a car touching it, falling to nothing at `reach`: `touch` to whoever drove into it or was
+// standing by, `shot` to the cars round one somebody shot (a rival's shot is cut like the rest of its guns), and the
+// `push` it throws them with. A cluster goes up together, so the barrels after the first within `within` seconds do a
+// car only `again` of that: a knot of three is one bad knock, not three (it was 40 a barrel, and half a car's armour
+// for a cluster hit at speed).
+const BARREL = { touch: 18, shot: 30, reach: 14, push: 34, within: 1.2, again: 0.35 };
 function barrels(api, h) {
   const R = 2.1, H = 5, HP = 6, EVERY = h.every ?? 22, n = h.spots.length;
+  const last = new WeakMap(); let now = 0;   // when each car last took a barrel's blast
   const mk = (geo, mat) => { const m = new THREE.InstancedMesh(geo, mat, n); m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false; api.scene.add(m); return m; };
   const body = mk(new THREE.CylinderGeometry(R, R, H, 14), new THREE.MeshStandardMaterial({ color: 0xc8302a, roughness: 0.45, metalness: 0.35 }));
   const band = mk(new THREE.CylinderGeometry(R + 0.08, R + 0.08, 0.9, 14), new THREE.MeshStandardMaterial({ color: 0xf0c020, roughness: 0.5 }));
@@ -325,19 +333,21 @@ function barrels(api, h) {
     body.instanceMatrix.needsUpdate = band.instanceMatrix.needsUpdate = lid.instanceMatrix.needsUpdate = true;
   };
   h.spots.forEach((b, i) => { b.up = true; b.hp = HP; b.t = 0; b.fuse = 0; b.a = Math.random() * 6; show(i, b); });
-  // up it goes: the town's own explosion (which hurts the cars round it and sets off the next barrels), and a harder
-  // knock of our own to the cars nearest, put down to whoever set it off
+  // up it goes: the town's own explosion for the look, for what it breaks and for setting off the next barrels, and
+  // the hurt and the knock to the cars round it worked out here (BARREL), put down to whoever set it off
   function blow(i, who) {
     const b = h.spots[i]; if (!b.up) return;
     b.up = false; b.t = EVERY * (0.85 + Math.random() * 0.3); b.fuse = 0; show(i, b);
-    api.explode(b.x, 2.5, b.z, 4.2, 0.7, { maxDebris: 120, fire: true });
+    api.ownBlast(() => api.explode(b.x, 2.5, b.z, 4.2, 0.7, { maxDebris: 120, fire: true }));
     api.sfx.play('carboom', 0.9, b.x, b.z, { gap: 0.06 });
     for (const c of api.cars) {
       if (c.dead || c.gone) continue;
-      const dd = Math.hypot(c.x - b.x, c.z - b.z) - c.wide; if (dd > 16) continue;
-      const k = 1 - Math.max(0, dd) / 16;
-      api.damage(c, 24 * k, who && who !== c ? who : null);
-      const p = Math.max(1, Math.hypot(c.x - b.x, c.z - b.z)); c.vx += (c.x - b.x) / p * 26 * k; c.vz += (c.z - b.z) / p * 26 * k;
+      const dd = Math.hypot(c.x - b.x, c.z - b.z) - c.wide; if (dd > BARREL.reach) continue;
+      const shot = who && who !== c, again = now - (last.get(c) ?? -9) < BARREL.within;
+      const k = (1 - Math.max(0, dd) / BARREL.reach) * (again ? BARREL.again : 1);
+      if (!again) last.set(c, now);
+      api.damage(c, (shot ? BARREL.shot * (who.rival ? api.AI.dmg : 1) : BARREL.touch) * k, shot ? who : null);
+      const p = Math.max(1, Math.hypot(c.x - b.x, c.z - b.z)); c.vx += (c.x - b.x) / p * BARREL.push * k; c.vz += (c.z - b.z) / p * BARREL.push * k;
     }
   }
   // shots strike barrels (main.js asks everything in `extras`), and blasts set them off
@@ -358,6 +368,7 @@ function barrels(api, h) {
   });
   return {
     step(dt, live) {
+      now += dt;
       for (let i = 0; i < n; i++) {
         const b = h.spots[i];
         if (!b.up) {
@@ -585,29 +596,23 @@ function army(api, h) {
 // ---- the sweeper -------------------------------------------------------------------------------------------------
 function sweeper(api, h, S) {
   const N = h.n ?? 3, R0 = h.r0 ?? 12, R1 = h.r1 ?? 46, SPIN = h.spin ?? 0.52, DMG = h.dmg ?? 20, TOP = h.top ?? 40, LEAD = 0.55;
-  const steel = steelMat(), side = new THREE.MeshStandardMaterial({ map: stripesTex([(R1 - R0) / 8, 1]), roughness: 0.6, metalness: 0.2 });
-  const drumSide = new THREE.MeshStandardMaterial({ map: stripesTex([4, 1]), roughness: 0.6, metalness: 0.2 });
   const [lampOff, lampOn] = lampMats(3.2, 0.3, 0.15);
-  // the saw at each blade's tip: a disc with teeth round its rim
-  const sawTex = canvasTex(64, 64, (g) => { g.fillStyle = '#8a9099'; g.beginPath(); for (let k = 0; k < 24; k++) { const a = k / 24 * TAU, b = (k + 0.5) / 24 * TAU; g.lineTo(32 + Math.cos(a) * 31, 32 + Math.sin(a) * 31); g.lineTo(32 + Math.cos(b) * 25, 32 + Math.sin(b) * 25); } g.fill(); g.fillStyle = '#3c4148'; g.beginPath(); g.arc(32, 32, 9, 0, TAU); g.fill(); g.fillStyle = '#c8302a'; g.beginPath(); g.arc(32, 32, 4, 0, TAU); g.fill(); });
-  const sawMat = new THREE.MeshStandardMaterial({ map: sawTex, roughness: 0.35, metalness: 0.8, transparent: true, alphaTest: 0.5 });
+  const tm = trapMat(), armGeo = sweeperArm(R0, R1, TOP), sGeo = sawGeo();   // (the hub, the arms and the saws are modelled in arenatraps.js)
   // the glow on the floor ahead of each blade, brightest at the blade and fading out ahead of it
   const wedgeGeo = new THREE.RingGeometry(R0, R1 + 3, 16, 1, -LEAD, LEAD), wp = wedgeGeo.attributes.position, wc = [];
   for (let i = 0; i < wp.count; i++) { const f = 1 + Math.atan2(wp.getY(i), wp.getX(i)) / LEAD; const k = Math.pow(clamp(f, 0, 1), 2.2); wc.push(k, k * 0.12, k * 0.06); }
   wedgeGeo.setAttribute('color', new THREE.Float32BufferAttribute(wc, 3));
   const wedgeMat = new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(2.6, 2.6, 2.6), transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
   const g = new THREE.Group(); g.position.set(h.x, 0, h.z); api.scene.add(g);
-  const drum = new THREE.Mesh(new THREE.CylinderGeometry(8, 8, 6, 24), [drumSide, steel, steel]); drum.position.y = TOP - 3; drum.castShadow = true; g.add(drum);
+  const drum = new THREE.Mesh(sweeperHub(TOP), tm); drum.castShadow = true; g.add(drum);
   const saws = [], lamps = [];
   for (let k = 0; k < N; k++) {
     // each blade in its own frame, along +x (the way the blades turn is +z in it)
     const arm = new THREE.Group(); arm.rotation.y = -k * TAU / N; g.add(arm);
     const mid = (R0 + R1) / 2;
-    const beam = new THREE.Mesh(new THREE.BoxGeometry(R1 - 6, 2, 2.2), steel); beam.position.set((R1 + 6) / 2, TOP - 5, 0); beam.castShadow = true; arm.add(beam);
-    for (const r of [R0 + 1, mid, R1 - 1]) { const rod = new THREE.Mesh(new THREE.BoxGeometry(1.2, TOP - 11, 1.2), steel); rod.position.set(r, (TOP - 5 + 6) / 2, 0); arm.add(rod); }
-    const blade = new THREE.Mesh(new THREE.BoxGeometry(R1 - R0, 5, 1.8), [steel, steel, steel, steel, side, side]); blade.position.set(mid, 3.5, 0); blade.castShadow = true; arm.add(blade);
-    const edge = new THREE.Mesh(new THREE.BoxGeometry(R1 - R0, 0.8, 0.5), lampOff); edge.position.set(mid, 5.5, 0.9); arm.add(edge); lamps.push(edge);
-    const saw = new THREE.Mesh(new THREE.CylinderGeometry(4.2, 4.2, 0.8, 24), [steel, sawMat, sawMat]); saw.rotation.x = Math.PI / 2; saw.position.set(R1, 4.3, 0); arm.add(saw); saws.push(saw);
+    const body = new THREE.Mesh(armGeo, tm); body.castShadow = true; arm.add(body);
+    const edge = new THREE.Mesh(new THREE.BoxGeometry(R1 - R0, 0.7, 0.4), lampOff); edge.position.set(mid, 6.3, 1.1); arm.add(edge); lamps.push(edge);
+    const saw = new THREE.Mesh(sGeo, tm); saw.position.set(R1 + 1.4, 4.3, 0); arm.add(saw); saws.push(saw);
     const wedge = new THREE.Mesh(wedgeGeo, wedgeMat); wedge.rotation.x = -Math.PI / 2; wedge.position.y = 0.09; wedge.renderOrder = 2; arm.add(wedge);
   }
   let th = h.offset ?? 0, w = SPIN, spinA = 0, clock = 0, saw = null, toastT = 0;
@@ -622,7 +627,7 @@ function sweeper(api, h, S) {
       const want = SPIN * (wildIn(h, S) ? 2 : 1);
       w += (want - w) * Math.min(1, dt * 0.8);   // it spins up (and back down) over a second or two
       th = wrapPos(th + w * dt); h.angle = th; h.w = w;
-      g.rotation.y = -th; spinA += dt * 16; for (const s of saws) s.rotation.y = spinA;
+      g.rotation.y = -th; spinA += dt * 16; for (const s of saws) s.rotation.z = -spinA;
       const blink = (clock * 6 | 0) & 1;
       for (const l of lamps) l.material = blink ? lampOn : lampOff;
       wedgeMat.opacity = 0.5 + 0.2 * Math.sin(clock * 9);
@@ -703,17 +708,13 @@ function sweeper(api, h, S) {
 function hammer(api, h, S) {
   const L = h.len ?? 26.5, PY = h.y ?? 32, A = h.amp ?? 58 * Math.PI / 180, HR = h.head ?? 4.6, HL = 6, LANE = h.lane ?? 30, DMG = h.dmg ?? 34;
   const ux = h.axis === 'x' ? 1 : 0, uz = h.axis === 'x' ? 0 : 1, nx = uz, nz = -ux;   // the way the head swings, and across it
-  const steel = steelMat(), side = new THREE.MeshStandardMaterial({ map: stripesTex([3, 1]), roughness: 0.55, metalness: 0.3 });
   const [lampOff, lampOn] = lampMats();
   const pivot = new THREE.Group(); pivot.position.set(h.x, PY, h.z); api.scene.add(pivot);
-  const axle = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, 11, 12), steel); axle.rotation.set(0, 0, 0); pivot.add(axle);
-  if (ux) axle.rotation.x = Math.PI / 2; else axle.rotation.z = Math.PI / 2;   // across the swing
+  // (the axle, the arm and the head are modelled in arenatraps.js, swinging along z: turned for one that swings along x)
+  const axle = new THREE.Mesh(hammerAxle(), trapMat()); pivot.add(axle);
   const swing = new THREE.Group(); pivot.add(swing);
-  const arm = new THREE.Mesh(new THREE.BoxGeometry(1.8, L - HR, 1.8), steel); arm.position.y = -(L - HR) / 2; arm.castShadow = true; swing.add(arm);
-  const brace = new THREE.Mesh(new THREE.BoxGeometry(ux ? 1.2 : 6, 6, ux ? 6 : 1.2), steel); brace.position.y = -(L - HR - 3); swing.add(brace);
-  // the head: a drum lying the way it swings, so it strikes flat on
-  const head = new THREE.Mesh(new THREE.CylinderGeometry(HR, HR, HL * 2, 20), [side, steel, steel]); head.position.y = -L; head.castShadow = true; swing.add(head);
-  if (ux) head.rotation.z = Math.PI / 2; else head.rotation.x = Math.PI / 2;
+  const body = new THREE.Mesh(hammerSwing(L, HR, HL), trapMat()); body.castShadow = true; swing.add(body);
+  if (ux) { axle.rotation.y = Math.PI / 2; body.rotation.y = Math.PI / 2; }
   const lamps = [];
   for (const s of [-1, 1]) { const l = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.4, 1.4), lampOff); l.position.set(nx * s * (HR + 0.2), -L + HR - 0.6, nz * s * (HR + 0.2)); swing.add(l); lamps.push(l); }
   const beacon = new THREE.Mesh(new THREE.BoxGeometry(2, 1.6, 2), lampOff); beacon.position.y = 2.2; pivot.add(beacon); lamps.push(beacon);
@@ -807,19 +808,15 @@ function hammer(api, h, S) {
 function jets(api, h, S) {
   const WARN = h.warn ?? 1, BURN = h.burn ?? 2.4, REST = h.rest ?? 1.2, LAG = h.lag ?? 0.35, LEN = h.len ?? 26, DPS = h.dps ?? 32;
   const J = h.jets, G = Math.max(...J.map((j) => j.group)) + 1, SLOT = WARN + BURN + REST + LAG * Math.max(...J.map((j) => j.step || 0));
-  // a cone with its point at the nozzle and its mouth at the far end (along +x), fading out toward the mouth
-  const geo = new THREE.ConeGeometry(1, 1, 14, 1, true); geo.translate(0, -0.5, 0); geo.rotateZ(Math.PI / 2);
-  const ftex = canvasTex(32, 64, (g, W, H) => { const gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.55, 'rgba(255,255,255,0.7)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, W, H); g.fillStyle = 'rgba(0,0,0,0.35)'; for (let x = 0; x < W; x += 6) g.fillRect(x, 0, 2, H); });
-  const outerM = new THREE.MeshBasicMaterial({ map: ftex, color: new THREE.Color(3.2, 0.95, 0.16), transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
-  const innerM = new THREE.MeshBasicMaterial({ map: ftex, color: new THREE.Color(3.4, 2.4, 0.9), transparent: true, opacity: 0.75, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
-  const steel = new THREE.MeshStandardMaterial({ color: 0x2c3036, roughness: 0.5, metalness: 0.7 });
+  // (the burner is modelled in arenatraps.js; its flame is the flamethrower's pixel fire, thinned: pixelfire.js)
+  const FLAME = { w: 1.2, rate: 0.6, wild: 0.36, pilot: 0.14 };   // how wide, and how much of a flamethrower's stream each jet is (less of it when all eight burn at once)
+  const nozzle = jetNozzle(), pix = api.pix;
   const mouthOff = new THREE.MeshBasicMaterial({ color: 0x3a1a0a }), mouthWarm = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 0.5, 0.1), toneMapped: false }), mouthHot = new THREE.MeshBasicMaterial({ color: new THREE.Color(4, 1.6, 0.4), toneMapped: false });
   for (const j of J) {
     j.dx = Math.cos(j.a); j.dz = Math.sin(j.a); j.on = false; j.hot = false; j.was = 0; j.len = LEN;
-    const box = new THREE.Mesh(new THREE.BoxGeometry(3, 4, 4.4), steel); box.position.set(j.x - j.dx * 0.8, 3.6, j.z - j.dz * 0.8); box.rotation.y = -j.a; api.scene.add(box);
+    const box = new THREE.Mesh(nozzle, trapMat()); box.position.set(j.x, 0, j.z); box.rotation.y = -j.a; box.castShadow = true; api.scene.add(box);
     j.mouth = new THREE.Mesh(new THREE.BoxGeometry(0.6, 2, 2.6), mouthOff); j.mouth.position.set(j.x + j.dx * 0.9, 3.6, j.z + j.dz * 0.9); j.mouth.rotation.y = -j.a; api.scene.add(j.mouth);
-    j.outer = new THREE.Mesh(geo, outerM); j.inner = new THREE.Mesh(geo, innerM);
-    for (const m of [j.outer, j.inner]) { m.position.set(j.x + j.dx, 3.6, j.z + j.dz); m.rotation.y = -j.a; m.visible = false; m.renderOrder = 3; api.scene.add(m); }
+    j.from = { x: j.x + j.dx * 1.3, y: 3.6, z: j.z + j.dz * 1.3 }; j.dir = { x: j.dx, y: 0.03, z: j.dz }; j.ft = Math.random() * 3;
   }
   let t = h.offset ?? 0, hissT = 0, crackT = 0, clock = 0;
   const hitAt = new WeakMap(), _q = [0, 0];
@@ -845,17 +842,14 @@ function jets(api, h, S) {
         }
         j.on = st > 0; j.hot = st === 2; if (j.hot) anyHot = true;
         j.mouth.material = st === 2 ? mouthHot : st === 1 ? ((clock * 10 | 0) & 1 ? mouthHot : mouthWarm) : mouthOff;
-        j.outer.visible = j.inner.visible = st > 0;
         if (st === 1) {   // a pilot flame, and sparks spitting from the nozzle
-          j.outer.scale.set(2.2, 0.8, 0.8); j.inner.scale.set(1.4, 0.5, 0.5);
+          if (pix) pix.jet(j.from, j.dir, 6, dt, 0.7, clock + j.ft, 0, 0, FLAME.pilot);
           if (Math.random() < dt * 16 * busy(api)) sparks(j.x + j.dx * 2, 3.6, j.z + j.dz * 2, 3, 1, 0.6, 0.15, 14);
         } else if (st === 2) {
-          const k = 0.92 + Math.random() * 0.12, r = 6 * (0.9 + Math.random() * 0.15);
-          j.outer.scale.set(j.len * k, r, r); j.inner.scale.set(j.len * 0.62 * k, r * 0.45, r * 0.45);
-          if (Math.random() < dt * 24 * busy(api)) { const f = 0.25 + Math.random() * 0.75; fire(j.x + j.dx * j.len * f, 3 + Math.random() * 2, j.z + j.dz * j.len * f, 1, 0.5 + f); }
+          if (pix) pix.jet(j.from, j.dir, j.len * 1.04, dt, FLAME.w, clock + j.ft, 0, 0, (wild ? FLAME.wild : FLAME.rate) * (0.6 + 0.4 * busy(api)));
+          if (Math.random() < dt * 10 * busy(api)) { const f = 0.25 + Math.random() * 0.75; fire(j.x + j.dx * j.len * f, 3 + Math.random() * 2, j.z + j.dz * j.len * f, 1, 0.5 + f); }
         }
       }
-      outerM.map.offset.x = clock * 2.3;
       if (anyHot && (crackT -= dt) <= 0) { crackT = 0.45; const j = J.find((q) => q.hot); api.sound('crackle', 0.7, j.x, 2, j.z); }
       if (!live) return;
       // burn the cars in a flame
@@ -900,14 +894,10 @@ function jets(api, h, S) {
 // the point under it; at the middle it holds them, and sparks), drop (it lets go, with a clang), rest again.
 function magnet(api, h, S) {
   const R = h.r ?? 48, Y = h.y ?? 36, TOP = h.top ?? 54, REST = h.rest ?? 6, WARN = h.warn ?? 1.6, PULL = h.pull ?? 3.6, DPS = h.dps ?? 7;
-  const steel = steelMat(), dark = new THREE.MeshStandardMaterial({ color: 0x24272c, roughness: 0.6, metalness: 0.6 });
-  const rim = new THREE.MeshStandardMaterial({ map: canvasTex(128, 16, (g, W, H) => { for (let x = 0; x < W; x += 16) { g.fillStyle = (x / 16) & 1 ? '#e8e4da' : '#c8302a'; g.fillRect(x, 0, 16, H); } }, [3, 1]), roughness: 0.5, metalness: 0.3 });
-  const copper = new THREE.MeshStandardMaterial({ color: 0xb86a32, roughness: 0.35, metalness: 0.85 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x24272c, roughness: 0.6, metalness: 0.6 });
   const cable = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 1, 6), dark); api.scene.add(cable);
   const body = new THREE.Group(); body.position.set(h.x, Y, h.z); api.scene.add(body);
-  const disc = new THREE.Mesh(new THREE.CylinderGeometry(8, 8, 3.6, 28), [rim, steel, steel]); disc.castShadow = true; body.add(disc);
-  const cap = new THREE.Mesh(new THREE.CylinderGeometry(3, 4.5, 2.4, 14), dark); cap.position.y = 3; body.add(cap);
-  const coil = new THREE.Mesh(new THREE.TorusGeometry(6, 0.9, 8, 28), copper); coil.rotation.x = Math.PI / 2; coil.position.y = 2.1; body.add(coil);
+  const disc = new THREE.Mesh(magnetBody(), trapMat()); disc.castShadow = true; body.add(disc);   // (modelled in arenatraps.js)
   const under = glowMat(0.4, 1.2, 3, 0), glow = new THREE.Mesh(new THREE.CircleGeometry(7.8, 28), under); glow.rotation.x = Math.PI / 2; glow.position.y = -1.85; body.add(glow);
   // the rings that run in across the floor
   const ringM = [0, 1, 2].map(() => glowMat(0.3, 0.9, 2.6, 0));
@@ -927,7 +917,7 @@ function magnet(api, h, S) {
       const k = phase === 'warn' ? 1 - T / WARN : phase === 'pull' ? 1 : 0;
       const y = Y - (phase === 'pull' ? 4 : phase === 'warn' ? 4 * k * k : 0);
       body.position.set(h.x + (h.pull ? (Math.random() - 0.5) * 0.4 : 0), y, h.z + (h.pull ? (Math.random() - 0.5) * 0.4 : 0));
-      const top = TOP, len = top - (y + 3); cable.scale.y = len; cable.position.set(h.x, y + 3 + len / 2, h.z);
+      const top = TOP, len = top - (y + 5.5); cable.scale.y = len; cable.position.set(h.x, y + 5.5 + len / 2, h.z);
       under.opacity = phase === 'pull' ? 0.75 + Math.random() * 0.2 : phase === 'warn' ? 0.6 * k * ((clock * 10 | 0) & 1 ? 1 : 0.5) : 0;
       rings.forEach((r, i) => {
         if (!h.on) { ringM[i].opacity = 0; return; }

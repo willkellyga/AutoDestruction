@@ -20,6 +20,10 @@ const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const FLOOR = MAP.floor ? (x, z, y) => MAP.floor(x, z, y) : null;
 const STEP_UP = 6;     // a floor this much higher or lower a probe away is a wall (no slope is that steep over a car's length): past a deck's edge, should a car get through its parapet
 const RAIL = MAP.rail ? (x, z, y) => MAP.rail(x, z, y) : null;   // a deck's parapet, a cut's wall (maps/heights.js)
+// A map of dirt jumps (maps/arena.js: `ledges`) has drops a car drives off and lips it flies from: there only a floor
+// that stands more than STEP_UP over where the car is (in the air or not) is a wall.
+const LEDGES = !!MAP.ledges;
+const stepped = FLOOR ? (LEDGES ? (x, z, f, top) => FLOOR(x, z, top) - top > STEP_UP : (x, z, f, top) => Math.abs(FLOOR(x, z, top) - f) > STEP_UP) : null;
 
 let SEED = 1;
 // A car's body is rebuilt after it is hit, which costs a millisecond or two. Hits pile up between rebuilds: each car is
@@ -181,7 +185,7 @@ export class Vehicle {
     const f0 = this.fy, top = f0 + this.y, f1 = FLOOR(this.x, this.z, top);
     if (this.y === 0 && this.vy === 0) {
       const v = (f1 - f0) / Math.max(dt, 1e-3), vb = this.gvy - 70 * dt, yb = f0 + vb * dt;
-      if (yb > f1 + 0.3 && this.speed > 12) { this.y = yb - f1; this.vy = vb; }   // off a crest
+      if (yb > f1 + 0.3 && (this.speed > 12 || (LEDGES && f0 - f1 > 1.5))) { this.y = yb - f1; this.vy = vb; }   // off a crest (or, however slowly, off a ledge)
       else this.gvy += (clamp(v, -60, 60) - this.gvy) * Math.min(1, dt * 14);
     } else {
       this.y = top - f1; this.gvy = 0;   // in the air (step() moved it): the floor under it may have changed
@@ -221,7 +225,7 @@ export class Vehicle {
       // where a building stands, or stood (keepout.js): a wall to a car, holes or not. And where the road's height
       // steps: the edge of a bridge's deck, the wall of a cut
       const bld = flat && keptOut(wx, wz);
-      if (bld || (FLOOR && (Math.abs(FLOOR(wx, wz, top) - f) > STEP_UP || (RAIL && RAIL(wx, wz, top))))) {
+      if (bld || (FLOOR && (stepped(wx, wz, f, top) || (RAIL && RAIL(wx, wz, top))))) {
         out.hard++; out.wall++; if (bld) out.bld = 1;
         if (kind === 0) out.front++; else if (kind === 1) out.back++; else out.side++;
         out.x += wx; out.y += f + 3; out.z += wz; n++;
@@ -248,7 +252,7 @@ export class Vehicle {
   wallNormal(H, out) {
     const cx = Math.floor(H.x), cz = Math.floor(H.z);
     const f = this.fy || 0, top = f + (this.y || 0), fi = Math.round(f), flat = Math.abs(f) < 3;
-    const blk = (x, z) => (flat && keptOut(x, z)) || (FLOOR && (Math.abs(FLOOR(x + 0.5, z + 0.5, top) - f) > STEP_UP || (RAIL && RAIL(x + 0.5, z + 0.5, top)))) || (fi >= -1 && (solid(x, fi + 2, z) || solid(x, fi + 4, z)));
+    const blk = (x, z) => (flat && keptOut(x, z)) || (FLOOR && (stepped(x + 0.5, z + 0.5, f, top) || (RAIL && RAIL(x + 0.5, z + 0.5, top)))) || (fi >= -1 && (solid(x, fi + 2, z) || solid(x, fi + 4, z)));
     let n = 0, sx = 0, sz = 0, sxx = 0, sxz = 0, szz = 0;
     for (let dz = -3; dz <= 3; dz++) for (let dx = -3; dx <= 3; dx++) {
       if (dx * dx + dz * dz > 10) continue;
