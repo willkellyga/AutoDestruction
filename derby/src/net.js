@@ -2,7 +2,7 @@
 //
 // The lobby. Quick play is one tap (quickPlay): a mode's card on the home screen (Online), or Play again on the results,
 // asks the relay for a quick room for that mode, and the relay answers `go` at once, for a round that is counting down
-// (derby/server/relay.mjs). The page loads again on its map as ?map=<mode>&mp=<round>&h=<host>&q=1 (the world is laid
+// (derby/server/relay.mjs). The page loads again on its map as ?map=<mode>&mp=<round>&h=<host>&quick=1 (the world is laid
 // out once, as the page loads), so the countdown runs while the map loads, and nobody waits on a menu. The lobby panel
 // on the start card (makeLobby) is for friends: a room with a four-letter code; whoever made it picks the mode and starts.
 //
@@ -25,7 +25,7 @@
 const Q = new URLSearchParams(location.search);
 export const ROUND = (Q.get('mp') || '').replace(/[^a-z0-9]/gi, '').slice(0, 16);
 const HOST0 = Q.get('h') || '';
-const ROOM = (Q.get('r') || '').replace(/[^A-Z]/gi, '').slice(0, 4).toUpperCase(), QUICK = Q.get('q') === '1';
+const ROOM = (Q.get('r') || '').replace(/[^A-Z]/gi, '').slice(0, 4).toUpperCase(), QUICK = Q.get('quick') === '1';
 const MODES = ['arena', 'race', 'base'];
 const MODE_NAME = { arena: 'Arena', race: 'Race', base: 'Zombie Survival', fair: 'Zombie Survival' };
 const SEND = 1 / 15;   // seconds between state messages
@@ -68,8 +68,8 @@ export function myName() { return (store && store.getItem('ad-name')) || ''; }
 function setName(n) { try { store && store.setItem('ad-name', n); } catch (e) { /* private */ } }
 // a name for someone who never typed one (kept, so they are the same driver next time)
 const nameOrNew = () => { let n = myName(); if (!n) { n = 'Driver ' + (100 + Math.floor(Math.random() * 900)); setName(n); } return n; };
-const where = (map, extra) => { const u = new URL(location.href); u.search = ''; u.searchParams.set('map', map); for (const k in extra) if (extra[k]) u.searchParams.set(k, extra[k]); for (const k of ['server', 'as', 'q', 'touch']) if (Q.get(k) && k !== 'q') u.searchParams.set(k, Q.get(k)); return u.toString(); };
-const roundUrl = (m) => where(m.map, { mp: m.round, h: m.host, r: m.room, q: m.kind === 'quick' ? '1' : '' });
+const where = (map, extra) => { const u = new URL(location.href); u.search = ''; u.searchParams.set('map', map); for (const k in extra) if (extra[k]) u.searchParams.set(k, extra[k]); for (const k of ['server', 'as', 'touch']) if (Q.get(k)) u.searchParams.set(k, Q.get(k)); return u.toString(); };
+const roundUrl = (m) => where(m.map, { mp: m.round, h: m.host, r: m.room, quick: m.kind === 'quick' ? '1' : '' });   // (not ?q=: quality.js reads that as a held quality step, so every quick round was stuck on step 1)
 // back to the lobby after a friends' round: the same room
 export const lobbyUrl = (map) => where(map, { room: ROOM });
 
