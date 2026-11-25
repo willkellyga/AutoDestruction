@@ -234,6 +234,51 @@ button:disabled { opacity: 0.6; cursor: default; }
 @media (max-width: 560px) { .maps { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; } }
 #over b.t { display: block; font-family: var(--f-logo); font-weight: 400; font-size: clamp(40px, 8.5vw, 66px); color: var(--hot); text-transform: uppercase; text-shadow: 0 4px 0 var(--tar), 0 8px 18px rgba(0,0,0,0.5); }
 #over-l { font-size: 17px; margin-top: 10px; line-height: 1.6; }
+/* the results: a steel plate over the round, the place on a yellow tab, the standings, the tiles and what it paid */
+#over > .ov { position: relative; text-align: left; width: min(860px, 100%); max-width: none; padding: 8px 0 0; background: linear-gradient(180deg, #282c31, #131417); box-shadow: inset 0 0 0 2px rgba(255,255,255,0.1); --c: 20px; clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c)); }
+#over > .ov::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 8px; background: var(--stripes); }
+/* the wrecked card between cars: the same steel, smaller */
+#dead > div { position: relative; width: min(440px, 100%); padding: 30px 28px 24px; font-size: 18px; background: linear-gradient(180deg, #282c31, #131417); box-shadow: inset 0 0 0 2px rgba(255,255,255,0.1); --c: 16px; clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c)); }
+#dead > div::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 8px; background: var(--stripes); }
+.ov-head { display: flex; align-items: stretch; background: var(--tar); }
+.ov-badge { display: flex; align-items: flex-start; gap: 2px; background: var(--hot); color: var(--tar); padding: 8px 34px 4px 20px; clip-path: polygon(0 0, 100% 0, calc(100% - 24px) 100%, 0 100%); font-family: var(--f-logo); line-height: 1; }
+.ov-badge b { font-weight: 400; font-size: 70px; } .ov-badge b.w { font-size: 34px; align-self: center; text-transform: uppercase; } .ov-badge i { font-style: normal; font-size: 26px; margin-top: 8px; text-transform: uppercase; }
+.ov-tt { display: flex; flex-direction: column; justify-content: center; padding: 8px 18px 8px 12px; min-width: 0; }
+.ov-k { font: var(--head-w) var(--head-st) calc(14px * var(--head-k)) var(--f-head); text-transform: uppercase; letter-spacing: 0.14em; color: rgba(242,239,230,0.6); }
+#over .ov b.t { font-size: clamp(30px, 5.4vw, 48px); line-height: 1.05; text-shadow: 0 3px 0 #000; }
+.ov-sub { font: 600 16px var(--f-ui); color: var(--ink); }
+.ov-body { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 14px; padding: 14px 16px 2px; align-items: start; }
+.ov-table[hidden] + .ov-side { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 0 14px; align-items: start; }   /* no standings: the tiles beside what it paid */
+.ov-table[hidden] + .ov-side .ov-pay { margin-top: 0; grid-column: 2; grid-row: 1 / span 2; } .ov-table[hidden] + .ov-side #over-l { grid-column: 1; }
+.ov-r { display: grid; grid-template-columns: 40px minmax(0, 1.25fr) minmax(0, 0.8fr) 84px; gap: 8px; align-items: center; padding: 6px 12px; font: 600 16px var(--f-ui); background: rgba(255,255,255,0.045); }
+.ov-r:nth-child(odd) { background: rgba(255,255,255,0.09); }
+.ov-r.h { background: #000; font: var(--head-w) var(--head-st) calc(12px * var(--head-k)) var(--f-head); text-transform: uppercase; letter-spacing: 0.1em; color: rgba(242,239,230,0.7); padding: 4px 12px; }
+.ov-r span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ov-r .p { font: var(--head-w) var(--head-st) calc(20px * var(--head-k)) var(--f-head); } .ov-r .c { font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.75; }
+.ov-r .v { font-variant-numeric: tabular-nums; text-align: right; } .ov-r .n em { font-style: normal; font-size: 12px; opacity: 0.7; margin-left: 8px; }
+.ov-r.h span:last-child { text-align: right; }
+.ov-r.me { background: var(--hot); color: var(--tar); box-shadow: inset 5px 0 0 var(--red); } .ov-r.me .c { opacity: 0.85; }
+.ov-r.out .v { opacity: 0.8; }
+.ov-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ov-st { background: rgba(255,255,255,0.07); padding: 6px 10px 7px; min-width: 0; }
+.ov-st:last-child:nth-child(odd) { grid-column: 1 / -1; }
+.ov-st span { display: block; font: var(--head-w) var(--head-st) calc(11px * var(--head-k)) var(--f-head); text-transform: uppercase; letter-spacing: 0.1em; color: rgba(242,239,230,0.65); }
+.ov-st b { display: block; font: var(--head-w) var(--head-st) calc(24px * var(--head-k)) var(--f-head); line-height: 1.1; font-variant-numeric: tabular-nums; }
+.ov-st em { display: block; font: 600 12px var(--f-ui); font-style: normal; color: var(--hot); }
+#over .ov #over-l { font-size: 15px; line-height: 1.5; margin-top: 8px; }
+.ov-pay { margin-top: 10px; background: var(--tar); box-shadow: inset 0 0 0 2px rgba(255,194,26,0.4); padding: 8px 12px; font: 600 14px var(--f-ui); }
+.ov-pay div { display: flex; justify-content: space-between; gap: 10px; line-height: 1.5; }
+.ov-pay .tot { margin-top: 5px; padding-top: 5px; border-top: 1px solid rgba(255,255,255,0.2); align-items: baseline; font: var(--head-w) var(--head-st) calc(15px * var(--head-k)) var(--f-head); text-transform: uppercase; letter-spacing: 0.08em; }
+.ov-pay .tot b { font-size: calc(30px * var(--head-k)); color: var(--hot); font-variant-numeric: tabular-nums; }
+.ov-pay .bank { justify-content: flex-end; font-size: 12px; opacity: 0.7; }
+#over .ov .row { margin: 0; padding: 14px 16px 18px; } #over .ov .note { padding: 0 16px; text-align: center; }
+@media (max-width: 700px) { .ov-body { grid-template-columns: minmax(0, 1fr); } .ov-table[hidden] + .ov-side { display: block; } .ov-table[hidden] + .ov-side .ov-pay { margin-top: 10px; } .ov-badge b { font-size: 52px; } .ov-badge i { font-size: 20px; } .ov-badge { padding: 8px 28px 4px 14px; } }
+@media (max-height: 500px) {
+  .ov-badge b { font-size: 40px; } .ov-badge i { font-size: 16px; margin-top: 4px; } .ov-badge { padding: 4px 26px 2px 14px; } .ov-tt { padding: 3px 14px 3px 8px; } #over .ov b.t { font-size: 26px; } .ov-sub { font-size: 13px; }
+  .ov-body { padding: 8px 12px 0; gap: 10px; } .ov-r { padding: 2px 10px; font-size: 13px; grid-template-columns: 30px minmax(0, 1.25fr) minmax(0, 0.8fr) 70px; } .ov-r .p { font-size: 15px; } .ov-r .c { font-size: 11px; } .ov-r.h { padding: 2px 10px; }
+  .ov-st { padding: 3px 8px 4px; } .ov-st b { font-size: 17px; } .ov-stats { gap: 5px; } .ov-pay { margin-top: 6px; padding: 4px 10px; font-size: 12px; } .ov-pay .tot b { font-size: 20px; }
+  #over .ov .row { padding: 8px 12px 10px; } #over .ov #over-l { font-size: 12px; margin-top: 4px; }
+}
 /* ---- phones and tablets ---- */
 /* sideways: the armour bar sits low between the stick and the buttons, the hint just under the round's title */
 body.touch #bars { top: auto; bottom: 12px; width: min(280px, 34vw); }
@@ -748,7 +793,7 @@ body.racing.touch #hint { top: 128px; }
   <div class="row"><button class="go" id="ln-go">Let's go!</button></div>
 </div></div>
 <div class="card" id="pause" hidden><div><b class="t" id="pause-t">Paused</b><div class="note" id="pause-note"></div><div class="p-col"><button class="go" id="pause-go">Resume</button><button class="alt" id="pause-again">Restart</button><button class="alt" id="pause-learn">How to play</button><button class="alt" id="pause-sound">Sound: on</button><button class="alt desk-only" id="pause-auto">Auto-fire: on</button><button class="alt" id="pause-home">Main menu</button></div><div class="note desk-only"><kbd>Esc</kbd> or <kbd>P</kbd> to go back to the round</div></div></div>
-<div class="card" id="over" hidden><div><b class="t" id="over-t">Round over</b><div id="over-l"></div><div class="row more-only"><button class="go" id="over-more">Keep going</button></div><div class="note desk-only more-only"><kbd>Enter</kbd> or <kbd>C</kbd> to keep going: the same round, on your own</div><div class="row"><button class="alt" id="over-maps">Home</button><button class="alt" id="over-garage">Garage</button><button class="go" id="over-go">Again</button></div></div></div>
+<div class="card" id="over" hidden><div class="ov"><div class="ov-head"><div class="ov-badge" id="over-badge" hidden></div><div class="ov-tt"><span class="ov-k" id="over-k"></span><b class="t" id="over-t">Round over</b><span class="ov-sub" id="over-sub" hidden></span></div></div><div class="ov-body"><div class="ov-table" id="over-rows" hidden></div><div class="ov-side"><div class="ov-stats" id="over-stats" hidden></div><div id="over-l"></div><div class="ov-pay" id="over-pay" hidden></div></div></div><div class="row more-only"><button class="go" id="over-more">Keep going</button></div><div class="note desk-only more-only"><kbd>Enter</kbd> or <kbd>C</kbd> to keep going: the same round, on your own</div><div class="row"><button class="alt" id="over-maps">Home</button><button class="alt" id="over-garage">Garage</button><button class="go" id="over-go">Again</button></div></div></div>
 <div class="card" id="menu" hidden><div>
   <div class="brief-k" id="brief-k"></div><div class="brief-t" id="brief-t"></div>
   <div class="ln-steps" id="brief-steps"></div>

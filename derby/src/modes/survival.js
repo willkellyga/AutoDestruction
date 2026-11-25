@@ -15,6 +15,7 @@ import { makeHorde, HORDE } from '../zombies.js';
 import { WX, WZ } from '../../../src/world.js';
 import { SURVIVAL_LEVELS } from '../tuning.js';
 import { makeDrops } from '../drops.js';
+import { PARTS } from '../parts.js';
 
 const ORD = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th'];
 const clockText = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t) % 60).padStart(2, '0')}`;
@@ -57,6 +58,7 @@ export function makeSurvival(G) {
   let overtime = false, wonAt = 0, paidT = 0, best0 = 0, scrap0 = 0, mineOver = false;
   const carsIn = () => (G.net ? G.net.players.length + G.net.bots : S.rivals + 1);
   const held = new Map();
+  const fallen = [];   // the cars that have gone down, and when (the results' standings: a wreck is cleared away soon after)
   const bests = () => (G.save.survivalBest && typeof G.save.survivalBest === 'object' ? G.save.survivalBest : (G.save.survivalBest = {}));
   // the difficulty (the start card's buttons): the save's, or Normal. Online rounds are always Normal. Each level has its
   // own best time (Normal's under the map's id, as before the levels came in)
@@ -146,6 +148,19 @@ export function makeSurvival(G) {
   const bestLine = (beat) => (!best0 ? `Your best to beat: ${clockText(clock)}` : beat ? `New best time! (the old one was ${clockText(best0)})` : `Best: ${clockText(best0)} (${clockText(best0 - clock)} short)`);
   // the round is over: a card with how it went. A win holds the round (the clock stops, the dead stop clawing) and
   // offers to keep going
+  // the standings for the results: who is still out there, then everyone in the order they went down (the latest
+  // first). A car still running when the player goes down has no place yet.
+  function standings(top) {
+    const carName = (c) => (PARTS.body[c.load && c.load.body] || {}).name || '';
+    const list = G.cars.filter((c) => !c.gone && !c.dead && c !== G.player && (c.rival || c.remote)).map((c) => ({ name: c.name, car: carName(c), up: true, t: Infinity }));
+    for (const f of fallen) list.push({ name: f.name, car: f.car, t: f.t });
+    if (G.player) list.push({ name: 'You', car: carName(G.player), me: true, t: top ? Infinity : clock });
+    list.sort((a, b) => b.t - a.t || (a.me ? -1 : b.me ? 1 : 0));
+    return list.map((r) => ({
+      pos: r.up ? '–' : list.filter((o) => o.t > r.t + 0.05).length + 1, name: r.name, me: !!r.me, car: r.car,
+      value: r.me ? clockText(clock) : r.up ? 'Still driving' : clockText(r.t), out: !!r.up,
+    }));
+  }
   function finish(won) {
     if (phase === 'done' || phase === 'won' || mineOver) return;
     if (overtime) { finishOvertime(); return; }
@@ -163,7 +178,17 @@ export function makeSurvival(G) {
     ];
     out = { won, place, time: clock, zombies: horde.byPlayer, bonus, timeScrap, best: beat };
     wonAt = paidT = clock;
-    G.over(won ? 'Last car standing!' : tie ? 'Out together' : 'Wrecked', lines, bonus + timeScrap, won && !G.net ? { label: 'Keep going', go: keepGoing } : null);
+    const sheet = {
+      kicker: `${G.MAP.name || 'Zombie Survival'} · results`, badge: tie ? '1st' : ORD[place - 1], sub: `${tie ? 'Shared 1st' : ORD[place - 1]} of ${total}`,
+      cols: ['Pos', 'Driver', 'Car', 'Lasted'], rows: standings(won),
+      stats: [
+        ['Survived', clockText(clock), !best0 ? 'Your time to beat' : beat ? 'New best time!' : `Best ${clockText(best0)}`],
+        ['Zombies killed', String(horde.byPlayer)],
+        ['Difficulty', LV.name],
+      ],
+      pay: [[`${tie ? 'Shared 1st' : ORD[place - 1]} place`, bonus], ['Time survived', timeScrap], [`Zombies × ${horde.byPlayer}`, horde.byPlayer * HORDE.scrap]],
+    };
+    G.over(won ? 'Last car standing!' : tie ? 'Out together' : 'Wrecked', lines, bonus + timeScrap, won && !G.net ? { label: 'Keep going', go: keepGoing } : null, sheet);
   }
   // the win card's Keep going: the same round again, with the player the only car on the base
   function keepGoing() {
@@ -189,7 +214,18 @@ export function makeSurvival(G) {
       beat && best0 ? `Old best: ${clockText(best0)}` : bestLine(beat),
     ];
     out = { won: true, place: 1, time: clock, overtime: clock - wonAt, zombies: horde.byPlayer, scrap, best: beat, bestWas: best0 };
-    G.over(beat && best0 ? 'New best time!' : 'Overrun', lines, rest);
+    const sheet = {
+      kicker: `${G.MAP.name || 'Zombie Survival'} · results`, badge: '1st', sub: `Last car standing, then ${clockText(clock - wonAt)} more`,
+      cols: ['Pos', 'Driver', 'Car', 'Lasted'], rows: standings(true),
+      stats: [
+        ['Survived', clockText(clock), beat && best0 ? `New best! Was ${clockText(best0)}` : beat ? 'Your time to beat' : `Best ${clockText(best0)}`],
+        ['Zombies killed', String(horde.byPlayer)],
+        ['On your own', clockText(clock - wonAt)],
+        ['Difficulty', LV.name],
+      ],
+      pay: [[`Zombies × ${horde.byPlayer}`, horde.byPlayer * HORDE.scrap]], rest: 'Time, place and hits',
+    };
+    G.over(beat && best0 ? 'New best time!' : 'Overrun', lines, rest, null, sheet);
   }
 
   return {
@@ -213,7 +249,7 @@ export function makeSurvival(G) {
       horde = makeHorde(G, { max: G.TOUCH() && !(net && net.host) ? S.peakPhone : S.peak, puppet: !!(net && !net.host), onKill: (z, by) => { if (net && by && by.remote) net.zkill(by); } });
       G.extras.push(horde);
       if (MAP.drops && MAP.drops.length) drops = makeDrops(G);
-      best0 = bestOf(); scrap0 = G.game.scrap;
+      best0 = bestOf(); scrap0 = G.game.scrap; fallen.length = 0;
       const starts = MAP.starts || [];
       const tiers = S.tiers.slice().sort(() => Math.random() - 0.5);
       const humans = net ? net.players.length : 1, rivals = net ? (net.host ? net.bots : 0) : S.rivals;
@@ -265,6 +301,7 @@ export function makeSurvival(G) {
       horde.step(dt);
     },
     wrecked(c) {
+      if (horde && c !== G.player && !fallen.some((f) => f.c === c)) fallen.push({ c, name: c.name, car: (PARTS.body[c.load && c.load.body] || {}).name || '', t: clock });
       if (!horde || c === G.player) return;
       const n = live().length, win = phase === 'run' && !overtime && !mineOver && G.player && !G.player.dead && n === 1 && live()[0] === G.player;
       G.toast(`The dead got ${c.name}`, win ? 'You are the last car standing' : `${n} car${n === 1 ? '' : 's'} left`);

@@ -665,6 +665,7 @@ function radar(R, s, ox, oy, w, h) {
   R.drawImage(radarCv, 0, 0);
 }
 
+const MALL_DIRT = [0.27, 0.2, 0.11];   // the Mall's dirt as light (its paint is rgb 196, 172, 128, a little darker in the lump)
 const P = (name) => course().parts.find((p) => p.name === name);
 let ROOFS = null;
 // Washington past the map's edge (backdrops/potomac.js): where the shores leave the map (the numbers are the map's own
@@ -738,6 +739,14 @@ export default {
   // (the grass is the painted ground's: a deck over it, or the cut under it, is road)
   // the Reflecting Pool: its water holds a car back a little, and comes up off the wheels (dirt.js)
   wetAt: (x, z) => (inPool(x, z) ? 1 : 0),
+  // the Mall's road is dirt and gravel (paint(), legs 6 to 9): the wheels throw it up (dirt.js), and lay no rubber
+  dirtAt(x, z) {
+    if (!TR) return null;
+    const ix = Math.floor(x), iz = Math.floor(z); if (ix < 0 || iz < 0 || ix >= WX || iz >= WZ) return null;
+    const T = TR.T, c = iz * WX + ix, i = T.field.near[c]; if (i < 0) return null;
+    const l = T.field.lat[c], g = course().leg[i];
+    return g >= 6 && g <= 9 && l < T.WL[i] && l > -T.WR[i] ? MALL_DIRT : null;
+  },
   surface(x, z) { if (!grassy || !TR) return 0; if (inPool(x, z)) return 0.3; const c = clamp(Math.floor(z), 0, WZ - 1) * WX + clamp(Math.floor(x), 0, WX - 1), d = heights().deck[c]; return d === d || masks().cut[c] ? 0 : surfaceAt(TR.T, grassy, x, z); },
   get track() { return full(); },
 };

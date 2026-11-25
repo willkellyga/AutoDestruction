@@ -6,6 +6,7 @@
 // At the end a card ranks everyone and pays scrap by place, on top of the 100 a wreck that is paid as they happen.
 // See waves.js for what a mode is made of.
 import { ROUND, BRAWL_LEVELS, useAILevel } from '../tuning.js';
+import { PARTS } from '../parts.js';
 
 export const BRAWL = {
   rivals: 7,
@@ -56,8 +57,17 @@ export function makeBrawl(G) {
     const lines = order.map((r) => `${ord(placeOf(r))}  ${r.name}  ${r.wrecks} ${r.wrecks === 1 ? 'wreck' : 'wrecks'}${r.deaths ? ` (wrecked ${r.deaths})` : ''}`);
     if (me.wrecks) lines.push(`Your wrecks paid +${me.wrecks * 100} scrap as they happened`);
     const top = order.filter((r) => r.wrecks === order[0].wrecks);
-    const title = mine === 1 ? (top.length > 1 ? 'Joint winner!' : 'You win!') : `${ord(mine)} place`;
-    G.over(title, lines, Math.round(BRAWL.place[Math.min(BRAWL.place.length - 1, mine - 1)] * LV.prize));
+    const title = mine === 1 ? (top.length > 1 ? 'Joint winner!' : 'You win!') : mine <= 3 ? 'On the podium' : 'Round over';   // (the place itself is on the card's yellow tab)
+    const prize = Math.round(BRAWL.place[Math.min(BRAWL.place.length - 1, mine - 1)] * LV.prize);
+    const carOf = (r) => { const c = G.cars.find((o) => o.name === r.name && !o.gone); return (c && (PARTS.body[c.load.body] || {}).name) || ''; };
+    const sheet = {
+      kicker: `${G.MAP.name || 'Arena'} · results`, badge: ord(mine), sub: `You wrecked ${me.wrecks} ${me.wrecks === 1 ? 'car' : 'cars'}`,
+      cols: ['Pos', 'Driver', 'Car', 'Wrecks'],
+      rows: order.map((r) => ({ pos: placeOf(r), name: r.name, me: r.me, car: carOf(r), value: String(r.wrecks), note: r.deaths ? `wrecked ${r.deaths}` : '' })),
+      stats: [['Your wrecks', String(me.wrecks)], ['Times wrecked', String(me.deaths)], ['Difficulty', LV.name]],
+      pay: [[`${ord(mine)} place`, prize]],
+    };
+    G.over(title, lines, prize, null, sheet);
   }
 
   return {

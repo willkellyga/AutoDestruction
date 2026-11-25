@@ -21,7 +21,7 @@ export function startReports({ game, quality, renderer, MAP, cars, online, stats
   const args = new URLSearchParams(location.search);
   const on = /^https?:$/.test(location.protocol) && args.get('report') !== '0';
   const overlay = args.get('perf') === '1';
-  if (!on && !overlay) return { frame() {} };
+  if (!on && !overlay) return { frame() {}, drawStart() {}, drawEnd() {} };   // (main.js calls all three every frame)
 
   let id = ''; try { id = localStorage.adDevice || (localStorage.adDevice = Math.random().toString(36).slice(2, 7)); } catch (e) { id = 'private'; }
   // a crash on iOS reloads the page without a pagehide: the flag left at 1 says so on the next visit

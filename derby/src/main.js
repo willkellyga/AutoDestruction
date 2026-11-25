@@ -119,7 +119,7 @@ const backdrop = MAP.backdrop ? makeBackdrop({ scene, map: MAP, mobile: MOBILE, 
 kindFrom(kindAt, 'backdrop');
 initSim(scene);
 kindAt = scene.children.length;
-const drifts = makeDrift({ scene, camera, mobile: MOBILE, el: $('drift'), soft: floor.dirtAt });   // skid marks, tyre smoke, the drift meter
+const drifts = makeDrift({ scene, camera, mobile: MOBILE, el: $('drift'), soft: MAP.dirtAt ? (x, z) => (MAP.dirtAt(x, z) ? 1 : floor.dirtAt(x, z)) : floor.dirtAt });   // skid marks, tyre smoke, the drift meter (none on dirt, a map's own stretch of it too)
 const dirt = makeDirt({ scene, camera, renderer, floor, MAP, mobile: MOBILE });   // ruts, rooster tails, dust and clods off the wheels
 const streaks = MAP.mode === 'race' ? makeStreaks({ scene, mobile: MOBILE }) : null;   // the air rushing past, flat out
 kindFrom(kindAt, 'skids, dirt and streaks');
@@ -775,17 +775,63 @@ function addRival(n, at) {   // (n can be a build itself: the race's rivals are 
 }
 function hint(html) { if (html) { $('hint').innerHTML = html; $('hint').classList.add('on'); } else $('hint').classList.remove('on'); }
 // the round is over: a card with how it went, and the way to the next one. `more` ({ label, go }), if the mode gives
-// it, is a button (and Enter or C) to carry on the same round instead: overGo hides the card and calls `go`
+// it, is a button (and Enter or C) to carry on the same round instead: overGo hides the card and calls `go`.
+// `sheet` is what the mode has to show on it (all of it optional; without one the lines are shown as they are):
+//   kicker   the small line over the title ('Race results')
+//   badge    the place, big, on the yellow plate ('1st')
+//   sub      under the title ('Your time 3:02.7')
+//   cols, rows   the standings: the column heads, and { pos, name, car, value, note, me } for each car
+//   stats    tiles: [label, value, flag] (the flag in yellow: 'New record')
+//   pay      what paid this round, [label, scrap]; the card adds the wrecks (100 each, paid as they happen) and
+//            whatever else the round earned (`rest` names that line), and counts up the total
 let overMore = null;
-function over(title, lines = [], scrap = 0, more = null) {
+const el = (tag, cls, text) => { const d = document.createElement(tag); if (cls) d.className = cls; if (text !== undefined) d.textContent = text; return d; };
+function showResults(title, lines, scrap, sheet) {
+  $('over-t').textContent = title;
+  $('over-k').textContent = sheet.kicker || MAP.name || 'Round over';
+  $('over-sub').textContent = sheet.sub || ''; $('over-sub').hidden = !sheet.sub;
+  const badge = $('over-badge'), m = /^(\d+)(\D*)$/.exec(sheet.badge || '');
+  badge.hidden = !sheet.badge; badge.innerHTML = '';
+  if (m) { badge.append(el('b', '', m[1]), el('i', '', m[2])); } else if (sheet.badge) badge.append(el('b', 'w', sheet.badge));
+  // the standings
+  const T = $('over-rows'); T.innerHTML = ''; T.hidden = !(sheet.rows && sheet.rows.length);
+  if (!T.hidden) {
+    const cols = sheet.cols || ['Pos', 'Driver', 'Car', ''];
+    const head = el('div', 'ov-r h'); for (const c of cols) head.append(el('span', '', c)); T.append(head);
+    for (const r of sheet.rows) {
+      const d = el('div', 'ov-r' + (r.me ? ' me' : '') + (r.out ? ' out' : ''));
+      const name = el('span', 'n', r.name); if (r.note) name.append(el('em', '', r.note));
+      d.append(el('span', 'p', r.pos), name, el('span', 'c', r.car || ''), el('span', 'v', r.value ?? '')); T.append(d);
+    }
+  }
+  // the tiles, and any plain lines
+  const S = $('over-stats'); S.innerHTML = ''; S.hidden = !(sheet.stats && sheet.stats.length);
+  for (const [label, value, flag] of sheet.stats || []) { const d = el('div', 'ov-st'); d.append(el('span', '', label), el('b', '', value)); if (flag) d.append(el('em', '', flag)); S.append(d); }
+  const shown = sheet.rows || sheet.stats ? sheet.lines || [] : lines;
+  $('over-l').innerHTML = ''; for (const l of shown) $('over-l').append(el('div', '', l)); $('over-l').hidden = !shown.length;
+  // the scrap: what the mode paid, the wrecks, the rest of what the round earned, and the total counting up
+  const earned = Math.max(0, Math.round(game.scrap - (game.scrap0 ?? game.scrap - scrap)));
+  const pay = (sheet.pay || (scrap ? [['Prize', scrap]] : [])).filter((p) => p[1] > 0).map(([l, v]) => [l, Math.round(v)]);
+  if (game.kills && !sheet.noWrecks) pay.push([`Wrecks × ${game.kills}`, game.kills * 100]);
+  const rest = earned - pay.reduce((a, p) => a + p[1], 0);
+  if (rest >= 1) pay.push([sheet.rest || 'Hits and stunts', rest]);
+  const P = $('over-pay'); P.innerHTML = ''; P.hidden = earned < 1;
+  for (const [l, v] of pay) { const d = el('div'); d.append(el('span', '', l), el('span', '', `+${v}`)); P.append(d); }
+  const tot = el('div', 'tot'), num = el('b', '', `+${earned}`); tot.append(el('span', '', 'Scrap earned'), num); P.append(tot);
+  P.append(el('div', 'bank', `In the bank: ${Math.floor(game.scrap)}`));
+  return () => {   // (when the card comes up: the total runs up to what it is)
+    const t0 = performance.now(), tick = () => { const k = Math.min(1, (performance.now() - t0) / 900); num.textContent = `+${Math.round(earned * (1 - (1 - k) ** 3))}`; if (k < 1 && game.state === 'over') requestAnimationFrame(tick); else num.textContent = `+${earned}`; };
+    if (earned > 0) requestAnimationFrame(tick);
+  };
+}
+function over(title, lines = [], scrap = 0, more = null, sheet = null) {
   if (game.state === 'over') return;
   overMore = more; $('over').classList.toggle('more', !!more); $('over-go').className = more ? 'alt' : 'go';
   if (more) $('over-more').textContent = more.label || 'Keep going';
   game.state = 'over'; game.scrap += scrap; keepSave(save); hint(null);
   $('dead').hidden = true;
-  $('over-t').textContent = title;
-  $('over-l').innerHTML = ''; for (const l of [...lines, ...(scrap ? [`+${Math.round(scrap)} scrap`] : [])]) { const d = document.createElement('div'); d.textContent = l; $('over-l').appendChild(d); }
-  setTimeout(() => { if (game.state === 'over') { $('over').hidden = false; if (document.exitPointerLock) document.exitPointerLock(); } }, 1600);
+  const run = showResults(title, lines, scrap, sheet || {});
+  setTimeout(() => { if (game.state === 'over') { $('over').hidden = false; $('banner').classList.remove('on'); run(); if (document.exitPointerLock) document.exitPointerLock(); } }, 1600);
 }
 function overGo() {
   const m = overMore; if (!m || game.state !== 'over' || $('over').hidden) return;
@@ -1398,6 +1444,7 @@ function leaveGarage() {
 function startGame(auto) {
   learn.dismiss();   // (online, the round can start while the how-to-play card is still up)
   initAudio(); $('menu').hidden = true; game.state = 'play';
+  game.scrap0 = save.scrap;   // (what the round earns is shown on the results card)
   // phones and tablets: the whole screen for the round, where the browser allows it (a tap on Start counts as asking)
   const root = document.documentElement;
   if (MOBILE && root.requestFullscreen && !document.fullscreenElement) { try { root.requestFullscreen({ navigationUI: 'hide' }).catch(() => {}); } catch (err) { /* not allowed here */ } }
