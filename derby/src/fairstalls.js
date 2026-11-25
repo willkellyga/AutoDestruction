@@ -120,7 +120,7 @@ export function makeKit(ox, oz, yaw, all = false) {
     // a disc standing up, facing front and back (in rows of cubes); col: a colour or (dx, dy) => colour; lit: N's rgb
     discXY(cx, cy, z, r, d, col, lit = null) {
       for (let dy = -r; dy < r; dy++) {
-        const half = Math.floor(Math.sqrt(r * r - (dy + 0.5) * (dy + 0.5)) + 0.5); if (half <= 0) continue;
+        const half = Math.floor(Math.sqrt(r * r - (dy + 0.5) * (dy + 0.5)) + 0.5); if (!(half > 0)) continue;   // (also when r is not whole and the row is past its edge)
         if (typeof col !== 'function') { if (lit) K.l(cx - half, cy + dy, z, 2 * half, 1, d, lit); else K.b(cx - half, cy + dy, z, 2 * half, 1, d, col); continue; }
         let x0 = -half, c0 = col(-half + 0.5, dy + 0.5);
         for (let dx = -half + 1; dx <= half; dx++) { const c = dx < half ? col(dx + 0.5, dy + 0.5) : null; if (c !== c0) { K.b(cx + x0, cy + dy, z, dx - x0, 1, d, c0); x0 = dx; c0 = c; } }
@@ -433,7 +433,8 @@ function heap(K) {
 // much shooting it takes (0: it can't be smashed, and cars bounce off it), and where its light falls on the ground.
 // tough: cars bounce off it though it can be smashed (shot, blown up, or rammed: a player's car takes some off it
 // each time it hits it hard). shot: more of it for shots and blasts to strike than what stands on the ground, as
-// [x0, z0, x1, z1, y0, y1] (the first is also where its pieces fly from). boom: it blows up when it goes.
+// [x0, z0, x1, z1, y0, y1] (the first is also where its pieces fly from). boom: it blows up when it goes. chain: and
+// sets off whatever else blows up within this far of it.
 export const KINDS = {
   booth: { make: booth, foot: [[-7.2, -4.2, 7.2, 4.4]], top: 9.5, hp: 90, heap: 1, pool: [0, 9, 13] },
   kiosk: { make: kiosk, foot: [[-6.2, -3.7, 6.2, 4.2]], top: 9, hp: 80, heap: 0.9, pool: [0, 8, 12] },
@@ -447,7 +448,7 @@ export const KINDS = {
   genset: { make: genset, foot: [[-9, -3.2, 9, 3.2]], top: 10, hp: 0, pool: [3, 7, 9] },
   table: { make: table, foot: [[-2.2, -2.2, 2.2, 2.2]], top: 7, hp: 20, heap: 0.3, pool: null },
 };
-const footOf = (o) => (o.kind === 'board' ? null : o.kind === 'arch' ? [[-o.span / 4 - 1.2, -1.2, -o.span / 4 + 1.2, 1.2], [o.span / 4 - 1.2, -1.2, o.span / 4 + 1.2, 1.2]] : KINDS[o.kind].foot);
+const footOf = (o) => { if (o.kind === 'board') return null; if (o.kind === 'arch') return [[-o.span / 4 - 1.2, -1.2, -o.span / 4 + 1.2, 1.2], [o.span / 4 - 1.2, -1.2, o.span / 4 + 1.2, 1.2]]; const f = KINDS[o.kind].foot; return typeof f === 'function' ? f(o) : f; };   // (a kind's foot can depend on the thing: a wall's length)
 // is (x, z) on the ground thing o stands on, with a margin?
 function inFoot(o, x, z, pad = 0) {
   const dx = x - o.x, dz = z - o.z; if (dx * dx + dz * dz > o.reach2) return false;
@@ -479,7 +480,8 @@ const struck = (o, x, y, z, pad) => (y < o.top && inFoot(o, x, z, pad)) || (!!o.
 const _e = [[0, 0], [0, 0]];
 // api: main.js's api; list: the map's [{ kind, x, z, yaw, name, neon, frame, a, b, ... }]; power: the map's POWER
 // ({ lit: [four quarters, 0 to 1], rev }); quarter(x, z): which quarter a place is in; grid: [WX, WZ]
-export function makeStalls(api, list, power, quarter, [WX, WZ]) {
+// opts.heap: another map's own model of what is left of a smashed one (the army base's scrap)
+export function makeStalls(api, list, power, quarter, [WX, WZ], opts = {}) {
   const { scene } = api;
   const paintMat = new THREE.MeshLambertMaterial({ vertexColors: true });
   const time = { value: 0 }, atlas = { value: null };
@@ -556,7 +558,7 @@ export function makeStalls(api, list, power, quarter, [WX, WZ]) {
     o.dead = true; fold(paintMesh, o.pv); fold(litMesh[o.q], o.lv);
     o.src.dead = true; if (o.src.pool) o.src.pool.on = 0;
     power.rev = (power.rev || 0) + 1;
-    if (!heaps) { const K = makeKit(0, 0, 0); heap(K); heaps = new THREE.InstancedMesh(K.geos().paint, paintMat, objs.length); heaps.count = 0; heaps.frustumCulled = false; heaps.receiveShadow = true; heaps.matrixAutoUpdate = false; scene.add(heaps); }
+    if (!heaps) { const K = makeKit(0, 0, 0); (opts.heap || heap)(K); heaps = new THREE.InstancedMesh(K.geos().paint, paintMat, objs.length); heaps.count = 0; heaps.frustumCulled = false; heaps.receiveShadow = true; heaps.matrixAutoUpdate = false; scene.add(heaps); }
     const k = o.K.heap;
     _m.position.set(o.x, 0, o.z); _m.rotation.y = o.yaw; _m.scale.set(k, Math.min(1, k * 1.3), k); _m.updateMatrix();
     heaps.setMatrixAt(nHeaps++, _m.matrix); heaps.count = nHeaps; heaps.instanceMatrix.needsUpdate = true;
@@ -571,8 +573,11 @@ export function makeStalls(api, list, power, quarter, [WX, WZ]) {
     api.sfx.play('crunch_heavy', 0.9, o.x, o.z); api.sound('crash', 0.6, o.x, 3, o.z); api.sound('glass', 0.5, o.x, 3, o.z);
     const P = api.player; if (P && by === P) api.game.shake = Math.min(1.2, api.game.shake + 0.35);
     regrid();
-    if (o.K.boom) api.explode(o.x, 3, o.z, 5.5, 0.45, { maxDebris: 30 });
+    if (o.K.boom) api.explode(o.x, 3, o.z, o.K.boom === true ? 5.5 : o.K.boom, 0.45, { maxDebris: o.K.boom === true ? 30 : 70 });   // (boom: true, or how big)
+    // (chain: what else blows up within this far of it goes too, a moment later)
+    if (o.K.chain) for (const q of objs) if (!q.dead && q.breaks && q.K.boom && Math.hypot(q.x - o.x, q.z - o.z) < o.K.chain) fuses.push({ o: q, t: 0.3 + Math.random() * 0.35, by });
   }
+  const fuses = [];
   // shots strike them and blasts flatten them (main.js asks everything in `extras`). It is the players who wreck the
   // fair: a bot's shots only spark off a stall, and its blasts do a third as much
   const mine = (c) => !!c && (c === api.player || !!c.remote);
@@ -623,6 +628,7 @@ export function makeStalls(api, list, power, quarter, [WX, WZ]) {
     objs, blocks, smash, mats: { paint: paintMat, lit: litMats },
     step(dt) {
       time.value += dt;
+      for (let i = fuses.length - 1; i >= 0; i--) { const f = fuses[i]; if ((f.t -= dt) > 0) continue; fuses.splice(i, 1); smash(f.o, f.by, (Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20); }
       for (let q = 0; q < 4; q++) litMats[q].uniforms.power.value = power.lit[q];
       for (const c of api.cars) {
         if (c.gone) continue;
@@ -644,7 +650,7 @@ export function makeStalls(api, list, power, quarter, [WX, WZ]) {
     // on the radar: what still stands
     radar(R, s, ox, oy) {
       R.fillStyle = 'rgba(255,190,110,0.5)';
-      for (const o of objs) { if (o.dead) continue; const r = Math.max(1.5, Math.sqrt(o.reach2) - 6) * 0.7; R.fillRect(ox + (o.x - r) * s, oy + (o.z - r) * s, 2 * r * s, 2 * r * s); }
+      for (const o of objs) { if (o.dead || !o.foot) continue; const r = Math.max(1.5, Math.sqrt(o.reach2) - 6) * 0.7; R.fillRect(ox + (o.x - r) * s, oy + (o.z - r) * s, 2 * r * s, 2 * r * s); }
     },
   };
 }

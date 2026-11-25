@@ -36,6 +36,7 @@ import { TAU, ADD, TONE, rng, noiseTile, BEAM_FRAG, glowSprites, lampPools, grou
 // world past the walls gets (backdrop.js), the ground under the banks (unlit, and how much brighter in a cone: kit.js
 // floorLayer), and the lightning (seconds between strikes, least and most; how far off, least and most)
 export const STORM = {
+  lamp: 0.085,   // how bright the pools under the camp's own lamps are (a share of the lamp's colour)
   murk: 0x1c2321, fog: [150, 1000], exposure: 1.18, hemi: [0x5f707a, 0x2b2b22, 1.1],
   moon: [new THREE.Vector3(-0.45, 0.72, -0.53).normalize(), 0xffe9d0, 2.25], fill: [0x5a7290, 1.05, [0.6, 0.35, 0.72]],
   spill: 0.2, floor: { base: 0.92, gain: 0.8, FK: 1.8 }, strikes: [5, 14], far: [650, 1250],
@@ -335,7 +336,10 @@ export function make(L, { scene, renderer, camera, sky, hemi, sun, mats, bloom, 
   const noise = sky.material.uniforms.noise.value;
   const drops = rain(2800), mist = groundMist(noise, L.middle), beams = towerBeams(nt), smokes = smoke(fires, 8, noise), flashBolt = bolt();
   const banks = L.banks || [], nfl = banks.length;
-  const gmax = nfl + nt + 2 * nbk + nf + CAR_GLOWS, glows = glowSprites(gmax), pools = lampPools(2 * nbk + 2 * 40), spots = groundSpots(nt + nf);
+  // the camp's own lamps (L.pools, from the map's things: fairstalls.js stallPools): a pool of light on the ground under
+  // each, gone when the thing is smashed (its `on`)
+  const lamps = L.pools || [], nl = lamps.length;
+  const gmax = nfl + nt + 2 * nbk + nf + CAR_GLOWS, glows = glowSprites(gmax), pools = lampPools(2 * nbk + 2 * 40), spots = groundSpots(nt + nf + nl);
   for (const o of [drops, mist, beams, smokes, flashBolt, glows, pools, spots]) scene.add(o);
   // the floodlights: the towers, their beams in the rain and the light they put on the ground inside the wall
   const floodBeams = nfl ? bankBeams(banks) : null;
@@ -409,6 +413,7 @@ export function make(L, { scene, renderer, camera, sky, hemi, sun, mats, bloom, 
     // the floodlights' glare, facing down their beams (brighter in a flash: the rain round them lights up)
     for (const [x, y, z, dx, dy, dz] of floodGlow) { gp.set([x, y, z, 26], n * 4); gc.set([2.5 + f, 2.45 + f, 2.3 + f, 1], n * 4); gd.set([dx, dy, dz, 0.7], n * 4); n++; }
     towers.forEach(([x, y, z], i) => {
+      if (L.towerOn && !L.towerOn(i)) { aim[i].set(x, y - 1, z); return; }   // (its tower is down: no beam, no spot)
       const cx = mx + (x - mx) * 0.2, cz = mz + (z - mz) * 0.2;
       let ax = cx + Math.sin(time * (0.21 + 0.03 * i) + i * 1.7) * 150, az = cz + Math.sin(time * (0.27 + 0.02 * i) + i * 2.3) * 120;
       if (i === hunter && lock > 0.001 && player) { ax += (player.x - ax) * lock; az += (player.z - az) * lock; }
@@ -424,6 +429,7 @@ export function make(L, { scene, renderer, camera, sky, hemi, sun, mats, bloom, 
       gp.set([x, y + 1.2, z, 3.2 * s], n * 4); gc.set([2.6 * fl, 1.15 * fl, 0.35 * fl, 0], n * 4); gd.set([0, 0, 0, 0], n * 4); n++;
       sa.set([x, z, 15 * s, 15 * s], k * 4); sb.set([1, 0, 1.6, 0], k * 4); sc.set([0.36 * fl, 0.145 * fl, 0.04 * fl, 0], k * 4); k++;
     });
+    for (const p of lamps) { if (!(p.on > 0)) continue; const [cr, cg, cb] = p.rgb, kk = STORM.lamp * p.on; sa.set([p.x, p.z, p.r, p.r], k * 4); sb.set([1, 0, 1.25, 0], k * 4); sc.set([cr * kk, cg * kk, cb * kk, 0], k * 4); k++; }
     // the beacons: two lamps back to back turning, each a glow that flares as it faces the camera and a red sweep
     let kp = 0;
     beacons.forEach(([x, y, z], i) => {
