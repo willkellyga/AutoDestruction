@@ -30,6 +30,8 @@ import { makePartArt } from './partart.js';
 import { makeSpecials } from './specials.js';
 import { makeCrumple } from './crumple.js';
 import { makeSounds, fetchClips } from './audio.js';
+import { makeRoadSound } from './roadsound.js';
+import { makeEngineSound } from './enginesound.js';
 import { bank as sfxBank, count as sfxCount } from './sfxfiles.js';
 import { makePickups } from './pickups.js';
 import { makeHazards } from './hazards.js';
@@ -150,7 +152,7 @@ function initAudio() {
   audioMix.init();
   if (engine || !sfx.init()) return;
   // the player's engine and tyres, and the two nearest rivals' engines, on loops
-  engine = { me: sfx.loop('engine_loop'), skid: sfx.loop('skid_loop'), rivals: [sfx.loop('engine_loop'), sfx.loop('engine_loop')], spin: sfx.loop('mini_spin'), saw: sfx.loop('saw_loop'), hum: sfx.loop('arc_hum'), flame: sfx.loop('flame_loop'), jet: sfx.loop('mini_spin') };
+  engine = { note: makeEngineSound({ sfx }), spin: sfx.loop('mini_spin'), saw: sfx.loop('saw_loop'), hum: sfx.loop('arc_hum'), flame: sfx.loop('flame_loop'), jet: sfx.loop('mini_spin') };
 }
 function sound(name, vol = 1, x, y, z) {
   audioMix.on = !muted;
@@ -159,6 +161,7 @@ function sound(name, vol = 1, x, y, z) {
   audioMix.play(name, vol, x, y, z, grp, 0.4);
 }
 const armySfx = audioMix.module('a.', 'army');
+const road = makeRoadSound({ sfx, sound, map: MAP });   // tyres, scrapes, knocks, wind, pass-bys (roadsound.js)
 
 // ---- effects: the army's guns and the town's cars -------------------------------------------------------------
 const mats = [new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.1, color: new THREE.Color(1.2, 1.2, 1.2) }), new THREE.MeshBasicMaterial({ vertexColors: true })];
@@ -286,7 +289,7 @@ function wreck(c, who) {
   crumple.wrecked(c, chip);   // the roof caves in, the bonnet and a panel or two blow off
   c.unit.kill(p, 6, chip);
   c.blowParts(cube, p, 16);
-  sfx.play(c.maxHp > 200 ? 'bigboom' : 'carboom', 1, p.x, p.z);
+  sfx.play(c.maxHp > 200 ? 'bigboom' : 'carboom', 1, p.x, p.z); road.wrecked(p.x, p.z);
   const was = by; by = who || (mode.friendly ? c : null); splashK = { splash: 18, reach: 18 };   // (friendly: the wreck's own blast spares the other cars)
   try { boom(p.x, 2.5, p.z, 5.5, 0.6, { maxDebris: 260, fire: true }, BUILDINGS.wreck); } finally { by = was; splashK = null; }
   if (c.dummy) { c.respawnT = 2.6; if (who === player) toast('Target wrecked', 'Another one is on its way'); return; }   // no scrap for these
@@ -458,10 +461,12 @@ function bump(a, b) {
   const ma = a.dead ? 2.2 : a.spec.mass, mb = b.dead ? 2.2 : b.spec.mass, ia = 1 / ma, ib = 1 / mb;
   a.x -= _n.x * best * ia / (ia + ib); a.z -= _n.z * best * ia / (ia + ib); b.x += _n.x * best * ib / (ia + ib); b.z += _n.z * best * ib / (ia + ib);
   const vrel = (b.vx - a.vx) * _n.x + (b.vz - a.vz) * _n.z;
+  const vt = Math.abs((b.vx - a.vx) * -_n.z + (b.vz - a.vz) * _n.x);   // how fast they go past each other along the touch
+  if (vt > 6) { a.touch(vt); b.touch(vt); }   // door to door: the grind (roadsound.js)
   if (vrel >= 0) return;
   const j = -(1 + 0.35 * CRASH.kick) * vrel / (ia + ib);
   a.vx -= j * ia * _n.x; a.vz -= j * ia * _n.z; b.vx += j * ib * _n.x; b.vz += j * ib * _n.z;
-  const hitSp = -vrel; if (hitSp < 10) return;
+  const hitSp = -vrel; if (hitSp < 10) { road.meet(a, b, hitSp, (ax + bx) / 2, (az + bz) / 2); return; }   // a knock
   // the one driving into the other is the rammer; its plow takes less
   const ta = a.vx * _n.x + a.vz * _n.z, tb = -(b.vx * _n.x + b.vz * _n.z), ram = ta >= tb ? a : b, hit = ram === a ? b : a;
   const cp = new THREE.Vector3((ax + bx) / 2, 2.6, (az + bz) / 2), dmg = hitSp * CRASH.carHurt * ram.spec.ram;
@@ -472,6 +477,7 @@ function bump(a, b) {
   sparks(cp.x, cp.y, cp.z, Math.round(6 + hitSp * 0.3), 1, 0.8, 0.4, 24);
   sound(hitSp > 40 ? 'crash' : 'metal', clamp(hitSp / 60, 0.35, 1.2), cp.x, cp.y, cp.z);
   sfx.play(hitSp > 38 ? 'crunch_heavy' : 'crunch', clamp(hitSp / 45, 0.35, 1.2), cp.x, cp.z, { gap: 0.1 });
+  road.meet(a, b, hitSp, cp.x, cp.z);
   if (a === player || b === player) game.shake = Math.min(1.4, game.shake + hitSp / 80);
 }
 // what driving into the town feels like
@@ -486,9 +492,10 @@ const crashHooks = {
     crumple.crash(c, into, H, clamp(0.5 + (into - CRASH.bump) * 0.035, 0.5, 2.6));   // the end that hit the wall crumples
     sound('thud', clamp(into / 50, 0.3, 1), H.x, H.y, H.z); sparks(H.x, 2.5, H.z, 6, 1, 0.8, 0.4, 14);
     sfx.play(into > 30 ? 'crunch' : 'scrape', clamp(into / 40, 0.3, 1), H.x, H.z, { gap: 0.25 });
+    road.wall(c, into, H.x, H.z);
     if (c === player) game.shake = Math.min(1.2, game.shake + into / 90);
   },
-  land(c, speed) { specials.landed(c, speed); },   // down from a jump (vehicle.js)
+  land(c, speed) { specials.landed(c, speed); road.land(c, speed); },   // down from a jump (vehicle.js)
   // a drift held long enough pays out a short burst as it ends (vehicle.js)
   // (bigger the longer it was held: a whoosh, the nitro's roar, the view widening and a jolt, DRIFT.boost)
   drift(c, lvl) {
@@ -1709,10 +1716,9 @@ function step(dt) {
     const sp = Math.abs(player.fwd), on = !muted && (live || test || game.state === 'garage') && !player.dead, k = clamp(sp / player.spec.top, 0, 1.4);
     sfx.listen(player.x, player.z, cam.yaw);
     const rev = game.revT > 0 ? Math.sin(Math.min(1, game.revT / 1.4) * Math.PI) : 0;   // an engine tried in the garage: a rev
-    const E = PARTS.engine[player.load.engine] || {}, pitch = E.pitch || 1;
-    engine.me.set(on ? 0.5 + 0.35 * Math.max(Math.abs(player.throttle), rev) : 0, (0.72 + k * 1.05 + (player.boostT > 0 ? 0.22 : 0) + rev * 0.9) * pitch, player.x, player.z);
+    const E = PARTS.engine[player.load.engine] || {};
     engine.jet.set(on && E.whine ? 0.22 + 0.3 * Math.max(Math.abs(player.throttle), rev) : 0, 1.3 + k * 0.9 + rev * 0.8, player.x, player.z);
-    engine.skid.set(on && player.speed > 14 ? clamp(player.skid, 0, 0.9) : 0, 0.85 + clamp(player.speed / 160, 0, 0.3) + 0.12 * player.skid, player.x, player.z);
+    road.step(dt, player, cars, on && game.state !== 'garage');   // the tyres, scrapes, wind and the rest (roadsound.js)
     const near = live ? cars.filter((c) => c.rival && !c.dead).sort((a, b) => Math.hypot(a.x - player.x, a.z - player.z) - Math.hypot(b.x - player.x, b.z - player.z)) : [];
     // the minigun's barrels, the saws' motor and the arc coil's hum, on the player's car
     const bv = player.barrelV || 0, arcG = player.guns.find((G) => G.g.arc);
@@ -1722,7 +1728,7 @@ function step(dt) {
     // a flamethrower going: the player's, or else the nearest one
     const fl = player.flameT > 0 && !player.dead ? player : cars.filter((c) => c.flameT > 0 && !c.dead).sort((a, b) => Math.hypot(a.x - player.x, a.z - player.z) - Math.hypot(b.x - player.x, b.z - player.z))[0];
     engine.flame.set(!muted && fl ? (fl === player ? 0.8 : 0.6) : 0, fl === player ? 1 : 0.92, fl ? fl.x : player.x, fl ? fl.z : player.z);
-    engine.rivals.forEach((L, i) => { const c = near[i]; if (!c) L.set(0); else L.set(0.45 + 0.3 * Math.abs(c.throttle), (0.68 + clamp(Math.abs(c.fwd) / c.spec.top, 0, 1.3) * 0.95) * ((PARTS.engine[c.load.engine] || {}).pitch || 1), c.x, c.z); });
+    engine.note.step(dt, player, near, on, rev);   // the engines' note, through the gears (enginesound.js)
   }
   document.body.classList.toggle('in-garage', game.state === 'garage');
   document.body.classList.toggle('at-home', !!game.home);
@@ -1748,4 +1754,4 @@ if (net) net.ready_();
   else if (net || brief || /[?&](room|online|map)=/.test(location.search)) $('menu').hidden = false; else showHome();
 }
 requestAnimationFrame((t) => { last = t; frame(t); });
-window.__derby = { art, STARTER, net, specials, crumple, cube, room, gcam, garageLight, startTest, endTest, tryPart: (s, k) => onTry(s, k), dummies, renderer, mapLook, touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH, picked }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, pauseOn, pauseOff, toHome, setPlay, sfx, audioMix, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop, keep };
+window.__derby = { art, STARTER, net, specials, crumple, cube, room, gcam, garageLight, startTest, endTest, tryPart: (s, k) => onTry(s, k), dummies, renderer, mapLook, touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH, picked }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, pauseOn, pauseOff, toHome, setPlay, sfx, audioMix, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop, keep, road, engine: () => engine };

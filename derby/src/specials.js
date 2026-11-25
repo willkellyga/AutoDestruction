@@ -274,7 +274,7 @@ export function makeSpecials({ scene, fx, sfx, cars, extras, player, damage, bla
     if (speed > 14 && !c.dead) for (const e of extras) if (e.explosion) e.explosion(c.x + Math.sin(c.yaw) * c.mid, 0.5, c.z + Math.cos(c.yaw) * c.mid, Math.max(c.half, c.wide) + 3, 10 + speed * 0.4, c);
     if (speed < 8) return;
     dust(c.x, 0.6, c.z, Math.round(4 + speed * 0.25), 6);
-    if (speed > 20) sfx.play('crunch', 0.6, c.x, c.z, { rate: 0.8 });
+    if (speed > 30) sfx.play('crunch', 0.4, c.x, c.z, { rate: 0.8 });   // (a hard landing; the thump is roadsound.js land())
   }
   // a hop on the garage's turntable: up, and back down onto it (the car stands still there, so this does the falling)
   function hop(c, dt) {
