@@ -210,7 +210,7 @@ export function glowSprites(max) {
 }
 // The pools of light lamps throw on the ground: a fan ahead of each car from its headlamps, a small red one behind (and
 // a beacon's turning sweep). per instance: pa (x, z, heading, strength), pb (where it starts along the heading, its
-// length, its width there and at its end), pc (colour)
+// length, its width there and at its end), pc (colour, and how high the ground is there: a road on a deck)
 // A map whose floor is not the whole of the ground (maps/rig.js: decks over the sea) gives the looks a mask: the decks
 // as rectangles ([x0, z0, x1, z1]) and the holes in them. What is drawn flat on the ground (the pools and spots below)
 // is then drawn only where there is floor to fall on. floorMask() makes the shader's test from it.
@@ -230,7 +230,7 @@ export function lampPools(max, mask = '') {
       void main() {
         vec2 f = vec2(sin(pa.z), cos(pa.z)), side = vec2(f.y, -f.x);
         vec2 xz = pa.xy + f * (pb.x + pb.y * position.x) + side * mix(pb.z, pb.w, position.x) * position.y;
-        gl_Position = projectionMatrix * viewMatrix * vec4(xz.x, 0.07, xz.y, 1.0);
+        gl_Position = projectionMatrix * viewMatrix * vec4(xz.x, 0.07 + pc.w, xz.y, 1.0);
         vUv = position.xy; vC = pc.rgb * pa.w; vXZ = xz;
       }`.replace('varying vec3 vC;', 'varying vec3 vC; varying vec2 vXZ;'),
     fragmentShader: `varying vec2 vUv; varying vec3 vC; varying vec2 vXZ;
@@ -244,7 +244,7 @@ export function lampPools(max, mask = '') {
 }
 // Round pools of light on the ground (a searchlight's spot, the glow round a fire): soft ellipses, one quad each.
 // per instance: sa (x, z, radius across, radius along), sb (the way "along" points: x, z; how sharp the edge is), sc
-// (colour)
+// (colour, and how high the ground is there)
 export function groundSpots(max, mask = '') {
   const g = new THREE.InstancedBufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0], 3)); g.setIndex([0, 2, 1, 0, 3, 2]);
@@ -256,7 +256,7 @@ export function groundSpots(max, mask = '') {
       void main() {
         vec2 along = sb.xy, across = vec2(along.y, -along.x);
         vec2 xz = sa.xy + across * position.x * sa.z + along * position.y * sa.w;
-        gl_Position = projectionMatrix * viewMatrix * vec4(xz.x, 0.08, xz.y, 1.0);
+        gl_Position = projectionMatrix * viewMatrix * vec4(xz.x, 0.08 + sc.w, xz.y, 1.0);
         vUv = position.xy; vC = sc.rgb; vE = sb.z; vXZ = xz;
       }`.replace('varying float vE;', 'varying float vE; varying vec2 vXZ;'),
     fragmentShader: `varying vec2 vUv; varying vec3 vC; varying float vE; varying vec2 vXZ;
@@ -309,23 +309,23 @@ function lampsOf(c) {
 }
 // Every car's lamps, from its heading and its lamps' places, into the glows from instance n on and the pools from k on
 // (the pools only while `pooled`); returns where each ended. `k` scales the glows and `kp` the pools (1 at night: by
-// day's end they show less).
-export function carLamps(cars, glows, pools, n, k, pooled, max, kg = 1, kp = 1) {
+// day's end they show less). With `lift` they ride at the height of the road under the car (a map with decks and cuts).
+export function carLamps(cars, glows, pools, n, k, pooled, max, kg = 1, kp = 1, lift = false) {
   const A = glows.geometry.attributes, gp = A.gp.array, gc = A.gc.array, gd = A.gd.array;
   const B = pools.geometry.attributes, pa = B.pa.array, pb = B.pb.array, pc = B.pc.array, pmax = pa.length / 4;
   for (const c of cars) {
     if (c.gone || c.dead || !c.unit.root.visible || n + 4 > max) continue;   // (out with the car as it blinks back in)
     const L = c._lamps || (c._lamps = lampsOf(c)), s = Math.sin(c.yaw), co = Math.cos(c.yaw);
-    const braking = c.brake > 0 || c.throttle < 0 || c.hbBrake > 0;
+    const braking = c.brake > 0 || c.throttle < 0 || c.hbBrake > 0, up = lift ? c.h || 0 : 0;
     for (const [kind, sgn] of [['head', 1], ['tail', -1]]) for (const e of L[kind]) {
-      gp.set([c.x + e[0] * co + e[2] * s, e[1], c.z - e[0] * s + e[2] * co, kind === 'head' ? 1.9 : braking ? 2 : 1.5], n * 4);
+      gp.set([c.x + e[0] * co + e[2] * s, e[1] + up, c.z - e[0] * s + e[2] * co, kind === 'head' ? 1.9 : braking ? 2 : 1.5], n * 4);
       gc.set(kind === 'head' ? [1.2 * kg, 1.1 * kg, 0.9 * kg, 0.3] : braking ? [2.4 * kg, 0.25 * kg, 0.15 * kg, 0] : [1.3 * kg, 0.12 * kg, 0.08 * kg, 0], n * 4);
       gd.set([s * sgn, 0, co * sgn, 0.92], n * 4); n++;
     }
     if (pooled && k + 2 <= pmax) {
       const front = Math.max(L.head[0][2], L.head[1][2]) - 0.5, back = Math.min(L.tail[0][2], L.tail[1][2]) + 0.5;
-      pa.set([c.x, c.z, c.yaw, kp], k * 4); pb.set([front, 34, c.wide * 0.8, c.wide * 3.2], k * 4); pc.set([0.26, 0.23, 0.18, 0], k * 4); k++;
-      pa.set([c.x, c.z, c.yaw, (braking ? 1.8 : 1) * kp], k * 4); pb.set([back, -9, c.wide * 0.8, c.wide * 1.6], k * 4); pc.set([0.12, 0.012, 0.008, 0], k * 4); k++;
+      pa.set([c.x, c.z, c.yaw, kp], k * 4); pb.set([front, 34, c.wide * 0.8, c.wide * 3.2], k * 4); pc.set([0.26, 0.23, 0.18, up], k * 4); k++;
+      pa.set([c.x, c.z, c.yaw, (braking ? 1.8 : 1) * kp], k * 4); pb.set([back, -9, c.wide * 0.8, c.wide * 1.6], k * 4); pc.set([0.12, 0.012, 0.008, up], k * 4); k++;
     }
   }
   return [n, k];

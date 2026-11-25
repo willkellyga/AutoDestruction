@@ -1213,9 +1213,9 @@ function outOfRoom() {
 // The home screen: the car turning on the turntable, and a card for each way to play and for the garage.
 const BRIEF = 'ad-brief';   // (kept across the page loading again on another map: straight to that mode's card)
 const HOME_CARDS = [
-  { map: 'race', k: 'Two tracks', t: 'Race', d: 'Laps of New York and Washington with the guns on', icon: 'M5 3h2v18H5zm3 1h4l1 1h6v9h-6l-1-1H8zm2 2v2h2V6zm4 1v2h2V7zm-2 1v2h2V8zm-2 2v2h2v-2zm4 1v2h2v-2z' },
-  { map: 'base', k: 'Two maps', t: 'Zombie Survival', d: 'Outlast the horde. Last car running wins', icon: 'M12 2a8 8 0 0 1 8 8c0 3-1.5 5-3 6v3h-2v-2h-2v2h-2v-2H9v2H7v-3c-1.5-1-3-3-3-6a8 8 0 0 1 8-8zM8.5 9a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm7 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM12 13l-1.2 2.5h2.4z' },
-  { map: 'arena', k: 'Hammerdown Arena', t: 'Arena', d: 'Eight cars, three minutes, most wrecks wins', icon: 'M12 1l2.2 5.6L19 3.5l-1.6 5.6L23 10l-4.6 3.2L21 18.5l-5.6-1.3L14 23l-2-5-2 5-1.4-5.8L3 18.5l2.6-5.3L1 10l5.6-.9L5 3.5l4.8 3.1z' },
+  { map: 'race', k: 'City circuits', t: 'Race', d: 'Street laps of the great cities with the guns on', icon: 'M5 3h2v18H5zm3 1h4l1 1h6v9h-6l-1-1H8zm2 2v2h2V6zm4 1v2h2V7zm-2 1v2h2V8zm-2 2v2h2v-2zm4 1v2h2v-2z' },
+  { map: 'base', k: 'Hold the line', t: 'Zombie Survival', d: 'Outlast the horde. Last car running wins', icon: 'M12 2a8 8 0 0 1 8 8c0 3-1.5 5-3 6v3h-2v-2h-2v2h-2v-2H9v2H7v-3c-1.5-1-3-3-3-6a8 8 0 0 1 8-8zM8.5 9a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm7 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM12 13l-1.2 2.5h2.4z' },
+  { map: 'arena', k: 'Demolition derby', t: 'Arena', d: 'Eight cars, three minutes, most wrecks wins', icon: 'M12 1l2.2 5.6L19 3.5l-1.6 5.6L23 10l-4.6 3.2L21 18.5l-5.6-1.3L14 23l-2-5-2 5-1.4-5.8L3 18.5l2.6-5.3L1 10l5.6-.9L5 3.5l4.8 3.1z' },
   { garage: true, k: 'Your car', t: 'Garage', d: 'Build it, arm it, paint it', icon: 'M21.7 6.3l-3.6 3.6-2.8-.7-.7-2.8 3.6-3.6a6 6 0 0 0-7.7 7.7L2.3 18.7a2.1 2.1 0 0 0 3 3l8.2-8.2a6 6 0 0 0 8.2-7.2z' },
 ];
 // Solo, Online or Friends, picked on the home screen and kept. Solo: a mode's card has Start. Online is one tap: the

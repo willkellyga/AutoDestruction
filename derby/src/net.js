@@ -29,9 +29,9 @@ const HOST0 = Q.get('h') || '';
 const ROOM = (Q.get('r') || '').replace(/[^A-Z]/gi, '').slice(0, 4).toUpperCase(), QUICK = Q.get('quick') === '1';
 const MODES = ['arena', 'race', 'base'];
 // a map that is one of a mode's maps goes by that mode (the relay's POOLS: the round's map is picked at random)
-const POOL_MODE = { fair: 'base', empire: 'race', capital: 'race' };
+const POOL_MODE = { fair: 'base', empire: 'race', capital: 'race', tokyo: 'race' };
 const modeKey = (id) => POOL_MODE[id] || id;
-const MODE_NAME = { arena: 'Arena', race: 'Race', empire: 'Race', capital: 'Race', base: 'Zombie Survival', fair: 'Zombie Survival' };
+const MODE_NAME = { arena: 'Arena', race: 'Race', empire: 'Race', capital: 'Race', tokyo: 'Race', base: 'Zombie Survival', fair: 'Zombie Survival' };
 const SEND = 1 / 15;   // seconds between state messages
 const ZSEND = 0.15;    // and between the horde's, to each guest
 const ZRANGE = 260;    // the dead further than this from a guest's car are not sent to it

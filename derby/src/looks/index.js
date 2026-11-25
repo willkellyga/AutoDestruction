@@ -6,6 +6,7 @@
 //   storm   the base (./storm.js): a stormy night, rain, lightning, searchlights from the guard towers and fires
 //   fair    Dead Man's Fair (./fair.js): twilight, strings of coloured bulbs, and quarters of it going dark
 //   spring  Washington (./spring.js): a clear spring day, a high sun, blue sky and fair-weather clouds
+//   neon    Tokyo (./neon.js): a lit city at night, street lamps along the course, signs' glows and the moon
 // main.js calls setup() as it makes the sky, the fog and the lights (it can return the way to the sun, `sunDir`, for
 // the shadows), and make() once everything else is made; make() returns step(dt, cars), called every frame.
 import * as night from './night.js';
@@ -13,7 +14,8 @@ import * as dusk from './dusk.js';
 import * as storm from './storm.js';
 import * as fair from './fair.js';
 import * as spring from './spring.js';
+import * as neon from './neon.js';
 
-const KINDS = { night, dusk, storm, fair, spring };
+const KINDS = { night, dusk, storm, fair, spring, neon };
 export const lookSetup = (L, o) => KINDS[L.kind].setup(L, o);
 export const makeLook = (L, o) => KINDS[L.kind].make(L, o);
