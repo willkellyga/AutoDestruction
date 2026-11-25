@@ -313,12 +313,17 @@ function wreck(c, who) {
   if (net && !c.remote) net.wrecked(c, who);   // every other device wrecks its copy, put down to the same car
   c.dead = true; c.deadT = 0; c.hp = 0;
   const p = c.centre(new THREE.Vector3());
-  crumple.wrecked(c, chip);   // the roof caves in, the bonnet and a panel or two blow off
-  c.unit.kill(p, 6, chip);
-  c.blowParts(cube, p, 16);
-  sfx.play(c.maxHp > 200 ? 'bigboom' : 'carboom', 1, p.x, p.z); road.wrecked(p.x, p.z);
-  const was = by; by = who || (mode.friendly ? c : null); splashK = { splash: 18, reach: 18 };   // (friendly: the wreck's own blast spares the other cars)
-  try { boom(p.x, 2.5, p.z, 5.5, 0.6, { maxDebris: 260, fire: true }, BUILDINGS.wreck); } finally { by = was; splashK = null; }
+  // (a car that went into the sea, maps/rig.js: no blast and nothing flies off it; the map makes the splash and takes
+  // the wreck away)
+  if (MAP.sunk && MAP.sunk(c)) c.sunk = true;
+  else {
+    crumple.wrecked(c, chip);   // the roof caves in, the bonnet and a panel or two blow off
+    c.unit.kill(p, 6, chip);
+    c.blowParts(cube, p, 16);
+    sfx.play(c.maxHp > 200 ? 'bigboom' : 'carboom', 1, p.x, p.z); road.wrecked(p.x, p.z);
+    const was = by; by = who || (mode.friendly ? c : null); splashK = { splash: 18, reach: 18 };   // (friendly: the wreck's own blast spares the other cars)
+    try { boom(p.x, 2.5, p.z, 5.5, 0.6, { maxDebris: 260, fire: true }, BUILDINGS.wreck); } finally { by = was; splashK = null; }
+  }
   if (c.dummy) { c.respawnT = 2.6; if (who === player) toast('Target wrecked', 'Another one is on its way'); return; }   // no scrap for these
   if (c === player && game.state === 'test') { game.testEnd = Math.min(game.testEnd ?? 9, 1.8); toast('Wrecked!', 'Back to the garage'); return; }
   if (c === player) {
@@ -733,8 +738,11 @@ const lapClock = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4,
 const gapText = (g) => `${Math.abs(g).toFixed(1)}s`;
 function drawRaceHud() {
   const d = mode.raceHud && game.state !== 'over' ? mode.raceHud() : null;
-  document.body.classList.toggle('racing', !!d);
-  $('racehud').hidden = !d; $('standings').hidden = !d;
+  // (a mode without the race panel can still keep the list down the left: the arena's scoreboard, modes/brawl.js board())
+  const board = !d && mode.board && game.state !== 'over' ? mode.board() : null;
+  document.body.classList.toggle('racing', !!d); document.body.classList.toggle('boarded', !!board);
+  $('racehud').hidden = !d; $('standings').hidden = !d && !board;
+  if (board) drawStandings(board.rows, board.head);
   if (!d) { RH.place = 0; return; }
   const now = performance.now() / 1000;
   if (RH.place && d.place !== RH.place && !d.count) {
@@ -772,16 +780,25 @@ function drawRaceHud() {
   if ($('rh-next').dataset.h !== next) { $('rh-next').dataset.h = next; $('rh-next').innerHTML = next; }
   const nb = $('rh-next').querySelector('b'); if (nb && ahead) nb.textContent = ahead.name;
   // the order, with the gaps (seconds ahead of, or behind, the player)
-  const rows = d.order.map((o, k) => `${k + 1}|${o.name}|${o.me ? 'me' : o.dead ? 'dead' : ''}|${o.me ? '' : o.gap == null ? '' : gapText(o.gap)}`).join(';');
-  if (rows !== RH.rows) {
-    RH.rows = rows; const box = $('standings'); box.innerHTML = ''; const near = Math.min(Math.max(at, 1), d.order.length - 2);
-    d.order.forEach((o, k) => {
-      const r = document.createElement('div'); r.className = (o.me ? 'me' : o.dead ? 'dead' : '') + (Math.abs(k - near) <= 1 ? ' near' : '');   // near: the three shown on a phone held upright
-      const b = document.createElement('b'), n = document.createElement('span'), g = document.createElement('em');
-      b.textContent = k + 1; n.textContent = o.me ? 'You' : o.name; g.textContent = o.me || o.gap == null ? '' : gapText(o.gap);
-      r.append(b, n, g); box.appendChild(r);
-    });
-  }
+  drawStandings(d.order.map((o, k) => ({ pos: k + 1, name: o.me ? 'You' : o.name, me: o.me, dead: o.dead, note: o.me || o.gap == null ? '' : gapText(o.gap) })));
+}
+// The list down the left: the race's order with its gaps, the arena's scoreboard with its wrecks. One row a car
+// ({ pos, name, me, dead, note }), the player's in yellow, a wrecked car's greyed. `head` is a line over it (what the
+// numbers on the right are). A row whose number went up since the list was last drawn flashes (`up`).
+function drawStandings(list, head) {
+  const rows = (head || '') + '#' + list.map((o) => `${o.pos}|${o.name}|${o.me ? 'me' : o.dead ? 'dead' : ''}|${o.note}`).join(';');
+  if (rows === RH.rows) return;
+  RH.rows = rows; const box = $('standings'); box.innerHTML = '';
+  const at = list.findIndex((o) => o.me), near = Math.min(Math.max(at, 1), list.length - 2), was = RH.notes || {}, notes = RH.notes = {};
+  if (head) { const h = document.createElement('p'); h.textContent = head; box.appendChild(h); }
+  list.forEach((o, k) => {
+    const r = document.createElement('div'); r.className = (o.me ? 'me' : o.dead ? 'dead' : '') + (Math.abs(k - near) <= 1 ? ' near' : '');   // near: the three shown on a phone held upright
+    if (head && was[o.name] !== undefined && +o.note > +was[o.name]) r.className += ' up';
+    notes[o.name] = o.note;
+    const b = document.createElement('b'), n = document.createElement('span'), g = document.createElement('em');
+    b.textContent = o.pos; n.textContent = o.name; g.textContent = o.note;
+    r.append(b, n, g); box.appendChild(r);
+  });
 }
 
 // ---- the round: the map's mode runs it (modes/) --------------------------------------------------------------------
@@ -1878,7 +1895,8 @@ function step(dt) {
     // wrecks lie a while, then crumble away (the target cars come back on their own: stepDummies)
     for (let i = cars.length - 1; i >= 0; i--) {
       const c = cars[i]; if (c.dummy || !on(c)) continue;
-      if (c.dead && !c.gone && c.deadT > ROUND.wreckStays) { c.unit.burst(cube, null, 6, 0.2); c.gone = true; }
+      if (c.dead && !c.gone && c.sunk) { c.unit.root.visible = false; if (c !== player) c.gone = true; }   // (in the sea, maps/rig.js: gone at once, with nothing to burst)
+      else if (c.dead && !c.gone && c.deadT > ROUND.wreckStays) { c.unit.burst(cube, null, 6, 0.2); c.gone = true; }
       if (c.gone && c !== player) { if (net) net.forget(c); c.dispose(); if (c.tag) c.tag.remove(); cars.splice(i, 1); }
     }
     if (test) stepTest(dt);

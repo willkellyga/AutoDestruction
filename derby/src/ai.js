@@ -92,6 +92,8 @@ export function makeDriver(car) {
     const want = Math.atan2(gx - car.x, gz - car.z), off = wrap(want - car.yaw), sp = car.fwd;
     if (b.backT > 0) {   // backing out of a corner
       b.backT -= dt; car.throttle = -1; car.steer = b.backSteer; car.brake = 0; car.drift = false;
+      // (never back off an edge: maps/rig.js)
+      if (MAP.drop && MAP.drop(car.x - Math.sin(car.yaw) * (10 + Math.max(0, -sp) * 0.4), car.z - Math.cos(car.yaw) * (10 + Math.max(0, -sp) * 0.4))) { b.backT = 0; b.fwdT = 0.5; car.throttle = 1; }
     } else if (b.fwdT > 0) {   // pulling forward out of a corner it backed into
       b.fwdT -= dt; car.throttle = 1; car.steer = b.backSteer; car.brake = 0; car.drift = false;
     } else {
@@ -107,7 +109,19 @@ export function makeDriver(car) {
         if (hit(0)) { const l = hit(0.45), r = hit(-0.45); if (l && !r) car.steer = -1; else if (r && !l) car.steer = 1; }
         void s; void c;
       }
-      // stuck: pressing on but going nowhere
+      // a map with edges to go over (maps/rig.js: MAP.drop says where there is nothing under a car): never drive off
+      // one. It looks as far ahead as it needs to stop in; a drop there, it turns to whichever side is clear, and
+      // brakes if neither is (and backs away from one right under its nose).
+      if (MAP.drop) {
+        const look = 9 + Math.max(0, sp) * 0.42, at = (a, k = 1) => MAP.drop(car.x + Math.sin(car.yaw + a) * look * k, car.z + Math.cos(car.yaw + a) * look * k);
+        if (at(0) || at(0, 0.5)) {
+          const l = at(0.7, 0.8), r = at(-0.7, 0.8);
+          if (l && !r) car.steer = -1; else if (r && !l) car.steer = 1; else car.steer = off >= 0 ? 1 : -1;
+          car.drift = false;
+          if (l && r) { car.throttle = sp > 4 ? -1 : 0; car.brake = sp > 4 ? 1 : 0; if (sp <= 4) { b.backT = 0.7 + Math.random() * 0.4; b.backSteer = -car.steer; } }
+          else { car.throttle = sp > 26 ? -0.4 : 0.5; car.brake = sp > 40 ? 0.7 : 0; }
+        }
+      }
       // stuck: pressing on but getting nowhere for a second
       b.chkT = (b.chkT || 0) + dt;
       if (b.chkT > 1.1) { const moved = Math.hypot(car.x - (b.lx ?? car.x + 99), car.z - (b.lz ?? 0)); b.lx = car.x; b.lz = car.z; b.chkT = 0; if (moved < 5 && car.throttle > 0.5) { b.backT = 0.9 + Math.random() * 0.5; b.backSteer = -Math.sign(off || 1); }

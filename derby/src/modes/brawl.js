@@ -74,7 +74,7 @@ export function makeBrawl(G) {
     go: 'Fight',
     // the start card's one line under the difficulty (the how-to-play cards say the rest)
     get tip() { return BRAWL_LEVELS[levelId()].note || ''; },
-    get note() { const n = BRAWL_LEVELS[levelId()].note; return `Free-for-all: you and seven rival cars in the pit for three minutes, everyone against everyone. Wrecked cars are back in three seconds. Most wrecks wins.${n ? ' ' + n : ''}`; },
+    get note() { const n = BRAWL_LEVELS[levelId()].note; return `Free-for-all: you and seven rival cars for three minutes, everyone against everyone. Wrecked cars are back in three seconds. Most wrecks wins.${n ? ' ' + n : ''}`; },
     levels: {
       list: Object.entries(BRAWL_LEVELS).map(([id, L]) => [id, L.name]),
       get: levelId,
@@ -162,6 +162,15 @@ export function makeBrawl(G) {
       const sub = !lead.wrecks ? 'No wrecks yet' : me.wrecks < lead.wrecks ? `${ord(placeOf(me))} · ${lead.name} leads with ${lead.wrecks}`
         : level > 1 ? `Joint lead on ${lead.wrecks}` : `You lead with ${lead.wrecks}`;
       return [phase === 'over' ? 'Time!' : clock(left), sub, ['Wrecks', me.wrecks]];
+    },
+    // The scoreboard, kept on screen all round (main.js draws it down the left as it draws the race's order): every
+    // car by its wrecks, cars level sharing a place, a car that is down greyed until it is back. Will, 2026-11-25:
+    // "use that style [the Race UI] to have some persistent leader board so we can see the rankings".
+    board() {
+      if (phase === 'wait') return null;
+      const down = new Set(); for (const c of G.cars) if (!c.gone && c.dead) down.add(c === G.player ? 'You' : c.name);
+      const order = ranked();
+      return { head: 'Wrecks', rows: order.map((r) => ({ pos: order.findIndex((o) => o.wrecks === r.wrecks) + 1, name: r.name, me: r.me, dead: down.has(r.name), note: String(r.wrecks) })) };
     },
     garageOK: () => false,
   };

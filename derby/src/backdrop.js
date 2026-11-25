@@ -32,8 +32,9 @@ import { arena } from './backdrops/arena.js';
 import { harbor } from './backdrops/harbor.js';
 import { wilds } from './backdrops/wilds.js';
 import { potomac } from './backdrops/potomac.js';
+import { sea } from './backdrops/sea.js';
 
-const STYLES = { arena, harbor, wilds, potomac };
+const STYLES = { arena, harbor, wilds, potomac, sea };
 
 // map: the map (its backdrop, and the race's course for the helicopter); follow(): the car the craft keeps with
 export function makeBackdrop({ scene, map, mobile, viewH, follow }) {
