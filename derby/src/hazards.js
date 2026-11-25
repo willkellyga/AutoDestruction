@@ -310,8 +310,15 @@ function press(api, h, S) {
 }
 
 // ---- barrels -------------------------------------------------------------------------------------------------------
+// What one going up does to a car touching it, falling to nothing at `reach`: `touch` to whoever drove into it or was
+// standing by, `shot` to the cars round one somebody shot (a rival's shot is cut like the rest of its guns), and the
+// `push` it throws them with. A cluster goes up together, so the barrels after the first within `within` seconds do a
+// car only `again` of that: a knot of three is one bad knock, not three (it was 40 a barrel, and half a car's armour
+// for a cluster hit at speed).
+const BARREL = { touch: 18, shot: 30, reach: 14, push: 34, within: 1.2, again: 0.35 };
 function barrels(api, h) {
   const R = 2.1, H = 5, HP = 6, EVERY = h.every ?? 22, n = h.spots.length;
+  const last = new WeakMap(); let now = 0;   // when each car last took a barrel's blast
   const mk = (geo, mat) => { const m = new THREE.InstancedMesh(geo, mat, n); m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false; api.scene.add(m); return m; };
   const body = mk(new THREE.CylinderGeometry(R, R, H, 14), new THREE.MeshStandardMaterial({ color: 0xc8302a, roughness: 0.45, metalness: 0.35 }));
   const band = mk(new THREE.CylinderGeometry(R + 0.08, R + 0.08, 0.9, 14), new THREE.MeshStandardMaterial({ color: 0xf0c020, roughness: 0.5 }));
@@ -326,19 +333,21 @@ function barrels(api, h) {
     body.instanceMatrix.needsUpdate = band.instanceMatrix.needsUpdate = lid.instanceMatrix.needsUpdate = true;
   };
   h.spots.forEach((b, i) => { b.up = true; b.hp = HP; b.t = 0; b.fuse = 0; b.a = Math.random() * 6; show(i, b); });
-  // up it goes: the town's own explosion (which hurts the cars round it and sets off the next barrels), and a harder
-  // knock of our own to the cars nearest, put down to whoever set it off
+  // up it goes: the town's own explosion for the look, for what it breaks and for setting off the next barrels, and
+  // the hurt and the knock to the cars round it worked out here (BARREL), put down to whoever set it off
   function blow(i, who) {
     const b = h.spots[i]; if (!b.up) return;
     b.up = false; b.t = EVERY * (0.85 + Math.random() * 0.3); b.fuse = 0; show(i, b);
-    api.explode(b.x, 2.5, b.z, 4.2, 0.7, { maxDebris: 120, fire: true });
+    api.ownBlast(() => api.explode(b.x, 2.5, b.z, 4.2, 0.7, { maxDebris: 120, fire: true }));
     api.sfx.play('carboom', 0.9, b.x, b.z, { gap: 0.06 });
     for (const c of api.cars) {
       if (c.dead || c.gone) continue;
-      const dd = Math.hypot(c.x - b.x, c.z - b.z) - c.wide; if (dd > 16) continue;
-      const k = 1 - Math.max(0, dd) / 16;
-      api.damage(c, 24 * k, who && who !== c ? who : null);
-      const p = Math.max(1, Math.hypot(c.x - b.x, c.z - b.z)); c.vx += (c.x - b.x) / p * 26 * k; c.vz += (c.z - b.z) / p * 26 * k;
+      const dd = Math.hypot(c.x - b.x, c.z - b.z) - c.wide; if (dd > BARREL.reach) continue;
+      const shot = who && who !== c, again = now - (last.get(c) ?? -9) < BARREL.within;
+      const k = (1 - Math.max(0, dd) / BARREL.reach) * (again ? BARREL.again : 1);
+      if (!again) last.set(c, now);
+      api.damage(c, (shot ? BARREL.shot * (who.rival ? api.AI.dmg : 1) : BARREL.touch) * k, shot ? who : null);
+      const p = Math.max(1, Math.hypot(c.x - b.x, c.z - b.z)); c.vx += (c.x - b.x) / p * BARREL.push * k; c.vz += (c.z - b.z) / p * BARREL.push * k;
     }
   }
   // shots strike barrels (main.js asks everything in `extras`), and blasts set them off
@@ -359,6 +368,7 @@ function barrels(api, h) {
   });
   return {
     step(dt, live) {
+      now += dt;
       for (let i = 0; i < n; i++) {
         const b = h.spots[i];
         if (!b.up) {

@@ -8,9 +8,9 @@
 //     rollers. The Hammerdown strike hangs in the air over the buses: only a car flying the gap takes it. A car that
 //     comes down on another crushes it (specials.js).
 //   - The show's things (../arenakit.js, at the fair's level of detail: half a voxel a cube): the crushed cars and
-//     buses, striped bands and marker posts on the lips, trusses with each jump's name in lights, two show trucks up
-//     on containers, giant tyres, and tyres, bales and cones to scatter. Flame cannons by the lips fire when a car
-//     takes off (../arenamoves.js).
+//     buses, striped bands on the lips and marker posts on the mountain's top, a truss with its name in lights over
+//     each way in to the bus jump, and bales and cones to scatter. Flame cannons by the lips fire when a car takes
+//     off (../arenamoves.js). Kept spare on purpose: the dirt and the traps are what fills the floor.
 //   - Over it hangs the scoreboard, on cables from the four floodlight towers, with the clock and the leaders on all
 //     four faces (hazards.js).
 //   - The ring round it is the derby's: concrete barriers along the straights (sponsor boards on them), walls of tyres
@@ -173,31 +173,21 @@ const THINGS = [
   // the striped band along every lip
   ...LANES.flatMap((L) => [thing('lip', L.x0 + 0.1, L.z, E, { w: 2 * L.half, lift: 6.5 }), thing('lip', L.x1 - 0.1, L.z, -E, { w: 2 * L.half, lift: 6.5 })]),
   thing('lip', BUS.x, BUS.z0 + 0.1, 0, { w: 2 * BUS.half, lift: BUS.lip }), thing('lip', BUS.x, BUS.z1 - 0.1, Math.PI, { w: 2 * BUS.half, lift: BUS.lip }),
-  // marker posts at the corners of the mountain's top and its table
-  ...[[MOUNT.top, 'red'], [MOUNT, 'yellow']].flatMap(([T, neon]) => [[T.x0 + 1, T.z0 + 1], [T.x1 - 1, T.z0 + 1], [T.x0 + 1, T.z1 - 1], [T.x1 - 1, T.z1 - 1]].map(([x, z], i) => thing('marker', x, z, 0, { lift: T.h, neon, ph: -0.2 - i * 0.17 }))),
-  // a truss over the way in to each jump, its name in lights
+  // marker posts at the corners of the mountain's top
+  ...[[MOUNT.top, 'red']].flatMap(([T, neon]) => [[T.x0 + 1, T.z0 + 1], [T.x1 - 1, T.z0 + 1], [T.x0 + 1, T.z1 - 1], [T.x1 - 1, T.z1 - 1]].map(([x, z], i) => thing('marker', x, z, 0, { lift: T.h, neon, ph: -0.2 - i * 0.17 }))),
+  // a truss over each way in to the bus jump, its name in lights
   thing('truss', BUS.x, 452, 0, { span: 46, name: 'BUS JUMP' }), thing('truss', BUS.x, 572, 0, { span: 46, name: 'BUS JUMP' }),
-  thing('truss', 644, 448, 0, { span: 46, name: 'ROLLERS', neon: 'cyan', frame: 'blue' }), thing('truss', 644, 576, 0, { span: 46, name: 'ROLLERS', neon: 'cyan', frame: 'blue' }),
-  thing('truss', 424, LANES[0].z, E, { span: 38, name: 'CRUSH LANE', neon: 'white', frame: 'red' }), thing('truss', 600, LANES[1].z, E, { span: 38, name: 'CRUSH LANE', neon: 'white', frame: 'red' }),
   // flame cannons beside the lips and on the mountain's table (PYRO: the custom hazard below fires them)
   ...[[358, 487], [402, 487], [358, 537], [402, 537]].map(([x, z]) => thing('pyro', x, z, 0, { jump: 'bus' })),
-  ...LANES.flatMap((L) => [[L.x0 - 2, -1], [L.x0 - 2, 1], [L.x1 + 2, -1], [L.x1 + 2, 1]].map(([x, k]) => thing('pyro', x, L.z + k * (L.half + 6.5), 0, { jump: 'lane' }))),
+  ...LANES.flatMap((L) => [[L.x0 - 2, -1], [L.x1 + 2, 1]].map(([x, k]) => thing('pyro', x, L.z + k * (L.half + 6.5), 0, { jump: 'lane' }))),
   thing('pyro', CX, MOUNT.z0 + 4, 0, { lift: MOUNT.h, jump: 'mount' }), thing('pyro', CX, MOUNT.z1 - 4, 0, { lift: MOUNT.h, jump: 'mount' }),
-  // giant tyres half buried beside the rollers
-  ...[[618, 480], [618, 544], [670, 480], [670, 544]].map(([x, z], i) => thing('bigtyre', x, z, E, { c: i & 1 })),
-  // the show trucks, each up on a pair of containers with a stack beside it, in the south-west and the north-east
+  // what a car scatters: bales at the open ends of the lanes, cones from the boost strips to the jumps. (Will,
+  // 2026-11-24: "the arena feels too crowded ... remove some of the superficial decorations like those monster truck
+  // statues". Gone: the show trucks on their containers, the giant tyres, the trusses over the rollers and the crush
+  // lanes, half the lanes' cannons, the table's marker posts, the tyre stacks at the ramps' feet and a row of cones.)
   ...both([
-    thing('container', 334, 603.6, Math.PI, { c: 0, name: 'GRIT TYRES', neon: 'yellow', frame: 'red' }), thing('container', 334, 608.4, 0, { c: 3, name: 'KRANKO OIL', neon: 'white', frame: 'blue' }),
-    thing('showtruck', 334, 606, 0, { lift: 5.2, c: 0, name: 'HAMMERHEAD' }),
-    thing('container', 314, 624, 0.5, { c: 1, n: 2, name: 'SCRAPCO', neon: 'white', frame: 'yellow' }),
-    thing('tyres', 318, 596, 0, { c: 1 }), thing('tyres', 352, 614), thing('tyres', 357, 612, 0, { c: 1 }), thing('hay', 306, 606, 0.3),
-  ]),
-  // what a car scatters: tyres at the feet of the mountain's ramps, bales at the open ends of the lanes, cones from the
-  // boost strips to the jumps
-  ...both([
-    thing('tyres', 417, 473), thing('tyres', 417, 551, 0, { c: 1 }), thing('tyres', 413, 470, 0, { c: 1 }), thing('tyres', 413, 554),
     thing('hay', 601, 402), thing('hay', 601, 438, E),
-    ...[385, 410, 435].flatMap((z) => [thing('cones', 366, z, E), thing('cones', 394, z, E), thing('cones', 628, z, E), thing('cones', 660, z, E)]),
+    ...[392, 428].flatMap((z) => [thing('cones', 366, z, E), thing('cones', 394, z, E), thing('cones', 628, z, E), thing('cones', 660, z, E)]),
   ]),
 ];
 // Where a car cannot drive straight through: the dirt's steep sides and what stands solid (two voxels a cell). The

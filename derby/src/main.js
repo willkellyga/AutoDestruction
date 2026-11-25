@@ -238,8 +238,8 @@ hooks.scorch = (x, z, r) => {
 // any explosion in town (a rocket, a fuel tank going up, a car) hurts the cars round it
 let splashK = null;
 hooks.explosion = (x, y, z, r) => {
-  const base = (splashK ? splashK.splash : 16) * (by && by.rival ? AI.dmg : 1), reach = splashK ? splashK.reach : r * 2.4 + 4;
-  for (const c of cars) {
+  const base = (splashK ? splashK.splash : 16) * (by && by.rival ? AI.dmg : 1), reach = splashK && splashK.reach ? splashK.reach : r * 2.4 + 4;
+  if (!splashK || !splashK.own) for (const c of cars) {
     if (c.dead) continue;
     const d = Math.hypot(c.x - x, c.z - z) - c.wide; if (d > reach) continue;
     const k = 1 - Math.max(0, d) / reach;
@@ -248,6 +248,9 @@ hooks.explosion = (x, y, z, r) => {
   }
   for (const e of extras) e.explosion(x, y, z, reach, base, by);
 };
+// A blast whose caller works out for itself what it does to the cars (the arena's barrels: hazards.js): everything
+// else round it is broken, burnt and set off as by any other.
+function ownBlast(fn) { const was = splashK; splashK = { splash: 16, own: true }; try { fn(); } finally { splashK = was; } }
 // the town's parked cars blow up through a blast of their own (src/civilians.js); that should hurt as well
 const civBlast = hooks.blast;
 hooks.blast = (cx, cy, cz, r, o) => {
@@ -787,7 +790,7 @@ function overGo() {
 const api = {
   game, cars, extras, MAP, scene, mats, camera, renderer, sfx, save, cube, chip, blast, explode, sparks, dust, CRASH, ROUND, AI,
   get player() { return player; }, TOUCH: () => TOUCH,
-  addCar, addRival, rivalBuild, RIVAL_NAMES, damage, wreck, banner, toast, hint, over, keepSave: () => keepSave(save), sound,
+  addCar, addRival, rivalBuild, RIVAL_NAMES, damage, wreck, ownBlast, banner, toast, hint, over, keepSave: () => keepSave(save), sound,
   makeDriver, clearLine, spawnPlayer: (at) => spawnPlayer(at),
   get net() { return net; },
   // for the map's own parts and the pickups: the mode (its phase and clock), whether cars can hurt each other, the dead

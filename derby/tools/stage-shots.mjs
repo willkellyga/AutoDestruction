@@ -13,7 +13,7 @@ export const SHOTS = {
   capital: { auto: true },
   base: { auto: true },
   fair: { auto: true },
-  arena: { from: [268, 34, 662], at: [452, 8, 500] },   // (the show truck, the bus jump and the mountain)
+  arena: { from: [322, 22, 596], at: [452, 8, 500] },   // (the bus jump under its truss, the mountain behind)
 };
 const W = 640, H = 400;
 const only = process.argv.slice(2).filter((a) => !a.startsWith('-'));

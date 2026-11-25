@@ -5,17 +5,15 @@
 //                   are as high as their roofs), so they have no foot and nothing wrecks them.
 //   to mark a jump  the striped band along a kicker's lip, marker posts with a lamp at a ledge's corners, a truss over
 //                   a lane with its name in lights, the flame cannons beside a lip (arenamoves.js fires them)
-//   to run into     giant tyres half buried, shipping containers (alone or two high), a show truck up on them
-//   to scatter      stacks of tyres, hay bales, cones: a car goes through them
+//   to scatter      hay bales, cones: a car goes through them
 // `lift` (voxels) is how far up a thing stands, when it stands on the dirt.
 import { KINDS, N } from './fairstalls.js';
 
-const TYRE = 0x1a1a1c, TYRE_L = 0x2c2c30, BLACK = 0x121316, DARK = 0x24262c, STEEL = 0x8e969c, STEEL_D = 0x6a7178, WHITE = 0xeee8da, GLASS = 0x1c242c,
+const TYRE = 0x1a1a1c, BLACK = 0x121316, DARK = 0x24262c, STEEL = 0x8e969c, STEEL_D = 0x6a7178, WHITE = 0xeee8da, GLASS = 0x1c242c,
   YELLOW = 0xe8b830, BUS = 0xe6a81e, BUS_D = 0xc28a14, RED = 0xc8342c, RED_D = 0x7a2420, ORANGE = 0xe8742a, STRAW = 0xcfae5a, STRAW_D = 0xa8883e, TREAD = 0x4a3a2a,
   CHROME = 0xb8c0c6, RUST = 0x8a4a2a;
-// the crushed cars' paint, the containers', and a darker shade of any colour
+// the crushed cars' paint, and a darker shade of any colour
 const CARS = [0xc8342c, 0x2a6fc0, 0xe8b830, 0x3a9a58, 0xe8742a, 0x8a4ac0, 0xd8d4c8, 0x2aa6a6, 0x5a5e66, 0xd04a8a];
-const BOXES = [0x2a5a8a, 0xa83a2a, 0x3a7a4a, 0xc88a1e, 0x6a6e76];
 const shade = (hex, k) => (Math.round(((hex >> 16) & 255) * k) << 16) | (Math.round(((hex >> 8) & 255) * k) << 8) | Math.round((hex & 255) * k);
 const Y = (o) => (o.lift || 0) * 2;
 const SHARD = 0x9fb4bc;
@@ -115,58 +113,7 @@ function pyro(K, o) {
   K.l(-0.3, y + 3, 1.2, 0.6, 0.8, 0.6, N.orange, -0.8, 1.2);
 }
 
-// ---- to run into --------------------------------------------------------------------------------------------------------
-// a giant tyre off an earth mover, stood up and half buried: nine voxels across; painted lettering round its wall
-function bigtyre(K, o) {
-  const R = 9, col = (dx, dy) => { const r = Math.hypot(dx, dy); return r > 6.6 ? TYRE : r > 5.6 ? ((Math.atan2(dy, dx) * 6 / Math.PI + 12) | 0) % 3 === 0 ? WHITE : TYRE_L : r > 3.4 ? TYRE_L : r > 2.6 ? (o.c ? RED : YELLOW) : STEEL_D; };
-  K.discXY(0, 6, -3, R, 6, col);
-  for (let a = 0.15; a < Math.PI; a += 0.3) { const x = Math.cos(a) * (R - 0.3), y = 6 + Math.sin(a) * (R - 0.3); K.b(x - 0.8, y - 0.8, -3.5, 1.6, 1.6, 7, TYRE); }
-}
-// a shipping container, twenty long: corrugated sides, its doors at one end, a sponsor's name in lights on the side;
-// n: how many, one on another; c: its paint
-function container(K, o) {
-  const n = o.n || 1;
-  for (let k = 0; k < n; k++) {
-    const y = k * 10.4, C = BOXES[((o.c || 0) + k * 2) % BOXES.length], D = shade(C, 0.8);
-    K.b(-20, y, -4.8, 40, 10.4, 9.6, C);
-    for (let x = -19; x < 19.5; x += 2) { K.b(x, y + 0.8, -4.95, 1, 8.8, 0.2, D); K.b(x, y + 0.8, 4.75, 1, 8.8, 0.2, D); }
-    for (const x of [-20.1, 19.3]) for (const z of [-4.9, 4.1]) K.b(x, y, z, 0.8, 10.4, 0.8, DARK);
-    K.b(-20, y + 9.8, -4.9, 40, 0.6, 9.8, D); K.b(-20, y, -4.9, 40, 0.6, 9.8, DARK);
-    // the doors (+x): two leaves, four bars and their handles
-    K.b(20, y + 0.6, -4.4, 0.2, 9.2, 8.8, D); K.b(20.2, y + 0.6, -0.15, 0.15, 9.2, 0.3, DARK);
-    for (const z of [-3.2, -1.4, 1.1, 2.9]) { K.b(20.2, y + 1, z, 0.25, 8.4, 0.3, STEEL); K.b(20.4, y + 4, z - 0.3, 0.2, 0.5, 0.9, STEEL_D); }
-  }
-  K.sign(o.name || 'SCRAPCO', -2, (n - 1) * 10.4 + 5.2, 4.96, 30, 6, o.neon || 'white', o.frame || 'yellow', 0.1, 0);
-}
-// a show truck: a pickup's body high up on four great wheels, flames down its sides, lamps on the bar over the cab
-// and its name in lights down both sides. It stands on what it is given (lift): a stack of containers, say.
-function showtruck(K, o) {
-  const y = Y(o), C = CARS[(o.c || 0) % CARS.length], D = shade(C, 0.7);
-  for (const x of [-11, 11]) for (const z of [-10.5, 6]) { K.discXY(x, y + 7, z, 7, 4.5, (dx, dy) => { const r = Math.hypot(dx, dy); return r > 4.2 ? TYRE : r > 3.2 ? TYRE_L : r > 1.2 ? CHROME : DARK; }); for (let a = 0; a < 6.2; a += 0.52) K.b(x + Math.cos(a) * 6.8 - 0.6, y + 7 + Math.sin(a) * 6.8 - 0.6, z - 0.4, 1.2, 1.2, 5.3, TYRE); }
-  // the frame and the springs
-  K.b(-14, y + 9, -5, 28, 1.6, 10, DARK); for (const x of [-11, 11]) { K.b(x - 0.8, y + 6.2, -7, 1.6, 1.6, 14, STEEL_D); for (const z of [-5.4, 4.2]) K.b(x - 0.6, y + 7.8, z, 1.2, 5.4, 1.2, YELLOW); }
-  // the body: bonnet, cab, bed
-  K.b(-16, y + 13, -6.5, 32, 5, 13, C); K.b(-16, y + 13, -6.6, 32, 1, 13.2, D);
-  K.b(-3, y + 18, -6, 10, 5, 12, C); K.b(-3.3, y + 23, -6.3, 10.6, 0.8, 12.6, D);
-  K.b(7, y + 18.4, -5.4, 0.4, 4, 10.8, GLASS); K.b(-3.4, y + 18.6, -5.4, 0.4, 3.6, 10.8, GLASS); K.b(-1.5, y + 18.6, 6, 7, 3.6, 0.3, GLASS); K.b(-1.5, y + 18.6, -6.3, 7, 3.6, 0.3, GLASS);
-  K.b(-16, y + 18, -6.5, 13, 1.4, 1, D); K.b(-16, y + 18, 5.5, 13, 1.4, 1, D); K.b(-16.4, y + 13, -6.5, 0.6, 6.4, 13, D);
-  // the nose (+x): grille, lamps lit; flames along the sides
-  K.b(16, y + 14, -4.4, 0.3, 3, 8.8, CHROME); for (const z of [-6.2, 4.6]) K.l(16, y + 14.4, z, 0.4, 2, 1.6, N.white, 0, 1.2);
-  K.b(16, y + 12, -6.8, 1.4, 1.6, 13.6, CHROME); K.b(-17.4, y + 12, -6.8, 1.4, 1.6, 13.6, CHROME);
-  for (const z of [-6.62, 6.5]) for (let i = 0; i < 5; i++) { K.b(15.6 - i * 4.4, y + 14.4 - (i & 1) * 0.6, z, 4.6 - i * 0.5, 2.4 - i * 0.3, 0.14, i < 2 ? YELLOW : ORANGE); }
-  // the bar over the cab and its lamps, the flag
-  K.b(-4, y + 23.8, -6, 0.8, 3.4, 0.8, CHROME); K.b(-4, y + 23.8, 5.2, 0.8, 3.4, 0.8, CHROME); K.b(-4, y + 26.6, -6, 0.8, 0.8, 12, CHROME);
-  for (const z of [-5, -2.2, 0.6, 3.4]) K.l(-3.4, y + 25.2, z, 0.8, 1.4, 1.6, N.yellow, 0, 1.2);
-  K.b(-15, y + 18, 5.4, 0.5, 13, 0.5, CHROME); K.b(-21, y + 27, 5.5, 6, 4, 0.3, RED); K.b(-21, y + 28.4, 5.48, 6, 1.2, 0.34, WHITE);
-  K.sign(o.name || 'HAMMERHEAD', -6, y + 15.6, 6.62, 18, 3.6, 'yellow', 'red', 13.24, 12);
-}
-
 // ---- to scatter ---------------------------------------------------------------------------------------------------------
-// a stack of four tyres, the top one painted
-function tyres(K, o) {
-  for (let i = 0; i < 4; i++) { K.discXZ(0, i * 1.7, 0, 3, 1.6, i === 3 ? (o.c ? RED : WHITE) : i & 1 ? TYRE_L : TYRE); }
-  K.discXZ(0, 6.72, 0, 1.4, 0.1, BLACK);
-}
 // hay bales: two side by side and one across them, bound
 function hay(K) {
   const bale = (x, y, z, w, d) => { K.b(x, y, z, w, 3.6, d, STRAW); if (w > d) { K.b(x + 1.4, y - 0.05, z - 0.08, 0.5, 3.7, d + 0.16, STRAW_D); K.b(x + w - 1.9, y - 0.05, z - 0.08, 0.5, 3.7, d + 0.16, STRAW_D); } else { K.b(x - 0.08, y - 0.05, z + 1.4, w + 0.16, 3.7, 0.5, STRAW_D); K.b(x - 0.08, y - 0.05, z + d - 1.9, w + 0.16, 3.7, 0.5, STRAW_D); } };
@@ -187,10 +134,6 @@ Object.assign(KINDS, {
   lip: { make: lip, foot: null, top: 0, hp: 0, pool: null }, marker: { make: marker, foot: null, top: 0, hp: 0, pool: null },
   truss: { make: truss, foot: (o) => [[-o.span / 2 - 1.2, -1.2, -o.span / 2 + 1.2, 1.2], [o.span / 2 - 1.2, -1.2, o.span / 2 + 1.2, 1.2]], top: 40, hp: 0, pool: null },
   pyro: { make: pyro, foot: null, top: 0, hp: 0, pool: null },
-  bigtyre: { make: bigtyre, foot: [[-4.5, -1.6, 4.5, 1.6]], top: 7.5, hp: 180, tough: true, heap: 0.7, pool: null },
-  container: { make: container, foot: [[-10, -2.4, 10, 2.4]], top: 5.2, hp: 0, pool: null },
-  showtruck: { make: showtruck, foot: null, top: 0, hp: 0, pool: null },
-  tyres: { make: tyres, foot: [[-1.5, -1.5, 1.5, 1.5]], top: 3.4, hp: 20, heap: 0.3, pool: null },
   hay: { make: hay, foot: [[-2, -2, 2, 2]], top: 3.6, hp: 15, heap: 0.35, pool: null },
   cones: { make: cones, foot: [[-3.2, -0.8, 3.2, 0.8]], top: 2.4, hp: 5, heap: 0.15, pool: null },
 });
