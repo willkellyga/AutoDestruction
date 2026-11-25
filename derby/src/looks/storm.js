@@ -285,7 +285,7 @@ function boltAt(mesh, x, top, z, eye, r) {
 // a head of lamps, four by three, turned down at where its bank is aimed. Two draws for all of them: the steel (lit,
 // fogged) and the lamps' faces (unlit, bright enough to bloom, not fogged, so they show through the murk). Nothing
 // casts a shadow. per bank (maps/base.js): x, y (the head's middle), z, aim [x, z]
-function floodTowers(banks) {
+export function floodTowers(banks) {
   const steel = [], lamps = [], o = new THREE.Object3D(), up = new THREE.Vector3(0, 1, 0);
   const a = new THREE.Vector3(), b = new THREE.Vector3();
   // a bar of thickness t from p to q

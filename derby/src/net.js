@@ -27,7 +27,7 @@ export const ROUND = (Q.get('mp') || '').replace(/[^a-z0-9]/gi, '').slice(0, 16)
 const HOST0 = Q.get('h') || '';
 const ROOM = (Q.get('r') || '').replace(/[^A-Z]/gi, '').slice(0, 4).toUpperCase(), QUICK = Q.get('q') === '1';
 const MODES = ['arena', 'race', 'base'];
-const MODE_NAME = { arena: 'Arena', race: 'Race', base: 'Zombie Survival' };
+const MODE_NAME = { arena: 'Arena', race: 'Race', base: 'Zombie Survival', fair: 'Zombie Survival' };
 const SEND = 1 / 15;   // seconds between state messages
 const ZSEND = 0.15;    // and between the horde's, to each guest
 const ZRANGE = 260;    // the dead further than this from a guest's car are not sent to it

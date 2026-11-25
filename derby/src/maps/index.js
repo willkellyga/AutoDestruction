@@ -25,13 +25,16 @@ import base from './base.js';
 import arena from './arena.js';
 import crumble from './crumble.js';
 import bowtie from './bowtie.js';
+import fair from './fair.js';
 import empire from './empire.js';
 import capital from './capital.js';
 
-const ALL = [town, manhattan, base, arena, crumble, bowtie, empire, capital];
+const ALL = [town, manhattan, base, fair, arena, crumble, bowtie, empire, capital];
 // The start card: three ways to play, in this order. The rest (Crumbletown's waves, its race and the bow-tie) are
 // still there by address: ?map=town, ?map=crumble, ?map=bowtie.
-export const MAPS = [manhattan, base, arena];
+export const MAPS = [manhattan, base, fair, arena];
+// the maps of one mode that share a card: Zombie Survival's two (the card's map row picks; online picks for you)
+export const SHARED = { survival: [base, fair] };
 const KEY = 'ad-map';
 export const MAP = ALL.find((m) => m.id === picked()) || arena;
 // load the page again on another map (one that is not on the card keeps its ?map= in the address, so Play again stays on

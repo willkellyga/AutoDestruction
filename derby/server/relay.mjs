@@ -24,9 +24,15 @@ import crypto from 'node:crypto';
 const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 // the modes (the game's map ids), with how many cars a round has: players and bots together, and so the most players
 // and how long quick play's countdown is (from the first player in)
-export const MODES = { arena: { name: 'Arena', max: 8, wait: 10000 }, race: { name: 'Race', max: 6, wait: 15000 }, base: { name: 'Zombie Survival', max: 6, wait: 10000 } };
+export const MODES = { arena: { name: 'Arena', max: 8, wait: 10000 }, race: { name: 'Race', max: 6, wait: 15000 }, base: { name: 'Zombie Survival', max: 6, wait: 10000 }, fair: { name: 'Zombie Survival', max: 6, wait: 10000 } };
+// A mode with more than one map: a round is played on one of them, picked at random as the round is made. The mode goes
+// by its first map's id (rooms, quick play and the lobby all say 'base' for Zombie Survival), and a page on any of its
+// maps that asks for a round (Play again on the fair) means that mode. AD_MAP=<id> holds the pick, for the tests.
+export const POOLS = { base: ['base', 'fair'] };
+const POOL_OF = {}; for (const m in POOLS) for (const id of POOLS[m]) POOL_OF[id] = m;
+const mapFor = (mode) => { const p = POOLS[mode]; if (!p) return mode; const hold = process.env.AD_MAP; return p.includes(hold) ? hold : p[Math.floor(Math.random() * p.length)]; };
 const MAX_SEATS = 8;      // the most players in a friends' room (a round takes as many as its mode has room for)
-const modeOf = (m) => (MODES[m] ? m : 'arena');
+const modeOf = (m) => POOL_OF[m] || (MODES[m] ? m : 'arena');
 const waitOf = (mode) => +process.env.AD_WAIT || MODES[mode].wait;   // quick play's countdown (AD_WAIT: shorter, for the tests)
 const QUICK_FULL = 1500;    // ...cut to this once the room is full
 const LOAD_WAIT = +process.env.AD_LOAD || 15000;   // after the countdown, a device still loading holds the start this long at most
@@ -236,7 +242,7 @@ export function attachRelay(server, { log = () => {}, event = () => {} } = {}) {
   const onIn = (p, round) => !!p && !!p.game && p.game.open && p.game.round === round.id;
   const inRound = (round) => (round ? round.ids.map((id) => players.get(id)).filter((p) => onIn(p, round)) : []);
   function startRound(r, ids, host) {
-    const map = modeOf(r.pick), max = MODES[map].max;
+    const map = mapFor(modeOf(r.pick)), max = MODES[map].max;
     ids = ids.slice(0, max); if (!ids.includes(host)) host = ids[0];
     // each player's name for the round, fixed at the start; two the same get a number
     const look = {}, seen = new Map();
