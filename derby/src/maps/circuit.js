@@ -244,7 +244,7 @@ function wear(g, T, line, r, P) {
     for (let i0 = 0; i0 < N;) {
       let i1 = i0; while (i1 < N && runOf(i1) === runOf(i0)) i1++;
       const v = r();
-      g.fillStyle = v < 0.5 ? `rgba(255,255,255,${(0.015 + v * 0.05).toFixed(3)})` : `rgba(0,0,0,${(0.02 + (v - 0.5) * 0.08).toFixed(3)})`;
+      g.fillStyle = v < 0.5 ? `rgba(255,255,255,${(0.006 + v * 0.02).toFixed(3)})` : `rgba(0,0,0,${(0.008 + (v - 0.5) * 0.03).toFixed(3)})`;
       g.beginPath();
       for (let i = i0; i <= i1; i++) (i > i0 ? g.lineTo : g.moveTo).call(g, ...P(0, k * LANE, at(i)));
       for (let i = i1; i >= i0; i--) g.lineTo(...P(0, (k + 1) * LANE, at(i)));
@@ -258,12 +258,12 @@ function wear(g, T, line, r, P) {
     g.stroke();
   };
   g.lineCap = 'round'; g.lineJoin = 'round';
-  for (let k = -5; k <= 5; k++) along(k * LANE, 0, N, 'rgba(18,19,22,0.22)', 0.22);
+  for (let k = -5; k <= 5; k++) along(k * LANE, 0, N, 'rgba(18,19,22,0.1)', 0.2);
   // the wheel lanes on the racing line, a shade darker in stretches, darkest where cars brake and turn, and the oil
   // dripped down the middle between them
   g.lineCap = 'butt';
   for (let i0 = 0; i0 < N; i0 += 6) {
-    const bend = Math.min(1, Math.abs(K[at(i0 + 8)]) * 60), a = 0.09 + 0.06 * r() + 0.1 * bend;
+    const bend = Math.min(1, Math.abs(K[at(i0 + 8)]) * 60), a = 0.07 + 0.03 * r() + 0.08 * bend;
     along((i) => off[i], i0, 6, `rgba(8,8,10,${(a * 0.3).toFixed(3)})`, 7.5);
     for (const side of [-2.6, 2.6]) along((i) => off[i] + side, i0, 6, `rgba(8,8,10,${a.toFixed(3)})`, 1.7 + r() * 0.6);
     if (r() < 0.7) along((i) => off[i] + 0.3, i0, 6, `rgba(6,6,8,${(0.05 + 0.08 * r()).toFixed(3)})`, 0.9 + r() * 0.6);
@@ -273,15 +273,13 @@ function wear(g, T, line, r, P) {
   const patch = (i, a0, a1, l0, l1, fill) => {
     const pts = [P(a0, l0, i), P(a0, l1, i), P(a1, l1, i), P(a1, l0, i)];
     g.fillStyle = fill; g.beginPath(); g.moveTo(...pts[0]); for (const p of pts.slice(1)) g.lineTo(...p); g.closePath(); g.fill();
-    g.strokeStyle = 'rgba(16,16,18,0.4)'; g.lineWidth = 0.22 * GK; g.stroke();
+    g.strokeStyle = 'rgba(16,16,18,0.16)'; g.lineWidth = 0.2 * GK; g.stroke();
   };
-  for (let n = 0; n < N / 5; n++) {
-    const i = (r() * N) | 0, w = 2 + r() * 5, len = 4 + r() * 16, l = -WR[i] + r() * (WL[i] + WR[i] - w), fresh = r() < 0.45;
-    patch(i, 0, len, l, l + w, fresh ? `rgba(40,42,47,${(0.6 + r() * 0.3).toFixed(2)})` : `rgba(96,98,102,${(0.18 + r() * 0.16).toFixed(2)})`);
-  }
-  for (let n = 0; n < N / 60; n++) {   // trenches dug across the road and filled in
-    const i = (r() * N) | 0, w = 1.4 + r() * 1.6, l0 = -WR[i] - 1, l1 = WL[i] + 1;
-    patch(i, 0, w, l0, l1, r() < 0.5 ? 'rgba(44,46,51,0.8)' : 'rgba(92,94,98,0.3)');
+  // (few, and only a shade off the road: Will, 2026-11-24, "I don't love the dramatic asphalt texture differences ...
+  // It looks patchy ... the asphalt should be more consistent")
+  for (let n = 0; n < N / 22; n++) {
+    const i = (r() * N) | 0, w = 2 + r() * 4, len = 4 + r() * 12, l = -WR[i] + r() * (WL[i] + WR[i] - w), fresh = r() < 0.45;
+    patch(i, 0, len, l, l + w, fresh ? `rgba(50,53,60,${(0.16 + r() * 0.1).toFixed(2)})` : `rgba(96,98,104,${(0.05 + r() * 0.05).toFixed(2)})`);
   }
   // oil: drips along the middle of each car's way, more where they brake for a bend, and pools on the grid
   const stain = (x, z, rx, rz, ang, a) => { g.fillStyle = `rgba(10,10,12,${a.toFixed(3)})`; g.beginPath(); g.ellipse(x, z, rx * GK, rz * GK, ang, 0, 6.3); g.fill(); };
