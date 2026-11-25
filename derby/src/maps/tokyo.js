@@ -22,6 +22,7 @@ import { SHIBA, SENSO, PALACE, STATION, WHEEL, shibatower, soratower, sensoji, p
 import { METRO, metrohall, mayutower, flamehall } from '../../../src/tokyo_skyline.js';
 import { grabModel, statueMesh } from './statue.js';
 import { makeWater } from './water.js';
+import { NEON } from '../looks/neon.js';
 import { canvasFor, finish, pickSpot, GK } from './common.js';
 import { makeTrack, streetLoop, racingLine } from './racetrack.js';
 import { gatesFor, gridFor, paintCourse, grassOf, surfaceAt, radarCourse } from './circuit.js';
@@ -72,6 +73,38 @@ const BIG = [
   ['Mayu Tower', mayutower, 42, 172, 0, 2, 216, 440],
   ['Flame Hall', flamehall, 44, 64, 3, 2, 898, 296],
 ];
+// how each is lit at night: [the floodlights' colour on its own colours, the colour of its lit windows (glass, a share
+// of them: the fourth number), the glow of its lamps]; the wheel's rim and spokes run through the colours
+const LIT = {
+  'Shiba Tower': [[1.15, 0.72, 0.36], null, [3.2, 2.2, 0.9]],
+  'Sora Tower': [[0.34, 0.52, 1.05], null, [1.8, 2.3, 3.2]],
+  'Senso-ji': [[0.85, 0.6, 0.38], null, [3, 2.2, 1]],
+  Pagoda: [[0.85, 0.6, 0.38], null, [3, 2.2, 1]],
+  Palace: [[0.5, 0.55, 0.68], null, [2.6, 2.2, 1.4]],
+  'Tokyo Station': [[0.7, 0.52, 0.36], null, [2.8, 2.2, 1.2]],
+  'Bay Wheel': [[1.9, 1.9, 1.9, 1], null, [2.6, 2.6, 2.6]],
+  'Metro Hall': [[0.16, 0.18, 0.26], [1.9, 1.7, 1.2, 0.45], [2.6, 2.4, 1.8]],
+  'Mayu Tower': [[0.14, 0.24, 0.4], [0.45, 0.9, 1.4, 0.22], [2, 2.4, 3]],
+  'Flame Hall': [[0.55, 0.42, 0.2], [1.8, 1.5, 0.9, 0.35], [3, 2.2, 0.8]],
+};
+// A model's own colours lit as if by floodlights at its foot (statue.js's meshes take the moon and the sky only), and
+// its glass lit from inside, a pane here and there.
+function floodlit(g, [flood, win]) {
+  const mat = g.children[0].material, was = mat.onBeforeCompile;
+  mat.onBeforeCompile = (sh, r) => {
+    was(sh, r);
+    sh.uniforms.uFlood = { value: new THREE.Vector4(flood[0], flood[1], flood[2], flood[3] || 0) };
+    sh.uniforms.uWin = { value: win ? new THREE.Vector4(...win) : new THREE.Vector4(0, 0, 0, 0) };
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec4 uFlood; uniform vec4 uWin;')
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        { vec3 cc = floor(vCell * 0.5 + 0.001); float hh = fract(sin(dot(mod(cc, 89.0), vec3(27.17, 61.3, 43.7))) * 4375.85);
+          vec3 fl = uFlood.rgb;
+          if (uFlood.w > 0.5) { float a = atan(vCell.y - 84.0, vCell.x) / 6.2832; vec3 hue = 0.5 + 0.5 * cos(6.2832 * (a + vec3(0.0, 0.33, 0.67))); fl *= hue * hue; }
+          totalEmissiveRadiance += diffuseColor.rgb * fl; if (uFlood.w > 0.5) diffuseColor.rgb *= 0.3;
+          totalEmissiveRadiance += uWin.rgb * step(vColor.r * 1.12, vColor.b) * step(0.2, vColor.b) * step(1.0 - uWin.w, hh); }`);
+  };
+  mat.customProgramCacheKey = () => 'tokyo-floodlit';
+}
 const PAGODA = { x: 648, z: 142 };       // Senso-ji's five storeys, taken out of the temple's model to stand beside the lane
 const GATE = { x: 705, z: 188 };         // the Thunder Gate, astride the lane (voxels: see thunderGate)
 const HALLS = [[881, 846, 913, 890], [977, 846, 1009, 890]];   // what the wheel stands on, either side of the road, as high as it is lifted
@@ -296,27 +329,68 @@ function thunderGate(cx, z0) {
       for (let b = z0 + 2; b <= z1 - 2; b++) { set(a0, y, b, M.PL_W); set(a1, y, b, M.PL_W); }
     }
     for (const y of [5, TOP - 6]) { box(a0, y, z0, a1, y, z0, M.BRASS); box(a0, y, z1, a1, y, z1, M.BRASS); }
+    for (const b of [z0 - 1, z1 + 1]) box(a0 + 3, 2, b, a1 - 3, 2, b, M.LIT_Y);   // the floodlights at its foot
   }
   box(x0, TOP, z0, x1, TOP + 3, z1, M.VERMIL);
   for (const b of [z0, z1]) { box(cx - OP, TOP - 3, b, cx + OP - 1, TOP - 1, b, M.VERMIL); box(cx - OP, TOP - 4, b, cx + OP - 1, TOP - 4, b, M.BRASS); }
   box(cx - 8, TOP - 2, z0 - 1, cx + 7, TOP + 4, z0 - 1, M.DARK); box(cx - 8, TOP - 2, z1 + 1, cx + 7, TOP + 4, z1 + 1, M.DARK);
-  for (const b of [z0 - 2, z1 + 2]) for (const [a, y, w, h] of [[-6, 3, 3, 1], [-6, 0, 1, 3], [-4, 0, 1, 2], [-1, 0, 1, 4], [-2, 2, 3, 1], [2, 0, 3, 1], [2, 2, 3, 1], [3, 0, 1, 4], [5, 3, 1, 1]]) box(cx + a, TOP - 1 + y, b, cx + a + w - 1, TOP - 1 + y + h - 1, b, M.BRASS);
+  for (const b of [z0 - 2, z1 + 2]) for (const [a, y, w, h] of [[-6, 3, 3, 1], [-6, 0, 1, 3], [-4, 0, 1, 2], [-1, 0, 1, 4], [-2, 2, 3, 1], [2, 0, 3, 1], [2, 2, 3, 1], [3, 0, 1, 4], [5, 3, 1, 1]]) box(cx + a, TOP - 1 + y, b, cx + a + w - 1, TOP - 1 + y + h - 1, b, M.LIT_Y);
   hipRoof(x0, z0, x1, z1, TOP + 4, 7, M.ROOF_S, M.ROOF_D, 2);
   // the lantern: red paper between black hoops, a brass foot
   const lz = (z0 + z1 + 1) >> 1, Y0 = 19, Y1 = TOP - 5;
   box(cx - 1, Y1, lz - 1, cx, TOP - 1, lz, M.DARK);
-  for (let y = Y0; y <= Y1; y++) { const e = Math.min(y - Y0, Y1 - y); disc(cx, lz, y, e === 0 ? 4 : e === 1 ? 5 : 6, e < 2 ? M.DARK : M.CAR_A); }
+  for (let y = Y0; y <= Y1; y++) { const e = Math.min(y - Y0, Y1 - y); disc(cx, lz, y, e === 0 ? 4 : e === 1 ? 5 : 6, e < 2 ? M.DARK : M.LIT_R); }
   disc(cx, lz, Y0 - 1, 3, M.BRASS);
   for (let y = Y0 + 3; y <= Y1 - 3; y++) for (const a of [-1, 0]) if (y % 3) { set(cx + a, y, lz - 6, M.DARK); set(cx + a, y, lz + 5, M.DARK); }
 }
+// The street lamps: one every fifty voxels or so, on alternate sides, a post outside the barrier (on a deck, on its
+// parapet) with its head out over the road's edge; in the tunnel, amber lamps along both walls under the roof. Each is
+// a glow and a pool of light for the look (looks/neon.js) and, but in the tunnel, a post in the drawn stonework.
+// [x, y, z, colour, the glow's size, its pool (none on a slope): [x, z, radius across the road, along it, the way along (x, z), the road's height], the post's foot]
+const WHITE = [1.9, 2.0, 2.35], WARM = [2.4, 1.75, 0.95], AMBER = [2.5, 1.35, 0.4];
+let LAMPS = null;
+function lamps() {
+  if (LAMPS) return LAMPS;
+  const { T, H, on, leg, W } = course(), { N, X, Z, TX, TZ, STEP } = T, tun = P('Tunnel'), r0 = tun.i0 + tun.roof[0], r1 = tun.i0 + tun.roof[1], L = [];
+  const roofed = (i) => { const k = ((i - r0) % N + N) % N; return k <= r1 - r0; };
+  const every = Math.round(52 / STEP), wall = Math.round(15 / STEP);
+  for (let i = 0, side = 1; i < N; i += every, side = -side) {
+    if (roofed(i) || leg[i] === 2) continue;                    // (Lantern Alley has its lanterns)
+    const j = T.at(i + 1), slope = Math.abs(H[j] - H[i]) / STEP, nx = TZ[i] * side, nz = -TX[i] * side, w = side > 0 ? T.WL[i] : T.WR[i];
+    const out = on[i] === 1 ? w + 1 : w + 4.6, base = on[i] === 2 ? 0 : H[i], px = X[i] + nx * out, pz = Z[i] + nz * out, top = base + 21;
+    const warm = leg[i] === 4 || leg[i] === 5 || leg[i] === 1;   // the temple's lane and court, and the park
+    // (on a deck the pool keeps to the road: it lies along it, as wide as the deck)
+    const pool = slope > 0.04 ? null : on[i] ? [X[i], Z[i], W[i] - 0.5, 30, TX[i], TZ[i], H[i]] : [px - nx * 5.5, pz - nz * 5.5, 31, 31, 1, 0, 0];
+    L.push([px - nx * 5.5, top - 0.6, pz - nz * 5.5, warm ? WARM : WHITE, 2.5, pool, [px, pz, base, nx, nz]]);
+  }
+  for (let i = r0; i <= r1; i += wall) { const k = T.at(i); for (const side of [1, -1]) L.push([X[k] + TZ[k] * side * (W[k] - 1.2), H[k] + 11, Z[k] - TX[k] * side * (W[k] - 1.2), AMBER, 1.5, side > 0 ? [X[k], Z[k], W[k] - 0.5, 14, TX[k], TZ[k], H[k]] : null, null]); }
+  return (LAMPS = L);
+}
+// The other glows, and the coloured light they throw on the road: { at, rgb, size, pool: [x, z, radius, height] }
+let GLOWS = null;
+function glows() {
+  if (GLOWS) return GLOWS;
+  const L = [], RED = [2.6, 0.5, 0.3], GOLD = [2.4, 1.6, 0.6];
+  // the Thunder Gate: its lantern, and the floodlights at the feet of its bays
+  L.push({ at: [GATE.x, 24, GATE.z + 6, ], rgb: RED, size: 9, pool: [GATE.x, GATE.z + 6, 30, 0] });
+  for (const s of [-1, 1]) for (const dz of [-3, 15]) L.push({ at: [GATE.x + s * 33, 4, GATE.z + dz], rgb: GOLD, size: 5, pool: [GATE.x + s * 33, GATE.z + dz, 16, 0] });
+  return (GLOWS = L);
+}
 // what stands beside and over the course as a drawn model, each [x0, y0, z0, x1, y1, z1, colour]: the two halls the
-// wheel stands on
-const CONC = [0.5, 0.5, 0.53], CONC2 = [0.36, 0.36, 0.4];
+// wheel stands on, and the lamps' posts
+const CONC = [0.5, 0.5, 0.53], CONC2 = [0.36, 0.36, 0.4], POST = [0.2, 0.21, 0.25], HEAD = [0.95, 0.95, 1];
 let STONES = null;
 function stones() {
   if (STONES) return STONES;
   const L = [], lift = BIG.find((b) => b[0] === 'Bay Wheel')[9];
   for (const [x0, z0, x1, z1] of HALLS) L.push([x0, 0, z0, x1, lift - 2, z1, CONC2], [x0 - 1.5, lift - 2, z0 - 1.5, x1 + 1.5, lift, z1 + 1.5, CONC]);
+  for (const [, , , , , , post] of lamps()) {
+    if (!post) continue;
+    const [x, z, y, nx, nz] = post;
+    L.push([x - 0.45, y, z - 0.45, x + 0.45, y + 21, z + 0.45, POST]);
+    for (let a = 0; a <= 5; a++) L.push([x - nx * a - 0.4, y + 20.4, z - nz * a - 0.4, x - nx * a + 0.4, y + 21, z - nz * a + 0.4, POST]);
+    L.push([x - nx * 5.5 - 0.9, y + 19.9, z - nz * 5.5 - 0.9, x - nx * 5.5 + 0.9, y + 20.4, z - nz * 5.5 + 0.9, HEAD]);
+  }
   return (STONES = L);
 }
 function stoneMesh() {
@@ -359,6 +433,11 @@ function build() {
   {
     const v = MODELS.find((q) => q.name === 'Shiba Tower').vol, { S, m } = v;
     for (let y = 0; y <= 20; y++) for (let z = 0; z < S; z++) for (let x = 28; x < 58; x++) m[(y * S + z) * S + x] = 0;
+  }
+  // the Sora Tower's hall goes too: the bend wraps round the tower's own foot
+  {
+    const { S, m } = MODELS.find((q) => q.name === 'Sora Tower').vol;
+    for (let y = 0; y <= 9; y++) for (let z = 0; z < S; z++) for (let x = 0; x < S; x++) if (Math.hypot(x + 0.5 - 20, z + 0.5 - 20) > 16.5) m[(y * S + z) * S + x] = 0;
   }
   plan();
   place(0, 0, -1); ctx.L = 3; ctx.lot = -1; setSeed(5115);
@@ -460,7 +539,7 @@ export default {
   blurb: 'Three laps of Tokyo after dark: the Shinjuku flyover, Lantern Alley, the Thunder Gate, the river expressway, the Rainbow Bridge, under the Shiba Tower, round the palace and through the Scramble. Guns on.',
   loading: ['Closing the Scramble', 'Building Tokyo, lighting the signs and filling the moat'],
   outer: 0x8b8984,
-  look: { kind: 'dusk' },
+  look: { kind: 'neon', get lamps() { return lamps(); }, get signs() { return glows(); } },
   lodK: 0.34,
   // the road's height (vehicle.js, main.js's camera), the sides of the decks and the cut, and the floor that is drawn
   floor: (x, z, y) => heights().floor(x, z, y),
@@ -479,8 +558,8 @@ export default {
     return [
       { kind: 'custom', make: (api) => { makeRoads(api.scene, course().T, course().parts.map((p) => ({ ...p, skip: near }))); } },
       { kind: 'custom', make: (api) => { dressBridges(api.scene, course().T, [{ part: P('Rainbow Bridge'), kind: 'truss' }]); api.scene.add(stoneMesh()); } },
-      { kind: 'custom', make: (api) => { for (const m of MODELS) { const g = statueMesh(m.vol, m.k, { glow: [1.5, 1.4, 1.1], greedy: true }); g.position.set(m.x, m.y, m.z); g.rotation.y = m.turn; g.name = m.name; api.scene.add(g); } } },
-      { kind: 'custom', make: (api) => makeWater(api.scene, { x0: -1024, z0: -1024, span: 3072, sun: new THREE.Vector3(0.3, 0.8, 0.5), sky: 0x24304a, glint: 0xffffff, isWater: (x, z) => wet(x, z) || inMoat(x, z) || inPond(x, z), pools: [] }) },
+      { kind: 'custom', make: (api) => { for (const m of MODELS) { const g = statueMesh(m.vol, m.k, { glow: LIT[m.name][2], greedy: true }); floodlit(g, LIT[m.name]); g.position.set(m.x, m.y, m.z); g.rotation.y = m.turn; g.name = m.name; api.scene.add(g); } } },
+      { kind: 'custom', make: (api) => makeWater(api.scene, { x0: -1024, z0: -1024, span: 3072, sun: NEON.moon, sky: 0x1a1c3a, glint: 0xcfd8ff, isWater: (x, z) => wet(x, z) || inMoat(x, z) || inPond(x, z), pools: [] }) },
       { kind: 'covered', x0: s[0], z0: s[1], x1: s[2], z1: s[3], dim: 0.5 },
     ];
   },
