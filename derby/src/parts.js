@@ -152,6 +152,7 @@ export function loadSave() {
   if (!PATTERNS[s.load.pattern]) s.load.pattern = 'plain';
   return s;
 }
+export function forgetSave() { try { localStorage.removeItem(KEY); } catch (e) { /* nothing kept */ } }
 export function keepSave(s) { try { localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) { /* not kept */ } }
 
 // the rivals' builds: better parts as the waves go on

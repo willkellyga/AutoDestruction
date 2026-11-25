@@ -24,7 +24,7 @@ import { MODES } from './modes/index.js';
 import { CRASH, ROUND, AI, DRIFT, BUILDINGS, CAM, RACE, SURVIVAL_LEVELS, BRAWL_LEVELS } from './tuning.js';
 import { build as buildKeepOut } from './keepout.js';
 import { toughen, boom, chipAt, fuelBlast } from './sturdy.js';
-import { PARTS, PAINTS, STARTER, loadSave, keepSave, rivalBuild, RIVAL_NAMES, statsOf } from './parts.js';
+import { PARTS, PAINTS, STARTER, loadSave, keepSave, forgetSave, rivalBuild, RIVAL_NAMES, statsOf } from './parts.js';
 import { makeGarage, rating, classOf, GADGET, gadgetIcon } from './garage.js';
 import { makeGarageRoom } from './garageroom.js';
 import { makePartArt } from './partart.js';
@@ -1306,6 +1306,10 @@ function playAgain() { if (net) net.bye(); goOnline(MAP.id); }
     for (const slot of Object.keys(PARTS)) save.owned[slot] = Object.keys(PARTS[slot]);
     keepSave(save); sfx.play('ui_coin', 0.7); toast('Everything unlocked', 'Every car and part is yours in the garage'); drawHome();
   });
+  // a preview page only (it sets window.__AD_NEW_PLAYER): start over as someone who has never played, to see the first
+  // visit again. Forgets this browser's save and loads the arena afresh.
+  $('home-fresh').hidden = !window.__AD_NEW_PLAYER;
+  $('home-fresh').addEventListener('click', () => { if (!game.home) return; forgetSave(); chooseMap('arena'); });
   for (const c of HOME_CARDS) {
     const b = document.createElement('button'); b.className = 'h-card ' + (c.garage ? 'garage' : c.map);
     b.innerHTML = `<small></small><b></b><span></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${c.icon}"/></svg>`;
