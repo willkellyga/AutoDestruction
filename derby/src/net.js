@@ -22,6 +22,7 @@
 // every device takes that bot out, and the new player's own car starts where it was.
 //
 // Without ?mp= in the address none of the round half runs, and the game is as it was.
+import { leavePage } from './leave.js';
 const Q = new URLSearchParams(location.search);
 export const ROUND = (Q.get('mp') || '').replace(/[^a-z0-9]/gi, '').slice(0, 16);
 const HOST0 = Q.get('h') || '';
@@ -84,7 +85,7 @@ export function quickPlay(mode, fail = () => {}) {
   ws.onopen = () => ws.send(JSON.stringify({ t: 'hello', where: 'lobby', id: ME, key: KEY, name: nameOrNew(), touch: navigator.maxTouchPoints > 0, room: 'quick:' + mode }));
   ws.onmessage = (e) => {
     let m; try { m = JSON.parse(e.data); } catch (x) { return; }
-    if (m.t === 'go') { done = true; clearTimeout(t); location.href = roundUrl(m); }
+    if (m.t === 'go') { done = true; clearTimeout(t); leavePage(); location.href = roundUrl(m); }
     else if (m.t === 'busy') stop('The server is full. Try again in a minute.');
   };
   ws.onclose = () => stop('Could not reach the server');
@@ -122,7 +123,7 @@ export function makeLobby({ $, MAP, onOpen, onShut, onQuick, onFail }) {
     else if (m.t === 'busy') { title.textContent = 'The server is full'; sub.textContent = 'Try again in a minute.'; want = null; }
     else if (m.t === 'go') {
       gone = true; title.textContent = `Starting: ${MODE_NAME[m.map] || m.map}`; sub.textContent = 'Loading the map...';
-      location.href = roundUrl(m);
+      leavePage(); location.href = roundUrl(m);
     }
   }
   function draw() {
