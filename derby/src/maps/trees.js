@@ -142,7 +142,7 @@ function grain() {
 }
 
 // The trees come in a few sizes (a model is grown at the nearest of them, so its cubes stay a voxel across up close)
-// and two shapes of each. spots: [x, z, size, turn, kind]. `near` and `mid`: how far off the fine and the middling
+// and two shapes of each. spots: [x, z, size, turn, kind, how high its foot stands (0)]. `near` and `mid`: how far off the fine and the middling
 // cut are shown; past `far` a tree is left out.
 const SIZES = [0.8, 1.05, 1.4, 1.9], LAST = 1.4;
 export function makeGrove(api, spots, { near = 90, mid = 260, far = 700, end = 2300, most = [40, 160] } = {}) {
@@ -151,13 +151,13 @@ export function makeGrove(api, spots, { near = 90, mid = 260, far = 700, end = 2
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true, map: grain() }), ramps = RAMPS();
   const M4 = new THREE.Matrix4(), q = new THREE.Quaternion(), UP = new THREE.Vector3(0, 1, 0), p = new THREE.Vector3(), sc = new THREE.Vector3();
   const n = spots.length, X = new Float32Array(n), Z = new Float32Array(n), MX = new Float32Array(n * 16), TINT = new Float32Array(n * 3), VAR = new Uint8Array(n), vars = [], byKey = new Map();
-  spots.forEach(([x, z, size, turn, kind = 0], i) => {
+  spots.forEach(([x, z, size, turn, kind = 0, y = 0], i) => {
     let b = 0; for (let k = 1; k < SIZES.length; k++) if (Math.abs(Math.log(size / SIZES[k])) < Math.abs(Math.log(size / SIZES[b]))) b = k;
     const shape = hash(Math.round(x), 3, Math.round(z), 11) < 0.5 ? 0 : 1, key = kind * 100 + b * 10 + shape;
     if (!byKey.has(key)) { byKey.set(key, vars.length); vars.push({ kind, b, shape, n: 0 }); }
     VAR[i] = byKey.get(key); vars[VAR[i]].n++;
     X[i] = x; Z[i] = z;
-    q.setFromAxisAngle(UP, turn); M4.compose(p.set(x, 0, z), q, sc.setScalar(size / SIZES[b])); M4.toArray(MX, i * 16);
+    q.setFromAxisAngle(UP, turn); M4.compose(p.set(x, y, z), q, sc.setScalar(size / SIZES[b])); M4.toArray(MX, i * 16);
     const t = 0.9 + 0.2 * hash(Math.round(x), 7, Math.round(z), 3), w = (hash(Math.round(x), 9, Math.round(z), 5) - 0.5) * 0.1;
     TINT[i * 3] = t * (1 + w); TINT[i * 3 + 1] = t; TINT[i * 3 + 2] = t * (1 - w);
   });

@@ -15,13 +15,14 @@
 // Built the way Capital Circuit is (maps/capital.js): the road's height is maps/heights.js's, the decks and the cut are
 // maps/roads.js's, and the course is shut in the whole way round, so only what stands beside it is voxels.
 import * as THREE from 'three';
-import { WX, WZ, M, place, ctx, setSeed, set, put, box, walls, begin, LOC, vehicles } from '../../../src/world.js';
+import { WX, WZ, M, place, ctx, setSeed, set, put, box, walls, begin, LOC, vehicles, idx, voxAt } from '../../../src/world.js';
 import { face, text, textW, disc } from '../../../src/kit.js';
 import { hipRoof, machiya, zakkyo, shrine } from '../../../src/tokyo_kit.js';
 import { SHIBA, SENSO, PALACE, STATION, WHEEL, shibatower, soratower, sensoji, palace, station, baywheel } from '../../../src/tokyo_landmarks.js';
-import { METRO, metrohall, mayutower, flamehall } from '../../../src/tokyo_skyline.js';
+import { METRO, STUDIO, metrohall, mayutower, flamehall, baystudio } from '../../../src/tokyo_skyline.js';
 import { grabModel, statueMesh } from './statue.js';
-import { makeBlocks } from './blocks.js';
+import { makeTokyoBlocks, makeCrowd, makePetals, makeBoats, shapeOf, SIDE } from './tokyoblocks.js';
+import { write, wordH, SIGN_WORDS } from './tokyoart.js';
 import { makeGrove } from './trees.js';
 import { makeWater } from './water.js';
 import { NEON } from '../looks/neon.js';
@@ -45,14 +46,14 @@ const RIVER = { x0: 790, x1: 870 };                                  // the Sumi
 const BAY = { x0: 612, x1: 892, z0: 792, cut: 40 };                  // Tokyo Bay: its north-west corner is cut off on the slant
 const MOAT = { x0: 326, z0: 356, x1: 534, z1: 564, w: 24 };          // the palace's: a ring of water this wide
 const QUAY = { x: 890, z: 195, r: 45 };                              // the round quay the Sora Tower stands on, out into the river
-const POND = { x: 300, z: 170, rx: 46, rz: 24 };                     // Ueno's
+const POND = { x: 300, z: 192, rx: 46, rz: 24 };                     // Ueno's
 const onQuay = (x, z) => (x - QUAY.x) ** 2 + (z - QUAY.z) ** 2 < QUAY.r * QUAY.r;
 const wet = (x, z) => !onQuay(x, z) && (x >= RIVER.x0 && x < RIVER.x1 && z < BAY.z0 + 8 || (z >= BAY.z0 && x < BAY.x1 && x >= BAY.x0 + Math.max(0, BAY.z0 + BAY.cut - z)));
 const inMoat = (x, z) => x >= MOAT.x0 && x < MOAT.x1 && z >= MOAT.z0 && z < MOAT.z1 && !(x >= MOAT.x0 + MOAT.w && x < MOAT.x1 - MOAT.w && z >= MOAT.z0 + MOAT.w && z < MOAT.z1 - MOAT.w);
 const inPond = (x, z) => ((x - POND.x) / POND.rx) ** 2 + ((z - POND.z) / POND.rz) ** 2 < 1;
 const land = (x, z) => !wet(x, z);
 // the grounds nothing is built on but what belongs there: [x0, z0, x1, z1]
-const UENO = [186, 124, 404, 218], PALACE_G = [322, 352, 538, 568], TOWER_G = [344, 674, 516, 846], TEMPLE_G = [636, 0, 776, 240];
+const UENO = [186, 146, 404, 240], PALACE_G = [322, 352, 538, 568], TOWER_G = [344, 674, 516, 846], TEMPLE_G = [636, 0, 776, 240];
 const STATION_G = [598, 360, 790, 560], SORA_G = [845, 150, 935, 240], WHEEL_G = [862, 830, 1024, 906], PORT_G = [440, 858, 612, 1024];
 const inBox = (b, x, z) => x >= b[0] && x < b[2] && z >= b[1] && z < b[3];
 // where the ground is green and the barriers stone: the park, the palace and the tower's park
@@ -74,6 +75,7 @@ const BIG = [
   ['Metro Hall', metrohall, METRO.S, 204, 1, 1.5, 44, 356],           // Shinjuku, beside the flyover
   ['Mayu Tower', mayutower, 42, 172, 0, 2, 216, 440],
   ['Flame Hall', flamehall, 44, 64, 3, 2, 898, 296],
+  ['Bay Studio', baystudio, STUDIO.LEN, STUDIO.H + 6, 3, 1.5, 972, 640],   // on Bay Island, over the expressway's last bend
 ];
 // how each is lit at night: [the floodlights' colour on its own colours, the colour of its lit windows (glass, a share
 // of them: the fourth number), the glow of its lamps]; the wheel's rim and spokes run through the colours
@@ -88,20 +90,23 @@ const LIT = {
   'Metro Hall': [[0.16, 0.18, 0.26], [1.9, 1.7, 1.2, 0.45], [2.6, 2.4, 1.8]],
   'Mayu Tower': [[0.14, 0.24, 0.4], [0.45, 0.9, 1.4, 0.22], [2, 2.4, 3]],
   'Flame Hall': [[0.55, 0.42, 0.2], [1.8, 1.5, 0.9, 0.35], [3, 2.2, 0.8]],
+  'Bay Studio': [[0.2, 0.23, 0.3], [1.0, 1.1, 1.3, 0.16], [2.4, 2.4, 2.7]],
 };
 // A model's own colours lit as if by floodlights at its foot (statue.js's meshes take the moon and the sky only), and
 // its glass lit from inside, a pane here and there.
+const CLOCK = { value: 0 };              // seconds, for what moves: the wheel's lights, the signs that blink (hazards)
 function floodlit(g, [flood, win]) {
   const mat = g.children[0].material, was = mat.onBeforeCompile;
   mat.onBeforeCompile = (sh, r) => {
     was(sh, r);
     sh.uniforms.uFlood = { value: new THREE.Vector4(flood[0], flood[1], flood[2], flood[3] || 0) };
     sh.uniforms.uWin = { value: win ? new THREE.Vector4(...win) : new THREE.Vector4(0, 0, 0, 0) };
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec4 uFlood; uniform vec4 uWin;')
+    sh.uniforms.uTime = CLOCK;
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec4 uFlood; uniform vec4 uWin; uniform float uTime;')
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         { vec3 cc = floor(vCell * 0.5 + 0.001); float hh = fract(sin(dot(mod(cc, 89.0), vec3(27.17, 61.3, 43.7))) * 4375.85);
           vec3 fl = uFlood.rgb;
-          if (uFlood.w > 0.5) { float a = atan(vCell.y - 84.0, vCell.x) / 6.2832; vec3 hue = 0.5 + 0.5 * cos(6.2832 * (a + vec3(0.0, 0.33, 0.67))); fl *= hue * hue; }
+          if (uFlood.w > 0.5) { float a = atan(vCell.y - 84.0, vCell.x) / 6.2832 + uTime * 0.07; vec3 hue = 0.5 + 0.5 * cos(6.2832 * (a + vec3(0.0, 0.33, 0.67))); fl *= hue * hue; }
           totalEmissiveRadiance += diffuseColor.rgb * fl; if (uFlood.w > 0.5) diffuseColor.rgb *= 0.3;
           totalEmissiveRadiance += uWin.rgb * step(vColor.r * 1.12, vColor.b) * step(0.2, vColor.b) * step(1.0 - uWin.w, hh); }`);
   };
@@ -114,13 +119,15 @@ const HALLS = [[881, 846, 913, 890], [977, 846, 1009, 890]];   // what the wheel
 // ---- the course ----------------------------------------------------------------------------------------------------
 // each corner [x, z, radius of the curve round it]; a leg is the run from one corner to the next, numbered by its first
 const LINE_X = 140, LINE_Z = 700, GANTRY_Y = 27;
+const ALLEY_W = 24;                 // Lantern Alley's room each side of its middle
+const GATE_OP = 30;                 // half the Thunder Gate's opening
 const COURSE = [
   [LINE_X, LINE_Z, 0],   //  0  the line, on Scramble Avenue: north, up onto the Shinjuku flyover and down
-  [140, 90, 55],         //  1  right, along Ueno's pond
-  [430, 90, 60],         //  2  half right, Lantern Alley
+  [140, 110, 55],        //  1  right, along Ueno's pond under the cherry trees
+  [450, 110, 60],        //  2  half right, Lantern Alley
   [590, 250, 60],        //  3  half left, Electric Town
-  [705, 250, 40],        //  4  left, through the Thunder Gate and up the lane
-  [705, 120, 40],        //  5  right, in front of the main hall, and the red bridge over the Sumida
+  [705, 250, 50],        //  4  left, through the Thunder Gate and up the lane
+  [705, 120, 50],        //  5  right, in front of the main hall, and the red bridge over the Sumida
   [965, 120, 75],        //  6  right, round the foot of the Sora Tower, then up onto the expressway
   [965, 420, 80],        //  7  half right, out over the river
   [830, 535, 80],        //  8  half left, down the middle of it
@@ -139,11 +146,12 @@ const NL = COURSE.length;
 // how much room each side of the middle line (the barriers stand just past it)
 function widthAt(leg, x, z) {
   switch (leg) {
-    case 18: case 0: return z > 560 ? 30 : 24;          // Scramble Avenue and the grid on it, then the flyover
+    case 18: case 0: return z > 560 ? 30 : 28;          // Scramble Avenue and the grid on it, then the flyover
     case 1: return 28;                                  // Ueno
-    case 2: return 13;                                  // Lantern Alley
-    case 3: return 36;                                  // Electric Town
-    case 4: return 22;                                  // the gate and the lane
+    case 2: return ALLEY_W;                             // Lantern Alley (Will, 2026-11-25: not "a single car width section right after the start")
+    case 3: return 28;                                  // Electric Town (no wider than the bend after it can keep a round inside to: at 36 the
+                                                        // inside of the turn to the gate was a notch a car got caught in)
+    case 4: return GATE_OP - 4;                         // the gate and the lane: the barriers run through the gate just inside its bays
     case 5: return x > 770 && x < 890 ? 22 : 28;        // the hall's front, the red bridge
     case 6: return z < 250 ? 36 : 25;                   // round the Sora Tower, then the expressway
     case 7: case 8: return 25;
@@ -279,13 +287,13 @@ function full() {
 // Concrete blocks with a red and white top on the streets; in the parks, on the Mall and in Virginia a low wall of
 // pale stone. On the knoll they stand as high as it does.
 function barriers() {
-  const { T, H, on } = course(), { N, X, Z, TX, TZ, WL, WR } = T, { road } = masks();
+  const { T, H, on, leg } = course(), { N, X, Z, TX, TZ, WL, WR } = T, { road } = masks();
   for (let i0 = 0; i0 < N; i0 += 32) {
     let open = false;
     for (let i = i0; i < Math.min(N, i0 + 32); i++) {
       if (on[i]) continue;
       if (!open) { begin('Barrier', 'barrier', false); open = true; }
-      const j = T.at(i + 1), park = leafy(X[i], Z[i]), top = Math.round(H[i]) + (park ? 3 : 4), cap = park ? M.MARBLE : Math.floor(i / 3) & 1 ? M.CAR_A : M.TRIM, m = park ? M.GRANITE : M.CONC;
+      const j = T.at(i + 1), park = leafy(X[i], Z[i]) || (leg[i] === 1 && X[i] > 190 && X[i] < 410), top = Math.round(H[i]) + (park ? 3 : 4), cap = park ? M.MARBLE : Math.floor(i / 3) & 1 ? M.CAR_A : M.TRIM, m = park ? M.GRANITE : M.CONC;
       for (const sd of [1, -1]) for (let a = 0; a < 1; a += 0.25) {
         const cx = X[i] + (X[j] - X[i]) * a, cz = Z[i] + (Z[j] - Z[i]) * a, nx = TZ[i] + (TZ[j] - TZ[i]) * a, nz = -(TX[i] + (TX[j] - TX[i]) * a);
         const w = sd > 0 ? WL[i] + (WL[j] - WL[i]) * a : WR[i] + (WR[j] - WR[i]) * a;
@@ -322,7 +330,7 @@ function gantryNS(lineZ, x0, x1, names, y) {
 // The Thunder Gate, astride the lane at the road's own scale and in voxels, so it can be shot at and driven into: a bay
 // either side of the road, the great beam across, a tiled roof over all of it, and the red lantern hung in the middle.
 function thunderGate(cx, z0) {
-  const OP = 26, BAY = 14, z1 = z0 + 11, TOP = 34, x0 = cx - OP - BAY, x1 = cx + OP + BAY - 1;
+  const OP = GATE_OP, BAY = 14, z1 = z0 + 11, TOP = 34, x0 = cx - OP - BAY, x1 = cx + OP + BAY - 1;
   begin('Thunder Gate', 'monument');
   for (const s of [-1, 1]) {
     const a0 = s > 0 ? cx + OP : x0, a1 = a0 + BAY - 1;
@@ -376,7 +384,7 @@ let LANTERNS = null;
 function lanterns() {
   if (LANTERNS) return LANTERNS;
   const a = COURSE[ALLEY.leg], b = COURSE[ALLEY.leg + 1], len = Math.hypot(b[0] - a[0], b[1] - a[1]), ux = (b[0] - a[0]) / len, uz = (b[1] - a[1]) / len, L = [];
-  for (let t = 50; t < len - 50; t += 6) for (const sd of [1, -1]) { const o = 13 + 6.5; L.push([a[0] + ux * t + uz * sd * o, 11 + ((t / 6) & 1) * 0.6, a[1] + uz * t - ux * sd * o]); }
+  for (let t = 50; t < len - 50; t += 6) for (const sd of [1, -1]) { const o = ALLEY_W + 6.5; L.push([a[0] + ux * t + uz * sd * o, 11 + ((t / 6) & 1) * 0.6, a[1] + uz * t - ux * sd * o]); }
   return (LANTERNS = L);
 }
 // The other glows, and the coloured light they throw on the road: { at, rgb, size, pool: [x, z, radius, height] }
@@ -388,8 +396,43 @@ function glows() {
   for (const [x, y, z] of lanterns()) L.push({ at: [x, y, z], rgb: RED, size: 2.6, pool: null });
   // the Thunder Gate: its lantern, and the floodlights at the feet of its bays
   L.push({ at: [GATE.x, 24, GATE.z + 6, ], rgb: RED, size: 9, pool: [GATE.x, GATE.z + 6, 30, 0] });
-  for (const s of [-1, 1]) for (const dz of [-3, 15]) L.push({ at: [GATE.x + s * 33, 4, GATE.z + dz], rgb: GOLD, size: 5, pool: [GATE.x + s * 33, GATE.z + dz, 16, 0] });
+  for (const s of [-1, 1]) for (const dz of [-3, 15]) L.push({ at: [GATE.x + s * (GATE_OP + 7), 4, GATE.z + dz], rgb: GOLD, size: 5, pool: [GATE.x + s * (GATE_OP + 7), GATE.z + dz, 16, 0] });
+  // the lanterns on their lines, and a pool of their light under each line
+  const H = hung();
+  for (const [x, y, z, kind] of H.lanterns) L.push({ at: [x, y, z], rgb: LANTERN[kind][1], size: 2, pool: null });
+  for (const [x, z, kind, r, y] of H.pools) L.push({ at: [x, y + 16, z], rgb: LANTERN[kind][1].map((v) => v * 0.55), size: 0.01, pool: [x, z, r, y] });
+  for (const z of TORII.z) for (const sd of [-1, 1]) L.push({ at: [TORII.x + sd * (TORII.half - 5), 3, z + 6], rgb: GOLD, size: 4, pool: [TORII.x + sd * (TORII.half - 12), z + 2, 16, 0] });
+  for (const [x, y, z] of plan().lights) L.push({ at: [x, y, z], rgb: [2.8, 0.25, 0.15], size: 3.4, pool: null });
   return (GLOWS = L);
+}
+// Lanterns on lines (Will's reference pictures, 2026-11-25: a back street under strings of yellow paper lanterns and
+// blossom, great red ones at the doors). Lines across Lantern Alley from post to post, red and yellow turn about; a
+// line of yellow ones down each side of Ueno's avenue under the cherries; red ones up both sides of the temple's lane.
+// lanterns: [x, y, z, kind (0 red, 1 yellow, 2 pink)]; wire: little cubes [x, y, z]; posts: [x, z, top]; pools: [x, z, kind, radius, height]
+const LANTERN = [[[1.3, 0.2, 0.1], [1.5, 0.3, 0.18]], [[1.0, 0.52, 0.07], [1.3, 0.85, 0.3]], [[1.4, 0.8, 0.9], [1.3, 0.7, 0.85]]];
+const TORII = { x: 430, z: [893, 873, 853], half: 33, h: 34 };   // three great torii over the road into the Shiba Tower's park
+let HUNG = null;
+function hung() {
+  if (HUNG) return HUNG;
+  const { T, leg, W, on, far } = course(), { N, X, Z, TX, TZ, STEP } = T, lanterns = [], wire = [], posts = [], pools = [];
+  let last = -1e9, n = 0, lastU = -1e9, lastL = -1e9;
+  for (let i = 0; i < N; i++) {
+    if (on[i]) continue;
+    const ax = TZ[i], az = -TX[i], s = i * STEP;
+    // across the alley, a line every twenty-two voxels
+    if (leg[i] === ALLEY.leg && far[i] > 26 && far[i] < 176 && s - last >= 22) {
+      last = s; const w = W[i] + 4.4, y = 16.5, kind = n++ & 1, m = 9;
+      for (const sd of [-1, 1]) posts.push([X[i] + ax * sd * w, Z[i] + az * sd * w, y + 4]);
+      for (let u = -w; u <= w; u += 1.1) wire.push([X[i] + ax * u, y + 3.6 - 2.8 * (1 - (u / w) ** 2), Z[i] + az * u]);
+      for (let k = 0; k < m; k++) { const u = ((k + 0.5) / m * 2 - 1) * (w - 2); lanterns.push([X[i] + ax * u, y + 1.6 - 2.8 * (1 - (u / w) ** 2), Z[i] + az * u, kind]); }
+      pools.push([X[i], Z[i], kind, 26, 0]);
+    }
+    // down each side of Ueno's avenue, and up each side of the lane
+    const ueno = leg[i] === 1 && X[i] > 196 && X[i] < 404, lane = leg[i] === 4 || (leg[i] === 5 && X[i] < 760);
+    if (ueno && s - lastU >= 7.5) { lastU = s; for (const sd of [-1, 1]) { const o = W[i] + 6.5; lanterns.push([X[i] + ax * sd * o, 12.6, Z[i] + az * sd * o, 1]); for (let a = 0; a < 7.5; a += 1.5) wire.push([X[i] + ax * sd * o + TX[i] * a, 14.6, Z[i] + az * sd * o + TZ[i] * a]); if (Math.round(s / 7.5) % 4 === 0) posts.push([X[i] + ax * sd * o, Z[i] + az * sd * o, 14.6]); } if (Math.round(s / 7.5) % 6 === 0) pools.push([X[i], Z[i], 1, 30, 0]); }
+    if (lane && s - lastL >= 8) { lastL = s; for (const sd of [-1, 1]) { const o = (sd > 0 ? T.WL[i] : T.WR[i]) + 4.4; if (Math.abs(X[i] + ax * sd * o - GATE.x) < GATE_OP + 16 && Math.abs(Z[i] + az * sd * o - GATE.z - 6) < 14) continue; lanterns.push([X[i] + ax * sd * o, 10.5, Z[i] + az * sd * o, 0]); posts.push([X[i] + ax * sd * o, Z[i] + az * sd * o, 12.4]); } }
+  }
+  return (HUNG = { lanterns, wire, posts, pools });
 }
 // what stands beside and over the course as a drawn model, each [x0, y0, z0, x1, y1, z1, colour]: the two halls the
 // wheel stands on, and the lamps' posts
@@ -408,19 +451,28 @@ function stones() {
     for (let a = 0; a <= 5; a++) L.push([x - nx * a - 0.4, y + 20.4, z - nz * a - 0.4, x - nx * a + 0.4, y + 21, z - nz * a + 0.4, POST]);
     L.push([x - nx * 5.5 - 0.9, y + 19.9, z - nz * 5.5 - 0.9, x - nx * 5.5 + 0.9, y + 20.4, z - nz * 5.5 + 0.9, HEAD]);
   }
+  const H = hung();
+  for (const [x, z, top] of H.posts) L.push([x - 0.4, 0, z - 0.4, x + 0.4, top, z + 0.4, POST]);
+  for (const [x, y, z] of H.wire) L.push([x - 0.2, y - 0.2, z - 0.2, x + 0.2, y + 0.2, z + 0.2, POST]);
+  for (const [x, y, z] of H.lanterns) L.push([x - 0.8, y + 1.7, z - 0.8, x + 0.8, y + 2.2, z + 0.8, POST], [x - 0.8, y - 2.1, z - 0.8, x + 0.8, y - 1.7, z + 0.8, POST]);
+  // the railway's columns: a pair every forty voxels, but where the Scramble runs under it
+  for (let z = RAIL.z0 + 6; z < RAIL.z1; z += 40) { if (masks().wide[Math.min(WZ - 1, z) * WX + RAIL.x]) continue; for (const sx of [-5, 5]) L.push([RAIL.x + sx - 1, 0, z - 1, RAIL.x + sx + 1, RAIL.y, z + 1, [0.24, 0.34, 0.3]]); L.push([RAIL.x - 6.5, RAIL.y - 2, z - 1, RAIL.x + 6.5, RAIL.y, z + 1, [0.24, 0.34, 0.3]]); }
   return (STONES = L);
 }
-function stoneMesh() {
+// the lanterns' paper, lit from inside: [x0, y0, z0, x1, y1, z1, colour]
+function papers() { return hung().lanterns.flatMap(([x, y, z, kind]) => [[x - 1.1, y - 1.7, z - 1.1, x + 1.1, y + 1.7, z + 1.1, LANTERN[kind][0]], [x - 1.4, y - 1, z - 1.4, x + 1.4, y + 1, z + 1.4, LANTERN[kind][0]]]); }
+function stoneMesh(list = stones(), lit = false) {
   const pos = [], col = [], nor = [], idx = [];
-  const quad = (P, n, c) => { const i = pos.length / 3; pos.push(...P); for (let k = 0; k < 4; k++) { nor.push(...n); col.push(...c); } idx.push(i, i + 1, i + 2, i, i + 2, i + 3); };
-  for (const [x0, y0, z0, x1, y1, z1, c] of stones()) {
+  // (lit things have no light on them to shape them: their sides are told apart here)
+  const quad = (P, n, c) => { const i = pos.length / 3, k = lit ? (n[1] ? 0.7 : n[0] ? 0.84 : 1) : 1; pos.push(...P); for (let q = 0; q < 4; q++) { nor.push(...n); col.push(c[0] * k, c[1] * k, c[2] * k); } idx.push(i, i + 1, i + 2, i, i + 2, i + 3); };
+  for (const [x0, y0, z0, x1, y1, z1, c] of list) {
     quad([x1, y0, z0, x0, y0, z0, x0, y1, z0, x1, y1, z0], [0, 0, -1], c); quad([x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1], [0, 0, 1], c);
     quad([x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0], [-1, 0, 0], c); quad([x1, y0, z1, x1, y0, z0, x1, y1, z0, x1, y1, z1], [1, 0, 0], c);
     quad([x0, y1, z0, x0, y1, z1, x1, y1, z1, x1, y1, z0], [0, 1, 0], c); if (y0 > 0) quad([x0, y0, z1, x0, y0, z0, x1, y0, z0, x1, y0, z1], [0, -1, 0], c.map((v) => v * 0.6));
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.setIndex(idx);
-  const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true })); m.castShadow = false; m.receiveShadow = false; m.matrixAutoUpdate = false; m.updateMatrix(); m.name = 'stonework';
+  const m = new THREE.Mesh(g, lit ? new THREE.MeshBasicMaterial({ vertexColors: true }) : new THREE.MeshLambertMaterial({ vertexColors: true })); m.castShadow = false; m.receiveShadow = false; m.matrixAutoUpdate = false; m.updateMatrix(); m.name = lit ? 'lanterns' : 'stonework';
   return m;
 }
 
@@ -462,22 +514,34 @@ function kitFor(d, R) {
 }
 const KITS = { zakkyo, machiya, shrine };
 // the towers that stand off the parks, for the lots to keep off: [x0, z0, x1, z1]
-const FEET = [[14, 296, 76, 416], [180, 404, 252, 476], [870, 268, 926, 324]];
+const FEET = [[14, 296, 76, 416], [180, 404, 252, 476], [870, 268, 926, 324], [906, 574, 1023, 706]];
+// The great film boards, each on its own legs where a long straight looks straight at it: Gaora over the end of the
+// flyover, Daidako at the end of the Rainbow Bridge, Mekao at the end of the moat's north side. { x, z, s (faces: 0 north, 1
+// east, 2 south, 3 west), film, y }
+const HEROES = [{ x: 140, z: 58, s: 2, film: 0, y: 40 }, { x: 362, z: 955, s: 1, film: 1, y: 30 }, { x: 244, z: 326, s: 1, film: 2, y: 26 }];
+// The railway: a line on a steel deck over the streets (hazards.js 'el'), from a shed behind the Scramble's east side
+// south over the Scramble itself and on out of the map, a green commuter train along it every few seconds.
+const RAIL = { x: 233, z0: 600, z1: 1034, y: 30 };
 // Lantern Alley runs on the slant, and voxel houses cannot: so its houses are drawn (two rows of town houses built once
 // by the engine's kit and copied out, as the great buildings are, but at their own size), turned to face the alley.
-const ALLEY = { leg: 2, n: 4, step: 42, models: [] };
+const ALLEY = { leg: 2, n: 3, step: 43, models: [] };
 let PLAN = null;
 function plan() {
   if (PLAN) return PLAN;
   const { T, leg } = course(), { N, X, Z, WL, WR } = T, lots = [];
   let s = 20261126; const R = () => { s = (s * 1664525 + 1013904223) | 0; return ((s >>> 8) & 0xffff) / 65536; };
   for (const f of FEET) take(f[0] - 3, f[1] - 3, f[2] + 3, f[3] + 3);
+  take(RAIL.x - 9, RAIL.z0 - 4, RAIL.x + 9, WZ - 1);   // the railway's ground
+  for (const h of HEROES) {   // (their own ground, and the ground in front of them: nothing stands between a board and the road)
+    const w = h.s === 0 || h.s === 2 ? [76, 8] : [8, 76], f = [[0, -44], [44, 0], [0, 44], [-44, 0]][h.s];
+    take(h.x - w[0] + Math.min(0, f[0]), h.z - w[1] + Math.min(0, f[1]), h.x + w[0] + Math.max(0, f[0]), h.z + w[1] + Math.max(0, f[1]));
+  }
   const lot = (x0, z0, f, d) => { take(x0 - 2, z0 - 2, x0 + 41, z0 + 41); const [k, opt] = kitFor(d, R); lots.push({ x: x0, z: z0, f, kit: k, o: opt, seed: 4000 + lots.length * 37 }); };
   // Lantern Alley's houses, a row each side
   {
     const a = COURSE[ALLEY.leg], b = COURSE[ALLEY.leg + 1], len = Math.hypot(b[0] - a[0], b[1] - a[1]), ux = (b[0] - a[0]) / len, uz = (b[1] - a[1]) / len, t0 = (len - (ALLEY.n - 1) * ALLEY.step) / 2;
     for (let j = 0; j < ALLEY.n; j++) for (const sd of [1, -1]) {
-      const t = t0 + j * ALLEY.step, out = 13 + 3.5 + 20, x = a[0] + ux * t + uz * sd * out, z = a[1] + uz * t - ux * sd * out;
+      const t = t0 + j * ALLEY.step, out = ALLEY_W + 3.5 + 20, x = a[0] + ux * t + uz * sd * out, z = a[1] + uz * t - ux * sd * out;
       ALLEY.models.push({ x, z, turn: Math.atan2(uz * sd, -ux * sd), v: (j + (sd > 0 ? 0 : 1)) & 1 });
       take(Math.round(x - 29), Math.round(z - 29), Math.round(x + 29), Math.round(z + 29));
     }
@@ -494,7 +558,7 @@ function plan() {
     const start = s0 + (s1 - s0 - (n * 44 - 4)) / 2;
     for (let j = 0; j < n; j++) for (const sd of [1, -1]) {
       const t0 = start + j * 44, t1 = t0 + 39, w = room(t0, t1, sd); if (!w) continue;
-      const nx = dz * sd, nz = -dx * sd, o0 = w + 7, o1 = o0 + 39;   // out to the lot's near and far edges
+      const nx = dz * sd, nz = -dx * sd, o0 = w + 7 + (k === 1 ? VERGE : 0), o1 = o0 + 39;   // out to the lot's near and far edges (Ueno's stand back behind the cherries)
       const xs = [a[0] + dx * t0 + nx * o0, a[0] + dx * t1 + nx * o1], zs = [a[1] + dz * t0 + nz * o0, a[1] + dz * t1 + nz * o1];
       const x0 = Math.round(Math.min(...xs)), z0 = Math.round(Math.min(...zs));
       if (!free(x0, z0, x0 + 39, z0 + 39)) continue;
@@ -509,8 +573,8 @@ function plan() {
     take(x0 - 2, z0 - 2, x0 + w + 2, z0 + d + 2);
     const dd = district(x0 + w / 2, z0 + d / 2), r = R(), q = R(), big = Math.min(w, d) >= 40;
     const h = dd === 'S' ? (big ? 110 + r * 130 : 70 + r * 60) : dd === 'M' ? (big ? 96 + r * 96 : 60 + r * 60) : dd === 'B' ? 60 + r * 110 : dd === 'T' ? 48 + r * 72 : 36 + r * 36;
-    const style = dd === 'S' || dd === 'B' ? (q < 0.45 ? 'glass' : q < 0.7 ? 'lime' : q < 0.88 ? 'tan' : 'brown') : dd === 'M' ? (q < 0.4 ? 'lime' : q < 0.7 ? 'glass' : q < 0.9 ? 'marble' : 'tan') : dd === 'T' ? (q < 0.35 ? 'tan' : q < 0.6 ? 'glass' : q < 0.85 ? 'lime' : 'brick') : (q < 0.4 ? 'tan' : q < 0.7 ? 'brown' : q < 0.9 ? 'brick' : 'lime');
-    boxes.push({ x0, z0, w, d, h, style, seed: 1 + boxes.length, plain: dd === 'M' && q < 0.6, dd });
+    const style = dd === 'S' || dd === 'B' ? (q < 0.3 ? 'glass' : q < 0.58 ? 'office' : q < 0.74 ? 'dark' : q < 0.9 ? 'pencil' : 'flats') : dd === 'M' ? (q < 0.4 ? 'office' : q < 0.66 ? 'glass' : q < 0.86 ? 'brick' : 'dark') : dd === 'T' ? (q < 0.34 ? 'flats' : q < 0.6 ? 'office' : q < 0.82 ? 'pencil' : 'glass') : (q < 0.45 ? 'flats' : q < 0.82 ? 'pencil' : 'brick');
+    boxes.push({ x0, z0, w, d, h, style, seed: 1 + boxes.length, plain: dd === 'M' && q < 0.5, dd });
   };
   for (let bz = 17; bz < WZ - 40; bz += 104) for (let bx = 17; bx < WX - 40; bx += 104) {
     const k = R();
@@ -529,11 +593,19 @@ function plan() {
     const out = Math.hypot(Math.max(-bx, 0, bx - WX), Math.max(-bz, 0, bz - WZ)); if (out > 700) continue;
     let dry = true; for (const [a, b] of [[0, 0], [80, 0], [0, 80], [80, 80], [40, 40]]) if (wet(bx + a, bz + b)) dry = false; if (!dry) continue;
     const r = R(), west = bx < 0 ? 1 : 0, tall = 48 + out * 0.18 + r * 70 + west * 60, glassy = R();
-    const style = () => (glassy < 0.4 ? 'glass' : glassy < 0.65 ? 'lime' : glassy < 0.85 ? 'tan' : 'brown');
+    const style = () => { const q = (glassy + R() * 0.5) % 1; return q < 0.28 ? 'glass' : q < 0.52 ? 'office' : q < 0.72 ? 'flats' : q < 0.86 ? 'pencil' : q < 0.94 ? 'dark' : 'brick'; };
     if (r < 0.3) boxes.push({ x0: bx, z0: bz, w: 80, d: 80, h: tall * 1.3, style: style(), seed: 1 + boxes.length, plain: true });
     else for (const [qx, qz] of [[0, 0], [48, 0], [0, 48], [48, 48]]) if (R() < 0.85) boxes.push({ x0: bx + qx, z0: bz + qz, w: 32, d: 32, h: tall * (0.6 + R() * 0.6), style: style(), seed: 1 + boxes.length, plain: true });
   }
-  return (PLAN = { lots, boxes });
+  // how near the course each is, and the way to it (the signs are for the near ones, on the side that faces the road)
+  for (const B of boxes) {
+    const cx = B.x0 + B.w / 2, cz = B.z0 + B.d / 2; let bd = 1e18, bi = 0;
+    for (let i = 0; i < N; i += 3) { const d = (X[i] - cx) ** 2 + (Z[i] - cz) ** 2; if (d < bd) { bd = d; bi = i; } }
+    B.near = Math.max(0, Math.sqrt(bd) - (B.w + B.d) / 4); B.toward = [X[bi] - cx, Z[bi] - cz];
+  }
+  // the red lights on the tall ones' roofs, for the look's glows: the nearest seventy
+  const lights = boxes.filter((B) => shapeOf(B).floors >= 18 && B.near < 900).sort((a, b) => a.near - b.near).slice(0, 70).map((B) => { const r = shapeOf(B).roof; return [r[0], r[4] + 4.3, r[1]]; });
+  return (PLAN = { lots, boxes, lights });
 }
 function rows() {
   for (const L of plan().lots) {
@@ -543,23 +615,60 @@ function rows() {
     place(0, 0, -1);
   }
 }
-// The trees (maps/trees.js: drawn models, a voxel to a cube): cherries round Ueno's pond and through the park, in the
-// Shiba Tower's park and the temple's court, and pines and cherries inside the palace's walls and along its moat.
-const GROVE = [];
+// The trees (maps/trees.js: drawn models, a voxel to a cube). Will, 2026-11-25: the cherries after the start "are too
+// low poly, look too small and a little lame", and the "palace has trees poking through the walls". So:
+//   - Ueno's road is an avenue of great cherries, a row each side on a verge just outside the barriers, their boughs
+//     out over the road, and the fine cut of every tree is shown from further off (the grove's `near`, in hazards);
+//   - a ring of them round the pond, and more through the park, the Shiba Tower's park and the temple's court;
+//   - no tree stands where one of the great buildings does: a spot is taken only if the model has nothing over the
+//     ground anywhere under the tree's crown. The palace's own garden trees stand where the engine's did, up on its
+//     ramparts, small enough to clear its walls, or not at all.
+const GROVE = [], VERGE = 22;
+// how high one of the great buildings stands over a place on the ground (0: nothing there but the ground)
+let TOPS = null;
+function modelTop(x, z) {
+  if (!TOPS) TOPS = MODELS.map((m) => { const { S, NY, m: v } = m.vol, t = new Uint8Array(S * S); for (let y = NY - 1; y >= 0; y--) for (let c = 0; c < S * S; c++) if (!t[c] && v[y * S * S + c]) t[c] = y + 1; return t; });
+  let top = 0;
+  MODELS.forEach((m, i) => {
+    const S = m.vol.S, c = Math.cos(m.turn), sn = Math.sin(m.turn), dx = x - m.x, dz = z - m.z, lx = Math.floor((dx * c - dz * sn) / m.k + S / 2), lz = Math.floor((dx * sn + dz * c) / m.k + S / 2);
+    if (lx >= 0 && lz >= 0 && lx < S && lz < S) top = Math.max(top, TOPS[i][lz * S + lx] * m.k + m.y);
+  });
+  return top;
+}
+// the highest of them anywhere within r of a place
+const topNear = (x, z, r) => { let t = 0; for (let a = 0; a < 6.28; a += 0.52) for (const q of [0.5, 1]) t = Math.max(t, modelTop(x + Math.cos(a) * r * q, z + Math.sin(a) * r * q)); return Math.max(t, modelTop(x, z)); };
 function trees() {
   let s = 7719; const R = () => { s = (s * 1664525 + 1013904223) | 0; return ((s >>> 8) & 0xffff) / 65536; };
-  const tree = (x, z, size, kind = 1) => {
+  const { road, cut } = masks();
+  // a tree's reach, about (a cherry is wide and low)
+  const reach = (size, kind) => (kind ? 13 : 9) * size;
+  const tree = (x, z, size, kind = 1, verge = false) => {
     x = Math.round(x); z = Math.round(z);
-    if (!free(x - 9, z - 9, x + 9, z + 9, true) || inPond(x, z) || inMoat(x, z)) return;
+    if (x < 12 || z < 12 || x > WX - 12 || z > WZ - 12 || inPond(x, z) || inMoat(x, z) || !land(x, z)) return false;
+    if (verge ? road[z * WX + x] || cut[z * WX + x] || masks().taken[z * WX + x] : !free(x - 9, z - 9, x + 9, z + 9, true)) return false;
+    if (topNear(x, z, reach(size, kind)) > 2.5) return false;
     take(x - 5, z - 5, x + 5, z + 5);
-    GROVE.push([x + 0.5, z + 0.5, size, R() * 6.28, kind]);
+    GROVE.push([x + 0.5, z + 0.5, size, R() * 6.28, kind, 0]);
+    return true;
   };
-  // a ring of cherries round the pond, then the park
-  { const m = 14; for (let k = 0; k < m; k++) { const a = (k + R() * 0.3) / m * Math.PI * 2; tree(POND.x + Math.cos(a) * (POND.rx + 12), POND.z + Math.sin(a) * (POND.rz + 11), 0.95 + R() * 0.2); } }
-  // where the great buildings' own trees stood (they are left out of the models: statue.js), one of ours
+  // Ueno's avenue: a great cherry every thirty voxels or so, each side, on the verge
+  {
+    const { T, leg, W, on } = course(), { N, X, Z, TX, TZ, STEP } = T, every = Math.round(30 / STEP);
+    let n = 0;
+    for (let i = 0; i < N; i++) {
+      if (leg[i] !== 1 || on[i] || X[i] < 196 || X[i] > 404) continue;
+      if (n++ % every) continue;
+      for (const sd of [1, -1]) { const o = W[i] + 11 + R() * 3, j = T.at(i + (sd > 0 ? 0 : every >> 1)); tree(X[j] + TZ[j] * sd * o, Z[j] - TX[j] * sd * o, 1.75 + R() * 0.3, 1, true); }
+    }
+  }
+  // a ring of cherries round the pond
+  { const m = 12; for (let k = 0; k < m; k++) { const a = (k + R() * 0.3) / m * Math.PI * 2; tree(POND.x + Math.cos(a) * (POND.rx + 14), POND.z + Math.sin(a) * (POND.rz + 13), 1.3 + R() * 0.25); } }
+  // where the great buildings' own trees stood (they are left out of the models: statue.js), one of ours: on the
+  // ground if it is the ground there, or up on the building's own terrace, as small as it must be to clear the walls
   for (const m of MODELS) for (const [lx, lz, cherry] of m.vol.trees) {
-    const a = (lx - m.vol.S / 2) * m.k, b = (lz - m.vol.S / 2) * m.k, c = Math.cos(m.turn), sn = Math.sin(m.turn);
-    tree(m.x + a * c + b * sn, m.z - a * sn + b * c, cherry ? 0.9 + R() * 0.2 : 0.55 * m.k + R() * 0.15, cherry);
+    const a = (lx - m.vol.S / 2) * m.k, b = (lz - m.vol.S / 2) * m.k, c = Math.cos(m.turn), sn = Math.sin(m.turn), x = m.x + a * c + b * sn, z = m.z - a * sn + b * c, y = modelTop(x, z);
+    if (y < 2.5) { tree(x, z, cherry ? 1.3 + R() * 0.25 : 0.55 * m.k + R() * 0.15, cherry); continue; }
+    for (const size of [0.8, 0.62, 0.5]) if (topNear(x, z, reach(size, cherry) * 0.8) < y + 3) { GROVE.push([x, z, size, R() * 6.28, cherry, y]); break; }
   }
   for (let gz = 20; gz < WZ - 16; gz += 26) for (let gx = 20; gx < WX - 16; gx += 26) {
     const x = gx + (R() - 0.5) * 16, z = gz + (R() - 0.5) * 16, r = R(), k = R();
@@ -567,8 +676,71 @@ function trees() {
     const palace = inBox(PALACE_G, x, z), tower = inBox(TOWER_G, x, z);
     if (tower && Math.abs(x - 430) < 46) continue;                       // (the road, and a clear look up at the tower from it)
     if (r > (palace ? 0.5 : 0.8)) continue;
-    tree(x, z, palace && k < 0.6 ? 1 + k * 0.4 : 0.9 + k * 0.25, palace && k < 0.6 ? 0 : 1);
+    tree(x, z, palace && k < 0.6 ? 1 + k * 0.4 : 1.25 + k * 0.3, palace && k < 0.6 ? 0 : 1);
   }
+}
+// The sign buildings along the course (the engine's, their own signs in Roman letters) get what Tokyo's have: boards
+// that hang out over the pavement where one building meets the next, one above another up the wall, a word in katakana
+// down each, lit. Voxels, as the buildings are (three thick: the word reads the right way round from both sides).
+function kanaBoards() {
+  let sd = 99173; const R = () => { sd = (sd * 1664525 + 1013904223) | 0; return ((sd >>> 8) & 0xffff) / 65536; };
+  const INK = [[M.LIT_R, M.LIT_W], [M.DARK, M.LIT_Y], [M.LIT_W, M.CAR_A], [M.LIT_B, M.LIT_W], [M.DARK, M.LIT_P], [M.LIT_Y, M.DARK], [M.DARK, M.LIT_G], [M.LIT_P, M.LIT_W]];
+  const solid = (x, y, z) => x >= 0 && z >= 0 && x < WX && z < WZ && voxAt(idx(x, y, z)) !== 0;
+  for (const L of plan().lots) {
+    if (L.kit !== 'zakkyo') continue;
+    const S = SIDE(L.f, L.x, L.z, L.x + 40, L.z + 40), dx = S.ax < 0 || S.nx < 0 ? -1 : 0, dz = S.az < 0 || S.nz < 0 ? -1 : 0;
+    const at = (t, o) => [S.ox + S.ax * t + S.nx * o + dx, S.oz + S.az * t + S.nz * o + dz];
+    const wall = (t, o, y) => { const a = at(t - 2, o), b = at(t + 2, o); return solid(a[0], y, a[1]) || solid(b[0], y, b[1]); };
+    for (const t of [13, 26]) {
+      let ow = 1; for (let o = 0; o >= -10; o--) if (wall(t, o, 20)) { ow = o; break; }
+      if (ow > 0) continue;
+      let top = 20; while (top < 120 && wall(t, ow, top)) top++;
+      begin('Sign', 'prop', false);
+      let y = 16 + Math.floor(R() * 4);
+      for (let n = 0; n < 3; n++) {
+        const word = SIGN_WORDS[Math.floor(R() * SIGN_WORDS.length)], H = wordH(word) + 4, [bd, ink] = INK[Math.floor(R() * INK.length)];
+        if (y + H > top - 2) break;
+        if (R() < 0.25) { y += H + 2; continue; }
+        for (let py = 0; py < H; py++) for (let px = 0; px < 11; px++) {
+          const m = px === 0 || py === 0 || px === 10 || py === H - 1 ? ink : bd;
+          for (const tt of [t - 1, t, t + 1]) { const [x, z] = at(tt, ow + 1 + px); set(x, y + H - 1 - py, z, tt === t ? M.DARK : m); }
+        }
+        write((px, py) => { let [x, z] = at(t + 1, ow + 11 - px); set(x, y + H - 1 - py, z, ink); [x, z] = at(t - 1, ow + 1 + px); set(x, y + H - 1 - py, z, ink); }, word, 2, 2, true);
+        y += H + 2;
+      }
+    }
+  }
+}
+// A great torii astride the road, in voxels: two round posts outside the barriers, the tie beam through them, the
+// lintel and its dark cap turned up at the ends, a tablet between.
+function bigTorii(cx, z, half, h) {
+  begin('Torii gate', 'monument');
+  for (const s of [-1, 1]) { const a = cx + s * half; box(a - 3, 0, z - 1, a + 3, 2, z + 5, M.STONE); for (let y = 3; y <= h + 2; y++) disc(a, z + 2, y, 2, M.VERMIL); box(a - 2, 3, z, a + 2, 5, z + 4, M.DARK); for (const b of [z - 2, z + 6]) box(a - 2, 2, b, a + 2, 2, b, M.LIT_Y); }
+  box(cx - half - 6, h - 9, z + 1, cx + half + 6, h - 6, z + 3, M.VERMIL);
+  box(cx - half - 9, h + 3, z, cx + half + 9, h + 5, z + 4, M.VERMIL);
+  box(cx - half - 11, h + 6, z - 1, cx + half + 11, h + 7, z + 5, M.DARK);
+  for (const s of [-1, 1]) { box(cx + s * (half + 8) - 3, h + 8, z - 1, cx + s * (half + 8) + 3, h + 8, z + 5, M.DARK); box(cx + s * (half + 10) - 1, h + 9, z - 1, cx + s * (half + 10) + 1, h + 9, z + 5, M.DARK); box(cx + s * (half + 9) - 2, h + 6, z, cx + s * (half + 9) + 2, h + 6, z + 4, M.VERMIL); }
+  box(cx - 3, h - 5, z + 1, cx + 3, h + 2, z + 3, M.DARK); box(cx - 2, h - 4, z, cx + 2, h + 1, z + 4, M.BRASS);
+}
+// The people along the barriers (maps/tokyoblocks.js makeCrowd): [x, z, yaw, colour], in knots where the town is
+// thickest (the Scramble, the avenue and its grid, Electric Town, the lane, the station's front), fewer elsewhere.
+let CROWD = null;
+function crowd() {
+  if (CROWD) return CROWD;
+  const { T, leg, on } = course(), { N, X, Z, TX, TZ } = T, { road, cut } = masks(), L = [];
+  const SHARE = { 17: 0.85, 18: 0.7, 0: 0.7, 3: 0.8, 2: 0.3, 4: 0.5, 5: 0.3, 12: 0.25, 10: 0.35, 11: 0.25, 13: 0.25, 14: 0.5, 15: 0.2 };
+  let s = 5501; const R = () => { s = (s * 1664525 + 1013904223) | 0; return ((s >>> 8) & 0xffff) / 65536; };
+  for (let i = 0; i < N && L.length < 900; i++) {
+    if (on[i] || !(leg[i] in SHARE)) continue;
+    for (const sd of [1, -1]) {
+      const knot = Math.sin(i * 0.11 + sd * 1.3) + Math.sin(i * 0.037 + sd) > -0.3;
+      if (!knot || R() > SHARE[leg[i]]) continue;
+      const o = (sd > 0 ? T.WL[i] : T.WR[i]) + 4.2 + R() * 1.5, x = X[i] + TZ[i] * sd * o, z = Z[i] - TX[i] * sd * o, c = Math.floor(z) * WX + Math.floor(x);
+      if (x < 4 || z < 4 || x > WX - 4 || z > WZ - 4 || !land(x, z) || leafy(x, z) || inMoat(x, z) || road[c] || cut[c]) continue;
+      L.push([x, z, Math.atan2(-TZ[i] * sd, TX[i] * sd) + (R() - 0.5) * 0.8, Math.floor(R() * 8)]);
+    }
+  }
+  return (CROWD = L);
 }
 const MODELS = [];
 function build() {
@@ -606,9 +778,12 @@ function build() {
   place(0, 0, -1); ctx.L = 3; ctx.lot = -1; setSeed(5115);
   rows();
   place(0, 0, -1); ctx.L = 3; ctx.lot = -1;
+  kanaBoards();
+  place(0, 0, -1); ctx.L = 3; ctx.lot = -1;
   barriers();
   place(0, 0, -1); ctx.L = 3; ctx.lot = -1;
   thunderGate(GATE.x, GATE.z);
+  for (const z of TORII.z) bigTorii(TORII.x, z, TORII.half, TORII.h);
   place(0, 0, -1); ctx.L = 3; ctx.lot = -1;
   vehicles.length = 0;   // nothing parked along the road
   gantryNS(LINE_Z, LINE_X - 33, LINE_X + 33, ['MIDNIGHT TOKYO', 'TOKYO GP'], GANTRY_Y);
@@ -656,8 +831,9 @@ function paint() {
   g.fillStyle = 'rgba(40,40,44,0.16)';
   for (let v = 0; v < WX; v += 8) { C.rect(v - 0.15, 0, v + 0.15, WZ); C.rect(0, v - 0.15, WX, v + 0.15); }
   // the parks, the pond, and the moat in its stone rim
-  g.fillStyle = LAWN; for (const b of [UENO, PALACE_G, TOWER_G]) C.rect(b[0], b[1], b[2], b[3]);
-  for (const b of [UENO, PALACE_G, TOWER_G]) C.speckle(b[0], b[1], b[2], b[3], 16000, ['rgba(70,116,60,0.5)', 'rgba(120,160,90,0.4)']);
+  const AVENUE = [186, 110 - 28 - VERGE - 4, 404, UENO[1]];   // the verge the avenue's north row of cherries stands on
+  g.fillStyle = LAWN; for (const b of [UENO, AVENUE, PALACE_G, TOWER_G]) C.rect(b[0], b[1], b[2], b[3]);
+  for (const b of [UENO, AVENUE, PALACE_G, TOWER_G]) C.speckle(b[0], b[1], b[2], b[3], 16000, ['rgba(70,116,60,0.5)', 'rgba(120,160,90,0.4)']);
   g.fillStyle = STONE; g.beginPath(); g.ellipse(POND.x * GK, POND.z * GK, (POND.rx + 2.5) * GK, (POND.rz + 2.5) * GK, 0, 0, Math.PI * 2); g.fill();
   g.fillStyle = WATER; g.beginPath(); g.ellipse(POND.x * GK, POND.z * GK, POND.rx * GK, POND.rz * GK, 0, 0, Math.PI * 2); g.fill();
   g.fillStyle = STONE; C.rect(MOAT.x0 - 3, MOAT.z0 - 3, MOAT.x1 + 3, MOAT.z1 + 3);
@@ -679,6 +855,12 @@ function paint() {
   const WLp = T.WL.slice(), WRp = T.WR.slice();
   for (let i = 0; i < T.N; i++) if (on[i] && Math.abs(H[i]) > FOOT) { WLp[i] = -1.4; WRp[i] = -1.4; }
   paintCourse(g, { ...T, WL: WLp, WR: WRp }, grid, 62, line);
+  // crossings, striped across the road where the town is thickest
+  for (const [k, t] of [[17, 60], [0, 85], [3, 48], [14, 130], [13, 68], [15, 135]]) {
+    const i = course().find([k, t]); g.save(); g.translate(T.X[i] * GK, T.Z[i] * GK); g.rotate(Math.atan2(T.TZ[i], T.TX[i])); g.fillStyle = 'rgba(226,226,220,0.8)';
+    for (let a = -T.WL[i] + 2.5; a + 3 <= T.WR[i] - 1.5; a += 6) g.fillRect(-7 * GK, a * GK, 14 * GK, 3 * GK);
+    g.restore();
+  }
   // over the tunnel's roof the pavement carries on (the course's own line would show as a seam)
   { const t = P('Tunnel'); g.strokeStyle = PAVE; g.lineWidth = 6 * GK; g.lineCap = 'butt'; g.beginPath(); for (let k = t.roof[0] - 2; k <= t.roof[1] + 2; k++) { const i = T.at(t.i0 + k); k === t.roof[0] - 2 ? g.moveTo(T.X[i] * GK, T.Z[i] * GK) : g.lineTo(T.X[i] * GK, T.Z[i] * GK); } g.stroke(); }
   grassy = grassOf(cv, true, T);
@@ -708,7 +890,7 @@ export default {
   loading: ['Closing the Scramble', 'Building Tokyo, lighting the signs and filling the moat'],
   outer: 0x8b8984,
   look: { kind: 'neon', get lamps() { return lamps(); }, get signs() { return glows(); } },
-  lodK: 0.34,
+  lodK: 0.3,
   // the road's height (vehicle.js, main.js's camera), the sides of the decks and the cut, and the floor that is drawn
   floor: (x, z, y) => heights().floor(x, z, y),
   rail: (x, z, y) => heights().rail(x, z, y),
@@ -725,16 +907,21 @@ export default {
     const s = P('Tunnel').roofBox;
     return [
       { kind: 'custom', make: (api) => { makeRoads(api.scene, course().T, course().parts.map((p) => ({ ...p, skip: near }))); } },
-      { kind: 'custom', make: (api) => { dressBridges(api.scene, course().T, [{ part: P('Rainbow Bridge'), kind: 'stone', white: true }]); api.scene.add(stoneMesh()); } },
+      { kind: 'custom', make: (api) => { dressBridges(api.scene, course().T, [{ part: P('Rainbow Bridge'), kind: 'stone', white: true }]); api.scene.add(stoneMesh()); api.scene.add(stoneMesh(papers(), true)); } },
       { kind: 'custom', make: (api) => { for (const m of MODELS) { const g = statueMesh(m.vol, m.k, { glow: LIT[m.name][2], greedy: true }); floodlit(g, LIT[m.name]); g.position.set(m.x, m.y, m.z); g.rotation.y = m.turn; g.name = m.name; api.scene.add(g); } } },
       { kind: 'custom', make: (api) => {
         const made = ALLEY.vols.map((v) => { const g = statueMesh(v, 1, { glow: [2.6, 2.1, 1.2], greedy: true }); floodlit(g, [[0.5, 0.36, 0.22], [2.1, 1.5, 0.7, 0.6]]); return g; });
         for (const h of ALLEY.models) { const g = made[h.v].clone(); g.position.set(h.x, 0, h.z); g.rotation.y = h.turn; g.name = 'Lantern Alley'; api.scene.add(g); }
       } },
-      { kind: 'custom', make: (api) => { makeBlocks(api.scene, plan().boxes); } },
+      // the city off the course, and what moves in it: the signs that blink and the wheel's lights (CLOCK)
+      { kind: 'custom', make: (api) => { const B = makeTokyoBlocks(api.scene, plan().boxes, CLOCK, HEROES); api.MAP.blocks = B; return { step(dt) { CLOCK.value += dt; } }; } },
+      { kind: 'el', x: RAIL.x, z0: RAIL.z0, z1: RAIL.z1, y: RAIL.y, every: 5, speed: 64, see: 520, model: 'commuter', cars: 6, paint: 'green', sheds: true },
+      { kind: 'custom', make: (api) => makeCrowd(api.scene, crowd(), CLOCK) },
+      { kind: 'custom', make: (api) => makePetals(api, [150, 40, 470, 260], CLOCK) },
+      { kind: 'custom', make: (api) => makeBoats(api.scene, [{ z: 868, x0: 640, x1: 850, v: 7 }, { z: 838, x0: 664, x1: 840, v: -5 }, { z: 1008, x0: 630, x1: 870, v: 6 }]) },
       // (the trees take the lamps' light too: the blossom stays pink under a blue night)
       { kind: 'custom', make: (api) => {
-        const G = makeGrove(api, GROVE); api.MAP.grove = G; if (!G.meshes) return;
+        const G = makeGrove(api, GROVE, { near: 130, mid: 330 }); api.MAP.grove = G; if (!G.meshes) return;
         const mat = G.meshes[0].material;
         mat.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * vec3(0.8, 0.5, 0.52);'); };
         mat.customProgramCacheKey = () => 'tokyo-grove'; mat.needsUpdate = true;

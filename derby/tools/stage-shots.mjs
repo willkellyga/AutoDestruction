@@ -11,7 +11,7 @@ const { chromium } = createRequire(import.meta.url)('playwright');
 export const SHOTS = {
   empire: { auto: true },
   capital: { auto: true },
-  tokyo: { auto: true },
+  tokyo: { from: [140, 46, 300], at: [150, 50, 58], car: [140, 240] },   // (off the flyover: the signs, Gaora's board, Ueno's cherries)
   base: { auto: true },
   fair: { auto: true },
   arena: { from: [330, 20, 566], at: [520, 9, 470] },   // (the boost strip into the mountain, a crush lane either side)
