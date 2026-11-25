@@ -2,7 +2,9 @@
 // One shape, drawn two ways:
 //   plantTree(x, z, seed)        a voxel tree, in the world: beside the road, where a rocket can take its leaves off
 //   makeGrove(scene, spots)      the same trees as drawn models, a few shapes drawn many times over: for the lawns
-//                                behind, which nothing reaches. spots: [x, z, size, turn]
+//                                behind, which nothing reaches. spots: [x, z, size, turn, kind]
+// Either can be a tree in blossom (kind 1: maps/capital.js's cherries round the Tidal Basin): the same tree, lower and
+// wider, in pink.
 // A tree: a trunk that flares at the root and thins toward the top, four or five boughs that leave it at different
 // heights and climb outward, a mass of leaves at the end of each and a crown over the top. The leaves are darker
 // underneath and inside, lighter on top, with a ragged edge.
@@ -33,18 +35,31 @@ function shape(seed, k, out) {
     }
   }
 }
-const MATS = () => [M.TRUNK, M.HEDGE, M.LEAF, M.LEAF2];
+const MATS = (kind = 0) => (kind === 1 ? [M.TRUNK, M.SAKURA, M.SAKURA, M.SAKURA2] : [M.TRUNK, M.HEDGE, M.LEAF, M.LEAF2]);
 
-export function plantTree(x, z, seed, k = 1) {
-  const mats = MATS();
+export function plantTree(x, z, seed, k = 1, kind = 0) {
+  const mats = MATS(kind);
   begin('Tree', 'tree', false);
   shape(seed, k, (dx, dy, dz, kind) => { if (dy < 0) return; if (kind === 0) set(x + dx, dy, z + dz, mats[0]); else put(x + dx, dy, z + dz, mats[kind]); });
 }
 
-// one shape as a drawn model, in cubes two voxels across (it stands far off): only the faces that show
-function model(seed) {
-  const N = 28, NY = 44, C = 2, v = new Uint8Array(N * NY * N), mats = MATS(), h = N / 2;
-  shape(seed, 1 / C, (dx, dy, dz, kind) => { const x = dx + h, z = dz + h; if (x < 0 || z < 0 || dy < 0 || x >= N || z >= N || dy >= NY) return; const c = (dy * N + z) * N + x; if (kind === 0 || !v[c]) v[c] = kind + 1; });
+// one shape as a drawn model, in cubes two voxels across (it stands far off; four across for the ones past the map's
+// edge): only the faces that show
+function model(seed, kind = 0, C = 2) {
+  const mats = MATS(kind), N2 = 28, NY2 = 44, v2 = new Uint8Array(N2 * NY2 * N2);
+  shape(seed, 0.5, (dx, dy, dz, k) => { const x = dx + N2 / 2, z = dz + N2 / 2; if (x < 0 || z < 0 || dy < 0 || x >= N2 || z >= N2 || dy >= NY2) return; const c = (dy * N2 + z) * N2 + x; if (k === 0 || !v2[c]) v2[c] = k + 1; });
+  let N = N2, NY = NY2, v = v2;
+  if (C > 2) {
+    // a coarse one: the same tree, eight of its cubes to one (what most of them are; a cube with only a twig in it is left out)
+    N = N2 / 2; NY = NY2 / 2; v = new Uint8Array(N * NY * N);
+    const n = [0, 0, 0, 0, 0];
+    for (let y = 0; y < NY; y++) for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
+      n.fill(0); for (let k = 0; k < 8; k++) n[v2[((y * 2 + (k >> 2)) * N2 + z * 2 + ((k >> 1) & 1)) * N2 + x * 2 + (k & 1)]]++;
+      const leaf = n[2] + n[3] + n[4];
+      if (leaf >= 3) v[(y * N + z) * N + x] = n[3] >= n[2] && n[3] >= n[4] ? 3 : n[4] > n[2] ? 4 : 2; else if (n[1] >= 2 && leaf < 2) v[(y * N + z) * N + x] = 1;
+    }
+  }
+  const h = N / 2;
   const at = (x, y, z) => (x < 0 || z < 0 || y < 0 || x >= N || z >= N || y >= NY ? 0 : v[(y * N + z) * N + x]);
   const pos = [], col = [], nor = [], idx = [];
   const F = [[1, 0, 0, [1, 0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1]], [-1, 0, 0, [0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 0, 0]], [0, 1, 0, [0, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0]], [0, -1, 0, [0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 1]], [0, 0, 1, [1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 0, 1]], [0, 0, -1, [0, 0, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0]]];
@@ -63,16 +78,17 @@ function model(seed) {
   return g;
 }
 
-// spots: [x, z, size, turn]; they are drawn in clumps (CLUMP across), each left out when it is out of the picture
-export function makeGrove(scene, spots, kinds = 3) {
+// spots: [x, z, size, turn, kind]; they are drawn in clumps (`clump` across), each left out when it is out of the
+// picture. `cube`: how many voxels across a cube of the model is (2, or 4 for trees that are only ever seen from afar).
+export function makeGrove(scene, spots, kinds = 3, { clump: CLUMP = 192, cube = 2 } = {}) {
   if (!spots.length) return { tris: 0 };
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true }), M4 = new THREE.Matrix4(), q = new THREE.Quaternion(), UP = new THREE.Vector3(0, 1, 0), p = new THREE.Vector3(), sc = new THREE.Vector3();
-  const CLUMP = 192, geos = [], by = new Map();
-  for (let k = 0; k < kinds; k++) geos.push(model(31 + k * 17));
-  spots.forEach((s, i) => { const key = Math.floor(s[0] / CLUMP) + ',' + Math.floor(s[1] / CLUMP) + ',' + (i % kinds); if (!by.has(key)) by.set(key, []); by.get(key).push(s); });
+  const geos = new Map(), by = new Map();
+  const geo = (k, kind) => { const id = k + kind * 100; if (!geos.has(id)) geos.set(id, model(31 + k * 17, kind, cube)); return geos.get(id); };
+  spots.forEach((s, i) => { const key = Math.floor(s[0] / CLUMP) + ',' + Math.floor(s[1] / CLUMP) + ',' + (i % kinds) + ',' + (s[4] || 0); if (!by.has(key)) by.set(key, []); by.get(key).push(s); });
   let tris = 0;
   for (const [key, mine] of by) {
-    const g = geos[+key.split(',')[2]], mesh = new THREE.InstancedMesh(g, mat, mine.length);
+    const ks = key.split(','), g = geo(+ks[2], +ks[3]), mesh = new THREE.InstancedMesh(g, mat, mine.length);
     mine.forEach(([x, z, size, turn], i) => { q.setFromAxisAngle(UP, turn); M4.compose(p.set(x, 0, z), q, sc.setScalar(size)); mesh.setMatrixAt(i, M4); });
     mesh.computeBoundingSphere();
     mesh.castShadow = false; mesh.receiveShadow = false; mesh.name = 'grove'; scene.add(mesh); tris += g.index.count / 3 * mine.length;

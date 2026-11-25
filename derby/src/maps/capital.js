@@ -20,6 +20,7 @@
 // barriers, the rows of buildings that face it, the landmarks and the first row of trees. The rest of the city is
 // boxes with a drawn front (maps/blocks.js), the trees behind are models (maps/trees.js) and the water moves under
 // one flat sheet (maps/water.js).
+import * as THREE from 'three';
 import { WX, WZ, M, place, ctx, setSeed, put, begin, LOC, ri, rnd, vehicles } from '../../../src/world.js';
 import { lampPost } from '../../../src/kit.js';
 import { brownstone } from '../../../src/nyc_kit.js';
@@ -32,12 +33,15 @@ import { grabModel, statueMesh } from './statue.js';
 import { makeBlocks } from './blocks.js';
 import { plantTree, makeGrove } from './trees.js';
 import { makeWater } from './water.js';
-import { DUSK } from '../looks/dusk.js';
+import { SPRING } from '../looks/spring.js';
+import { potomacLand } from '../backdrops/potomac.js';
 import { canvasFor, finish, pickSpot, GK } from './common.js';
 import { makeTrack, streetLoop, racingLine } from './racetrack.js';
 import { gantry, gatesFor, gridFor, paintCourse, grassOf, surfaceAt, radarCourse } from './circuit.js';
 import { makeHeights } from './heights.js';
 import { makeRoads } from './roads.js';
+import { dressBridges } from './bridges.js';
+import { makeStation } from './station.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const ramp = (t) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
@@ -201,7 +205,7 @@ function course() {
       for (let k = q.roof[0]; k <= q.roof[1]; k++) { const i = T.at(i0 + k); x0 = Math.min(x0, X[i] - W[i]); x1 = Math.max(x1, X[i] + W[i]); z0 = Math.min(z0, Z[i]); z1 = Math.max(z1, Z[i]); }
       q.roofBox = [x0, z0, x1, z1];   // (the Metro runs along z)
     }
-    if (p.open) { q.open = [ks(p.open[0]), ks(p.open[1])]; const a = T.at(i0 + q.open[0]), b = T.at(i0 + q.open[1]); q.openZ = [Math.max(Z[a], Z[b]), Math.min(Z[a], Z[b])]; }
+    if (p.open) { q.open = [ks(p.open[0]), ks(p.open[1])]; const a = T.at(i0 + q.open[0]), b = T.at(i0 + q.open[1]); q.openZ = [Math.min(Z[a], Z[b]), Math.max(Z[a], Z[b])]; }
     return q;
   });
   // the Monument's knoll, and the pool's floor
@@ -382,8 +386,8 @@ function plan() {
     take(x0 - 2, z0 - 2, x0 + w + 2, z0 + d + 2);
     const dd = district(x0 + w / 2, z0 + d / 2), r = R(), q = R(), low = dd === 'G' || dd === 'H';
     const h = low ? 36 + r * 36 : 60 + r * 48;
-    const style = dd === 'G' ? (q < 0.6 ? 'brick' : q < 0.85 ? 'brown' : 'tan') : dd === 'H' ? (q < 0.5 ? 'brick' : q < 0.75 ? 'lime' : 'tan') : dd === 'F' ? (q < 0.8 ? 'lime' : 'tan') : (q < 0.45 ? 'lime' : q < 0.7 ? 'tan' : q < 0.88 ? 'glass' : 'brick');
-    boxes.push({ x0, z0, w, d, h, style, seed: 1 + boxes.length });
+    const style = dd === 'G' ? (q < 0.6 ? 'brick' : q < 0.85 ? 'brown' : 'tan') : dd === 'H' ? (q < 0.5 ? 'brick' : q < 0.75 ? 'lime' : 'tan') : dd === 'F' ? (q < 0.6 ? 'marble' : q < 0.9 ? 'lime' : 'tan') : (q < 0.3 ? 'lime' : q < 0.5 ? 'marble' : q < 0.72 ? 'tan' : q < 0.88 ? 'glass' : 'brick');
+    boxes.push({ x0, z0, w, d, h, style, seed: 1 + boxes.length, plain: dd === 'F' || (dd !== 'G' && dd !== 'H' && q < 0.5) });   // (the ministries and offices have no shops along the street)
   };
   for (let bz = 17; bz < WZ - 40; bz += 104) for (let bx = 17; bx < WX - 40; bx += 104) {
     const k = R();
@@ -410,7 +414,88 @@ function landmarks() {
     place(x, z, f, S); make(LOC, LOC, 3, o || {}); place(0, 0, -1);
   }
 }
-const GROVE = [], MODELS = [];
+// What stands beside and over the course in stone, as a drawn model (nothing to drive into: it is all outside the
+// barriers or well over the road): the high bridge that carries a street over Rock Creek's valley, on two piers either
+// side of the road, and the pylons at the ends of the Memorial Bridge, with their gilded tops, and the posts along it.
+// Each: [x0, y0, z0, x1, y1, z1, colour].
+const GRANITE = [0.7, 0.66, 0.58], GRANITE2 = [0.6, 0.56, 0.49], GILT = [0.95, 0.7, 0.2];
+let STONES = null;
+function stones() {
+  if (STONES) return STONES;
+  const L = [], Z0 = 205, Z1 = 221, Y = 44;
+  L.push([164, Y, Z0, 304, Y + 6, Z1, GRANITE], [164, Y + 6, Z0, 304, Y + 8.5, Z0 + 1.4, GRANITE], [164, Y + 6, Z1 - 1.4, 304, Y + 8.5, Z1, GRANITE]);
+  L.push([164, 0, Z0, 178, Y, Z1, GRANITE2], [290, 0, Z0, 304, Y, Z1, GRANITE2], [204, 0, Z0 + 1, 213, Y, Z1 - 1, GRANITE2], [267, 0, Z0 + 1, 276, Y, Z1 - 1, GRANITE2]);
+  // the arches, in steps: each span's soffit follows an arc from pier to pier, a little under the deck at its crown
+  for (const [a, b] of [[178, 204], [213, 267], [276, 290]]) {
+    const w = b - a, rise = Math.min(w * 0.42, 18), n = w > 40 ? 7 : 4, soffit = (t) => Y - 2.5 - rise * (1 - Math.sqrt(Math.max(0, 1 - (1 - 2 * t / w) ** 2)));
+    for (let k = 0; k < n; k++) { const t0 = w / 2 * (k / n) ** 1.5, t1 = w / 2 * ((k + 1) / n) ** 1.5, y = soffit((t0 + t1) / 2); L.push([a + t0, y, Z0 + 1, a + t1, Y, Z1 - 1, GRANITE2], [b - t1, y, Z0 + 1, b - t0, Y, Z1 - 1, GRANITE2]); }
+  }
+  for (let x = 172; x < 300; x += 32) for (const z of [Z0 + 0.7, Z1 - 0.7]) L.push([x - 0.5, Y + 8.5, z - 0.5, x + 0.5, Y + 19, z + 0.5, [0.12, 0.13, 0.15]], [x - 1.2, Y + 19, z - 1.2, x + 1.2, Y + 21, z + 1.2, [0.9, 0.9, 0.85]]);
+  // the Memorial Bridge
+  { const { T, W, parts } = course(), p = parts.find((q) => q.name === 'Memorial Bridge');
+    for (const k of [0, p.n]) { const i = T.at(p.i0 + k); for (const sd of [1, -1]) { const x = T.X[i] + T.TZ[i] * sd * (W[i] + 8), z = T.Z[i] - T.TX[i] * sd * (W[i] + 8); L.push([x - 4, 0, z - 4, x + 4, 24, z + 4, GRANITE], [x - 5, 24, z - 5, x + 5, 26, z + 5, GRANITE2], [x - 2.5, 26, z - 2.5, x + 2.5, 33, z + 2.5, GILT]); } }
+    for (let k = 14; k < p.n - 8; k += 16) { const i = T.at(p.i0 + k); for (const sd of [1, -1]) { const x = T.X[i] + T.TZ[i] * sd * (W[i] + 2.2), z = T.Z[i] - T.TX[i] * sd * (W[i] + 2.2), y = p.H[i]; L.push([x - 1.2, y - 2, z - 1.2, x + 1.2, y + 6.5, z + 1.2, GRANITE], [x - 0.9, y + 6.5, z - 0.9, x + 0.9, y + 8.3, z + 0.9, [0.95, 0.93, 0.85]]); } }
+  }
+  return (STONES = L);
+}
+function stoneMesh() {
+  const pos = [], col = [], nor = [], idx = [];
+  const quad = (P, n, c) => { const i = pos.length / 3; pos.push(...P); for (let k = 0; k < 4; k++) { nor.push(...n); col.push(...c); } idx.push(i, i + 1, i + 2, i, i + 2, i + 3); };
+  for (const [x0, y0, z0, x1, y1, z1, c] of stones()) {
+    quad([x1, y0, z0, x0, y0, z0, x0, y1, z0, x1, y1, z0], [0, 0, -1], c); quad([x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1], [0, 0, 1], c);
+    quad([x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0], [-1, 0, 0], c); quad([x1, y0, z1, x1, y0, z0, x1, y1, z0, x1, y1, z1], [1, 0, 0], c);
+    quad([x0, y1, z0, x0, y1, z1, x1, y1, z1, x1, y1, z0], [0, 1, 0], c); if (y0 > 0) quad([x0, y0, z1, x0, y0, z0, x1, y0, z0, x1, y0, z1], [0, -1, 0], c.map((v) => v * 0.6));
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.setIndex(idx);
+  const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true })); m.castShadow = false; m.receiveShadow = false; m.matrixAutoUpdate = false; m.updateMatrix(); m.name = 'stonework';
+  return m;
+}
+
+// The trees. Elms in rows down both sides of the Mall, cherries in blossom round the Tidal Basin and down the point,
+// woods along Rock Creek and over Virginia, and trees about the parks and the great buildings' grounds. The ones
+// beside the course are voxels (plantTree); the rest are drawn models (GROVE), and so are the woods past the map's
+// edge (FAR), from the backdrop's own shores. The Monument's knoll and the middle of the Mall are kept clear.
+const GROVE = [], FAR = [], MODELS = [];
+function trees() {
+  let s = 7717; const R = () => { s = (s * 1664525 + 1013904223) | 0; return ((s >>> 8) & 0xffff) / 65536; };
+  const { used } = masks();
+  const by = (x, z, r) => { for (let a = 0; a < 8; a++) { const X = Math.round(x + Math.cos(a * 0.785) * r), Z = Math.round(z + Math.sin(a * 0.785) * r); if (X >= 0 && Z >= 0 && X < WX && Z < WZ && used[Z * WX + X]) return true; } return false; };
+  for (const [x0, y0, z0, x1, , z1] of stones()) if (y0 === 0) take(Math.floor(x0) - 7, Math.floor(z0) - 7, Math.ceil(x1) + 7, Math.ceil(z1) + 7);   // (no tree up through the bridge)
+  take(164, 198, 304, 228);
+  let n = 0;
+  const tree = (x, z, size, kind = 0) => {
+    x = Math.round(x); z = Math.round(z);
+    if (!free(x - 11, z - 11, x + 11, z + 11, true) || Math.hypot(x - KNOLL.x, z - KNOLL.z) < KNOLL.r + 8 || inPool(x, z)) return;
+    take(x - 5, z - 5, x + 5, z + 5); n++;
+    if (by(x, z, 24) || by(x, z, 38)) plantTree(x, z, 900 + n * 7 + x, size, kind); else GROVE.push([x + 0.5, z + 0.5, size * 1.08, R() * 6.28, kind]);
+  };
+  // the Mall's elms: two rows a side, from the Capitol's lawn to the Lincoln Memorial
+  for (let x = 282; x < 762; x += 26) for (const z of [536, 624, 510, 650]) tree(x + (R() - 0.5) * 3, z + (R() - 0.5) * 3, 1.2 + R() * 0.2);
+  // the cherries: two rings round the Tidal Basin
+  for (const [out, step] of [[13, 19], [34, 25]]) { const rx = BASIN.rx + out, rz = BASIN.rz + out, m = Math.round(Math.PI * (rx + rz) / step); for (let k = 0; k < m; k++) { const a = (k + R() * 0.3) / m * Math.PI * 2; tree(BASIN.x + Math.cos(a) * rx, BASIN.z + Math.sin(a) * rz, 0.78 + R() * 0.14, 1); } }
+  // and everywhere else that is green
+  for (let gz = 20; gz < WZ - 16; gz += 30) for (let gx = 20; gx < WX - 16; gx += 30) {
+    const x = gx + (R() - 0.5) * 18, z = gz + (R() - 0.5) * 18, r = R(), k = R();
+    if (!inPark(x, z)) continue;
+    const creek = x >= 166 && x < 318 && z >= 98 && z < 300, mall = z > 474 && z < 690 && x > 270 && x < 765;
+    if (mall && z > 500 && z < 660) continue;
+    const nearBasin = Math.hypot(x - BASIN.x, (z - BASIN.z) * 1.3) < 190 || (z > 860 && x > 430 && x < 740);
+    if (r > (creek ? 0.95 : virginia(x, z) ? 0.6 : leafy(x, z) ? 0.42 : 0.3)) continue;
+    tree(x, z, nearBasin ? 0.8 + k * 0.15 : 1 + k * 0.35, nearBasin && k < 0.75 ? 1 : 0);
+  }
+  // past the map's edge: woods over Virginia and the far bank, along Rock Creek going north, and blossom down the point
+  const { lands } = potomacLand(BACKDROP);
+  for (let gz = -1300; gz < 2400; gz += 62) for (let gx = -1500; gx < 2400; gx += 62) {
+    const x = gx + (R() - 0.5) * 40, z = gz + (R() - 0.5) * 40, r = R(), k = R();
+    if (x > -8 && z > -8 && x < WX + 8 && z < WZ + 8) continue;
+    if (Math.hypot(Math.max(100 - x, 0, x - 1000), Math.max(40 - z, 0, z - 1000)) > 1250) continue;
+    if (BACKDROP.keep.some(([kx, kz, kr]) => Math.hypot(x - kx, z - kz) < kr) || BACKDROP.towers.some((t) => Math.hypot(x - t.x, z - t.z) < t.r * 0.8)) continue;
+    const l = lands(x, z), wild = Math.max(l[2], l[3]) > 16, point = l[1] > 12, creek = l[0] > 16 && BACKDROP.green(x, z);
+    if (!(wild && r < 0.62) && !(point && r < 0.7) && !(creek && r < 0.9)) continue;
+    FAR.push([x, z, point ? 1.5 + k * 0.4 : 1.9 + k * 0.9, k * 6.28, point && k < 0.7 ? 1 : 0]);
+  }
+}
 function build() {
   // the great buildings first, on a bare corner of the map: built, copied, and taken out again
   for (const [name, make, S, NY, f, k, x0, z0, turn] of BIG) MODELS.push({ name, vol: grabModel(make, S, NY, 16, 16, f, 2), k, x: x0 + S * k / 2, z: z0 + S * k / 2, turn: turn || 0 });
@@ -423,6 +508,7 @@ function build() {
   // a lamp now and then along the streets, outside the barriers
   { const { T, on } = course(); setSeed(3003);
     for (let i = 0; i < T.N; i += 40) { if (on[i] || inPark(T.X[i], T.Z[i])) continue; for (const sd of [1, -1]) { const w = (sd > 0 ? T.WL[i] : T.WR[i]) + 4.5, x = Math.round(T.X[i] + T.TZ[i] * sd * w), z = Math.round(T.Z[i] - T.TX[i] * sd * w); if (x > 12 && z > 12 && x < WX - 12 && z < WZ - 12 && land(x, z) && !masks().road[z * WX + x]) lampPost(x, z, 22); } } }
+  trees();
   vehicles.length = 0;   // nothing parked along the road
   gantry(LINE_X, LINE_Z - 33, LINE_Z + 33, ['CAPITAL CIRCUIT', 'WASHINGTON GP'], -1, GANTRY_Y);
   finish();
@@ -500,6 +586,27 @@ function paint() {
     const P = (k, l) => [(T.X[k] + T.TZ[k] * l) * GK, (T.Z[k] - T.TX[k] * l) * GK];
     g.fillStyle = pool ? 'rgba(63,111,128,0.9)' : 'rgba(217,201,162,0.6)'; g.beginPath(); g.moveTo(...P(i, -T.WR[i])); g.lineTo(...P(i, T.WL[i])); g.lineTo(...P(j, T.WL[j])); g.lineTo(...P(j, -T.WR[j])); g.closePath(); g.fill();
   }
+  // The shadows of what casts none of its own (the drawn trees, the cheap city and the great buildings, none of them
+  // in the sun's shadow pass): painted, all at once so that where they cross they are no darker, the way the spring
+  // sun throws them (north and a little west, about four fifths as long as the thing is tall).
+  {
+    const sx = -SPRING.sun.x / SPRING.sun.y, sz = -SPRING.sun.z / SPRING.sun.y;
+    g.beginPath();
+    const quad = (x0, z0, x1, z1, hw) => { const l = Math.hypot(x1 - x0, z1 - z0) || 1, px = -(z1 - z0) / l * hw, pz = (x1 - x0) / l * hw, ex = (x1 - x0) / l * hw, ez = (z1 - z0) / l * hw; g.moveTo((x0 - ex + px) * GK, (z0 - ez + pz) * GK); g.lineTo((x1 + ex + px) * GK, (z1 + ez + pz) * GK); g.lineTo((x1 + ex - px) * GK, (z1 + ez - pz) * GK); g.lineTo((x0 - ex - px) * GK, (z0 - ez - pz) * GK); g.closePath(); };
+    for (const [x, z, size, , kind] of GROVE) { const h = (kind ? 26 : 30) * size, r = 9 * size; g.moveTo((x + sx * h + r) * GK, (z + sz * h) * GK); g.ellipse((x + sx * h) * GK, (z + sz * h) * GK, r * GK, r * 0.8 * GK, 0, 0, Math.PI * 2); quad(x, z, x + sx * h, z + sz * h, 1.2); }
+    for (const b of plan().boxes) { const h = Math.max(2, Math.round(b.h / 12)) * 12, dx = sx * h, dz = sz * h; for (const [ax, az, bx, bz] of [[b.x0, b.z0, b.x0 + b.w, b.z0], [b.x0, b.z0, b.x0, b.z0 + b.d], [b.x0 + b.w, b.z0 + b.d, b.x0 + b.w, b.z0], [b.x0 + b.w, b.z0 + b.d, b.x0, b.z0 + b.d]]) { g.moveTo(ax * GK, az * GK); g.lineTo(bx * GK, bz * GK); g.lineTo((bx + dx) * GK, (bz + dz) * GK); g.lineTo((ax + dx) * GK, (az + dz) * GK); g.closePath(); } g.rect((b.x0 + dx) * GK, (b.z0 + dz) * GK, b.w * GK, b.d * GK); }
+    for (const [x0, y0, z0, x1, y1, z1] of stones()) { const dx = sx * y1, dz = sz * y1; if (y0 > 0) { if (y1 - y0 > 3 && x1 - x0 > 3) g.rect((x0 + dx) * GK, (z0 + dz) * GK, (x1 - x0) * GK, (z1 - z0) * GK); } else if (x1 - x0 > 3) quad((x0 + x1) / 2, (z0 + z1) / 2, (x0 + x1) / 2 + dx, (z0 + z1) / 2 + dz, (x1 - x0 + z1 - z0) / 4); }
+    for (const m of MODELS) {
+      const { S, NY, m: v } = m.vol, c = Math.cos(m.turn), sn = Math.sin(m.turn), y0 = m.name === 'Monument' ? KNOLL.h : 0;
+      for (let z = 0; z < S; z += 2) for (let x = 0; x < S; x += 2) {
+        let top = 0; for (let y = NY - 1; y > 0; y--) if (v[(y * S + z) * S + x]) { top = y + 1; break; }
+        if (top < 3) continue;
+        const lx = (x + 1 - S / 2) * m.k, lz = (z + 1 - S / 2) * m.k, wx = m.x + lx * c + lz * sn, wz = m.z - lx * sn + lz * c, h = top * m.k + y0;
+        quad(wx, wz, wx + sx * h, wz + sz * h, m.k * 1.3);
+      }
+    }
+    g.fillStyle = 'rgba(18,30,52,0.34)'; g.fill('nonzero');
+  }
   grassy = grassOf(cv, true, T);
   if (!PHONE) return cv;
   const half = document.createElement('canvas'); half.width = cv.width >> 1; half.height = cv.height >> 1;
@@ -521,13 +628,32 @@ function radar(R, s, ox, oy, w, h) {
 
 const P = (name) => course().parts.find((p) => p.name === name);
 let ROOFS = null;
+// Washington past the map's edge (backdrops/potomac.js): where the shores leave the map (the numbers are the map's own
+// shores at its edges), the downtown north of the White House, the towers across the river and down it, the cathedral,
+// the bridge at Georgetown, the Pentagon's ground (kept clear: half of it stands past the edge), and Rock Creek's woods
+const BACKDROP = {
+  kind: 'potomac', seed: 1791,
+  world: [0, 0, WX, WZ], view: { x: 512, z: 512 }, course: [100, 40, 1000, 1000], reach: 2200,
+  water: 0x4d8fa8, lawn: 0x74a65e, pave: 0xcfc9b9,
+  shores: { west: BANK[0][0], va: [613, 0.13], south: [336.5, 465.4, 742.8], east: [953, 0.3], far: [1130, 0.3, 700] },
+  downtown: { x: 560, z: -260, r: 520, k: 1.35 },
+  towers: [{ x: -340, z: 300, r: 230, n: 16, h: 300 }, { x: 140, z: 1440, r: 200, n: 12, h: 190 }],
+  cathedral: [340, -640],
+  bridges: [{ a: [BANK[0][0] + 4, 190], b: [-58, 190], y: 30, w: 34, span: 44 }],
+  keep: [[62, 1000, 250]],
+  green: (x, z) => x > 150 && x < 330 && z < 0 && z > -760,
+  boats: [{ x: 30, z: 330, len: 46, yaw: 1.5 }, { x: 400, z: 1170, len: 60, yaw: 1.25 }, { x: 880, z: 1004, len: 40, yaw: 0.15 }],
+  hills: [0.5, 0.8, 0.9, 0.9, 1, 1, 1.15, 0.9, 0.5],
+  heli: { ahead: 290, y: 96, size: 1.5, sway: 18 },
+};
 export default {
   id: 'capital', name: 'Capital Circuit', mode: 'race', laps: 3, hidden: true,
   blurb: 'Three laps of Washington: down the Avenue to the Capitol, the freeway, the Mall, through the Reflecting Pool, two bridges, the Metro, Georgetown and Dupont Circle. Guns on.',
   loading: ['Closing the Avenue', 'Building Washington, filling the pool and digging the Metro'],
   outer: 0x8fae78,
-  look: { kind: 'dusk' },
-  lodK: 0.4,
+  look: { kind: 'spring' },
+  backdrop: BACKDROP,
+  lodK: 0.34,   // (the Avenue has the city close on both sides for a long way: a little less of it in full than Empire City)
   // the road's height (vehicle.js, main.js's camera), the sides of the decks and the cut, and the floor that is drawn
   floor: (x, z, y) => heights().floor(x, z, y),
   rail: (x, z, y) => heights().rail(x, z, y),
@@ -544,10 +670,13 @@ export default {
     const s = P('Metro').roofBox;
     return [
       { kind: 'custom', make: (api) => { makeRoads(api.scene, course().T, course().parts.map((p) => ({ ...p, skip: near }))); } },
-      { kind: 'custom', make: (api) => { for (const m of MODELS) { const g = statueMesh(m.vol, m.k, { glow: [1.5, 1.4, 1.1], greedy: true }); g.position.set(m.x, m.name === 'Monument' ? KNOLL.h : 0, m.z); g.rotation.y = m.turn; g.name = m.name; api.scene.add(g); console.log('INFO model', m.name, g.userData.tris); } } },
-      { kind: 'custom', make: (api) => { makeBlocks(api.scene, plan().boxes); } },
-      { kind: 'custom', make: (api) => { makeGrove(api.scene, GROVE); } },
-      { kind: 'custom', make: (api) => makeWater(api.scene, { x0: 0, z0: 0, span: 1024, sun: DUSK.sun, isWater: (x, z) => !land(x, z) || inPool(x, z), pools: [[POOL.x0, POOL.z0, POOL.x1, POOL.z1, 0.55]] }) },
+      { kind: 'custom', make: (api) => { for (const m of MODELS) { const g = statueMesh(m.vol, m.k, { glow: [1.5, 1.4, 1.1], greedy: true }); g.position.set(m.x, m.name === 'Monument' ? KNOLL.h : 0, m.z); g.rotation.y = m.turn; g.name = m.name; api.scene.add(g); } } },
+      { kind: 'custom', make: (api) => { dressBridges(api.scene, course().T, [{ part: P('14th Street Bridge'), kind: 'truss' }]); api.scene.add(stoneMesh()); } },
+      { kind: 'custom', make: (api) => { const p = P('Metro'), T = course().T, i = T.at(p.i0 + p.open[0]); makeStation(api.scene, { x: T.X[i], w: course().W[i], z0: p.openZ[0], z1: p.openZ[1], y0: p.h, y1: p.roofY, name: 'SMITHSONIAN', style: 'vault' }); } },
+      { kind: 'el', x: COURSE[14][0] - 18 - 10.5, z0: P('Metro').openZ[0] - 56, z1: P('Metro').openZ[1] + 56, ground: true, y: P('Metro').h, every: 7, speed: 64, see: 130, model: 'commuter', paint: 'blue' },
+      { kind: 'custom', make: (api) => { makeBlocks(api.scene, plan().boxes, { day: true }); } },
+      { kind: 'custom', make: (api) => { makeGrove(api.scene, GROVE, 2, { clump: 342 }); makeGrove(api.scene, FAR, 1, { clump: 900, cube: 4 }); } },
+      { kind: 'custom', make: (api) => { const far = potomacLand(BACKDROP).land, inMap = (x, z) => x >= 0 && z >= 0 && x < WX && z < WZ; return makeWater(api.scene, { x0: -1024, z0: -1024, span: 3072, sun: SPRING.sun, sky: 0xbcd6ee, glint: 0xffffff, isWater: (x, z) => (inMap(x, z) ? !land(x, z) || inPool(x, z) : far(x, z) < 0), pools: [[POOL.x0, POOL.z0, POOL.x1, POOL.z1, 0.55]] }); } },
       { kind: 'covered', x0: s[0], z0: s[1], x1: s[2], z1: s[3], dim: 0.5 },
     ];
   },
@@ -568,6 +697,8 @@ export default {
   groundDetail: { hard: true, deFleck: true, fade: 20 },
   rutBox: [0, 0, WX, WZ],
   // (the grass is the painted ground's: a deck over it, or the cut under it, is road)
-  surface(x, z) { if (!grassy || !TR) return 0; const c = clamp(Math.floor(z), 0, WZ - 1) * WX + clamp(Math.floor(x), 0, WX - 1), d = heights().deck[c]; return d === d || masks().cut[c] ? 0 : surfaceAt(TR.T, grassy, x, z); },
+  // the Reflecting Pool: its water holds a car back a little, and comes up off the wheels (dirt.js)
+  wetAt: (x, z) => (inPool(x, z) ? 1 : 0),
+  surface(x, z) { if (!grassy || !TR) return 0; if (inPool(x, z)) return 0.3; const c = clamp(Math.floor(z), 0, WZ - 1) * WX + clamp(Math.floor(x), 0, WX - 1), d = heights().deck[c]; return d === d || masks().cut[c] ? 0 : surfaceAt(TR.T, grassy, x, z); },
   get track() { return full(); },
 };

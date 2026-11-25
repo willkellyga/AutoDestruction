@@ -6,6 +6,8 @@
 //           bridges reaching off it, the traffic on far roads, and the news helicopter over the race (./backdrops/harbor.js)
 //   wilds   the forest round Camp Deadfall: pines, hills, a road out with what was left on it, a radio mast, and a town
 //           burning on the horizon (./backdrops/wilds.js)
+//   potomac Washington carrying on past the edge of its map: the low pale city, the rivers, the towers across the Potomac,
+//           the cathedral on its hill and wooded hills round the horizon (./backdrops/potomac.js)
 // What they share is in ./backdrops/kit.js.
 //   - None of it is voxels and none of it can be hit, and none of it stands on anything that can be driven on.
 //   - A handful of draws: the ground (one mesh with a hole where the map is, its paint and lamplight worked out from where
@@ -29,8 +31,9 @@ import { seeded, fogKeep, COMMON, RED, makeBoxes, makePoints, makeSkyline, paint
 import { arena } from './backdrops/arena.js';
 import { harbor } from './backdrops/harbor.js';
 import { wilds } from './backdrops/wilds.js';
+import { potomac } from './backdrops/potomac.js';
 
-const STYLES = { arena, harbor, wilds };
+const STYLES = { arena, harbor, wilds, potomac };
 
 // map: the map (its backdrop, and the race's course for the helicopter); follow(): the car the craft keeps with
 export function makeBackdrop({ scene, map, mobile, viewH, follow }) {
