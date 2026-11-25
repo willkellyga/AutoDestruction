@@ -31,7 +31,7 @@ import { makePartArt } from './partart.js';
 import { makeSpecials } from './specials.js';
 import { makeCrumple } from './crumple.js';
 import { makeSounds, fetchClips } from './audio.js';
-import { makeMusic, MAP_TRACK } from './music.js';
+import { makeMusic, roundTrack } from './music.js';
 import { makeRoadSound } from './roadsound.js';
 import { makeEngineSound } from './enginesound.js';
 import { bank as sfxBank, count as sfxCount } from './sfxfiles.js';
@@ -160,7 +160,7 @@ let muted = false, engine = null;
 const sfx = makeSounds(() => audioMix.ctx);
 // the music (music.js): the main theme all through the home zone (home, garage and shop, a mode's start card), and in a
 // round the map's own track where it has one
-const ROUND_TRACK = MAP_TRACK[MAP.id] || null;
+const ROUND_TRACK = roundTrack(MAP);
 const music = makeMusic(() => audioMix.ctx, ROUND_TRACK ? ['theme', ROUND_TRACK] : ['theme']);
 const HOME_ZONE = { garage: 1, menu: 1, test: 1 }, IN_ROUND = { play: 1, dead: 1 };
 function musicOn() { music.on = !muted && !document.hidden; }
