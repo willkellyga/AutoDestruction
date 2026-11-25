@@ -99,6 +99,10 @@ export class Unit {
     }
     this.gone = true; this.root.visible = false;
   }
+  // far off and untouched: let go of the vertex lists (voxpart.js unload); `loading` until reload's rebuild is done
+  unload() { for (const p of this.parts) p.unload(); this.unloaded = true; this.loading = false; }
+  reload() { if (!this.unloaded) return; for (const p of this.parts) p.reload(); this.unloaded = false; this.loading = true; }
+  get busy() { for (const p of this.parts) if (p.dirty || p.more) return true; return false; }
   dispose() { for (const p of this.parts) for (const m of p.meshes) if (m) m.geometry.dispose(); this.root.removeFromParent(); }
 }
 const ZERO = [0, 0, 0, 0, 0, 0, 1];

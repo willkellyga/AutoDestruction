@@ -243,6 +243,9 @@ export const HELI = {
   onKill(u, point, r, debris) { u.play('Crash', 0.05); },
 };
 
+// paint and helpers shared with the convoy vehicles (convoy.js)
+export { GREEN, SAND, DARK, STEEL, METAL, BLACK, RUBBER, TREAD, STOW, CANVAS, GLASS, GLASS2, STRIPE, WARN, LAMP, RED, FIRE1, FIRE2, INNER, OFF, camo, flashPart };
+
 // ================= the pack's own models, unchanged, for comparison =================
 function packDef(name, h, alt = 0) {
   const m = PACK[name], [sx, sy, sz] = m.size, ox = -Math.floor(sx / 2), oz = -Math.floor(sz / 2);
