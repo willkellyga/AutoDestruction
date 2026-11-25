@@ -35,7 +35,7 @@ import { makeMusic, roundTrack, RADIO, trackName } from './music.js';
 import { makeRoadSound } from './roadsound.js';
 import { makeEngineSound } from './enginesound.js';
 import { bank as sfxBank, count as sfxCount } from './sfxfiles.js';
-import { makePickups } from './pickups.js';
+import { makePickups, PICKUPS } from './pickups.js';
 import { makeHazards } from './hazards.js';
 import { makeQuality } from './quality.js';
 import { startReports } from './report.js';
@@ -48,6 +48,7 @@ import { makeStreaks } from './streaks.js';
 import { makeNet, makeLobby, serverUrl, quickPlay } from './net.js';
 import { makeLearn } from './learn.js';
 import { nextPart, firstBonus, barHtml } from './goal.js';
+import { makeCoach } from './coach.js';
 import { onLeave, leavePage, leaving } from './leave.js';
 
 const $ = (id) => document.getElementById(id);
@@ -331,6 +332,7 @@ function wreck(c, who) {
   if (c === player) {
     game.deaths++; keepSave(save);
     const r = mode.playerDown();
+    sfx.play('wrecked', 1);   // (the player's car is wrecked: a power-down under the blast)
     if (r && r.respawn !== undefined) { game.state = 'dead'; game.deadT = r.respawn; $('dead').hidden = r.respawn <= 0.01; $('dead-garage').hidden = !!r.noGarage; game.noGarage = !!r.noGarage; $('dead-go').hidden = !!r.noSkip; }
     if (document.exitPointerLock && game.state === 'dead') document.exitPointerLock();
   }
@@ -634,7 +636,7 @@ function stepMines(dt) {
 // E (or Q): the gadget. Nitro is a burst of speed; the repair kit patches the car up.
 function gadget(c) {
   const G = c.gadget; if (!G || c.dead || c.gadgetT > 0) return;
-  useGadget(c, G);
+  useGadget(c, G); if (c === player) did.gadget = true;
   if (net && !c.remote && c.gadgetT > 0) net.gadget(c);   // the others see it go off too (and an oil slick is on every road)
 }
 function useGadget(c, G) {
@@ -680,7 +682,9 @@ function drawTags() {
   }
 }
 let toastT = 0;
-function toast(a, b) { if (!$('over').hidden) return;   // a late wreck message would sit over the results card
+function toast(a, b) { if (!$('over').hidden) return;
+  if (PICKUP_NAMES.has(a)) did.picked = true;   // (a pickup taken: the coach's tick, coach.js)
+   // a late wreck message would sit over the results card
   $('toast').innerHTML = `<b></b><span></span>`; $('toast').querySelector('b').textContent = a; $('toast').querySelector('span').textContent = b; $('toast').classList.add('on'); toastT = 2.2; }
 function banner(text, sub) { $('banner').querySelector('b').textContent = text; $('banner').querySelector('span').textContent = sub || ''; $('banner').classList.add('on'); game.banner = 2.4; }
 const radar = $('radar').getContext('2d');
@@ -822,6 +826,10 @@ function hint(html) { if (html) { $('hint').innerHTML = html; $('hint').classLis
 //   pay      what paid this round, [label, scrap]; the card adds the wrecks (100 each, paid as they happen) and
 //            whatever else the round earned (`rest` names that line), and counts up the total
 let overMore = null, overNext = null;
+// what the player has done this round, for the coach's popups (coach.js)
+const did = { moved: false, fired: false, heavy: false, drift: false, gadget: false, picked: false };
+const PICKUP_NAMES = new Set(Object.values(PICKUPS).map((k) => k.name));
+const coach = makeCoach({ el: $('coach'), save, keep: () => {}, touch: () => TOUCH });
 const el = (tag, cls, text) => { const d = document.createElement(tag); if (cls) d.className = cls; if (text !== undefined) d.textContent = text; return d; };
 function showResults(title, lines, scrap, sheet, bonus = 0) {
   $('over-t').textContent = title;
@@ -878,7 +886,7 @@ function over(title, lines = [], scrap = 0, more = null, sheet = null) {
   game.state = 'over'; game.scrap += scrap; hint(null);
   // the first round ever pays a bonus, enough for the next part (goal.js); from here on this browser has played
   const bonus = save.played ? 0 : firstBonus(save, game.scrap);
-  game.scrap += bonus; save.played = true; keepSave(save); $('tips').hidden = true;
+  game.scrap += bonus; save.played = true; keepSave(save); coach.reset();
   $('dead').hidden = true;
   const run = showResults(title, lines, scrap, sheet || {}, bonus);
   setTimeout(() => { if (game.state === 'over') { $('over').hidden = false; $('banner').classList.remove('on'); run(); if (document.exitPointerLock) document.exitPointerLock(); } }, 1600);
@@ -1518,8 +1526,6 @@ function firstVisit() {
     e.preventDefault(); F.hidden = true; removeEventListener('keydown', go, true);
     game.firstRound = true;   // (this round only, gentler than Easy: tuning.js BRAWL_FIRST, read by modes/brawl.js)
     startGame();
-    const T = $('tips'); T.hidden = false; T.classList.remove('out');
-    setTimeout(() => T.classList.add('out'), 14000); setTimeout(() => { T.hidden = true; }, 15000);
   };
   F.addEventListener('click', go); addEventListener('keydown', go, true);
 }
@@ -1530,6 +1536,7 @@ function startGame(auto) {
   learn.dismiss();   // (online, the round can start while the how-to-play card is still up)
   initAudio(); $('menu').hidden = true; game.state = 'play';
   game.scrap0 = save.scrap;   // (what the round earns is shown on the results card)
+  for (const k in did) did[k] = false; coach.reset();
   // phones and tablets: the whole screen for the round, where the browser allows it (a tap on Start counts as asking)
   const root = document.documentElement;
   if (MOBILE && root.requestFullscreen && !document.fullscreenElement) { try { root.requestFullscreen({ navigationUI: 'hide' }).catch(() => {}); } catch (err) { /* not allowed here */ } }
@@ -1953,6 +1960,13 @@ function step(dt) {
       if (game.deadT <= 0) { $('dead').hidden = true; game.state = 'play'; spawnPlayer(); }
     }
     if (live) mode.step(dt);
+    // the coach's popups (coach.js), while the player is driving
+    if (game.state === 'play' && player && !player.dead) {
+      const hv = player.guns.find((g) => g.group === 1), gk = gadgetKey(player.gadget);
+      did.moved = did.moved || Math.abs(player.speed) > 12; did.fired = did.fired || mouse.b0 || touch.fire; did.heavy = did.heavy || mouse.b2 || touch.heavy;
+      did.drift = did.drift || (player.drift && Math.abs(player.speed) > 15);
+      coach.step(dt, did, { heavyName: hv ? (hv.g.mine ? 'Mine' : hv.g.fx === 'cannon' ? 'Cannon' : 'Rockets') : null, gadgetName: gk ? (GADGET[gk] || {}).label || PARTS.gadget[gk].name : null, pickups: !!(MAP.pickups && MAP.pickups.length) });
+    } else if (game.state === 'dead' && coach.showing) coach.reset();   // (not over the Wrecked card: it comes back after)
     if ((savedT += dt) > 15) { savedT = 0; keepSave(save); }
   }
   if (game.state === 'garage' || test) stepDummies(dt);
@@ -1994,7 +2008,7 @@ function step(dt) {
     engine.hum.set(on && arcG ? (arcG.t <= 0 ? 0.35 : 0.12) : 0, arcG && arcG.t <= 0 ? 1 : 0.8, player.x, player.z);
     // a flamethrower going: the player's, or else the nearest one
     const fl = player.flameT > 0 && !player.dead ? player : cars.filter((c) => c.flameT > 0 && !c.dead).sort((a, b) => Math.hypot(a.x - player.x, a.z - player.z) - Math.hypot(b.x - player.x, b.z - player.z))[0];
-    engine.flame.set(!muted && fl ? (fl === player ? 0.8 : 0.6) : 0, fl === player ? 1 : 0.92, fl ? fl.x : player.x, fl ? fl.z : player.z);
+    engine.flame.set(!muted && fl ? (fl === player ? 0.8 : 0.6) : 0, fl === player ? 0.86 : 0.8, fl ? fl.x : player.x, fl ? fl.z : player.z);
     engine.note.step(dt, player, near, on, rev);   // the engines' note, through the gears (enginesound.js)
   }
   document.body.classList.toggle('in-garage', game.state === 'garage');

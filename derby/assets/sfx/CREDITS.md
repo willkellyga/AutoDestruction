@@ -22,6 +22,7 @@ Every clip here was cut from Sonniss's free **GDC Game Audio Bundles** (https://
 | `ui_click.mp3`, `ui_tab.mp3`, `ui_open.mp3` | garage buttons, tabs, opening | Kalimba 3 Up; Woosh Sweep Slide; Cartoon Pull Swoosh |
 | `ui_equip.mp3`, `ui_coin.mp3`, `ui_go.mp3` | fitting a part, buying, starting | Epic Stock Media: Power Up Bright; Coin Flip; Game Entry Happy Short |
 | `vo_clear.mp3`, `vo_rampage.mp3` | wave cleared, three wrecks in six seconds | Announcer: Objective Completed; Monster Kill (laugh) |
+| `wrecked.mp3` | the player's car is wrecked | 344 Audio, Bass Drops & Downers Vol. 1: Bass Drop & Downer Fast 16, under a falling two-saw power-down made in code so it carries on small speakers |
 
 ### The weapons
 
