@@ -34,6 +34,14 @@ const ALL = [town, manhattan, base, fair, arena, crumble, bowtie, empire];
 export const MAPS = [manhattan, base, fair, arena];
 // the maps of one mode that share a card: Zombie Survival's two (the card's map row picks; online picks for you)
 export const SHARED = { survival: [base, fair] };
+// The stage select (main.js): a solo player picks a map of the mode from these picture cards, by the mode's name, and the
+// line under each card's name. Their pictures are src/stages.json (node derby/tools/stage-shots.mjs). A map here loads
+// without ?map= in the address, like the start card's.
+export const STAGES = { race: [manhattan, empire], survival: [base, fair], brawl: [arena] };
+export const TAGS = {
+  race: '4 laps · river sweeps and towers', empire: '3 laps · bridges, the subway, Lady Liberty', capital: '3 laps · the Capitol, the Mall, the Metro',
+  base: 'Army base · a storm at night', fair: 'County fair · the lights are failing', arena: 'Derby pit · traps round the edge',
+};
 const KEY = 'ad-map';
 export const MAP = ALL.find((m) => m.id === picked()) || arena;
 // load the page again on another map (one that is not on the card keeps its ?map= in the address, so Play again stays on
@@ -42,6 +50,6 @@ export function chooseMap(id) {
   try { sessionStorage.setItem(KEY, id); } catch (e) { /* fall through to the window's name */ }
   try { window.name = (window.name || '').replace(/ad-map=\w+;?/, '') + `ad-map=${id};`; } catch (e) { /* stays */ }
   let u = location.href.replace(/([?&])map=\w+&?/, '$1').replace(/[?&]$/, '');
-  if (!MAPS.some((m) => m.id === id)) u = u.replace(/(#|$)/, `${u.includes('?') ? '&' : '?'}map=${id}$1`);
+  if (!MAPS.some((m) => m.id === id) && !Object.values(STAGES).some((l) => l.some((m) => m.id === id))) u = u.replace(/(#|$)/, `${u.includes('?') ? '&' : '?'}map=${id}$1`);
   if (u !== location.href) location.replace(u); else location.reload();
 }
