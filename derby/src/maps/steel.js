@@ -125,9 +125,12 @@ const THINGS = [
   thing('lip', LANE.x0 + 0.1, LANE.z, E, { w: 2 * LANE.half, lift: 6.5 }), thing('lip', LANE.x1 - 0.1, LANE.z, -E, { w: 2 * LANE.half, lift: 6.5 }),
   thing('lip', COIL.x0 + 0.1, COIL.z, E, { w: 2 * COIL.half, lift: COIL.lip }), thing('lip', COIL.x1 - 0.1, COIL.z, -E, { w: 2 * COIL.half, lift: COIL.lip }),
   thing('lip', JUMP.x0 + 0.1, CZ, E, { w: JUMP.z1 - JUMP.z0, lift: JUMP.lip }), thing('lip', JUMP.x1 - 0.1, CZ, -E, { w: JUMP.z1 - JUMP.z0, lift: JUMP.lip }),
-  // flame cannons beside the lips (../arenamoves.js fires them at a take-off)
-  ...[[JUMP.x0 - 2, JUMP.z0 - 6.5], [JUMP.x0 - 2, JUMP.z1 + 6.5], [JUMP.x1 + 2, JUMP.z0 - 6.5], [JUMP.x1 + 2, JUMP.z1 + 6.5]].map(([x, z]) => thing('pyro', x, z, 0, { jump: 'pour' })),
-  ...[[COIL.x0 - 2, -1], [COIL.x1 + 2, 1]].map(([x, k]) => thing('pyro', x, COIL.z + k * (COIL.half + 6.5), 0, { jump: 'coil' })),
+  // flame cannons down both sides of every jump, from the foot of each ramp to its lip (../arenamoves.js lights a
+  // jump's whole set at a take-off, the fire running along it). Will, 2026-11-25: "add more flame throws on the jumps
+  // and have them run longer".
+  ...[JUMP.x0 - JUMP.run + 2, JUMP.x0 - 18, JUMP.x0 - 2, JUMP.x1 + 2, JUMP.x1 + 18, JUMP.x1 + JUMP.run - 2].flatMap((x) => [JUMP.z0 - 6.5, JUMP.z1 + 6.5].map((z) => thing('pyro', x, z, 0, { jump: 'pour' }))),
+  ...[COIL.x0 - 18, COIL.x0 - 2, COIL.x1 + 2, COIL.x1 + 18].flatMap((x) => [-1, 1].map((k) => thing('pyro', x, COIL.z + k * (COIL.half + 6.5), 0, { jump: 'coil' }))),
+  ...[LANE.x0 - 2, LANE.x1 + 2].flatMap((x) => [-1, 1].map((k) => thing('pyro', x, LANE.z + k * (LANE.half + 6.5), 0, { jump: 'lane' }))),
 ];
 // where a car cannot drive straight through: the steel's steep sides (two voxels a cell)
 const SG = 2, SGX = Math.ceil(WX / SG), steepAt = new Uint8Array(SGX * Math.ceil(WZ / SG));
@@ -414,7 +417,7 @@ export default {
     { kind: 'custom', make(api, S) {
       for (const o of THINGS) o.dead = false;
       stalls = makeStalls(api, THINGS, POWER, () => 0, [WX, WZ], { heap: wreckage, bots: true });
-      moves = makeArenaMoves(api, { pyros: THINGS.filter((o) => o.kind === 'pyro') });
+      moves = makeArenaMoves(api, { pyros: THINGS.filter((o) => o.kind === 'pyro'), burn: 2.2, reach: 26, rate: 0.42, air: 0.08, ripple: 0.004 });
       works = makeWorks(api, { ...WORKS, dress }, S);
       FORGE.arm = works.arm; FORGE.at = works.at;
       return { step(dt) { stalls.step(dt); moves.step(dt); works.tip(POUR.tip || 0, !!POUR.pouring); works.step(dt); } };
