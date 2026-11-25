@@ -31,7 +31,8 @@ import { fedblock, dcoffice, temple, dcgrove } from '../../../src/dc_kit.js';
 import { WHITEHOUSE, CAPITOL, LINCOLN, JEFFERSON, CASTLE, PENTAGON, whitehouse, capitol, lincoln, jefferson, castle, pentagon, wmonument } from '../../../src/dc_landmarks.js';
 import { grabModel, statueMesh } from './statue.js';
 import { pentagonMesh, underPentagon } from './pentagon.js';
-import { makeBlocks } from './blocks.js';
+import { makeDcBlocks } from './dcblocks.js';
+import { makeCrowd, makePetals } from './cityblocks.js';
 import { makeGrove } from './trees.js';
 import { makeWater } from './water.js';
 import { SPRING } from '../looks/spring.js';
@@ -339,11 +340,22 @@ function kitFor(d, R) {
   }
 }
 const KITS = { fedblock, dcoffice, temple, dcgrove, brownstone, rowhouse, haussmann, shop };
+// The great boards (maps/cityblocks.js; the pictures are maps/dcart.js FILMS), where a long straight looks at them: the
+// Grand Prix's past the end of the start straight, the Space Museum's at the far end of Constitution Avenue, and the Cherry
+// Blossom Festival's over the road itself (`over`: on legs either side of it) on the way up the Tidal Basin. The last
+// two are the smaller size (`great`): a full one beside the Monument was more than the Mall's view could take.
+const HEROES = [{ x: 770, z: 172, s: 3, film: 0, y: 30 }, { x: 212, z: 444, s: 1, film: 2, y: 26, great: true }, { x: 660, z: 850, s: 2, film: 1, y: 38, over: true, great: true }];
+const CLOCK = { value: 0 };
 let PLAN = null;
 function plan() {
   if (PLAN) return PLAN;
   const { T, leg } = course(), { N, X, Z, WL, WR } = T, lots = [];
   let s = 20261125; const R = () => { s = (s * 1664525 + 1013904223) | 0; return ((s >>> 8) & 0xffff) / 65536; };
+  for (const h of HEROES) {   // (their own ground, and the ground in front of them: nothing stands between a board and the road)
+    if (h.over) { for (const o of [-29, 29]) take(h.x + o - 7, h.z - 9, h.x + o + 7, h.z + 7); continue; }
+    const hw = h.great ? 52 : 76, w = h.s === 0 || h.s === 2 ? [hw, 8] : [8, hw], o = h.open ?? 44, f = [[0, -o], [o, 0], [0, o], [-o, 0]][h.s];
+    take(h.x - w[0] + Math.min(0, f[0]), h.z - w[1] + Math.min(0, f[1]), h.x + w[0] + Math.max(0, f[0]), h.z + w[1] + Math.max(0, f[1]));
+  }
   for (const f of FIXED) take(f[1] - 3, f[2] - 3, f[1] + f[3] + 2, f[2] + f[3] + 2);
   for (const b of BIG) take(b[6] - 3, b[7] - 3, Math.ceil(b[6] + b[2] * b[5]) + 2, Math.ceil(b[7] + b[2] * b[5]) + 2);
   const lot = (x0, z0, f, kit, o) => { take(x0 - 2, z0 - 2, x0 + 41, z0 + 41); const [k, opt] = kit ? [kit, o] : kitFor(district(x0 + 20, z0 + 20), R); lots.push({ x: x0, z: z0, f, kit: k, o: opt, seed: 4000 + lots.length * 37 }); };
@@ -388,7 +400,7 @@ function plan() {
   const add = (x0, z0, w, d) => {
     take(x0 - 2, z0 - 2, x0 + w + 2, z0 + d + 2);
     const dd = district(x0 + w / 2, z0 + d / 2), r = R(), q = R(), low = dd === 'G' || dd === 'H';
-    const h = low ? 36 + r * 36 : 60 + r * 48;
+    const h = low ? (Math.min(w, d) < 32 ? 24 + r * 16 : 28 + r * 28) : 60 + r * 48;   // (the houses of Georgetown and the Hill: three to seven floors)
     const style = dd === 'G' ? (q < 0.6 ? 'brick' : q < 0.85 ? 'brown' : 'tan') : dd === 'H' ? (q < 0.5 ? 'brick' : q < 0.75 ? 'lime' : 'tan') : dd === 'F' ? (q < 0.6 ? 'marble' : q < 0.9 ? 'lime' : 'tan') : (q < 0.3 ? 'lime' : q < 0.5 ? 'marble' : q < 0.72 ? 'tan' : q < 0.88 ? 'glass' : 'brick');
     boxes.push({ x0, z0, w, d, h, style, seed: 1 + boxes.length, plain: dd === 'F' || (dd !== 'G' && dd !== 'H' && q < 0.5) });   // (the ministries and offices have no shops along the street)
   };
@@ -401,8 +413,54 @@ function plan() {
       for (const sz of [32, 24, 16]) for (let oz = 0; oz + sz <= 40; oz += 8) for (let ox = 0; ox + sz <= 40; ox += 8) if (open(bx + qx + ox, bz + qz + oz, sz, sz)) add(bx + qx + ox, bz + qz + oz, sz, sz);
     }
   }
+  for (const B of boxes) aim(B);
   return (PLAN = { lots, boxes });
 }
+// how near the course a block is, and the way to it (its banners and its porch are on the side that faces the road)
+function aim(B) {
+  const { N, X, Z } = course().T, cx = B.x0 + B.w / 2, cz = B.z0 + B.d / 2; let bd = 1e18, bi = 0;
+  for (let i = 0; i < N; i += 3) { const d = (X[i] - cx) ** 2 + (Z[i] - cz) ** 2; if (d < bd) { bd = d; bi = i; } }
+  B.near = Math.max(0, Math.sqrt(bd) - (B.w + B.d) / 4); B.toward = [X[bi] - cx, Z[bi] - cz]; return B;
+}
+// The people out to watch (maps/cityblocks.js makeCrowd): along the Avenue and round the Capitol, down the Mall, under
+// the cherries, along Constitution Avenue, in Georgetown and round Dupont Circle: [x, z, yaw, colour, the ground there]
+let CROWD = null;
+function crowd() {
+  if (CROWD) return CROWD;
+  const { T, leg, on } = course(), { N, X, Z, TX, TZ } = T, { road, cut } = masks(), gnd = heights().gnd, L = [];
+  const SHARE = { 26: 0.9, 0: 0.9, 1: 0.6, 2: 0.4, 5: 0.3, 6: 0.6, 7: 0.4, 8: 0.4, 9: 0.4, 10: 0.3, 12: 0.2, 14: 0.5, 15: 0.5, 16: 0.4, 17: 0.5, 21: 0.3, 22: 0.4, 23: 0.5, 24: 0.5, 25: 0.7 };
+  let s = 1791; const R = () => { s = (s * 1664525 + 1013904223) | 0; return ((s >>> 8) & 0xffff) / 65536; };
+  const clear = (x, z) => { const c = Math.floor(z) * WX + Math.floor(x); return x > 4 && z > 4 && x < WX - 4 && z < WZ - 4 && land(x, z) && !inPool(x, z) && !road[c] && !cut[c]; };
+  for (let i = 0; i < N && L.length < 900; i++) {
+    if (on[i] || !(leg[i] in SHARE)) continue;
+    for (const sd of [1, -1]) {
+      const knot = Math.sin(i * 0.11 + sd * 1.3) + Math.sin(i * 0.037 + sd) > -0.3;
+      if (!knot || R() > SHARE[leg[i]]) continue;
+      const o = (sd > 0 ? T.WL[i] : T.WR[i]) + 4.4 + R() * 1.6, x = X[i] + TZ[i] * sd * o, z = Z[i] - TX[i] * sd * o;
+      if (!clear(x, z) || !clear(x + 3, z) || !clear(x - 3, z) || !clear(x, z + 3) || !clear(x, z - 3)) continue;
+      L.push([x, z, Math.atan2(-TZ[i] * sd, TX[i] * sd) + (R() - 0.5) * 0.8, Math.floor(R() * 8), gnd[Math.floor(z) * WX + Math.floor(x)] || 0]);
+    }
+  }
+  return (CROWD = L);
+}
+// Kites over the Mall (the festival flies them there every spring): a diamond in two colours with a tail of bows, on
+// a string from the lawn. Each is a group with its foot where the string is held; it leans and swings about that.
+const KITES = [[330, 528, 0], [392, 636, 1], [468, 520, 2], [612, 532, 3], [668, 628, 0], [716, 536, 2], [300, 620, 3], [560, 512, 1]];
+const KITE_INKS = [[[0.85, 0.15, 0.17], [0.95, 0.7, 0.12]], [[0.16, 0.4, 0.85], [0.96, 0.95, 0.9]], [[0.95, 0.45, 0.65], [0.96, 0.95, 0.9]], [[0.2, 0.62, 0.36], [0.95, 0.85, 0.2]]];
+function makeKites(scene) {
+  const all = KITES.map(([x, z, k], n) => {
+    const pos = [], col = [], idx = [], [A, B] = KITE_INKS[k], len = 78 + (n * 37) % 44;
+    const tri = (P, c) => { const i = pos.length / 3; pos.push(...P); for (let q = 0; q < P.length / 3; q++) col.push(...c); for (let q = 2; q < P.length / 3; q++) idx.push(i, i + q - 1, i + q); };
+    tri([0, len + 7, 0, 5, len, 0, 0, len - 9, 0], A); tri([0, len + 7, 0, 0, len - 9, 0, -5, len, 0], B);
+    for (let q = 0; q < 5; q++) { const y = len - 11 - q * 2.6, dx = Math.sin(q * 1.4) * 1.2; tri([dx - 1.3, y + 0.8, 0, dx + 1.3, y - 0.8, 0, dx + 1.3, y + 0.8, 0, dx - 1.3, y - 0.8, 0], q % 2 ? A : B); }
+    tri([-0.12, 0, 0, 0.12, 0, 0, 0.12, len - 2, 0, -0.12, len - 2, 0], [0.92, 0.92, 0.9]); tri([0, 0, -0.12, 0, 0, 0.12, 0, len - 2, 0.12, 0, len - 2, -0.12], [0.92, 0.92, 0.9]);
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.setIndex(idx);
+    const m = new THREE.Mesh(g, KITE_MAT || (KITE_MAT = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }))); m.name = 'kites'; m.position.set(x, heights().gnd[z * WX + x] || 0, z); m.rotation.order = 'YXZ'; m.rotation.y = 0.9 + n * 0.21; m.frustumCulled = false; scene.add(m);
+    return { m, n };
+  });
+  return { step() { const t = CLOCK.value; for (const { m, n } of all) { m.rotation.x = 0.42 + Math.sin(t * 0.5 + n * 1.7) * 0.1 + Math.sin(t * 1.3 + n) * 0.03; m.rotation.z = Math.sin(t * 0.37 + n * 2.3) * 0.22; } } };
+}
+let KITE_MAT = null;
 function rows() {
   for (const L of plan().lots) {
     setSeed(L.seed); ctx.lot = -1; ctx.L = 3;
@@ -483,7 +541,7 @@ function trees() {
   // the Mall's elms: two rows a side, from the Capitol's lawn to the Lincoln Memorial
   for (let x = 282; x < 762; x += 26) for (const z of [536, 624, 510, 650]) tree(x + (R() - 0.5) * 3, z + (R() - 0.5) * 3, 1.2 + R() * 0.2);
   // the cherries: two rings round the Tidal Basin
-  for (const [out, step] of [[13, 19], [34, 25]]) { const rx = BASIN.rx + out, rz = BASIN.rz + out, m = Math.round(Math.PI * (rx + rz) / step); for (let k = 0; k < m; k++) { const a = (k + R() * 0.3) / m * Math.PI * 2; tree(BASIN.x + Math.cos(a) * rx, BASIN.z + Math.sin(a) * rz, 0.9 + R() * 0.2, 1); } }
+  for (const [out, step] of [[13, 19], [34, 25]]) { const rx = BASIN.rx + out, rz = BASIN.rz + out, m = Math.round(Math.PI * (rx + rz) / step); for (let k = 0; k < m; k++) { const a = (k + R() * 0.3) / m * Math.PI * 2; tree(BASIN.x + Math.cos(a) * rx, BASIN.z + Math.sin(a) * rz, (out < 20 ? 1.45 : 1.25) + R() * 0.3, 1); } }
   // and everywhere else that is green
   for (let gz = 20; gz < WZ - 16; gz += 30) for (let gx = 20; gx < WX - 16; gx += 30) {
     const x = gx + (R() - 0.5) * 18, z = gz + (R() - 0.5) * 18, r = R(), k = R();
@@ -492,7 +550,7 @@ function trees() {
     if (mall && z > 500 && z < 660) continue;
     const nearBasin = Math.hypot(x - BASIN.x, (z - BASIN.z) * 1.3) < 190 || (z > 860 && x > 430 && x < 740);
     if (r > (creek ? 0.95 : virginia(x, z) ? 0.75 : leafy(x, z) ? 0.6 : 0.45)) continue;
-    tree(x, z, nearBasin ? 0.88 + k * 0.2 : 1 + k * 0.35, nearBasin && k < 0.75 ? 1 : 0);
+    tree(x, z, nearBasin ? 1.1 + k * 0.4 : 1 + k * 0.35, nearBasin && k < 0.75 ? 1 : 0);
   }
   // past the map's edge: woods over Virginia and the far bank, along Rock Creek going north, and blossom down the point
   const { lands } = potomacLand(BACKDROP);
@@ -714,7 +772,10 @@ export default {
       { kind: 'custom', make: (api) => { dressBridges(api.scene, course().T, [{ part: P('14th Street Bridge'), kind: 'truss' }]); api.scene.add(stoneMesh()); } },
       { kind: 'custom', make: (api) => { const p = P('Metro'), T = course().T, i = T.at(p.i0 + p.open[0]); makeStation(api.scene, { x: T.X[i], w: course().W[i], z0: p.openZ[0], z1: p.openZ[1], y0: p.h, y1: p.roofY, name: 'SMITHSONIAN', style: 'vault' }); } },
       { kind: 'el', x: COURSE[14][0] - 18 - 10.5, z0: P('Metro').openZ[0] - 56, z1: P('Metro').openZ[1] + 56, ground: true, y: P('Metro').h, every: 7, speed: 64, see: 130, model: 'commuter', paint: 'blue' },
-      { kind: 'custom', make: (api) => { makeBlocks(api.scene, [...plan().boxes, ...potomacCity(BACKDROP).near], { day: true }); } },
+      { kind: 'custom', make: (api) => { api.MAP.blocks = makeDcBlocks(api.scene, [...plan().boxes, ...potomacCity(BACKDROP).near.map(aim)], CLOCK, HEROES); return { step(dt) { CLOCK.value += dt; } }; } },
+      { kind: 'custom', make: (api) => makeCrowd(api.scene, crowd(), CLOCK, { glow: null, key: 'dc' }) },
+      { kind: 'custom', make: (api) => makeKites(api.scene) },
+      { kind: 'custom', make: (api) => makePetals(api, [430, 690, 720, 1000], CLOCK, { n: 460, px: 0.55 }) },
       { kind: 'custom', make: (api) => { api.MAP.grove = makeGrove(api, [...GROVE, ...FAR]); } },
       { kind: 'custom', make: (api) => { const far = potomacLand(BACKDROP).land, inMap = (x, z) => x >= 0 && z >= 0 && x < WX && z < WZ; return makeWater(api.scene, { x0: -1024, z0: -1024, span: 3072, sun: SPRING.sun, sky: 0xbcd6ee, glint: 0xffffff, isWater: (x, z) => (inMap(x, z) ? !land(x, z) || inPool(x, z) : far(x, z) < 0), pools: [[POOL.x0, POOL.z0, POOL.x1, POOL.z1, 0.55]] }); } },
       { kind: 'covered', x0: s[0], z0: s[1], x1: s[2], z1: s[3], dim: 0.5 },

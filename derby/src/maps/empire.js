@@ -28,7 +28,8 @@ import { grabStatue, statueMesh } from './statue.js';
 import { dressBridges } from './bridges.js';
 import { makeStation } from './station.js';
 import { makeScreens } from './screens.js';
-import { makeBlocks } from './blocks.js';
+import { makeNycBlocks } from './nycblocks.js';
+import { makeCrowd, makePetals, makeBoats } from './cityblocks.js';
 import { plantTree, makeGrove } from './trees.js';
 import { makeWater } from './water.js';
 import { DUSK } from '../looks/dusk.js';
@@ -289,10 +290,26 @@ function kitFor(d, R) {
   }
 }
 const KITS = { tenement, brownstone, deco, billboard, tower, church, shop };
+// The great show boards, each on its own legs where a long straight looks straight at it (maps/cityblocks.js heroes):
+// WRECKED! over the foot of the Queens Bridge, FIGHT NIGHT at the end of the River Drive, NITRO COLA at the top of the
+// waterfront. { x, z, s (faces: 0 north, 1 east, 2 south, 3 west), film, y }
+const HEROES = [{ x: 906, z: 560, s: 3, film: 0, y: 30 }, { x: 598, z: 752, s: 0, film: 1, y: 30 }, { x: 870, z: 150, s: 2, film: 2, y: 28 }];
+const CLOCK = { value: 0 };
+// The far shores (backdrops/harbor.js): the Bronx north of the Harlem River, the far bank of the Hudson, Brooklyn and
+// Queens on east and south from the map's own, and the island across the harbor. KEEP: the part of Brooklyn hard by
+// the map's east and south edges, which the backdrop leaves empty for this map to build in full (the avenue under the
+// El runs fifty voxels from the edge: its east side was bare ground and far-off boxes).
+const WORLD = [0, 0, WX, WZ];
+const SHORES = { harlem: [-70, -24], bronx: -34, jersey: -240, brooklyn: { x: SH.BK, slope: 0.19, south: 1540, fall: 0.45 }, island: { z: 1470, x: 560 }, sound: { x: 1320, z0: 140, z1: 540 } };
+const KEEP = [[WX, -20, 1262, 1230], [780, WZ, 1262, 1230]];
 let PLAN = null;
 function plan() {
   if (PLAN) return PLAN;
   const { T, leg } = course(), { N, X, Z, WL, WR } = T, lots = [];
+  for (const h of HEROES) {   // (their own ground, and the ground in front of them: nothing stands between a board and the road)
+    const w = h.s === 0 || h.s === 2 ? [76, 8] : [8, 76], f = [[0, -44], [44, 0], [0, 44], [-44, 0]][h.s];
+    take(h.x - w[0] + Math.min(0, f[0]), h.z - w[1] + Math.min(0, f[1]), h.x + w[0] + Math.max(0, f[0]), h.z + w[1] + Math.max(0, f[1]));
+  }
   let s = 20261124; const R = () => { s = (s * 1664525 + 1013904223) | 0; return ((s >>> 8) & 0xffff) / 65536; };
   for (let k = 0; k < NL; k++) {
     const a = COURSE[k], b = COURSE[(k + 1) % NL], c = COURSE[(k + 2) % NL], p = COURSE[(k - 1 + NL) % NL];
@@ -336,7 +353,60 @@ function plan() {
       for (const sz of [32, 24, 16]) for (let oz = 0; oz + sz <= 40; oz += 8) for (let ox = 0; ox + sz <= 40; ox += 8) if (open(bx + qx + ox, bz + qz + oz, sz, sz)) add(bx + qx + ox, bz + qz + oz, sz, sz);
     }
   }
+  // Brooklyn past the map's edge (KEEP), on the backdrop's own blocks so its painted streets run between them: a row
+  // hard by the edge, facing the avenue under the El, a row behind it, and the same along the south
+  {
+    const far = harborLand({ world: WORLD, shores: SHORES }).land, ZL = [2, 124, 246, 368, 490, 612, 734, 856, 978, 1100];
+    const put = (x0, z0, w, d, tall) => {
+      for (const [a, b] of [[0, 0], [w, 0], [0, d], [w, d]]) { const x = x0 + a, z = z0 + b; if (x < WX && z < WZ ? !land(x, z) : far(x, z) < 6) return; }
+      if (x0 < WX - 1 && z0 < WZ - 1 && !free(x0, z0, Math.min(WX - 2, x0 + w), Math.min(WZ - 2, z0 + d))) return;
+      const q = R(); boxes.push({ x0, z0, w, d, h: (tall ? 100 : 64) + R() * (tall ? 110 : 70), style: q < 0.4 ? 'brick' : q < 0.65 ? 'tan' : q < 0.85 ? 'brown' : 'lime', seed: 1 + boxes.length, plain: x0 >= 1100 });
+    };
+    for (let j = 0; j + 1 < ZL.length; j++) {
+      const z0 = ZL[j] + 25, z1 = ZL[j + 1] - 25;
+      if (R() < 0.5) put(1002, z0, 72, z1 - z0, true); else { put(1002, z0, 72, 32, true); put(1002, z1 - 32, 72, 32, false); }
+      for (const x of [1125, 1193]) if (R() < 0.85) put(x, z0, 56, z1 - z0, R() < 0.4);
+    }
+    for (let x = 812; x + 56 <= 1076; x += 66) { if (R() < 0.9) put(x, 1030, 56, 40, false); if (R() < 0.8) put(x, 1125, 56, 72, R() < 0.3); }
+  }
+  // how near the course each is, and the way to it (the signs are for the near ones, on the side that faces the road)
+  for (const B of boxes) {
+    const cx = B.x0 + B.w / 2, cz = B.z0 + B.d / 2; let bd = 1e18, bi = 0;
+    for (let i = 0; i < N; i += 3) { const d = (X[i] - cx) ** 2 + (Z[i] - cz) ** 2; if (d < bd) { bd = d; bi = i; } }
+    B.near = Math.max(0, Math.sqrt(bd) - (B.w + B.d) / 4); B.toward = [X[bi] - cx, Z[bi] - cz];
+  }
   return (PLAN = { lots, boxes });
+}
+// The people out to watch, along the barriers where the town is thickest (maps/cityblocks.js makeCrowd): [x, z, yaw, colour]
+let CROWD = null;
+function crowd() {
+  if (CROWD) return CROWD;
+  const { T, leg, on } = course(), { N, X, Z, TX, TZ } = T, { road, used } = masks(), L = [];
+  const SHARE = { 24: 0.9, 0: 0.8, 1: 0.35, 3: 0.4, 4: 0.5, 5: 0.5, 13: 0.25, 14: 0.3, 21: 0.25, 22: 0.45, 23: 0.7 };
+  let s = 7717; const R = () => { s = (s * 1664525 + 1013904223) | 0; return ((s >>> 8) & 0xffff) / 65536; };
+  for (let i = 0; i < N && L.length < 900; i++) {
+    if (on[i] || !(leg[i] in SHARE)) continue;
+    for (const sd of [1, -1]) {
+      const knot = Math.sin(i * 0.11 + sd * 1.3) + Math.sin(i * 0.037 + sd) > -0.3;
+      if (!knot || R() > SHARE[leg[i]]) continue;
+      const o = (sd > 0 ? T.WL[i] : T.WR[i]) + 4.2 + R() * 1.5, x = X[i] + TZ[i] * sd * o, z = Z[i] - TX[i] * sd * o, c = Math.floor(z) * WX + Math.floor(x);
+      if (x < 4 || z < 4 || x > WX - 4 || z > WZ - 4 || !land(x, z) || !land(x + 3, z) || !land(x - 3, z) || !land(x, z + 3) || !land(x, z - 3) || inPark(x, z) || onIsle(x, z) || road[c] || used[c]) continue;
+      L.push([x, z, Math.atan2(-TZ[i] * sd, TX[i] * sd) + (R() - 0.5) * 0.8, Math.floor(R() * 8)]);
+    }
+  }
+  return (CROWD = L);
+}
+// a ferry: an orange hull, two decks of lit windows, a wheelhouse at each end (maps/cityblocks.js makeBoats draws with it)
+function ferry(part) {
+  const HULL = [0.12, 0.13, 0.16], ORANGE = [0.8, 0.27, 0.04], LITW = [1.05, 0.82, 0.4], ROOF = [0.5, 0.5, 0.52];
+  part(-19, 0.3, -6, 19, 2.4, 6, HULL); part(-22, 1, -4, -19, 2.4, 4, HULL); part(19, 1, -4, 22, 2.4, 4, HULL);
+  part(-18, 2.4, -5.6, 18, 6, 5.6, ORANGE); part(-17.5, 3.4, -5.7, 17.5, 5, 5.7, LITW);
+  for (let x = -16; x <= 16; x += 3.2) part(x - 0.9, 2.4, -5.8, x + 0.9, 6, 5.8, ORANGE);
+  part(-15, 6, -5, 15, 9.2, 5, ORANGE); part(-14.5, 6.9, -5.1, 14.5, 8.3, 5.1, LITW);
+  for (let x = -13; x <= 13; x += 3.2) part(x - 0.9, 6, -5.2, x + 0.9, 9.2, 5.2, ORANGE);
+  part(-16, 9.2, -5.4, 16, 9.8, 5.4, ROOF);
+  for (const x of [-11, 11]) { part(x - 3, 9.8, -3, x + 3, 12.6, 3, ORANGE); part(x - 3.1, 10.8, -3.1, x + 3.1, 11.9, 3.1, LITW); part(x - 3.4, 12.6, -3.4, x + 3.4, 13.1, 3.4, ROOF); }
+  part(-1.2, 9.8, -1.2, 1.2, 15, 1.2, HULL);
 }
 // Times Square's screens: a big one on the front of every building that faces the plaza, a blade sign hung out from it
 // over the pavement, facing the cars as they come, and a stack of them head-on where the course turns in from the south
@@ -523,7 +593,7 @@ export default {
   look: { kind: 'dusk' },
   backdrop: {
     kind: 'harbor', seed: 7311,
-    world: [0, 0, WX, WZ],
+    world: WORLD,
     view: { x: 540, z: 540 },
     course: [60, 34, 1000, 1014],
     reach: 2300,
@@ -531,7 +601,8 @@ export default {
     streets: { x: [112, 216, 320, 424, 528], w: 36, zN: [-160, 122], zS: [1100, 122], xE: [1100, 174], xW: [-300, 174] },
     // the far shores: the Bronx north of the Harlem River, the far bank of the Hudson, Brooklyn and Queens on east and
     // south from the map's own, and the island across the harbor
-    shores: { harlem: [-70, -24], bronx: -34, jersey: -240, brooklyn: { x: SH.BK, slope: 0.19, south: 1540, fall: 0.45 }, island: { z: 1470, x: 560 }, sound: { x: 1320, z0: 140, z1: 540 } },
+    shores: SHORES,
+    keep: KEEP,
     downtowns: [
       { x: -560, z: 880, r: 520, k: 1.55, mark: 1 },
       { x: 1230, z: 700, r: 380, k: 1.4, mark: 3 },
@@ -575,7 +646,11 @@ export default {
       { kind: 'custom', make: (api) => { const { T, parts } = course(), by = (n) => parts.find((p) => p.name === n); dressBridges(api.scene, T, [{ part: by('Queens Bridge'), kind: 'truss' }, { part: by('Brooklyn Bridge'), kind: 'stone' }]); } },
       { kind: 'custom', make: (api) => { makeRoads(api.scene, course().T, course().parts.map((p) => ({ ...p, skip: near }))); } },
       { kind: 'custom', make: (api) => { const p = P('Subway'), i = p.i0 + p.open[0]; STATION = makeStation(api.scene, { x: course().T.X[i], w: course().W[i], z0: p.openZ[0], z1: p.openZ[1], y0: p.h, y1: p.roofY }); } },
-      { kind: 'custom', make: (api) => { makeBlocks(api.scene, [...plan().boxes, { x0: 272, z0: 480, w: 40, d: 16, h: 132, style: 'glass', seed: 9 }]); } },
+      { kind: 'custom', make: (api) => { api.MAP.blocks = makeNycBlocks(api.scene, [...plan().boxes, { x0: 272, z0: 480, w: 40, d: 16, h: 132, style: 'glass', seed: 9 }], CLOCK, HEROES); return { step(dt) { CLOCK.value += dt; } }; } },
+      { kind: 'custom', make: (api) => makeCrowd(api.scene, crowd(), CLOCK, { glow: [0.12, 0.09, 0.07], key: 'nyc' }) },
+      // ticker tape over Times Square: paper on the air, from the last corner to the foot of the bridge
+      { kind: 'custom', make: (api) => makePetals(api, [250, 480, 640, 640], CLOCK, { n: 520, a: [1.0, 0.95, 0.85], b: [1.0, 0.85, 0.3], px: 0.6, name: 'ticker tape' }) },
+      { kind: 'custom', make: (api) => makeBoats(api.scene, [{ z: 330, x0: 668, x1: 772, v: 6 }, { z: 690, x0: 668, x1: 772, v: -5 }, { z: 962, x0: 610, x1: 770, v: 7 }], ferry) },
       { kind: 'custom', make: (api) => { api.MAP.grove = makeGrove(api, GROVE); } },
       { kind: 'custom', make: (api) => { const far = harborLand(api.MAP.backdrop).land, inMap = (x, z) => x >= 0 && z >= 0 && x < WX && z < WZ; return makeWater(api.scene, { x0: -1024, z0: -1024, span: 3072, sun: DUSK.sun, isWater: (x, z) => (inMap(x, z) ? !land(x, z) || ((x - POND.x) / POND.rx) ** 2 + ((z - POND.z) / POND.rz) ** 2 < 1 : far(x, z) < 0), pools: [[POND.x - POND.rx - 4, POND.z - POND.rz - 4, POND.x + POND.rx + 4, POND.z + POND.rz + 4, 1.06]] }); } },
       { kind: 'custom', make: (api) => makeScreens(api.scene, screens()) },

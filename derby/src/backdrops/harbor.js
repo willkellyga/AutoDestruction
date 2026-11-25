@@ -119,6 +119,7 @@ vec3 bdPlainLight(vec3 w) { return vec3(0.0); }
       if (pts4.some(([x, z]) => land(x, z) < 10 || far(x, z) > REACH)) continue;
       if (x1 > W[0] - 12 && x0 < W[2] + 12 && z1 > W[1] - 12 && z0 < W[3] + 12) continue;
       if (onBridge((x0 + x1) / 2, (z0 + z1) / 2, Math.hypot(x1 - x0, z1 - z0) / 2)) continue;
+      if (L.keep && L.keep.some(([a, b, c, d]) => x1 > a && x0 < c && z1 > b && z0 < d)) continue;   // (the map builds these itself, in full: maps/empire.js)
       blocks.push({ x0, x1, z0, z1, mx: (x0 + x1) / 2, mz: (z0 + z1) / 2 });
     }
   }
