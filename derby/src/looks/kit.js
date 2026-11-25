@@ -135,8 +135,10 @@ export function floorLayer(night, opts = {}) {
       }`,
   });
   m.uniforms.field.value = floorField(night, opts);   // (set after the merge, which would copy it)
-  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2 * R.hx, 2 * R.hz), m);
-  mesh.rotation.x = -Math.PI / 2; mesh.position.set(R.x, 0.02, R.z); mesh.updateMatrix(); mesh.matrixAutoUpdate = false;
+  // (a map with a shaped floor that is not the whole ground gives the floor's own mesh, in the world's own places: opts.geo)
+  const mesh = new THREE.Mesh(opts.geo || new THREE.PlaneGeometry(2 * R.hx, 2 * R.hz), m);
+  if (opts.geo) mesh.position.y = 0.02; else { mesh.rotation.x = -Math.PI / 2; mesh.position.set(R.x, 0.02, R.z); }
+  mesh.updateMatrix(); mesh.matrixAutoUpdate = false;
   mesh.renderOrder = -1;   // first of what is drawn after the solid things: the skid marks and anything else on the ground go over it
   return mesh;
 }
@@ -209,7 +211,15 @@ export function glowSprites(max) {
 // The pools of light lamps throw on the ground: a fan ahead of each car from its headlamps, a small red one behind (and
 // a beacon's turning sweep). per instance: pa (x, z, heading, strength), pb (where it starts along the heading, its
 // length, its width there and at its end), pc (colour)
-export function lampPools(max) {
+// A map whose floor is not the whole of the ground (maps/rig.js: decks over the sea) gives the looks a mask: the decks
+// as rectangles ([x0, z0, x1, z1]) and the holes in them. What is drawn flat on the ground (the pools and spots below)
+// is then drawn only where there is floor to fall on. floorMask() makes the shader's test from it.
+export function floorMask(M) {
+  if (!M) return '';
+  const inR = ([x0, z0, x1, z1]) => `(p.x > ${x0.toFixed(1)} && p.x < ${x1.toFixed(1)} && p.y > ${z0.toFixed(1)} && p.y < ${z1.toFixed(1)})`;
+  return `bool onFloor(vec2 p) { return (${M.decks.map(inR).join(' || ')})${(M.holes || []).map((h) => ` && !${inR(h)}`).join('')}; }\n`;
+}
+export function lampPools(max, mask = '') {
   const g = new THREE.InstancedBufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute([0, -1, 0, 1, -1, 0, 1, 1, 0, 0, 1, 0], 3)); g.setIndex([0, 2, 1, 0, 3, 2]);
   for (const k of ['pa', 'pb', 'pc']) g.setAttribute(k, new THREE.InstancedBufferAttribute(new Float32Array(max * 4), 4).setUsage(THREE.DynamicDrawUsage));
@@ -221,10 +231,12 @@ export function lampPools(max) {
         vec2 f = vec2(sin(pa.z), cos(pa.z)), side = vec2(f.y, -f.x);
         vec2 xz = pa.xy + f * (pb.x + pb.y * position.x) + side * mix(pb.z, pb.w, position.x) * position.y;
         gl_Position = projectionMatrix * viewMatrix * vec4(xz.x, 0.07, xz.y, 1.0);
-        vUv = position.xy; vC = pc.rgb * pa.w;
-      }`,
-    fragmentShader: `varying vec2 vUv; varying vec3 vC;
-      void main() { float a = smoothstep(0.0, 0.12, vUv.x) * pow(max(1.0 - vUv.x, 0.0), 1.5) * max(1.0 - vUv.y * vUv.y, 0.0);
+        vUv = position.xy; vC = pc.rgb * pa.w; vXZ = xz;
+      }`.replace('varying vec3 vC;', 'varying vec3 vC; varying vec2 vXZ;'),
+    fragmentShader: `varying vec2 vUv; varying vec3 vC; varying vec2 vXZ;
+      ${mask}
+      void main() { ${mask ? 'if (!onFloor(vXZ)) discard;' : ''}
+        float a = smoothstep(0.0, 0.12, vUv.x) * pow(max(1.0 - vUv.x, 0.0), 1.5) * max(1.0 - vUv.y * vUv.y, 0.0);
         gl_FragColor = vec4(vC * a, 1.0); ${TONE} }`,
   });
   const mesh = new THREE.Mesh(g, m); mesh.frustumCulled = false; mesh.matrixAutoUpdate = false; mesh.renderOrder = 0;
@@ -233,7 +245,7 @@ export function lampPools(max) {
 // Round pools of light on the ground (a searchlight's spot, the glow round a fire): soft ellipses, one quad each.
 // per instance: sa (x, z, radius across, radius along), sb (the way "along" points: x, z; how sharp the edge is), sc
 // (colour)
-export function groundSpots(max) {
+export function groundSpots(max, mask = '') {
   const g = new THREE.InstancedBufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0], 3)); g.setIndex([0, 2, 1, 0, 3, 2]);
   for (const k of ['sa', 'sb', 'sc']) g.setAttribute(k, new THREE.InstancedBufferAttribute(new Float32Array(max * 4), 4).setUsage(THREE.DynamicDrawUsage));
@@ -245,10 +257,12 @@ export function groundSpots(max) {
         vec2 along = sb.xy, across = vec2(along.y, -along.x);
         vec2 xz = sa.xy + across * position.x * sa.z + along * position.y * sa.w;
         gl_Position = projectionMatrix * viewMatrix * vec4(xz.x, 0.08, xz.y, 1.0);
-        vUv = position.xy; vC = sc.rgb; vE = sb.z;
-      }`,
-    fragmentShader: `varying vec2 vUv; varying vec3 vC; varying float vE;
-      void main() { float r = length(vUv); float a = (1.0 - smoothstep(1.0 - 1.0 / max(vE, 1.01), 1.0, r)) * (0.55 + 0.45 * max(1.0 - r * r, 0.0));
+        vUv = position.xy; vC = sc.rgb; vE = sb.z; vXZ = xz;
+      }`.replace('varying float vE;', 'varying float vE; varying vec2 vXZ;'),
+    fragmentShader: `varying vec2 vUv; varying vec3 vC; varying float vE; varying vec2 vXZ;
+      ${mask}
+      void main() { ${mask ? 'if (!onFloor(vXZ)) discard;' : ''}
+        float r = length(vUv); float a = (1.0 - smoothstep(1.0 - 1.0 / max(vE, 1.01), 1.0, r)) * (0.55 + 0.45 * max(1.0 - r * r, 0.0));
         gl_FragColor = vec4(vC * a, 1.0); ${TONE} }`,
   });
   const mesh = new THREE.Mesh(g, m); mesh.frustumCulled = false; mesh.matrixAutoUpdate = false; mesh.renderOrder = 0;

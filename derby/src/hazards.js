@@ -597,23 +597,26 @@ function army(api, h) {
 function sweeper(api, h, S) {
   const N = h.n ?? 3, R0 = h.r0 ?? 12, R1 = h.r1 ?? 46, SPIN = h.spin ?? 0.52, DMG = h.dmg ?? 20, TOP = h.top ?? 40, LEAD = 0.55;
   const [lampOff, lampOn] = lampMats(3.2, 0.3, 0.15);
-  const tm = trapMat(), armGeo = sweeperArm(R0, R1, TOP), sGeo = sawGeo();   // (the hub, the arms and the saws are modelled in arenatraps.js)
+  // (the hub, the arms and the saws are modelled in arenatraps.js. A map can hang its own on it instead: `geo` { hub, arm },
+  // with `saws: false` for no saw at the tips, `wedge: false` for no glow on the floor, `thick` for half the width of
+  // what sweeps, `lamp` [y, z] for where the warning strip sits on it: maps/rig.js's crane and its container)
+  const TH = h.thick ?? 1.1, tm = trapMat(), armGeo = h.geo ? h.geo.arm : sweeperArm(R0, R1, TOP), sGeo = h.saws === false ? null : sawGeo();
   // the glow on the floor ahead of each blade, brightest at the blade and fading out ahead of it
   const wedgeGeo = new THREE.RingGeometry(R0, R1 + 3, 16, 1, -LEAD, LEAD), wp = wedgeGeo.attributes.position, wc = [];
   for (let i = 0; i < wp.count; i++) { const f = 1 + Math.atan2(wp.getY(i), wp.getX(i)) / LEAD; const k = Math.pow(clamp(f, 0, 1), 2.2); wc.push(k, k * 0.12, k * 0.06); }
   wedgeGeo.setAttribute('color', new THREE.Float32BufferAttribute(wc, 3));
   const wedgeMat = new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(2.6, 2.6, 2.6), transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
   const g = new THREE.Group(); g.position.set(h.x, 0, h.z); api.scene.add(g);
-  const drum = new THREE.Mesh(sweeperHub(TOP), tm); drum.castShadow = true; g.add(drum);
+  const drum = new THREE.Mesh(h.geo ? h.geo.hub : sweeperHub(TOP), tm); drum.castShadow = true; g.add(drum);
   const saws = [], lamps = [];
   for (let k = 0; k < N; k++) {
     // each blade in its own frame, along +x (the way the blades turn is +z in it)
     const arm = new THREE.Group(); arm.rotation.y = -k * TAU / N; g.add(arm);
     const mid = (R0 + R1) / 2;
     const body = new THREE.Mesh(armGeo, tm); body.castShadow = true; arm.add(body);
-    const edge = new THREE.Mesh(new THREE.BoxGeometry(R1 - R0, 0.7, 0.4), lampOff); edge.position.set(mid, 6.3, 1.1); arm.add(edge); lamps.push(edge);
-    const saw = new THREE.Mesh(sGeo, tm); saw.position.set(R1 + 1.4, 4.3, 0); arm.add(saw); saws.push(saw);
-    const wedge = new THREE.Mesh(wedgeGeo, wedgeMat); wedge.rotation.x = -Math.PI / 2; wedge.position.y = 0.09; wedge.renderOrder = 2; arm.add(wedge);
+    const edge = new THREE.Mesh(new THREE.BoxGeometry(R1 - R0, 0.7, 0.4), lampOff); edge.position.set(mid, h.lamp ? h.lamp[0] : 6.3, h.lamp ? h.lamp[1] : 1.1); arm.add(edge); lamps.push(edge);
+    if (sGeo) { const saw = new THREE.Mesh(sGeo, tm); saw.position.set(R1 + 1.4, 4.3, 0); arm.add(saw); saws.push(saw); }
+    if (h.wedge !== false) { const wedge = new THREE.Mesh(wedgeGeo, wedgeMat); wedge.rotation.x = -Math.PI / 2; wedge.position.y = 0.09; wedge.renderOrder = 2; arm.add(wedge); }
   }
   let th = h.offset ?? 0, w = SPIN, spinA = 0, clock = 0, saw = null, toastT = 0;
   const hitAt = new WeakMap();
@@ -633,7 +636,7 @@ function sweeper(api, h, S) {
       wedgeMat.opacity = 0.5 + 0.2 * Math.sin(clock * 9);
       // the saws' whine, from the nearest point of a blade to the player
       const p = api.player;
-      if (p && api.sfx.loop) {
+      if (p && api.sfx.loop && sGeo) {
         if (!saw) saw = api.sfx.loop('saw_loop');
         const pa = Math.atan2(p.z - h.z, p.x - h.x); let bi = 0, bd = 9;
         for (let i = 0; i < N; i++) { const d = Math.abs(wrap(blades(i) - pa)); if (d < bd) { bd = d; bi = i; } }
@@ -647,11 +650,11 @@ function sweeper(api, h, S) {
         ends(c, _e);
         for (let i = 0; i < N; i++) {
           const a = blades(i), ux = Math.cos(a), uz = Math.sin(a), tx = -uz, tz = ux;
-          const need = c.wide + 1.1, lc = cx * tx + cz * tz;   // the car's middle: ahead of the blade (+) or behind it
+          const need = c.wide + TH, lc = cx * tx + cz * tz;   // the car's middle: ahead of the blade (+) or behind it
           let push = 0, hit = false;
           for (const [ex, ez] of _e) {
             const rx = ex - h.x, rz = ez - h.z, al = rx * ux + rz * uz, le = rx * tx + rz * tz;
-            if (al < R0 - c.wide || al > R1 + 5) continue;   // (the saw at the tip reaches 4 past r1)
+            if (al < R0 - c.wide || al > R1 + (sGeo ? 5 : 1)) continue;   // (the saw at the tip reaches 4 past r1)
             if (lc >= 0 ? le >= need : le <= -need) continue;
             hit = true; push = lc >= 0 ? Math.max(push, need - le) : Math.min(push, -need - le);
           }
@@ -671,7 +674,7 @@ function sweeper(api, h, S) {
           sparks(hx, 3, hz, Math.round(26 * busy(api)), 1, 0.75, 0.3, 30);
           api.sound('c.clang', 1, hx, 3, hz); api.sfx.play('grind', 0.9, hx, hz, { gap: 0.1 }); api.sfx.play('crunch_heavy', 0.7, hx, hz, { gap: 0.15 });
           shake(api, 0.45, hx, hz);
-          if (c === api.player && clock > toastT) { toastT = clock + 3; api.toast('Swept!', 'Mind the blades'); }
+          if (c === api.player && clock > toastT) { toastT = clock + 3; api.toast(...(h.toast || ['Swept!', 'Mind the blades'])); }
         }
       }
     },
@@ -863,7 +866,7 @@ function jets(api, h, S) {
           if (!inside) continue;
           api.damage(c, DPS * dt, null);
           if (Math.random() < dt * 18 * busy(api)) fire(c.x + (Math.random() - 0.5) * c.wide * 2, 1.5 + Math.random() * 3, c.z + (Math.random() - 0.5) * c.half, 2, 0.6);
-          if (c === api.player && fresh(hitAt, c, clock, 3)) api.toast('Burning!', 'Keep off the walls while the jets are lit');
+          if (c === api.player && fresh(hitAt, c, clock, 3)) api.toast(...(h.toast || ['Burning!', 'Keep off the walls while the jets are lit']));
           break;
         }
       }

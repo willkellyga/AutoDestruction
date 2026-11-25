@@ -298,12 +298,17 @@ function wreck(c, who) {
   if (net && !c.remote) net.wrecked(c, who);   // every other device wrecks its copy, put down to the same car
   c.dead = true; c.deadT = 0; c.hp = 0;
   const p = c.centre(new THREE.Vector3());
-  crumple.wrecked(c, chip);   // the roof caves in, the bonnet and a panel or two blow off
-  c.unit.kill(p, 6, chip);
-  c.blowParts(cube, p, 16);
-  sfx.play(c.maxHp > 200 ? 'bigboom' : 'carboom', 1, p.x, p.z); road.wrecked(p.x, p.z);
-  const was = by; by = who || (mode.friendly ? c : null); splashK = { splash: 18, reach: 18 };   // (friendly: the wreck's own blast spares the other cars)
-  try { boom(p.x, 2.5, p.z, 5.5, 0.6, { maxDebris: 260, fire: true }, BUILDINGS.wreck); } finally { by = was; splashK = null; }
+  // (a car that went into the sea, maps/rig.js: no blast and nothing flies off it; the map makes the splash and takes
+  // the wreck away)
+  if (MAP.sunk && MAP.sunk(c)) c.sunk = true;
+  else {
+    crumple.wrecked(c, chip);   // the roof caves in, the bonnet and a panel or two blow off
+    c.unit.kill(p, 6, chip);
+    c.blowParts(cube, p, 16);
+    sfx.play(c.maxHp > 200 ? 'bigboom' : 'carboom', 1, p.x, p.z); road.wrecked(p.x, p.z);
+    const was = by; by = who || (mode.friendly ? c : null); splashK = { splash: 18, reach: 18 };   // (friendly: the wreck's own blast spares the other cars)
+    try { boom(p.x, 2.5, p.z, 5.5, 0.6, { maxDebris: 260, fire: true }, BUILDINGS.wreck); } finally { by = was; splashK = null; }
+  }
   if (c.dummy) { c.respawnT = 2.6; if (who === player) toast('Target wrecked', 'Another one is on its way'); return; }   // no scrap for these
   if (c === player && game.state === 'test') { game.testEnd = Math.min(game.testEnd ?? 9, 1.8); toast('Wrecked!', 'Back to the garage'); return; }
   if (c === player) {
@@ -1855,7 +1860,8 @@ function step(dt) {
     // wrecks lie a while, then crumble away (the target cars come back on their own: stepDummies)
     for (let i = cars.length - 1; i >= 0; i--) {
       const c = cars[i]; if (c.dummy || !on(c)) continue;
-      if (c.dead && !c.gone && c.deadT > ROUND.wreckStays) { c.unit.burst(cube, null, 6, 0.2); c.gone = true; }
+      if (c.dead && !c.gone && c.sunk) { c.unit.root.visible = false; if (c !== player) c.gone = true; }   // (in the sea, maps/rig.js: gone at once, with nothing to burst)
+      else if (c.dead && !c.gone && c.deadT > ROUND.wreckStays) { c.unit.burst(cube, null, 6, 0.2); c.gone = true; }
       if (c.gone && c !== player) { if (net) net.forget(c); c.dispose(); if (c.tag) c.tag.remove(); cars.splice(i, 1); }
     }
     if (test) stepTest(dt);

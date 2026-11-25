@@ -74,7 +74,7 @@ export function makeBrawl(G) {
     go: 'Fight',
     // the start card's one line under the difficulty (the how-to-play cards say the rest)
     get tip() { return BRAWL_LEVELS[levelId()].note || ''; },
-    get note() { const n = BRAWL_LEVELS[levelId()].note; return `Free-for-all: you and seven rival cars in the pit for three minutes, everyone against everyone. Wrecked cars are back in three seconds. Most wrecks wins.${n ? ' ' + n : ''}`; },
+    get note() { const n = BRAWL_LEVELS[levelId()].note; return `Free-for-all: you and seven rival cars for three minutes, everyone against everyone. Wrecked cars are back in three seconds. Most wrecks wins.${n ? ' ' + n : ''}`; },
     levels: {
       list: Object.entries(BRAWL_LEVELS).map(([id, L]) => [id, L.name]),
       get: levelId,

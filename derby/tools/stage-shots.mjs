@@ -14,6 +14,7 @@ export const SHOTS = {
   base: { auto: true },
   fair: { auto: true },
   arena: { from: [330, 20, 566], at: [520, 9, 470] },   // (the boost strip into the mountain, a crush lane either side)
+  rig: { from: [700, 46, 646], at: [520, 8, 500] },   // (the main deck from its south-east corner: the crane, the derrick, the flare, the sea)
 };
 const W = 640, H = 400;
 const only = process.argv.slice(2).filter((a) => !a.startsWith('-'));
