@@ -18,7 +18,7 @@ import { SFX_BANK, SFX_NORM } from '../../src/sfx-bank.js';
 import { makeFx, WEAPONS } from '../../units/src/fx.js';
 import { Vehicle, newFrame } from './vehicle.js';
 import { makeDriver, clearLine } from './ai.js';
-import { MAP, MAPS, SHARED, chooseMap } from './maps/index.js';
+import { MAP, MAPS, SHARED, PREVIEW, chooseMap } from './maps/index.js';
 import { MODES } from './modes/index.js';
 import { CRASH, ROUND, AI, DRIFT, BUILDINGS } from './tuning.js';
 import { build as buildKeepOut } from './keepout.js';
@@ -1208,7 +1208,7 @@ const LAST = 'ad-last-';
 function lastMap(id) {
   const m = MAPS.find((o) => o.id === id), list = m && SHARED[m.mode]; if (!list) return id;
   let v = null; try { v = localStorage.getItem(LAST + m.mode); } catch (e) { /* the first */ }
-  return list.some((o) => o.id === v) ? v : id;
+  return list.some((o) => o.id === v) ? v : list.some((o) => o.id === PREVIEW) ? PREVIEW : id;   // (a preview page opens on the track it is for)
 }
 function drawHome() {
   const st = statsOf(save.load), r = rating(st), body = PARTS.body[save.load.body] || {};

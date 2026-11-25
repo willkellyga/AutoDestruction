@@ -34,7 +34,10 @@ const ALL = [town, manhattan, base, fair, arena, crumble, bowtie, empire, capita
 // still there by address: ?map=town, ?map=crumble, ?map=bowtie.
 export const MAPS = [manhattan, base, fair, arena];
 // the maps of one mode that share a card: Zombie Survival's two (the card's map row picks; online picks for you)
-export const SHARED = { survival: [base, fair] };
+// A preview page (one that sets window.__AD_PREVIEW_TRACKS to a track's id before the game loads) also puts the race
+// tracks that are not on the card yet on the Race card's map row, and opens the Race on that track the first time.
+export const PREVIEW = (typeof window !== 'undefined' && window.__AD_PREVIEW_TRACKS) || null;
+export const SHARED = { survival: [base, fair], ...(PREVIEW ? { race: [manhattan, empire, capital] } : {}) };
 const KEY = 'ad-map';
 export const MAP = ALL.find((m) => m.id === picked()) || arena;
 // load the page again on another map (one that is not on the card keeps its ?map= in the address, so Play again stays on
@@ -43,6 +46,6 @@ export function chooseMap(id) {
   try { sessionStorage.setItem(KEY, id); } catch (e) { /* fall through to the window's name */ }
   try { window.name = (window.name || '').replace(/ad-map=\w+;?/, '') + `ad-map=${id};`; } catch (e) { /* stays */ }
   let u = location.href.replace(/([?&])map=\w+&?/, '$1').replace(/[?&]$/, '');
-  if (!MAPS.some((m) => m.id === id)) u = u.replace(/(#|$)/, `${u.includes('?') ? '&' : '?'}map=${id}$1`);
+  if (!MAPS.some((m) => m.id === id) && !(PREVIEW && SHARED.race.some((m) => m.id === id))) u = u.replace(/(#|$)/, `${u.includes('?') ? '&' : '?'}map=${id}$1`);
   if (u !== location.href) location.replace(u); else location.reload();
 }
