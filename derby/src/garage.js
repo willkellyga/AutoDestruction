@@ -106,7 +106,7 @@ export function makeGarage({ root, save, art, onChange, onDrive, onTest, onTry, 
     if (owned(slot, key)) { if (fit(slot, key)) sound('ui_equip'); render(); return; }
     const p = PARTS[slot][key];
     if (look && look[0] === slot && look[1] === key) {   // the second press buys it
-      if (save.scrap < p.cost) { toast('Not enough scrap', `${p.cost - Math.floor(save.scrap)} more needed. Wreck more cars!`); sound('ui_click'); return; }
+      if (save.scrap < p.cost) { toast('Not enough scrap', `${p.cost - Math.floor(save.scrap)} more needed. It is your next part now: the bar on the home screen counts up to it.`); sound('ui_click'); return; }
       const s = statsOf({ ...save.load, [slot]: key });
       if (s.over) { toast('Not enough Power to fit it', `${s.power} of ${s.maxPower}. Take a part off first, or build on a bigger body.`); sound('ui_click'); flashPower(); return; }
       save.scrap -= p.cost; save.owned[slot] = [...(save.owned[slot] || []), key];
@@ -114,7 +114,9 @@ export function makeGarage({ root, save, art, onChange, onDrive, onTest, onTry, 
       fit(slot, key); toast(`${p.name} bought`, `-${p.cost} scrap`);
       render(); return;
     }
-    look = [slot, key]; onChange(shown(), 'look', slot); sound('ui_click'); render();
+    look = [slot, key];
+    if (save.scrap < p.cost) { save.goal = [slot, key]; keepSave(save); }   // (a part that costs too much yet: the one to save up for, goal.js)
+    onChange(shown(), 'look', slot); sound('ui_click'); render();
   }
   // try a part out: on the car to look at (unless it's on already), then show it working
   function tryPart(slot, key) {
@@ -174,7 +176,8 @@ export function makeGarage({ root, save, art, onChange, onDrive, onTest, onTry, 
     const eq = save.load[slot] === key, own = owned(slot, key), trying = look && look[0] === slot && look[1] === key;
     const fitS = statsOf({ ...save.load, [slot]: key }), nofit = !eq && fitS.over;
     const state = eq ? '<b class="g-eq">Fitted</b>' : own ? (trying ? '<b class="g-buy">Fit it</b>' : '<b class="g-own">Owned</b>') : trying ? `<b class="g-buy">Buy · ${p.cost}</b>` : `<b class="g-price">${p.cost} scrap</b>`;
-    const ch = [...(nofit ? [`needs ${fitS.power - fitS.maxPower} more Power`] : []), ...chips(slot, p)].map((c, i) => `<i class="${nofit && i === 0 ? 'warn' : ''}">${esc(c)}</i>`).join('');
+    const goal = !own && Array.isArray(save.goal) && save.goal[0] === slot && save.goal[1] === key;
+    const ch = (goal ? '<i class="goal">Next part</i>' : '') + [...(nofit ? [`needs ${fitS.power - fitS.maxPower} more Power`] : []), ...chips(slot, p)].map((c, i) => `<i class="${nofit && i === 0 ? 'warn' : ''}">${esc(c)}</i>`).join('');
     const tl = tryLabel(slot, p);
     const tb = tl ? `<button class="g-trybtn" data-try="${key}" title="Try it out">${tl}</button>` : '';
     return `<div role="button" tabindex="0" class="g-card ${eq ? 'eq' : ''} ${trying ? 'try' : ''} ${!own && p.cost > save.scrap ? 'dear' : ''} ${nofit ? 'nofit' : ''}" data-slot="${slot}" data-key="${key}">`
@@ -248,6 +251,13 @@ export function makeGarage({ root, save, art, onChange, onDrive, onTest, onTry, 
     open() { look = null; root.hidden = false; sound('ui_open'); sound('door', 0.6); setTab(tab, true); },
     close() { root.hidden = true; if (look) { const was = look[0]; look = null; onChange(save.load, 'reset', was); } },
     hide() { root.hidden = true; }, show() { root.hidden = false; render(); },
+    // straight to a part: its tab, the part on the car and working, its card in view (one more press buys it)
+    goTo(slot, key) {
+      if (!PARTS[slot] || !PARTS[slot][key]) return;
+      setTab(slot, true); tryPart(slot, key);
+      const c = root.querySelector(`.g-card[data-slot="${slot}"][data-key="${key}"]`), list = $('.g-list');
+      if (c && list) { list.scrollLeft = Math.max(0, c.offsetLeft - 12); list.scrollTop = Math.max(0, c.offsetTop - list.offsetTop - 8); }
+    },
     render, place, setTab, shown,
     get tab() { return tab; },
     get open_() { return !root.hidden; },

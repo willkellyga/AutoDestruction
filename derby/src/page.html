@@ -525,6 +525,35 @@ button.alt:hover { background: linear-gradient(180deg, #4a5056, #2e3237); }
 #testbar { border: 0; background: rgba(22,24,27,0.92); box-shadow: inset 0 0 0 2px rgba(255,255,255,0.12); }
 #testbar b { letter-spacing: 0.06em; } #test-t { font: 700 26px var(--f-head); }
 .tag b { font-weight: 700; }
+/* ---- the next part (goal.js): a bar of scrap against its price, on the home screen and the results card ---- */
+.nx { display: grid; grid-template-columns: auto 1fr; gap: 1px 10px; align-items: baseline; width: 100%; box-sizing: border-box; text-align: left; border: 0; color: var(--ink); padding: 7px 12px 8px; background: rgba(22,24,27,0.88); box-shadow: inset 0 0 0 2px rgba(255,255,255,0.12); --c: 8px; clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c)); pointer-events: auto; cursor: pointer; font: 600 13px var(--f-ui); }
+.nx:disabled { cursor: default; }
+.nx small { font: 700 12px var(--f-head); letter-spacing: 0.14em; text-transform: uppercase; color: rgba(242,239,230,0.65); }
+.nx b { font: 700 19px var(--f-head); letter-spacing: 0.04em; text-transform: uppercase; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nx .nx-bar { grid-column: 1 / -1; display: block; height: 9px; margin: 3px 0 2px; background: rgba(255,255,255,0.12); }
+.nx .nx-bar s { display: block; height: 100%; background: repeating-linear-gradient(-45deg, transparent 0 6px, rgba(0,0,0,0.16) 6px 9px), var(--hot); transition: width 1.1s cubic-bezier(0.2, 0.7, 0.2, 1); }
+.nx em { grid-column: 1 / -1; font-style: normal; font-size: 12px; text-align: right; opacity: 0.8; font-variant-numeric: tabular-nums; }
+.nx.ready { box-shadow: inset 0 0 0 2px var(--hot); } .nx.ready small, .nx.ready em { color: var(--hot); opacity: 1; }
+.nx.ready:not(:disabled):hover { filter: brightness(1.15); }
+.h-next { position: absolute; right: 22px; top: 70px; width: 250px; }
+#over-next { margin-top: 8px; }
+.ov-table[hidden] + .ov-side #over-next { grid-column: 1 / -1; }
+#over-buy { font-size: calc(20px * var(--head-k)); padding-left: 22px; padding-right: 22px; }
+.g-chips i.goal { background: var(--hot); color: var(--tar); }
+@media (max-height: 520px) and (min-width: 561px) { .h-next { right: auto; left: 14px; top: auto; bottom: 92px; width: 200px; padding: 4px 10px 5px; } .h-next b { font-size: 15px; } .h-next small, .h-next em { font-size: 11px; } .h-next .nx-bar { height: 6px; } #over-next { margin-top: 5px; padding: 3px 10px 4px; } #over-next b { font-size: 15px; } #over-next .nx-bar { height: 6px; margin: 1px 0; } #over-next em { display: none; } #over-buy { font-size: 16px; padding: 9px 14px; } }
+@media (max-width: 560px) { .h-next { right: 10px; top: 80px; width: 168px; padding: 5px 10px 6px; } .h-next b { font-size: 15px; } .h-next small, .h-next em { font-size: 11px; } #over.buy .ov .row { flex-wrap: nowrap; gap: 8px; } #over.buy .ov .row button.alt { font-size: 14px; padding: 9px 11px; } #over-buy { font-size: 15px; line-height: 1.05; padding: 8px 12px; flex: 1 1 auto; } #over.buy #over-next { display: none; } #over-next { margin-top: 6px; padding: 4px 10px 5px; } #over-next em { display: none; } #over-next b { font-size: 16px; } }
+/* ---- the first visit: one press starts a round (main.js firstVisit), and the controls sit over its first seconds ---- */
+#first { position: fixed; inset: 0; z-index: 7; pointer-events: auto; cursor: pointer; display: flex; align-items: flex-end; justify-content: center; background: linear-gradient(transparent 35%, rgba(10,11,13,0.9) 82%); }
+#first[hidden] { display: none; }
+.fs-box { text-align: center; padding: 0 16px max(8vh, 28px); display: grid; gap: 6px; justify-items: center; }
+.fs-box small { font: 700 16px var(--f-head); letter-spacing: 0.3em; text-transform: uppercase; color: var(--hot); }
+.fs-box b { font: 400 clamp(40px, 9vw, 84px)/1 var(--f-logo); text-transform: uppercase; color: var(--ink); text-shadow: 0 4px 0 var(--tar), 0 8px 18px rgba(0,0,0,0.5); animation: fs-pulse 1.1s ease-in-out infinite alternate; }
+.fs-box span { font: 600 16px var(--f-ui); opacity: 0.9; max-width: 34em; }
+@keyframes fs-pulse { from { transform: scale(1); } to { transform: scale(1.05); } }
+#tips { position: fixed; left: 50%; bottom: 64px; transform: translateX(-50%); z-index: 5; pointer-events: none; padding: 7px 16px; background: rgba(12,13,15,0.74); box-shadow: inset 0 0 0 2px rgba(255,194,26,0.5); width: max-content; max-width: 92vw; box-sizing: border-box; transition: opacity 0.9s; }
+#tips.out { opacity: 0; } #tips .ln-keys { margin: 0; opacity: 1; }
+body.touch #tips { bottom: auto; top: 62px; }
+@media (max-width: 560px) { body.touch #tips { top: 150px; } .fs-box span { font-size: 14px; } }
 /* ---- the home screen: the car on the turntable, the logo, and a card for each way to play and the garage ---- */
 #home { position: fixed; inset: 0; z-index: 6; pointer-events: none; }
 #home .title { position: absolute; left: 22px; top: 16px; font-size: clamp(26px, 4.6vw, 54px); }
@@ -797,7 +826,7 @@ body.racing.touch #hint { top: 128px; }
   <div class="row"><button class="go" id="ln-go">Let's go!</button></div>
 </div></div>
 <div class="card" id="pause" hidden><div><b class="t" id="pause-t">Paused</b><div class="note" id="pause-note"></div><div class="p-col"><button class="go" id="pause-go">Resume</button><button class="alt" id="pause-again">Restart</button><button class="alt" id="pause-learn">How to play</button><button class="alt" id="pause-sound">Sound: on</button><button class="alt" id="pause-radio">Radio: Auto</button><button class="alt desk-only" id="pause-auto">Auto-fire: on</button><button class="alt" id="pause-home">Main menu</button></div><div class="note desk-only"><kbd>Esc</kbd> or <kbd>P</kbd> to go back to the round</div></div></div>
-<div class="card" id="over" hidden><div class="ov"><div class="ov-head"><div class="ov-badge" id="over-badge" hidden></div><div class="ov-tt"><span class="ov-k" id="over-k"></span><b class="t" id="over-t">Round over</b><span class="ov-sub" id="over-sub" hidden></span></div></div><div class="ov-body"><div class="ov-table" id="over-rows" hidden></div><div class="ov-side"><div class="ov-stats" id="over-stats" hidden></div><div id="over-l"></div><div class="ov-pay" id="over-pay" hidden></div></div></div><div class="row more-only"><button class="go" id="over-more">Keep going</button></div><div class="note desk-only more-only"><kbd>Enter</kbd> or <kbd>C</kbd> to keep going: the same round, on your own</div><div class="row"><button class="alt" id="over-maps">Home</button><button class="alt" id="over-garage">Garage</button><button class="go" id="over-go">Again</button></div></div></div>
+<div class="card" id="over" hidden><div class="ov"><div class="ov-head"><div class="ov-badge" id="over-badge" hidden></div><div class="ov-tt"><span class="ov-k" id="over-k"></span><b class="t" id="over-t">Round over</b><span class="ov-sub" id="over-sub" hidden></span></div></div><div class="ov-body"><div class="ov-table" id="over-rows" hidden></div><div class="ov-side"><div class="ov-stats" id="over-stats" hidden></div><div id="over-l"></div><div class="ov-pay" id="over-pay" hidden></div><button class="nx" id="over-next" hidden></button></div></div><div class="row more-only"><button class="go" id="over-more">Keep going</button></div><div class="note desk-only more-only"><kbd>Enter</kbd> or <kbd>C</kbd> to keep going: the same round, on your own</div><div class="row"><button class="alt" id="over-maps">Home</button><button class="alt" id="over-garage">Garage</button><button class="go" id="over-go">Again</button><button class="go" id="over-buy" hidden>Buy</button></div></div></div>
 <div class="card" id="menu" hidden><div>
   <div class="brief-k" id="brief-k"></div><div class="brief-t" id="brief-t"></div>
   <div class="ln-steps" id="brief-steps"></div>
@@ -829,9 +858,12 @@ body.racing.touch #hint { top: 128px; }
 <div id="home" hidden>
   <div class="title logo" role="img" aria-label="AutoDestruction.io"><div class="lg-auto"><div class="lg-l"><span>A</span><span>U</span><span>T</span><span>O</span></div></div><div class="lg-bar"><div class="lg-l"><span>D</span><span>E</span><span>S</span><span>T</span><span>R</span><span>U</span><span>C</span><span>T</span><span>I</span><span>O</span><span>N</span></div></div><b class="lg-io">.io</b></div>
   <div class="h-top"><button class="h-unlock" id="home-unlock" title="Own every car and part, for playtesting">Unlock all</button><div class="h-scrap">Scrap<b id="home-scrap">0</b></div></div>
+  <button class="nx h-next" id="home-next" hidden></button>
   <div class="h-car"><b id="home-car"></b><span class="g-rate" id="home-rate" data-c="C"><b class="g-class" id="home-class">C</b><em class="g-num" id="home-num">0</em></span><span class="h-gad" id="home-gad" hidden></span><i class="desk-only">Drag to turn the car</i></div>
   <div class="h-cards" id="home-cards"><div class="h-play" id="home-play" role="group" aria-label="Solo, online or with friends"><button data-p="solo">Solo</button><button data-p="online">Online</button><button data-p="friends">Friends</button></div></div>
 </div>
+<div id="first" hidden><div class="fs-box"><small>Arena · everyone against everyone</small><b class="desk-only">Click to drive</b><b class="touch-only">Tap to drive</b><span>Wreck the most cars in three minutes. Wrecked? You're back in three seconds.</span></div></div>
+<div id="tips" hidden><div class="ln-keys desk-only"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive</span><span><b>Mouse</b> aim</span><span><b>Left click</b> guns</span><span><b>Right click</b> rockets</span><span><kbd>Space</kbd> drift</span></div><div class="ln-keys touch-only"><span><b>Left thumb</b> drive</span><span><b>Fire</b> guns aim for you</span><span><b>Rockets</b> big hits</span><span><b>Drift</b> sharp turns</span></div></div>
 <div id="garage" hidden>
   <div class="g-name"><b>Garage</b><span>Drag to turn the car · tap a glowing spot to change that part</span></div>
   <div class="g-rate" data-c="C" title="Car rating: armour, speed, handling, firepower and ramming added up. The letter is its class, D up to S."><span>Rating</span><b class="g-class">C</b><em class="g-num">0</em><em class="g-delta"></em></div>
@@ -950,7 +982,9 @@ body.racing.touch #hint { top: 128px; }
       poll = setInterval(function () {
         var s = sounds ? sounds() : { got: 1, asked: 1 }, k = s.asked ? s.got / s.asked : 1;
         go(0.86 + 0.12 * k, '', 0, 0);
-        if (k >= 1 || performance.now() - tS > 6000) { clearInterval(poll); finish(); }   // (sounds still coming after that play as they arrive)
+        // (not held for the sounds: the round's first ones are small and the rest play as they arrive. Will, 2026-11-25:
+        // time to the first fun. A blink for the ones already in the browser's cache, so the round does not open silent)
+        if (k >= 1 || performance.now() - tS > 250) { clearInterval(poll); finish(); }
       }, 100);
     },
     // shown again on the way to another map (the page loads again; what: the words for building that one, its loading[0])
