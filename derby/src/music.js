@@ -1,6 +1,6 @@
 // The game's music: the main theme loops on the home screen, in the garage and shop, and on a mode's start card (Will,
 // 2026-11-24: once you're back in the home zone the music shouldn't switch). In a round the map's own track plays, where
-// it has one (Camp Deadfall so far), and the theme fades out.
+// it has one (Camp Deadfall and the New York races so far), and the theme fades out.
 // Every track is an original made in Will's Suno account (derby/assets/music/CREDITS.md). Each file is the loop plus
 // half a second either side: the loop runs from a track's start for its len seconds, both cut on a drum hit, and the bars just
 // after the start already hold a short crossfade from the bars after the end, so going round has no seam. The spare
@@ -8,13 +8,15 @@
 // It is fetched on its own after the page is up (not through sfxfiles.js's count, so the loading screen never waits for it).
 import theme from '../assets/music/theme.mp3';
 import deadfall from '../assets/music/deadfall.mp3';
+import raceNyc from '../assets/music/race-nyc.mp3';
 
 const TRACKS = {
   theme: { clip: theme, start: 0.5, len: 42.36723, level: 0.42 },
   deadfall: { clip: deadfall, start: 0.5, len: 32.71338, level: 0.38 },   // Camp Deadfall's rounds
+  race: { clip: raceNyc, start: 0.5, len: 55.18617, level: 0.38 },   // the New York races: Manhattan Circuit and Empire City
 };
 // each map's round track (maps without one are quiet in a round)
-export const MAP_TRACK = { base: 'deadfall' };
+export const MAP_TRACK = { base: 'deadfall', race: 'race', empire: 'race' };
 
 function load(clip) {
   if (clip && typeof clip.__sfx === 'string') return fetch(clip.__sfx).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(r.status)));
