@@ -460,11 +460,16 @@ function paint() {
   landPath(); g.fillStyle = '#c8c1b1'; g.fill();
   g.save(); landPath(); g.clip();
   C.speckle(0, 0, WX, WZ, 90000, ['rgba(255,250,235,0.16)', 'rgba(60,56,50,0.13)']);
-  // the streets of the city off the course, a grid of them (the cheap blocks stand between)
-  g.fillStyle = '#50545c';
+  // The city off the course stands on pavement: slabs, a joint every eight, and the walks between the blocks (where
+  // side streets were painted once) in a paler stone with a kerb line either side. No street is painted beside the
+  // course (Will, 2026-11-24: "our road and cars are much bigger than those roads, so it ruins the perspective. It
+  // would look better if those were side walks").
+  g.fillStyle = 'rgba(70,66,58,0.14)';
+  for (let v = 0; v < WX; v += 8) { C.rect(v - 0.15, 0, v + 0.15, WZ); C.rect(0, v - 0.15, WX, v + 0.15); }
+  g.fillStyle = 'rgba(236,230,214,0.5)';
   for (let v = 8; v < WX; v += 104) { C.rect(v - 8, 0, v + 8, WZ); C.rect(0, v - 8, WX, v + 8); }
-  g.fillStyle = 'rgba(230,207,120,0.5)';
-  for (let v = 8; v < WX; v += 104) for (let a = 0; a < WX; a += 12) { C.rect(v - 0.3, a, v + 0.3, a + 6); C.rect(a, v - 0.3, a + 6, v + 0.3); }
+  g.fillStyle = 'rgba(90,84,74,0.3)';
+  for (let v = 8; v < WX; v += 104) for (const e of [-8, 8]) { C.rect(v + e - 0.25, 0, v + e + 0.25, WZ); C.rect(0, v + e - 0.25, WX, v + e + 0.25); }
   // the park: grass, a pond, paths
   g.fillStyle = '#74a65e'; C.rect(PARK.x0, PARK.z0, PARK.x1, PARK.z1);
   C.speckle(PARK.x0, PARK.z0, PARK.x1, PARK.z1, 46000, ['rgba(92,146,74,0.5)', 'rgba(146,192,108,0.45)', 'rgba(170,190,110,0.25)']);
