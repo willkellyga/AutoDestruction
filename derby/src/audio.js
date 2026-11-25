@@ -110,8 +110,21 @@ export function makeSounds(getCtx) {
     if (ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = pan; g.connect(p); p.connect(bus); } else g.connect(bus);
     src.start();
   }
-  // a loop that keeps going; set(volume, rate, x, z) every frame
-  function loop(name) {
+  // a sound that is not one of the clips above (one map's own, fetched only there): fn(ctx) gives its AudioBuffer, or a
+  // promise of it; asked for the first time this is called once the sound is running. True once it is there to be played.
+  const making = {};
+  function make(name, fn) {
+    if (!buf[name] && !making[name] && ctx && ctx.state === 'running') {
+      making[name] = true;
+      try { Promise.resolve(fn(ctx)).then((b) => { if (b) buf[name] = b; }, () => {}); } catch (e) { /* no sound of it, then */ }
+    }
+    return !!buf[name];
+  }
+  // a loop that keeps going; set(volume, rate, x, z) every frame. hold: seconds after the last set() that it fades out
+  // by itself (for a loop whose owner is not stepped while the game is paused or in the garage). part: [from, to] in
+  // seconds, if only that much of the clip is the loop (a clip with a lead-in and a tail, so that a decoder's padding
+  // can't open a gap at the join)
+  function loop(name, hold = 0, part = null) {
     let src = null, g = null, p = null;
     return {
       set(vol, rate = 1, x, z) {
@@ -120,15 +133,17 @@ export function makeSounds(getCtx) {
           src = ctx.createBufferSource(); src.buffer = buf[name]; src.loop = true;
           g = ctx.createGain(); g.gain.value = 0; src.connect(g);
           if (ctx.createStereoPanner) { p = ctx.createStereoPanner(); g.connect(p); p.connect(bus); } else g.connect(bus);
-          src.start(0, Math.random() * buf[name].duration);
+          if (part) { src.loopStart = part[0]; src.loopEnd = part[1]; src.start(0, part[0]); } else src.start(0, Math.random() * buf[name].duration);
         }
         const [k, pan] = place(x, z), t = ctx.currentTime;
+        if (hold) g.gain.cancelScheduledValues(t);
         g.gain.setTargetAtTime(on ? vol * k * (LEVEL[name] ?? 1) : 0, t, 0.06);
+        if (hold) g.gain.setTargetAtTime(0, t + hold, 0.2);
         src.playbackRate.setTargetAtTime(Math.max(0.3, rate), t, 0.05);
         if (p) p.pan.setTargetAtTime(pan, t, 0.05);
       },
       stop() { if (src) { try { g.gain.setTargetAtTime(0, ctx.currentTime, 0.05); src.stop(ctx.currentTime + 0.3); } catch (e) { /* already stopped */ } src = null; } },
     };
   }
-  return { init, play, loop, listen, get clips() { return Object.keys(buf).length; }, get on() { return on; }, set on(v) { on = v; } };
+  return { init, play, loop, make, listen, get clips() { return Object.keys(buf).length; }, get on() { return on; }, set on(v) { on = v; } };
 }

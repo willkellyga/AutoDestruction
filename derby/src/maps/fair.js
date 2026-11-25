@@ -1,13 +1,18 @@
 // Dead Man's Fair: a county fair the dead have overrun, at twilight with the lights still on, for the last-car-standing
 // round (modes/survival.js). A painted board fence with a gate in each side. The midway runs east to west through the
-// middle and the avenue north to south, and they cross in the open. Round them, a quarter each:
-//   north-west  the Ferris wheel on its stand, turning (a mesh, ../fairrides.js). It stays there (Will, 2026-11-24:
-//               shot loose early, it was gone for the rest of the round); the rolling is still in fairrides.js.
-//   north-east  the big top: a striped tent nobody can drive into.
-//   south-west  the carousel, still turning (a mesh on a voxel plinth), and the generator truck that runs the lights.
-//   south-east  the rollercoaster: track high overhead on steel legs a car can knock out.
-// Game stalls and food stalls line the midway, food trucks stand by the avenue, and neon arches span the ways in
-// (all meshes at twice the town's detail: ../fairstalls.js. A car goes straight through a stall and it flies apart).
+// middle and the avenue north to south, and where they cross the carousel turns (a mesh on a voxel plinth), with the
+// traffic going round it. A quarter each:
+//   north-west  the Ferris wheel on its stand, turning (a mesh, ../fairrides.js), the fairground organ playing by it
+//               (heard as you come near). It stays there (Will, 2026-11-24: shot loose early, it was
+//               gone for the rest of the round); the rolling is still in fairrides.js. The game stalls in a horseshoe,
+//               and the octopus.
+//   north-east  the big top: a striped tent nobody can drive into. The chair swing and the drop tower.
+//   south-west  the pirate ship, swinging (it runs down what is under it at the bottom of its swing), the food court
+//               (trucks and stalls round a yard of picnic tables), and the generator truck that runs the lights.
+//   south-east  the rollercoaster: track high overhead on steel legs a car can knock out, and its train going round.
+// The rides that move are ../fairmoves.js. A few stalls stand at either end of the midway, and neon arches span the
+// ways in (all meshes at twice the town's detail: ../fairstalls.js. A car goes straight through a stall and it flies
+// apart). Outside the fence: a strip mall to the north and a small suburb to the east (../fairtown.js).
 // Strings of coloured bulbs hang between the lamp posts and run along the top of the fence (the look's glows,
 // ../looks/fair.js), and eight floodlight towers stand outside the fence, as Camp Deadfall's do.
 // The lights: the generator is failing. Every so often a quarter of the fair flickers and goes dark (its bulbs, its
@@ -21,6 +26,10 @@ import { canvasFor, finish, makeGridNav, pickSpot, gridRadar } from './common.js
 import { dropSpots } from '../drops.js';
 import { makeRides, WHEEL } from '../fairrides.js';
 import { makeStalls, stallPools } from '../fairstalls.js';
+import { makeMoves } from '../fairmoves.js';
+import { fairTown } from '../fairtown.js';
+import { bytes } from '../sfxfiles.js';
+import organClip from '../../assets/sfx/fair_organ.mp3';
 
 const TAU = Math.PI * 2;
 // ---- the plan (town voxels; x east, z south) ------------------------------------------------------------------------
@@ -30,9 +39,9 @@ const GX = 256, GZ = 208;              // the gates' middles: north and south on
 const MID = [184, 232];                // the midway, z from and to
 const AVE = [234, 278];                // the avenue, x from and to
 const RING = 40;                       // the ring road: this far in from the fence's outside
-const FERRIS = { x: 96, z: 74 };       // the Ferris wheel's hub; its alley runs east from it along z
+const FERRIS = { x: 96, z: 74 };       // the Ferris wheel's hub
 const TENT = { x: 384, z: 138, r: 32 };
-const CAROUSEL = { x: 132, z: 318, r: 17 };
+const CAROUSEL = { x: GX, z: GZ, r: 17 };   // at the crossing: the way round it is a roundabout
 const GEN = { x0: 44, x1: 62, z0: 254, z1: 264 };       // the generator truck
 const COASTER = { x: 392, z: 318, hx: 72, hz: 48, r: 30 };
 const SWITCH = { x: 82, z: 259 };      // the lights' switch, by the generator
@@ -74,44 +83,54 @@ const POWER = { on: [1, 1, 1, 1], lit: [1, 1, 1, 1], rev: 0 };
 const LIGHTS = { first: 50, every: 24, after: 45, boost: 1.35, flicker: 2.6 };   // seconds to the first quarter going out, between quarters, after a reset; how much faster the dead are in the dark; how long a quarter flickers before it goes
 
 // ---- the stalls, the trucks and the signs (../fairstalls.js: meshes at twice the detail) ---------------------------------
-// Along the midway, their fronts to it: games down the north side and the west of the south side, the food at the
-// south-east. Trucks by the avenue, serving toward it. An arch over each way in to the crossing.
-const NORTH = MID[0] - 11, SOUTH = MID[1] + 8, F = Math.PI;
+// The games in a horseshoe in the north-west, open to the midway; a few more at either end of the midway, their fronts
+// to it. The food court in the south-west: trucks and stalls round a yard of tables. More food on the east arm. An arch
+// over each way in. And what stands still of each ride (../fairmoves.js has what moves).
+const NORTH = MID[0] - 11, SOUTH = MID[1] + 8, F = Math.PI, E = Math.PI / 2;
 const stall = (kind, x, z, yaw, name, neon, frame, a, more = {}) => ({ kind, x, z, yaw, name, neon, frame, a, ...more });
 const C = { red: 0xc8342c, blue: 0x2f6fc0, green: 0x3c9a52, yellow: 0xe8b830, teal: 0x1f9c98, pink: 0xe86aa8, purple: 0x7a4ac0, orange: 0xe2752a, navy: 0x243a6a, white: 0xeee8da };
+const SHIP = stall('shipframe', 96, 322, 0, 'PIRATE SHIP', 'red', 'yellow', C.navy, { b: C.yellow });
+const SWING = stall('swingbase', 318, 84, 0, '', 'pink', 'pink', C.blue);
+const DROP = stall('droptower', 442, 70, 0, 'FREE FALL', 'cyan', 'red', C.purple);
+const OCTO = stall('octobase', 190, 66, 0, '', 'green', 'green', C.teal);
 const STALLS = [
-  stall('booth', 64, NORTH, 0, 'RING TOSS', 'yellow', 'red', C.red, { game: 'ring' }),
-  stall('booth', 96, NORTH, 0, 'BALLOON POP', 'pink', 'cyan', C.blue, { game: 'balloon', seed: 2 }),
-  stall('booth', 128, NORTH, 0, 'KNOCK EM DOWN', 'green', 'yellow', C.green, { game: 'cans', seed: 4 }),
-  stall('booth', 160, NORTH, 0, 'DUCK POND', 'cyan', 'yellow', C.teal, { game: 'duck', seed: 1 }),
-  stall('booth', 192, NORTH, 0, 'DEAD EYE', 'red', 'white', C.purple, { game: 'deadeye', seed: 3 }),
-  stall('booth', 320, NORTH, 0, 'HOOPS', 'orange', 'blue', C.orange, { game: 'hoops', seed: 5 }),
-  stall('booth', 432, NORTH, 0, 'SPIN TO WIN', 'purple', 'yellow', C.yellow, { game: 'spin', seed: 6 }),
+  // the games' horseshoe
+  stall('booth', 154, 112, 0, 'RING TOSS', 'yellow', 'red', C.red, { game: 'ring' }),
+  stall('booth', 172, 112, 0, 'BALLOON POP', 'pink', 'cyan', C.blue, { game: 'balloon', seed: 2 }),
+  stall('booth', 190, 112, 0, 'KNOCK EM DOWN', 'green', 'yellow', C.green, { game: 'cans', seed: 4 }),
+  stall('booth', 140, 136, E, 'DUCK POND', 'cyan', 'yellow', C.teal, { game: 'duck', seed: 1 }),
+  stall('booth', 204, 136, -E, 'DEAD EYE', 'red', 'white', C.purple, { game: 'deadeye', seed: 3 }),
+  stall('striker', 172, 134, 0.3, '', 'red', 'red', C.red),
+  // either end of the midway
+  stall('booth', 64, NORTH, 0, 'HOOPS', 'orange', 'blue', C.orange, { game: 'hoops', seed: 5 }),
+  stall('booth', 96, NORTH, 0, 'SPIN TO WIN', 'purple', 'yellow', C.yellow, { game: 'spin', seed: 6 }),
+  stall('booth', 64, SOUTH, F, 'DUCK POND', 'cyan', 'yellow', C.blue, { game: 'duck', seed: 5 }),
+  stall('booth', 96, SOUTH, F, 'BALLOON POP', 'pink', 'cyan', C.pink, { game: 'balloon', seed: 6 }),
+  stall('booth', 432, NORTH, 0, 'DEAD EYE', 'red', 'white', C.green, { game: 'deadeye' }),
   stall('booth', 464, NORTH, 0, 'RING TOSS', 'yellow', 'red', C.teal, { game: 'ring', seed: 2 }),
-  stall('booth', 64, SOUTH, F, 'SPIN TO WIN', 'purple', 'yellow', C.pink, { game: 'spin', seed: 3 }),
-  stall('booth', 96, SOUTH, F, 'DUCK POND', 'cyan', 'yellow', C.blue, { game: 'duck', seed: 5 }),
-  stall('booth', 128, SOUTH, F, 'DEAD EYE', 'red', 'white', C.green, { game: 'deadeye' }),
-  stall('booth', 160, SOUTH, F, 'HOOPS', 'orange', 'blue', C.red, { game: 'hoops', seed: 4 }),
-  stall('booth', 192, SOUTH, F, 'BALLOON POP', 'pink', 'cyan', C.orange, { game: 'balloon', seed: 6 }),
   stall('kiosk', 320, SOUTH, F, 'FRIED OREOS', 'pink', 'white', C.navy, { food: 'oreo' }),
   stall('kiosk', 352, SOUTH, F, 'CORN DOGS', 'yellow', 'red', C.red, { food: 'corndog' }),
-  stall('kiosk', 384, SOUTH, F, 'LEMONADE', 'green', 'yellow', C.yellow, { food: 'lemonade', b2: C.green }),
-  stall('kiosk', 416, SOUTH, F, 'POPCORN', 'orange', 'white', C.red, { food: 'popcorn' }),
-  stall('kiosk', 448, SOUTH, F, 'COTTON CANDY', 'cyan', 'pink', C.pink, { food: 'cotton', b: 0xcfeaf6 }),
-  stall('truck', 221, 130, Math.PI / 2 + 0.06, 'TACOS', 'green', 'orange', C.teal, { top: 'taco', c: C.orange }),
-  stall('truck', 291, 98, -Math.PI / 2 + 0.05, 'ICE CREAM', 'pink', 'cyan', C.white, { top: 'cone', b: C.pink, c: C.pink }),
-  stall('truck', 291, 300, -Math.PI / 2 - 0.07, 'BURGERS', 'yellow', 'red', C.red, { top: 'burger', c: C.yellow }),
-  stall('arch', 40, GZ, Math.PI / 2, 'GAMES', 'yellow', 'pink', C.red, { span: 116 }),
-  stall('arch', 478, GZ, Math.PI / 2, 'EATS', 'pink', 'cyan', C.blue, { span: 116 }),
+  stall('kiosk', 384, SOUTH, F, 'POPCORN', 'orange', 'white', C.red, { food: 'popcorn' }),
+  // the food court
+  stall('truck', 166, 268, 0, 'TACOS', 'green', 'orange', C.teal, { top: 'taco', c: C.orange }),
+  stall('truck', 218, 300, -E, 'ICE CREAM', 'pink', 'cyan', C.white, { top: 'cone', b: C.pink, c: C.pink }),
+  stall('truck', 186, 338, F, 'BURGERS', 'yellow', 'red', C.red, { top: 'burger', c: C.yellow }),
+  stall('kiosk', 146, 296, E, 'LEMONADE', 'green', 'yellow', C.yellow, { food: 'lemonade', b2: C.green }),
+  stall('kiosk', 146, 318, E, 'COTTON CANDY', 'cyan', 'pink', C.pink, { food: 'cotton', b: 0xcfeaf6 }),
+  stall('table', 176, 292, 0.2, '', 'warm', 'warm', C.red), stall('table', 196, 298, 1.1, '', 'warm', 'warm', C.blue),
+  stall('table', 184, 312, -0.3, '', 'warm', 'warm', C.yellow), stall('table', 168, 316, 0.8, '', 'warm', 'warm', C.green), stall('table', 200, 320, 0.1, '', 'warm', 'warm', C.orange),
+  // the rides
+  SHIP, SWING, DROP, OCTO,
+  stall('arch', 40, GZ, E, 'GAMES', 'yellow', 'pink', C.red, { span: 116 }),
+  stall('arch', 478, GZ, E, 'EATS', 'pink', 'cyan', C.blue, { span: 116 }),
   stall('arch', GX, 44, 0, 'RIDES', 'cyan', 'yellow', C.purple, { span: 108 }),
   stall('arch', GX, 372, 0, 'MIDWAY', 'orange', 'green', C.red, { span: 108 }),
-  stall('pylon', 140, 112, 0.3, 'BIG WHEEL', 'yellow', 'red', 0),
-  stall('pylon', 212, 168, -0.4, 'PRIZES', 'pink', 'cyan', 0),
+  stall('pylon', 130, 98, 0.3, 'BIG WHEEL', 'yellow', 'red', 0),
+  stall('pylon', 150, 164, -0.4, 'PRIZES', 'pink', 'cyan', 0),
   stall('pylon', 356, 176, 0.2, 'FREAK SHOW', 'green', 'purple', 0),
-  stall('pylon', 170, 296, 2.6, 'FUN HOUSE', 'purple', 'yellow', 0),
-  stall('pylon', 212, 246, F + 0.3, 'COLD DRINKS', 'cyan', 'white', 0),
-  stall('striker', 300, 172, 0.5, '', 'red', 'red', C.red),
-  stall('striker', 214, 262, F - 0.4, '', 'yellow', 'yellow', C.blue),
+  stall('pylon', 198, 254, F + 0.3, 'FOOD COURT', 'cyan', 'white', 0),
+  stall('pylon', 296, 292, 2.6, 'THE COMET', 'purple', 'yellow', 0),
+  stall('striker', 300, 174, 0.5, '', 'yellow', 'yellow', C.blue),
   stall('tickets', 66, 96, 0, 'TICKETS', 'yellow', 'red', C.blue),
   stall('genset', (GEN.x0 + GEN.x1) / 2, (GEN.z0 + GEN.z1) / 2, 0, '', 'yellow', 'yellow', 0),
   stall('board', TENT.x + 0.5, TENT.z + TENT.r + 2.2, 0, 'BIG TOP', 'yellow', 'red', 0, { w: 52, h: 13, y: 35, legs: true }),
@@ -120,22 +139,24 @@ const STALLS = [
 // the lamp posts are the same kind of thing (so a car can knock one down): LAMPS[i] stands at POSTS[i]
 const LAMPS = POSTS.map(([x, z]) => stall('lamp', x + 0.5, z + 0.5, 0, '', 'warm', 'warm', 0));
 STALLS.push(...LAMPS);
+// and what stands outside the fence (scenery: ../fairtown.js)
+STALLS.push(...fairTown(WX, WZ, GX, GZ));
 const POOLS = stallPools(STALLS, quarter);
 
 // the six places to line up for the round, the player's first, far apart and facing into the fair
 const STARTS = [
   { x: 70, z: 208, yaw: Math.PI / 2 }, { x: 442, z: 208, yaw: -Math.PI / 2 }, { x: 256, z: 60, yaw: 0 },
-  { x: 256, z: 356, yaw: Math.PI }, { x: 310, z: 150, yaw: -2.2 }, { x: 200, z: 286, yaw: Math.PI / 2 },
+  { x: 256, z: 356, yaw: Math.PI }, { x: 310, z: 150, yaw: -2.2 }, { x: 124, z: 282, yaw: Math.PI / 2 },
 ];
 const SPOTS = [...STARTS, { x: 24, z: 24 }, { x: WX - 24, z: 24 }, { x: 24, z: WZ - 24 }, { x: WX - 24, z: WZ - 24 }, { x: 160, z: 208 }, { x: 352, z: 208 }, { x: 256, z: 150 }, { x: 256, z: 270 }];
 // where the supply drops come down (../drops.js): open ground, spread over the fair
-const DROPS = dropSpots([[256, 208], [150, 150], [330, 76], [190, 360], [300, 250], [460, 208], [60, 190], [256, 110], [256, 320], [440, 80]]);
+const DROPS = dropSpots([[214, 208], [172, 172], [352, 60], [190, 362], [300, 252], [460, 208], [60, 196], [256, 110], [256, 320], [404, 72]]);
 // the lights' switch (pickups.js 'switch': driven over, it does what its `on` says, which the lights fill in when they
 // are made: setup, below)
 const SW_LIGHTS = { kind: 'switch', x: SWITCH.x, z: SWITCH.z, hold: true, name: 'Lights on', sub: 'The generator is running again' };
 
 // ---- the route grid: the voxels, the stalls that still stand, and the wheel while it is on its stand ------------------------------------------------
-let rides = null, stalls = null;
+let rides = null, stalls = null, moves = null, organ = null;
 const nav = makeGridNav({ also: (x, z) => (!!rides && rides.blocks(x, z)) || (!!stalls && stalls.blocks(x, z)) });
 const radarGrid = gridRadar(nav);
 
@@ -264,15 +285,14 @@ function build() {
   bigTop(TENT);
   carouselPlinth(CAROUSEL);
   coaster();
-  for (const [x, z, a] of [[150, 96, 1], [158, 96, 1], [304, 118, 0], [60, 350, 0], [90, 286, 1], [176, 150, 1], [336, 160, 0], [420, 250, 1], [120, 150, 0]]) hayBale(x, z, a);
-  // the crossing, the midway and the wheel's alley are left open
+  for (const [x, z, a] of [[150, 92, 1], [158, 92, 1], [296, 122, 0], [60, 354, 0], [90, 286, 1], [336, 160, 0], [420, 250, 1], [118, 152, 0], [226, 330, 0], [130, 344, 1]]) hayBale(x, z, a);
   finish();
 }
 
 // ---- the painted ground -----------------------------------------------------------------------------------------------
 // Trampled straw and packed dirt (browns and straw, not greens: the dead are green, and should stand out on it), the
-// midway and the avenue worn darker, sawdust round the tent and the rides, a chalked show ring at the crossing, and the
-// wheel's alley, where the grass never grew back.
+// midway and the avenue worn darker, sawdust round the tent, the carousel and the games, the food court's boards, and
+// the paths trodden to the rides.
 function ground() {
   const c = canvasFor('#9a8a5e', 1313), { g, rect, mottle } = c, GK = c.GK;
   const circle = (x, z, r) => { g.beginPath(); g.arc(x * GK, z * GK, r * GK, 0, TAU); };
@@ -284,16 +304,22 @@ function ground() {
   const dirt = (x0, z0, x1, z1, col = '#857252') => { g.fillStyle = col; rect(x0, z0, x1, z1); for (const cell of [6, 2]) mottle(x0, z0, x1, z1, cell, [[66, 54, 38, 0.36], [168, 148, 108, 0.32]]); };
   dirt(W1, N1, WX - 7, RING); dirt(W1, WZ - RING, WX - 7, S0); dirt(W1, N1, RING, S0); dirt(WX - RING, N1, E0, S0);
   dirt(W1, MID[0], E0, MID[1], '#7c6a4c'); dirt(AVE[0], N1, AVE[1], S0, '#7c6a4c');
-  // the wheel's alley: a long worn strip east from the wheel, with chalk warnings along its edges
-  dirt(FERRIS.x - 34, FERRIS.z - 9, E0, FERRIS.z + 9, '#74634a');
-  g.fillStyle = 'rgba(236,226,200,0.55)';
-  for (let x = FERRIS.x + 40; x < E0 - 8; x += 14) { rect(x, FERRIS.z - 10.2, x + 7, FERRIS.z - 9.4); rect(x, FERRIS.z + 9.4, x + 7, FERRIS.z + 10.2); }
-  // sawdust round the tent, the carousel and under the coaster's station
-  g.fillStyle = 'rgba(214,190,130,0.5)'; circle(TENT.x, TENT.z, TENT.r + 9); g.fill(); circle(CAROUSEL.x, CAROUSEL.z, CAROUSEL.r + 8); g.fill();
+  // sawdust round the tent, round the carousel at the crossing, and in the games' horseshoe
+  g.fillStyle = 'rgba(214,190,130,0.5)'; circle(TENT.x, TENT.z, TENT.r + 9); g.fill(); circle(CAROUSEL.x, CAROUSEL.z, CAROUSEL.r + 12); g.fill();
+  rect(132, 104, 212, 150);
   mottle(TENT.x - 44, TENT.z - 44, TENT.x + 44, TENT.z + 44, 1.5, [[230, 210, 150, 0.2], [150, 126, 84, 0.2]]);
-  // the show ring chalked at the crossing: two rings and a star
-  g.strokeStyle = 'rgba(240,232,210,0.6)'; g.lineWidth = 0.9 * GK; circle(GX, GZ, 30); g.stroke(); g.lineWidth = 0.5 * GK; circle(GX, GZ, 24); g.stroke();
-  g.beginPath(); for (let i = 0; i <= 5; i++) { const a = -Math.PI / 2 + i * TAU * 2 / 5, x = GX + Math.cos(a) * 20, z = GZ + Math.sin(a) * 20; if (i) g.lineTo(x * GK, z * GK); else g.moveTo(x * GK, z * GK); } g.stroke();
+  mottle(132, 104, 212, 150, 1.5, [[230, 210, 150, 0.2], [150, 126, 84, 0.2]]);
+  // the food court's yard: laid with boards, worn
+  g.fillStyle = '#8c7a5c'; rect(152, 276, 212, 332);
+  g.fillStyle = 'rgba(52,42,30,0.28)'; for (let z = 276; z < 332; z += 4) rect(152, z, 212, z + 0.4);
+  mottle(152, 276, 212, 332, 2, [[66, 54, 38, 0.3], [178, 158, 118, 0.26]]);
+  // worn ground under the rides, and the paths trodden to them from the midway and the avenue
+  g.fillStyle = 'rgba(70,58,42,0.42)';
+  for (const [x, z, r] of [[OCTO.x, OCTO.z, 19], [SWING.x, SWING.z, 22], [DROP.x, DROP.z, 12], [FERRIS.x, FERRIS.z + 2, 24]]) { circle(x, z, r); g.fill(); }
+  const path = (x0, z0, x1, z1, w = 7) => { g.strokeStyle = 'rgba(112,94,66,0.7)'; g.lineWidth = w * GK; g.lineCap = 'round'; g.beginPath(); g.moveTo(x0 * GK, z0 * GK); g.lineTo(x1 * GK, z1 * GK); g.stroke(); };
+  path(AVE[0], 70, OCTO.x + 16, OCTO.z); path(OCTO.x - 18, OCTO.z + 2, FERRIS.x + 30, FERRIS.z + 8); path(172, MID[0], 172, 152, 10);
+  path(AVE[1], 84, SWING.x - 20, SWING.z); path(SWING.x + 22, SWING.z - 4, DROP.x - 12, DROP.z); path(DROP.x, DROP.z + 12, 452, MID[0], 6);
+  path(182, MID[1], 182, 274, 10); path(152, 306, SHIP.x + 22, SHIP.z, 8); path(SHIP.x, SHIP.z - 16, 84, 264, 6); path(AVE[1], 292, COASTER.x - COASTER.hx - 8, COASTER.z, 8);
   // ruts down the midway and round the ring road
   g.fillStyle = 'rgba(58,48,34,0.3)';
   for (const z of [GZ - 12, GZ - 5, GZ + 5, GZ + 12]) rect(W1, z - 0.6, E0, z + 0.6);
@@ -328,6 +354,20 @@ function breach(G) {
     out.push({ out: { x: x + dx * 34, z: z + dz * 34 }, entry: { x: x - dx * 26, z: z - dz * 26 } });
   }
   return out;
+}
+
+// ---- the fairground organ --------------------------------------------------------------------------------------------
+// It plays by the big wheel, and is heard as you come near it (Will, 2026-11-24): full by the wheel, gone by the far side
+// of the fair. On the wheel's circuit: when that quarter's lights fail it winds down with them.
+// The tune is a band organ waltz of our own (assets/sfx/CREDITS.md), sixteen bars that come round; the file has half a
+// second either side of the loop.
+const ORGAN = { vol: 0.9, near: 110, far: 210, loop: [0.5, 16.7935] };   // how loud by the wheel; how far off it starts to fade for good, and where it is gone; the loop in the file, seconds
+const organSound = (ctx) => bytes(organClip).then((u8) => ctx.decodeAudioData(u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength)));
+function stepOrgan(api) {
+  if (!organ) { if (!api.sfx.make('fair_organ', organSound)) return; organ = api.sfx.loop('fair_organ', 0.5, ORGAN.loop); }
+  const cam = api.camera.position, d = Math.hypot(cam.x - FERRIS.x, cam.z - FERRIS.z), lit = POWER.lit[quarter(FERRIS.x, FERRIS.z)];
+  const fade = Math.max(0, Math.min(1, (ORGAN.far - d) / (ORGAN.far - ORGAN.near)));
+  organ.set(ORGAN.vol * fade * (0.1 + 0.9 * lit), 0.7 + 0.3 * lit, FERRIS.x, FERRIS.z);
 }
 
 // ---- the lights -------------------------------------------------------------------------------------------------------
@@ -419,9 +459,14 @@ export default {
     for (const p of POOLS) p.on = 1;
     for (const o of STALLS) o.dead = false;
     stalls = makeStalls(api, STALLS, POWER, quarter, [WX, WZ]);
+    moves = makeMoves(api, { ship: SHIP, swing: SWING, drop: DROP, octo: OCTO, coaster: { x: COASTER.x, z: COASTER.z, at: coasterAt } }, stalls.mats, quarter);
     SW_LIGHTS.on = (c) => lightsOn(c);
     SW_LIGHTS.raise = false;
-    return { step(dt, live) { rides.step(dt, live); stalls.step(dt); stepLights(dt); rides.power(POWER.lit[quarter(FERRIS.x, FERRIS.z)], POWER.lit[quarter(CAROUSEL.x, CAROUSEL.z)]); } };
+    return { step(dt, live) {
+      rides.step(dt, live); stalls.step(dt); moves.step(dt, live); stepLights(dt);
+      rides.power(POWER.lit[quarter(FERRIS.x, FERRIS.z)], Math.max(...POWER.lit));   // (the carousel, at the crossing, runs while any quarter does)
+      stepOrgan(api);
+    } };
   } }],
   groundDetail: { soft: 'dirt', hard: false, wet: 0 },
   rutBox: [W1, N1, E0, S0],
@@ -440,7 +485,8 @@ export default {
     for (let q = 0; q < 4; q++) if (!POWER.on[q]) R.fillRect(ox + (q & 1 ? GX : 0) * s, oy + (q & 2 ? GZ : 0) * s, (q & 1 ? WX - GX : GX) * s, (q & 2 ? WZ - GZ : GZ) * s);
     radarGrid(R, s, ox, oy, w, h);
     if (rides) rides.radar(R, s, ox, oy);
+    if (moves) moves.radar(R, s, ox, oy);
   },
   nav,
-  rides: () => rides && rides.wheel, stalls: () => stalls, power: POWER,   // (for the tests)
+  rides: () => rides && rides.wheel, stalls: () => stalls, moves: () => moves, organ: () => organ, power: POWER,   // (for the tests)
 };

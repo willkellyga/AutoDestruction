@@ -24,20 +24,20 @@ const RED = 0xc8342c, WHITE = 0xeee8da, YELLOW = 0xe8b830, BLUE = 0x2f6fc0, GREE
   PINK = 0xe86aa8, PURPLE = 0x7a4ac0, ORANGE = 0xe2752a, WOOD = 0x8a6238, WOODL = 0xb88a52, PLANK = 0x5c4630, STEEL = 0x8e969c,
   NAVY = 0x243a6a, CREAM = 0xf4ead0, BROWN = 0x6a4326, GOLD = 0xc98a2c, TAN = 0xd9a45e, SKY = 0x7ac4ee, LIME = 0x9ad03c, TYRE = 0x1a1a1c;
 // what glows (unlit, bright enough to bloom): r, g, b
-const N = {
+export const N = {
   pink: [2.6, 0.5, 1.5], blue: [0.5, 1.3, 2.8], yellow: [2.6, 1.9, 0.4], green: [0.5, 2.5, 0.8], red: [2.8, 0.45, 0.35], white: [2.2, 2.1, 1.9],
   orange: [2.7, 1.1, 0.3], purple: [1.6, 0.6, 2.8], cyan: [0.4, 2.3, 2.5], warm: [2.2, 1.6, 0.8],
 };
 const CSS = { pink: '#ff4fb0', blue: '#52b4ff', yellow: '#ffd23e', green: '#4dff8a', red: '#ff4a3c', white: '#fff4e0', orange: '#ff9a30', purple: '#b86aff', cyan: '#44f0ff', warm: '#ffc878' };
-const CHASE = ['red', 'yellow', 'blue', 'green', 'white'];
+export const CHASE = ['red', 'yellow', 'blue', 'green', 'white'];
 
 // ---- the signs' picture: every sign's letters, drawn once ---------------------------------------------------------------
 const ATLAS = { W: 2048, H: 1024, list: new Map(), x: 16, y: 0, row: 0, tex: null, cv: null };   // (the first 16 across are the white corner)
-function signRect(text, wHV, hHV, colour, frame) {
-  const key = `${text}|${wHV}|${hHV}|${colour}|${frame}`;
+function signRect(text, wHV, hHV, colour, frame, dots = 0) {
+  const key = `${text}|${wHV}|${hHV}|${colour}|${frame}|${dots}`;
   let r = ATLAS.list.get(key);
   if (!r) {
-    const S = wHV > 60 ? 8 : wHV > 40 ? 10 : 12;   // dots a cube: fewer on the big boards, which are seen from further off
+    const S = dots || (wHV > 60 ? 8 : wHV > 40 ? 10 : 12);   // dots a cube: fewer on the big boards, which are seen from further off (and fewer still, `dots`, on what stands outside the fence)
     const pw = Math.round(wHV * S), ph = Math.round(hHV * S);
     if (ATLAS.x + pw > ATLAS.W) { ATLAS.x = 0; ATLAS.y += ATLAS.row + 2; ATLAS.row = 0; }
     r = { text, colour, frame, px: ATLAS.x, py: ATLAS.y, pw, ph, S };
@@ -85,14 +85,14 @@ const FACES = [
 const _c = new THREE.Color();
 const WHITE_UV = [7 / ATLAS.W, 1 - 7 / ATLAS.H];
 // a kit writes into `paint` (lit by the day, casts a shadow) and `lit` (glows); at (ox, oz), its front (the model's +z)
-// turned to face yaw (0: south, as a car's)
-function makeKit(ox, oz, yaw) {
+// turned to face yaw (0: south, as a car's). all: its undersides too (for what hangs or moves: ../fairmoves.js)
+export function makeKit(ox, oz, yaw, all = false) {
   const co = Math.cos(yaw), si = Math.sin(yaw);
   const P = { p: [], n: [], c: [], i: [] }, L = { p: [], c: [], u: [], h: [], i: [] };
   const wx = (x, z) => ox + (x * co + z * si) * HV, wz = (x, z) => oz + (-x * si + z * co) * HV;
   function faces(x, y, z, w, h, d, each) {
     for (const [n, cs] of FACES) {
-      if (n[1] < 0 && y <= 0) continue;   // (nothing sees the underside of what stands on the ground)
+      if (n[1] < 0 && y <= 0 && !all) continue;   // (nothing sees the underside of what stands on the ground)
       each(n, cs.map(([a, b, c]) => [x + a * w, y + b * h, z + c * d]));
     }
   }
@@ -137,9 +137,9 @@ function makeKit(ox, oz, yaw) {
     },
     // a neon sign: its board, and its letters on the front and on the back; w by h cubes, its middle at (cx, cy), its
     // front face at z
-    sign(text, cx, cy, z, w, h, colour = 'pink', frame = 'cyan', thick = 1) {
+    sign(text, cx, cy, z, w, h, colour = 'pink', frame = 'cyan', thick = 1, dots = 0) {
       K.b(cx - w / 2, cy - h / 2, z - thick, w, h, thick, DARK);
-      const r = signRect(text, w, h, colour, frame);
+      const r = signRect(text, w, h, colour, frame, dots);
       const u0 = r.px / ATLAS.W, u1 = (r.px + r.pw) / ATLAS.W, v1 = 1 - r.py / ATLAS.H, v0 = 1 - (r.py + r.ph) / ATLAS.H;
       const quad = (zz, flip) => {
         const at = L.p.length / 3, xa = flip ? cx + w / 2 : cx - w / 2, xb = flip ? cx - w / 2 : cx + w / 2;
@@ -411,6 +411,14 @@ function genset(K) {
   for (let i = 0; i < 5; i++) K.b(13 + (i & 1), 0, 7 + i * 2, 1, 0.5, 2.5, DARK);                                // the cable off to the fair
   K.b(-17.3, 9, -3, 0.3, 4, 6, DARK); K.l(-17.5, 10, -2, 0.2, 2, 4, N.yellow, 0, 0.5);
 }
+// a picnic table under a sunshade, and what was left on it
+function table(K, o) {
+  K.b(-4, 3, -2, 8, 0.6, 4, WOODL); K.b(-4, 1.6, -4, 8, 0.5, 1.4, WOOD); K.b(-4, 1.6, 2.6, 8, 0.5, 1.4, WOOD);
+  for (const x of [-3.4, 2.6]) { K.b(x, 0, -3.6, 0.8, 1.6, 7.2, PLANK); K.b(x, 1.6, -0.4, 0.8, 1.4, 0.8, PLANK); }
+  K.b(-0.3, 3.6, -0.3, 0.6, 9, 0.6, STEEL);
+  K.discXZ(0, 12, 0, 6, 0.8, o.a); K.discXZ(0, 12.8, 0, 4, 0.8, WHITE); K.discXZ(0, 13.6, 0, 2, 0.8, o.a);
+  K.b(-2.5, 3.6, -1, 1, 1.4, 1, RED); K.b(1, 3.6, 0.4, 1.6, 0.5, 1.2, CREAM); K.b(-0.5, 3.6, 0.8, 0.8, 1.1, 0.8, YELLOW);
+}
 // what is left of a smashed stall: a heap of boards and striped cloth (one model, shared)
 function heap(K) {
   const R = (() => { let s = 99; return () => { s = (s * 1664525 + 1013904223) | 0; return ((s >>> 8) & 0xffff) / 65536; }; })();
@@ -423,7 +431,7 @@ function heap(K) {
 
 // what each kind is: its model, the ground it stands on (in voxels, about its middle: x0, z0, x1, z1), how tall, how
 // much shooting it takes (0: it can't be smashed, and cars bounce off it), and where its light falls on the ground
-const KINDS = {
+export const KINDS = {
   booth: { make: booth, foot: [[-7.2, -4.2, 7.2, 4.4]], top: 9.5, hp: 90, heap: 1, pool: [0, 9, 13] },
   kiosk: { make: kiosk, foot: [[-6.2, -3.7, 6.2, 4.2]], top: 9, hp: 80, heap: 0.9, pool: [0, 8, 12] },
   truck: { make: truck, foot: [[-11, -4, 11, 4]], top: 10, hp: 0, pool: [-4, 9, 14] },
@@ -434,6 +442,7 @@ const KINDS = {
   lamp: { make: lamp, foot: [[-0.7, -0.7, 0.7, 0.7]], top: 17.5, hp: 25, heap: 0.14, pool: null },
   board: { make: board, foot: null, top: 0, hp: 0, pool: null },
   genset: { make: genset, foot: [[-9, -3.2, 9, 3.2]], top: 10, hp: 0, pool: [3, 7, 9] },
+  table: { make: table, foot: [[-2.2, -2.2, 2.2, 2.2]], top: 7, hp: 20, heap: 0.3, pool: null },
 };
 const footOf = (o) => (o.kind === 'board' ? null : o.kind === 'arch' ? [[-o.span / 4 - 1.2, -1.2, -o.span / 4 + 1.2, 1.2], [o.span / 4 - 1.2, -1.2, o.span / 4 + 1.2, 1.2]] : KINDS[o.kind].foot);
 // is (x, z) on the ground thing o stands on, with a margin?
@@ -462,7 +471,7 @@ export function makeStalls(api, list, power, quarter, [WX, WZ]) {
   const { scene } = api;
   const paintMat = new THREE.MeshLambertMaterial({ vertexColors: true });
   const time = { value: 0 }, atlas = { value: null };
-  const litMats = [0, 1, 2, 3].map(() => new THREE.ShaderMaterial({
+  const litMats = [0, 1, 2, 3, 4].map(() => new THREE.ShaderMaterial({   // (the fifth: what is not on the fair's circuits and never goes out, `always`)
     uniforms: { time, atlas, power: { value: 1 } },
     vertexShader: `attribute vec3 color; attribute float ph; uniform float time; uniform float power; varying vec3 vC; varying vec2 vUv;
       float hash(float n) { return fract(sin(n) * 43758.5453); }
@@ -471,19 +480,23 @@ export function makeStalls(api, list, power, quarter, [WX, WZ]) {
         if (ph > 0.0) k = 0.22 + 0.78 * step(0.5, fract(time * 1.4 - ph));                       // the chase
         else if (ph < 0.0) k = 0.55 + 0.45 * sin(time * 5.0 + ph * 40.0);                         // a twinkle
         vC = color * k * (0.05 + 0.95 * power); vUv = uv;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        vec4 p = vec4(position, 1.0);
+        #ifdef USE_INSTANCING
+          p = instanceMatrix * p;
+        #endif
+        gl_Position = projectionMatrix * modelViewMatrix * p;
       }`,
     fragmentShader: `uniform sampler2D atlas; varying vec3 vC; varying vec2 vUv;
       void main() { gl_FragColor = vec4(vC * texture2D(atlas, vUv).rgb, 1.0); ${TONE} }`,
   }));
   // Everything goes into one mesh of paint and one of lights a quarter (a handful of draws for the whole fair, however
   // much of it is in view). Each thing remembers which vertices are its own: smashed, they are folded away to a point.
-  const objs = [], paints = [], lits = [[], [], [], []];
-  let nPaint = 0; const nLit = [0, 0, 0, 0];
+  const objs = [], paints = [], lits = [[], [], [], [], []];
+  let nPaint = 0; const nLit = [0, 0, 0, 0, 0];
   for (const o of list) {
     const KD = KINDS[o.kind], yaw = o.yaw || 0, K = makeKit(o.x, o.z, yaw);
     KD.make(K, o);
-    const g = K.geos(), q = quarter(o.x, o.z);
+    const g = K.geos(), q = o.always ? 4 : quarter(o.x, o.z);
     const S = { ...o, K: KD, yaw, co: Math.cos(yaw), si: Math.sin(yaw), foot: footOf(o), top: KD.top, hp: KD.hp, solid: !KD.hp, dead: false, q, cols: K.cols, src: o };
     S.reach2 = 0; if (S.foot) for (const [x0, z0, x1, z1] of S.foot) S.reach2 = Math.max(S.reach2, (Math.max(-x0, x1) + 6) ** 2 + (Math.max(-z0, z1) + 6) ** 2);
     S.pv = [nPaint, g.paint.attributes.position.count]; nPaint += S.pv[1]; paints.push(g.paint);
@@ -583,7 +596,7 @@ export function makeStalls(api, list, power, quarter, [WX, WZ]) {
   }
   const SMASH = 9, SMASH_BOT = Infinity;   // how fast a car must be going to go through a stall and not bounce off it: a player's, and a bot's (never: it goes round)
   return {
-    objs, blocks, smash,
+    objs, blocks, smash, mats: { paint: paintMat, lit: litMats },
     step(dt) {
       time.value += dt;
       for (let q = 0; q < 4; q++) litMats[q].uniforms.power.value = power.lit[q];

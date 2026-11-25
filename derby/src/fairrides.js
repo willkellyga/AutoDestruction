@@ -24,6 +24,7 @@ export const WHEEL = {
   accel: 22,
   dmg: 55,        // what it does to a car in its way
   seats: 12,
+  turn: 0.3,      // how fast it turns on its stand (radians a second: a turn every twenty seconds or so)
 };
 
 // a box with one colour, moved and turned (about z, then placed), for merging
@@ -184,7 +185,7 @@ export function makeRides(api, spec) {
     blocks: () => false,
     step(dt, live) {
       merry.rotation.y -= dt * 0.45;
-      if (S.state === 'stand') { S.a -= dt * 0.12; }
+      if (S.state === 'stand') { S.a -= dt * WHEEL.turn; }
       else if (S.state === 'drop') {
         // off the stand and down onto the ground
         S.t += dt; S.y = Math.max(R, WHEEL.hub - 60 * S.t * S.t); S.x += 8 * dt; S.a -= dt * 0.3;
