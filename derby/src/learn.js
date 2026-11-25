@@ -30,7 +30,7 @@ const STEPS = {
   survival: (MAP) => [
     ['zombie', 'Last car running', `Zombies are taking over the ${MAP.id === 'fair' ? 'fair' : 'base'}. Stay alive longer than every other car. You only get one!`],
     ['smash', 'Run them over', 'Smash through zombies or shoot them. Turn hard to throw off the ones that grab on.'],
-    ['glow', 'Race to the drops', `Crates parachute in: ${dot('#4be37a', 'fix')} ${dot('#45b4ff', 'speed')} ${dot('#ff8a2a', 'faster guns')} ${dot('#ff4fd8', 'air strike')}` + (MAP.id === 'fair' ? '<br>The red button by the generator turns the lights back on.' : '')],
+    ['glow', 'Race to the drops', `Crates parachute in: ${dot('#4be37a', 'fix')} ${dot('#45b4ff', 'speed')} ${dot('#ff8a2a', 'faster guns')} ${dot('#ff4fd8', 'air strike')}` + (MAP.id === 'fair' ? '<br>The red button by the generator turns the lights back on.' : MAP.id === 'base' ? '<br>The red button by headquarters wakes the sentry guns.' : '')],
   ],
   brawl: () => [
     ['clock', 'Most wrecks wins', 'Everyone against everyone until the clock runs out.'],
