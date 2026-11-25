@@ -212,6 +212,9 @@ export const BRAWL_LEVELS = {
 };
 const AI0 = { ...AI };
 // set the rivals' numbers for a level (the arena calls it as the match starts; every other mode leaves them as they are)
+// a new player's very first round (main.js firstVisit): gentler than Easy, so the first three minutes are wrecks, not
+// being wrecked (Will, 2026-11-25). Not on the stage select; the results card calls it Easy. It pays like Normal.
+export const BRAWL_FIRST = { name: 'Easy', aim: 2.6, reaction: 3.2, view: 0.6, dmg: 0.4, hp: 0.6, ram: 0.5, turn: 0.45, prize: 1, note: '' };
 export function useAILevel(L) {
   AI.aimErr = AI0.aimErr * L.aim; AI.reaction = AI0.reaction * L.reaction; AI.view = AI0.view * L.view;
   AI.dmg = AI0.dmg * L.dmg; AI.hp = AI0.hp * L.hp; AI.ram = AI0.ram * L.ram; AI.turretTurn = AI0.turretTurn * L.turn;

@@ -1503,7 +1503,7 @@ function leaveGarage() {
   sfx.play('start', 0.9); lockMouse();
 }
 // The first visit (nothing saved, no round ever finished here): no home screen, no map to pick, no card to read. The
-// arena is already built behind the loading screen, so one click, key or tap starts a round in it on Easy, with the
+// arena is already built behind the loading screen, so one click, key or tap starts a gentle round in it, with the
 // controls over the game for its first seconds; the home screen comes after the results (Will, 2026-11-25: drop new
 // players into a mode first. The one press is what lets the browser hand over the sound, the mouse and the whole screen).
 function firstVisit() {
@@ -1512,9 +1512,8 @@ function firstVisit() {
     if (F.hidden || game.state !== 'menu') return;
     if (e.type === 'keydown' && (e.metaKey || e.ctrlKey || e.altKey || /^(Tab|Escape|F\d+)$/.test(e.code))) return;
     e.preventDefault(); F.hidden = true; removeEventListener('keydown', go, true);
-    const L = lvBox(), was = L.brawl; if (!was) L.brawl = 'easy';
+    game.firstRound = true;   // (this round only, gentler than Easy: tuning.js BRAWL_FIRST, read by modes/brawl.js)
     startGame();
-    if (!was) delete L.brawl;   // (this round only: the stage select still opens on Normal)
     const T = $('tips'); T.hidden = false; T.classList.remove('out');
     setTimeout(() => T.classList.add('out'), 14000); setTimeout(() => { T.hidden = true; }, 15000);
   };
