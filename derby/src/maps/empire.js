@@ -457,18 +457,18 @@ function paint() {
   g.lineJoin = 'round';
   landPath(); g.strokeStyle = 'rgba(120,176,190,0.55)'; g.lineWidth = 14 * GK; g.stroke();
   landPath(); g.strokeStyle = '#6f6a60'; g.lineWidth = 5 * GK; g.stroke();
-  landPath(); g.fillStyle = '#c8c1b1'; g.fill();
+  landPath(); g.fillStyle = '#8b8984'; g.fill();   // (a mid grey: Will, 2026-11-24, of the pale stone it was, "too white, they need to be a darker grey")
   g.save(); landPath(); g.clip();
-  C.speckle(0, 0, WX, WZ, 90000, ['rgba(255,250,235,0.16)', 'rgba(60,56,50,0.13)']);
+  C.speckle(0, 0, WX, WZ, 90000, ['rgba(235,232,224,0.12)', 'rgba(40,38,34,0.14)']);
   // The city off the course stands on pavement: slabs, a joint every eight, and the walks between the blocks (where
-  // side streets were painted once) in a paler stone with a kerb line either side. No street is painted beside the
+  // side streets were painted once) in a slightly lighter grey with a kerb line either side. No street is painted beside the
   // course (Will, 2026-11-24: "our road and cars are much bigger than those roads, so it ruins the perspective. It
   // would look better if those were side walks").
-  g.fillStyle = 'rgba(70,66,58,0.14)';
+  g.fillStyle = 'rgba(40,38,34,0.2)';
   for (let v = 0; v < WX; v += 8) { C.rect(v - 0.15, 0, v + 0.15, WZ); C.rect(0, v - 0.15, WX, v + 0.15); }
-  g.fillStyle = 'rgba(236,230,214,0.5)';
+  g.fillStyle = 'rgba(176,174,166,0.3)';
   for (let v = 8; v < WX; v += 104) { C.rect(v - 8, 0, v + 8, WZ); C.rect(0, v - 8, WX, v + 8); }
-  g.fillStyle = 'rgba(90,84,74,0.3)';
+  g.fillStyle = 'rgba(46,44,40,0.4)';
   for (let v = 8; v < WX; v += 104) for (const e of [-8, 8]) { C.rect(v + e - 0.25, 0, v + e + 0.25, WZ); C.rect(0, v + e - 0.25, WX, v + e + 0.25); }
   // the park: grass, a pond, paths
   g.fillStyle = '#74a65e'; C.rect(PARK.x0, PARK.z0, PARK.x1, PARK.z1);
@@ -485,7 +485,7 @@ function paint() {
   g.fillStyle = '#74a65e'; g.beginPath(); rr(BATTERY.x0 + 3, BATTERY.z0 + 3, BATTERY.x1 - 3, BATTERY.z1 - 3, 16); g.fill();
   C.speckle(BATTERY.x0, BATTERY.z0, BATTERY.x1, BATTERY.z1, 9000, ['rgba(92,146,74,0.5)', 'rgba(146,192,108,0.45)']);
   // Times Square's plaza: pale paving round the grid
-  g.fillStyle = '#d6cdb8'; C.rect(300, LINE_Z - 52, LINE_X + 30, LINE_Z + 52);
+  g.fillStyle = '#a3a19a'; C.rect(300, LINE_Z - 52, LINE_X + 30, LINE_Z + 52);
   g.restore();
   // the course, on the ground only: the decks and the cut have their own road (roads.js), so they get no room here
   const WLp = T.WL.slice(), WRp = T.WR.slice();
