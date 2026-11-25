@@ -5,7 +5,7 @@
 //                   are as high as their roofs), so they have no foot and nothing wrecks them.
 //   to mark a jump  the striped band along a kicker's lip, marker posts with a lamp at a ledge's corners, a truss over
 //                   a lane with its name in lights, the flame cannons beside a lip (arenamoves.js fires them)
-//   to scatter      hay bales, cones: a car goes through them
+//   to scatter      cones: a car goes through them
 // `lift` (voxels) is how far up a thing stands, when it stands on the dirt.
 import { KINDS, N } from './fairstalls.js';
 
@@ -114,11 +114,6 @@ function pyro(K, o) {
 }
 
 // ---- to scatter ---------------------------------------------------------------------------------------------------------
-// hay bales: two side by side and one across them, bound
-function hay(K) {
-  const bale = (x, y, z, w, d) => { K.b(x, y, z, w, 3.6, d, STRAW); if (w > d) { K.b(x + 1.4, y - 0.05, z - 0.08, 0.5, 3.7, d + 0.16, STRAW_D); K.b(x + w - 1.9, y - 0.05, z - 0.08, 0.5, 3.7, d + 0.16, STRAW_D); } else { K.b(x - 0.08, y - 0.05, z + 1.4, w + 0.16, 3.7, 0.5, STRAW_D); K.b(x - 0.08, y - 0.05, z + d - 1.9, w + 0.16, 3.7, 0.5, STRAW_D); } };
-  bale(-4, 0, -4, 8, 3.8); bale(-4, 0, 0.2, 8, 3.8); bale(-2, 3.6, -4, 3.8, 8);
-}
 // three cones in a row
 function cones(K) {
   for (const x of [-5, 0, 5]) { K.b(x - 1.4, 0, -1.4, 2.8, 0.4, 2.8, BLACK); K.b(x - 1, 0.4, -1, 2, 1.4, 2, ORANGE); K.b(x - 0.7, 1.8, -0.7, 1.4, 0.9, 1.4, WHITE); K.b(x - 0.5, 2.7, -0.5, 1, 1.2, 1, ORANGE); K.b(x - 0.25, 3.9, -0.25, 0.5, 0.8, 0.5, ORANGE); }
@@ -134,6 +129,5 @@ Object.assign(KINDS, {
   lip: { make: lip, foot: null, top: 0, hp: 0, pool: null }, marker: { make: marker, foot: null, top: 0, hp: 0, pool: null },
   truss: { make: truss, foot: (o) => [[-o.span / 2 - 1.2, -1.2, -o.span / 2 + 1.2, 1.2], [o.span / 2 - 1.2, -1.2, o.span / 2 + 1.2, 1.2]], top: 40, hp: 0, pool: null },
   pyro: { make: pyro, foot: null, top: 0, hp: 0, pool: null },
-  hay: { make: hay, foot: [[-2, -2, 2, 2]], top: 3.6, hp: 15, heap: 0.35, pool: null },
   cones: { make: cones, foot: [[-3.2, -0.8, 3.2, 0.8]], top: 2.4, hp: 5, heap: 0.15, pool: null },
 });

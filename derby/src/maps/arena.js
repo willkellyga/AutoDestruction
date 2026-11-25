@@ -3,10 +3,11 @@
 // Truck style arena and ring with crushed cars, jumps and other things".
 //   - The pit is full of dirt to drive on (../arenadirt.js gives the floor its heights: cars climb it and fly off it):
 //     the mountain in the middle (two tiers, a ramp at each end, a repair kit on top), a lane of ten crushed cars along
-//     each long side with a ramp at both ends, the bus jump west of the mountain (a kicker either end and four crushed
-//     buses in the gap) and three rollers east of it. The boost strips on the long sides aim at the bus jump and the
-//     rollers. The Hammerdown strike hangs in the air over the buses: only a car flying the gap takes it. A car that
-//     comes down on another crushes it (specials.js).
+//     each long side with a ramp at both ends, the bus jump east of the north lane (a kicker either end and four
+//     crushed buses in the gap) and three rollers west of the south lane. The way to the mountain from either end is
+//     clear, with a boost strip on it; two more strips run into the bus jump and the rollers. The Hammerdown strike
+//     hangs in the air over the buses: only a car flying the gap takes it. A car that comes down on another crushes it
+//     (specials.js).
 //   - The show's things (../arenakit.js, at the fair's level of detail: half a voxel a cube): the crushed cars and
 //     buses, striped bands on the lips and marker posts on the mountain's top, a truss with its name in lights over
 //     each way in to the bus jump, and bales and cones to scatter. Flame cannons by the lips fire when a car takes
@@ -63,22 +64,30 @@ const pick = (a) => a[Math.floor(rand() * a.length)];
 // the sweeper's middle, in the north-west corner (far enough out of it that its frame's legs leave a lane all round)
 const SX = 306, SZ = 422;
 // the dirt's measures (the pieces themselves are further down: DIRT)
-const BUS = { x: 380, half: 16, z0: 492, z1: 532, lip: 9.5, roof: 7 };
-const LANES = [420, 604].map((z) => ({ z, x0: 454, x1: 570, half: 11, n: 10 }));   // the rows of crushed cars
+// (Will, 2026-11-24: "the big ramp in the middle is being blocked on either side by a ramp so that there isn't a lot of
+// runway". The bus jump and the rollers stood across the mountain's two ways in, 24 voxels from the feet of its ramps.
+// They lie along the long sides now, in line with the crush lanes, and the way to the mountain is clear from the
+// press to the tanker.)
+const BUS = { z: 420, half: 16, x0: 655, x1: 695, lip: 9.5, roof: 7, run: 34 };   // the buses' gap; a kicker `run` long either end
+const ROLL = { x0: 288, x1: 408, z0: 588, z1: 620 };
+const LANES = [{ z: 420, x0: 444 }, { z: 604, x0: 464 }].map((L) => ({ ...L, x1: L.x0 + 116, half: 11, n: 10 }));   // the rows of crushed cars
 const carRoofs = (n) => (u, v) => { const a = (u * n) % 1; return a < 0.07 || a > 0.93 ? -1.3 : (v < 0.22 || v > 0.8 ? -0.9 : 0.25); };
-const MOUNT = { x0: 452, x1: 572, z0: 476, z1: 548, h: 9, top: { x0: 492, x1: 532, z0: 488, z1: 536, h: 16 } };
+// (The table's ramps start where the top's do and climb at the same rate, so up the middle it is one straight ramp
+// from the floor to the top's crest, sixteen up: a car that comes at it fast leaves the crest and flies the top. With
+// the table's ramp starting sooner, as it did, a fast car hopped at the table and reached the crest with nothing left.)
+const MOUNT = { x0: 467, x1: 557, z0: 476, z1: 548, h: 9, run: 32, top: { x0: 492, x1: 532, z0: 488, z1: 536, h: 16, run: 57 } };
 // Pickups sit where it is risky to go: an overcharge in the sweeper's eye, scrap among its blades, repair kits under the
 // hammers and the press, nitro under the magnet and in the boneyard, overcharge among the flames and the wrecks, all
 // round the edge; and on the dirt, a nitro on the crushed cars of each lane and an overcharge on the middle roller, so
 // the fights move about the floor and over the jumps.
 // The strike hangs over the bus jump, level with the kickers' lips: only a car in the air over the buses takes it (one
 // crawling over their roofs is too low), so the rivals are not sent for it. A repair kit on top of the mountain.
-const SUPER = { kind: 'super', x: BUS.x, z: (BUS.z0 + BUS.z1) / 2, air: BUS.lip - BUS.roof, rivals: false };
+const SUPER = { kind: 'super', x: (BUS.x0 + BUS.x1) / 2, z: BUS.z, air: BUS.lip - BUS.roof, rivals: false };
 const PICKUP_SPOTS = [
   SUPER, { kind: 'ammo', x: SX, z: SZ }, { kind: 'repair', x: CX, z: CZ },
   { kind: 'repair', x: 512, z: 322 }, { kind: 'repair', x: 511, z: 701 }, { kind: 'repair', x: 196, z: 512 },
-  { kind: 'nitro', x: 800, z: 512 }, { kind: 'nitro', x: 771, z: 663 }, { kind: 'nitro', x: CX, z: LANES[0].z }, { kind: 'nitro', x: CX, z: LANES[1].z },
-  { kind: 'ammo', x: 644, z: CZ },
+  { kind: 'nitro', x: 800, z: 512 }, { kind: 'nitro', x: 771, z: 663 }, ...LANES.map((L) => ({ kind: 'nitro', x: (L.x0 + L.x1) / 2, z: L.z })),
+  { kind: 'ammo', x: (ROLL.x0 + ROLL.x1) / 2, z: (ROLL.z0 + ROLL.z1) / 2 },
   { kind: 'ammo', x: 795, z: 345 }, { kind: 'ammo', x: 228, z: 678 }, { kind: 'ammo', x: 806, z: 628 },
   { kind: 'scrap', x: SX + 30, z: SZ, rivals: false }, { kind: 'scrap', x: SX - 30, z: SZ, rivals: false },   // (bait for you alone)
 ];
@@ -115,10 +124,13 @@ const BARRELS = { kind: 'barrels', spots: [
   // drums among the boneyard's wrecks
   { x: 752, z: 676 }, { x: 757, z: 680 }, { x: 812, z: 664 }, { x: 790, z: 704 },
 ] };
-// boost strips from the wall out into the pit, two on each long side
+// boost strips: one at each end of the mountain's run, aimed at its ramp, and one into the bus jump and the rollers
+// (`to`: the mouth each aims at, for the chalk lane to it)
 const BOOSTS = [
-  { kind: 'boost', x0: 373, z0: 298, x1: 387, z1: 368, yaw: 0 }, { kind: 'boost', x0: 637, z0: 298, x1: 651, z1: 368, yaw: 0 },
-  { kind: 'boost', x0: 636, z0: 655, x1: 650, z1: 725, yaw: Math.PI }, { kind: 'boost', x0: 372, z0: 655, x1: 386, z1: 725, yaw: Math.PI },
+  { kind: 'boost', x0: 350, z0: 505, x1: 420, z1: 519, yaw: Math.PI / 2, to: [435, 488, 435, 536] },   // (its push lasts to the top's crest)
+  { kind: 'boost', x0: 603, z0: 505, x1: 673, z1: 519, yaw: -Math.PI / 2, to: [588, 488, 588, 536] },
+  { kind: 'boost', x0: 742, z0: 413, x1: 812, z1: 427, yaw: -Math.PI / 2 },
+  { kind: 'boost', x0: 218, z0: 597, x1: 278, z1: 611, yaw: Math.PI / 2 },
 ];
 // the announcer's events, in turn; each hangs the strike over the bus jump if it is not there already
 const SHOW = { kind: 'show', first: 35, every: 45, time: 15, events: [
@@ -143,23 +155,25 @@ const SPOTS = [
 // ---- the dirt (../arenadirt.js): what the trucks' show built in the pit --------------------------------------------
 //   the mountain     in the middle, two tiers: a ramp at each end up to a table nine up, and from it up to the top,
 //                    sixteen up. Its long sides fall straight off. A repair kit on the top: king of the hill.
+//                    The floor either end of it is clear for a run at it, with a boost strip on the way.
 //   the crush lanes  along both long sides: a ramp, ten crushed cars side by side to drive over, a ramp
-//   the bus jump     west of the mountain, in line with the boost strips: a kicker each end and four crushed buses in
-//                    the gap. The Hammerdown strike hangs over the gap: only a car in the air takes it.
-//   the rhythm lane  east of it, in line with the other strips: three rollers
+//   the bus jump     east of the north lane and in line with it: a kicker each end and four crushed buses in the
+//                    gap, a boost strip into it from the east. The Hammerdown strike hangs over the gap: only a car
+//                    in the air takes it.
+//   the rhythm lane  west of the south lane and in line with it: three rollers, a boost strip into them from the west
 // Up-ramps climb no faster than 0.3 (vehicle.js feels for walls a car's length ahead).
 const DIRT = makeDirt([
-  { x0: MOUNT.x0, x1: MOUNT.x1, z0: MOUNT.z0, z1: MOUNT.z1, h: MOUNT.h, w: 32, e: 32 },
-  { ...MOUNT.top, w: 57, e: 57, skirt: 4 },
+  { x0: MOUNT.x0, x1: MOUNT.x1, z0: MOUNT.z0, z1: MOUNT.z1, h: MOUNT.h, w: MOUNT.run, e: MOUNT.run },
+  { x0: MOUNT.top.x0, x1: MOUNT.top.x1, z0: MOUNT.top.z0, z1: MOUNT.top.z1, h: MOUNT.top.h, w: MOUNT.top.run, e: MOUNT.top.run, skirt: 4 },
   ...LANES.flatMap((L) => [
     { x0: L.x0 - 3, x1: L.x0, z0: L.z - L.half, z1: L.z + L.half, h: 6.5, w: 24, e: 0 },
     { kind: 'deck', x0: L.x0, x1: L.x1, z0: L.z - L.half, z1: L.z + L.half, h: 5, roof: carRoofs(L.n) },
     { x0: L.x1, x1: L.x1 + 3, z0: L.z - L.half, z1: L.z + L.half, h: 6.5, w: 0, e: 24 },
   ]),
-  { x0: BUS.x - BUS.half, x1: BUS.x + BUS.half, z0: BUS.z0 - 3, z1: BUS.z0, h: BUS.lip, n: 34, s: 0 },
-  { kind: 'deck', x0: BUS.x - BUS.half + 1, x1: BUS.x + BUS.half - 1, z0: BUS.z0, z1: BUS.z1, h: BUS.roof, roof: (u, v) => { const a = (v * 4) % 1; return a < 0.06 || a > 0.94 ? -1.2 : 0; } },
-  { x0: BUS.x - BUS.half, x1: BUS.x + BUS.half, z0: BUS.z1, z1: BUS.z1 + 3, h: BUS.lip, n: 0, s: 34 },
-  { kind: 'rollers', x0: 628, x1: 660, z0: 452, z1: 572, h: 4.5, humps: 3, axis: 'z', n: 0, s: 0 },
+  { x0: BUS.x0 - 3, x1: BUS.x0, z0: BUS.z - BUS.half, z1: BUS.z + BUS.half, h: BUS.lip, w: BUS.run, e: 0 },
+  { kind: 'deck', x0: BUS.x0, x1: BUS.x1, z0: BUS.z - BUS.half + 1, z1: BUS.z + BUS.half - 1, h: BUS.roof, roof: (u) => { const a = (u * 4) % 1; return a < 0.06 || a > 0.94 ? -1.2 : 0; } },
+  { x0: BUS.x1, x1: BUS.x1 + 3, z0: BUS.z - BUS.half, z1: BUS.z + BUS.half, h: BUS.lip, w: 0, e: BUS.run },
+  { kind: 'rollers', ...ROLL, h: 4.5, humps: 3, axis: 'x', w: 0, e: 0 },
 ]);
 
 // ---- the show's things (../arenakit.js; the fair's kit draws them, at half a voxel a cube) ---------------------------
@@ -169,26 +183,24 @@ const both = (list) => list.flatMap((o) => { const [x, z] = turn(o.x, o.z); retu
 const THINGS = [
   // what the dirt's decks are: ten crushed cars across each lane, four crushed buses in the gap
   ...LANES.flatMap((L, li) => Array.from({ length: L.n }, (_, i) => thing('crushed', L.x0 + (i + 0.5) * (L.x1 - L.x0) / L.n, L.z, (i + li) & 1 ? E : -E, { c: (i * 3 + li * 5) % 10, v: (i * 2 + li) % 3 }))),
-  ...[0, 1, 2, 3].map((i) => thing('bus', BUS.x, BUS.z0 + 5 + i * 10, i & 1 ? Math.PI : 0, { c: i })),
+  ...[0, 1, 2, 3].map((i) => thing('bus', BUS.x0 + 5 + i * 10, BUS.z, i & 1 ? E : -E, { c: i })),
   // the striped band along every lip
   ...LANES.flatMap((L) => [thing('lip', L.x0 + 0.1, L.z, E, { w: 2 * L.half, lift: 6.5 }), thing('lip', L.x1 - 0.1, L.z, -E, { w: 2 * L.half, lift: 6.5 })]),
-  thing('lip', BUS.x, BUS.z0 + 0.1, 0, { w: 2 * BUS.half, lift: BUS.lip }), thing('lip', BUS.x, BUS.z1 - 0.1, Math.PI, { w: 2 * BUS.half, lift: BUS.lip }),
+  thing('lip', BUS.x0 + 0.1, BUS.z, E, { w: 2 * BUS.half, lift: BUS.lip }), thing('lip', BUS.x1 - 0.1, BUS.z, -E, { w: 2 * BUS.half, lift: BUS.lip }),
   // marker posts at the corners of the mountain's top
   ...[[MOUNT.top, 'red']].flatMap(([T, neon]) => [[T.x0 + 1, T.z0 + 1], [T.x1 - 1, T.z0 + 1], [T.x0 + 1, T.z1 - 1], [T.x1 - 1, T.z1 - 1]].map(([x, z], i) => thing('marker', x, z, 0, { lift: T.h, neon, ph: -0.2 - i * 0.17 }))),
   // a truss over each way in to the bus jump, its name in lights
-  thing('truss', BUS.x, 452, 0, { span: 46, name: 'BUS JUMP' }), thing('truss', BUS.x, 572, 0, { span: 46, name: 'BUS JUMP' }),
+  ...[BUS.x0 - BUS.run - 6, BUS.x1 + BUS.run + 6].map((x) => thing('truss', x, BUS.z, E, { span: 46, name: 'BUS JUMP' })),
   // flame cannons beside the lips and on the mountain's table (PYRO: the custom hazard below fires them)
-  ...[[358, 487], [402, 487], [358, 537], [402, 537]].map(([x, z]) => thing('pyro', x, z, 0, { jump: 'bus' })),
+  ...[[BUS.x0 - 2, -1], [BUS.x0 - 2, 1], [BUS.x1 + 2, -1], [BUS.x1 + 2, 1]].map(([x, k]) => thing('pyro', x, BUS.z + k * (BUS.half + 6.5), 0, { jump: 'bus' })),
   ...LANES.flatMap((L) => [[L.x0 - 2, -1], [L.x1 + 2, 1]].map(([x, k]) => thing('pyro', x, L.z + k * (L.half + 6.5), 0, { jump: 'lane' }))),
   thing('pyro', CX, MOUNT.z0 + 4, 0, { lift: MOUNT.h, jump: 'mount' }), thing('pyro', CX, MOUNT.z1 - 4, 0, { lift: MOUNT.h, jump: 'mount' }),
-  // what a car scatters: bales at the open ends of the lanes, cones from the boost strips to the jumps. (Will,
+  // what a car scatters: cones along the last of each run at the mountain. (Will,
   // 2026-11-24: "the arena feels too crowded ... remove some of the superficial decorations like those monster truck
   // statues". Gone: the show trucks on their containers, the giant tyres, the trusses over the rollers and the crush
-  // lanes, half the lanes' cannons, the table's marker posts, the tyre stacks at the ramps' feet and a row of cones.)
-  ...both([
-    thing('hay', 601, 402), thing('hay', 601, 438, E),
-    ...[392, 428].flatMap((z) => [thing('cones', 366, z, E), thing('cones', 394, z, E), thing('cones', 628, z, E), thing('cones', 660, z, E)]),
-  ]),
+  // lanes, half the lanes' cannons, the table's marker posts, the tyre stacks at the ramps' feet, the bales and most
+  // of the cones.)
+  ...both([300, 318].flatMap((x) => [thing('cones', x, 496), thing('cones', x, 528)])),
 ];
 // Where a car cannot drive straight through: the dirt's steep sides and what stands solid (two voxels a cell). The
 // rivals' straight runs at a target ask it (ai.js: the voxels' own line test sees neither).
@@ -646,12 +658,12 @@ function paint() {
     wets.push([x, z, rx, rz, a, 0.15]);
   }
   for (const p of BARRELS.spots) { g.strokeStyle = '#c23b2e'; g.lineWidth = 0.8; g.setLineDash([1.5, 1.5]); g.beginPath(); g.arc(p.x, p.z, 3.4, 0, TAU); g.stroke(); g.setLineDash([]); }
-  // the boost strips: blue, with chevrons pointing the way they push (into the pit)
+  // the boost strips: blue, with chevrons pointing the way they push (they lie along x)
   for (const b of BOOSTS) {
     g.fillStyle = '#1d3f6e'; g.fillRect(b.x0, b.z0, b.x1 - b.x0, b.z1 - b.z0);
-    const dir = Math.cos(b.yaw) > 0 ? 1 : -1, mx = (b.x0 + b.x1) / 2, hw = (b.x1 - b.x0) / 2 - 1.5;
+    const dir = Math.sin(b.yaw) > 0 ? 1 : -1, mz = (b.z0 + b.z1) / 2, hw = (b.z1 - b.z0) / 2 - 1.5;
     g.strokeStyle = '#5fc8ff'; g.lineWidth = 2;
-    for (let z = b.z0 + 6; z < b.z1 - 4; z += 9) { g.beginPath(); g.moveTo(mx - hw, z - dir * 4); g.lineTo(mx, z + dir * 2); g.lineTo(mx + hw, z - dir * 4); g.stroke(); }
+    for (let x = b.x0 + 6; x < b.x1 - 4; x += 9) { g.beginPath(); g.moveTo(x - dir * 4, mz - hw); g.lineTo(x + dir * 2, mz); g.lineTo(x - dir * 4, mz + hw); g.stroke(); }
   }
   // a ring under each pickup, in its colour, so you can see where one comes back
   for (const p of PICKUP_SPOTS) { const k = PICKUPS[p.kind]; g.strokeStyle = k.css; g.lineWidth = 1.1; g.beginPath(); g.arc(p.x, p.z, 6, 0, TAU); g.stroke(); g.globalAlpha = 0.25; g.fillStyle = k.css; g.fill(); g.globalAlpha = 1; }
@@ -726,11 +738,12 @@ function paintDirt(g, c, V, I) {
   // the mountain's top: a chequered border, black and white
   const T = MOUNT.top;
   for (let x = T.x0 + 2; x < T.x1 - 2; x += 2) for (const [z, k] of [[T.z0 + 2, 0], [T.z0 + 4, 1], [T.z1 - 6, 0], [T.z1 - 4, 1]]) { g.fillStyle = (((x - T.x0) / 2 + k) & 1) ? 'rgba(236,232,222,0.85)' : 'rgba(22,22,24,0.85)'; g.fillRect(x, z, 2, 2); }
-  // chalk lanes from the boost strips to the jumps
+  // chalk lanes from the mountain's boost strips to the feet of its ramps
   g.strokeStyle = 'rgba(238,232,214,0.5)'; g.lineWidth = 1; g.setLineDash([5, 4]);
   for (const b of BOOSTS) {
-    const north = b.z0 < CZ, bus = b.x0 < CX, x0 = bus ? BUS.x - BUS.half : 628, x1 = bus ? BUS.x + BUS.half : 660, tz = north ? (bus ? BUS.z0 - 37 : 452) : (bus ? BUS.z1 + 37 : 572), bz = north ? b.z1 : b.z0;
-    g.beginPath(); g.moveTo(b.x0, bz); g.lineTo(x0, tz); g.moveTo(b.x1, bz); g.lineTo(x1, tz); g.stroke();
+    if (!b.to) continue;
+    const bx = b.to[0] > b.x1 ? b.x1 : b.x0;
+    g.beginPath(); g.moveTo(bx, b.z0); g.lineTo(b.to[0], b.to[1]); g.moveTo(bx, b.z1); g.lineTo(b.to[2], b.to[3]); g.stroke();
   }
   g.setLineDash([]); g.lineCap = 'round';
 }
