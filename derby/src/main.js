@@ -31,7 +31,7 @@ import { makePartArt } from './partart.js';
 import { makeSpecials } from './specials.js';
 import { makeCrumple } from './crumple.js';
 import { makeSounds, fetchClips } from './audio.js';
-import { makeMusic, roundTrack } from './music.js';
+import { makeMusic, roundTrack, RADIO, trackName } from './music.js';
 import { makeRoadSound } from './roadsound.js';
 import { makeEngineSound } from './enginesound.js';
 import { bank as sfxBank, count as sfxCount } from './sfxfiles.js';
@@ -161,7 +161,12 @@ const sfx = makeSounds(() => audioMix.ctx);
 // the music (music.js): the main theme all through the home zone (home, garage and shop, a mode's start card), and in a
 // round the map's own track where it has one
 const ROUND_TRACK = roundTrack(MAP);
-const music = makeMusic(() => audioMix.ctx, ROUND_TRACK ? ['theme', ROUND_TRACK] : ['theme']);
+// the pause menu's radio: 'auto' (the map's own track) or one track for every round, kept between visits
+const RADIO_KEY = 'auto-destruction-radio';
+let radio = 'auto'; try { const r = localStorage.getItem(RADIO_KEY); if (RADIO.includes(r)) radio = r; } catch (e) { /* auto */ }
+let radioOn = radio, radioT = 0;   // (the pick plays a moment after the last tap, so clicking past a track doesn't download it)
+function roundMusic() { return radioOn === 'auto' ? ROUND_TRACK : radioOn; }
+const music = makeMusic(() => audioMix.ctx, roundMusic() ? ['theme', roundMusic()] : ['theme']);
 const HOME_ZONE = { garage: 1, menu: 1, test: 1 }, IN_ROUND = { play: 1, dead: 1 };
 function musicOn() { music.on = !muted && !document.hidden; }
 document.addEventListener('visibilitychange', musicOn);
@@ -1409,6 +1414,7 @@ function drawPause() {
   $('pause-again').hidden = !!net; $('pause-home').textContent = net ? 'Leave the round' : 'Main menu';
   $('pause-sound').textContent = muted ? 'Sound: off' : 'Sound: on';
   $('pause-auto').textContent = autoFire ? 'Auto-fire: on' : 'Auto-fire: off';
+  $('pause-radio').textContent = 'Radio: ' + trackName(radio);
 }
 function pauseOn() {
   if (game.paused || (game.state !== 'play' && game.state !== 'dead')) return;
@@ -1538,6 +1544,12 @@ $('pause-go').addEventListener('click', pauseOff);
 $('pause-again').addEventListener('click', () => { pauseOff(); try { sessionStorage.setItem(BRIEF, 'solo'); } catch (e) { /* home */ } chooseMap(MAP.id); });
 $('pause-sound').addEventListener('click', () => { muted = !muted; sfx.on = !muted; audioMix.on = !muted; musicOn(); drawPause(); });
 $('pause-auto').addEventListener('click', () => { autoFire = !autoFire; try { localStorage.setItem(AUTOFIRE, autoFire ? '1' : '0'); } catch (e) { /* this visit only */ } drawPause(); });
+$('pause-radio').addEventListener('click', () => {
+  radio = RADIO[(RADIO.indexOf(radio) + 1) % RADIO.length];
+  try { localStorage.setItem(RADIO_KEY, radio); } catch (e) { /* this visit only */ }
+  clearTimeout(radioT); radioT = setTimeout(() => { radioOn = radio; }, 900);
+  drawPause();
+});
 $('pause-home').addEventListener('click', toHome);
 $('over-garage').addEventListener('click', () => { $('over').hidden = true; game.ended = true; openGarage('over'); });
 $('menu-home').addEventListener('click', () => { if (game.state !== 'menu') return; if (document.body.classList.contains('as-solo') && STAGES[MAP.mode]) showStages(MAP.mode); else showHome(); });
@@ -1826,7 +1838,7 @@ function frame(now) {
   if (leaving()) return;   // on the way out (leave.js): nothing more is stepped or drawn
   requestAnimationFrame(frame);
   if (innerWidth !== sizeW || innerHeight !== sizeH) resize();
-  music.play(HOME_ZONE[game.state] ? 'theme' : IN_ROUND[game.state] ? ROUND_TRACK : null);
+  music.play(HOME_ZONE[game.state] ? 'theme' : IN_ROUND[game.state] ? roundMusic() : null);
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   if (window.__hold) return;   // tests step the game by hand (window.__derby.step)
   const a = performance.now();
