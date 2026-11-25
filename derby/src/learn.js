@@ -32,10 +32,10 @@ const STEPS = {
     ['smash', 'Run them over', 'Smash through zombies or shoot them. Turn hard to throw off the ones that grab on.'],
     ['glow', 'Race to the drops', `Crates parachute in: ${dot('#4be37a', 'fix')} ${dot('#45b4ff', 'speed')} ${dot('#ff8a2a', 'faster guns')} ${dot('#ff4fd8', 'air strike')}` + (MAP.id === 'fair' ? '<br>The red button by the generator turns the lights back on.' : MAP.id === 'base' ? '<br>The red button by headquarters wakes the sentry guns.' : '')],
   ],
-  brawl: () => [
+  brawl: (MAP) => [
     ['clock', 'Most wrecks wins', 'Everyone against everyone until the clock runs out.'],
     ['smash', 'Ram, shoot and jump', 'Wreck as many cars as you can. Land on a rival to crush it. Got wrecked? You\'re back in three seconds.'],
-    ['glow', 'Grab the glow', `${dot('#4be37a', 'fix')} ${dot('#45b4ff', 'speed')} ${dot('#ff8a2a', 'faster guns')}<br>The ${dot('#ff4fd8', 'strike')} hangs over the bus jump: fly to take it.<br>Watch out for the hammers and the flames!`],
+    ['glow', 'Grab the glow', `${dot('#4be37a', 'fix')} ${dot('#45b4ff', 'speed')} ${dot('#ff8a2a', 'faster guns')}<br>` + (MAP.id === 'steel' ? `The ${dot('#ff4fd8', 'strike')} hangs over the molten runner: jump it to take it.<br>Watch out for the ladle, the hammer and the hot steel!` : MAP.id === 'rig' ? `The ${dot('#ff4fd8', 'strike')} is on the helipad.<br>Ram them into the sea, and stay out of it!` : `The ${dot('#ff4fd8', 'strike')} hangs over the bus jump: fly to take it.<br>Watch out for the hammers and the flames!`)],
   ],
   waves: () => [
     ['smash', 'Wreck each wave', 'Rival cars come in waves. Ram them and shoot them until they\'re all wrecked.'],

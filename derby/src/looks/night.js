@@ -32,10 +32,11 @@ import { TAU, ADD, TONE, rng, cloudStrip, BEAM_FRAG, glowSprites, lampPools, car
 // the look: the haze (the fog, and the sky at the horizon), the fog's start and end, the exposure, the sky light (sky
 // colour, ground colour, strength), the floodlight bank (colour, strength), the fill from the far tower (colour,
 // strength, the way to it) and how much of those two the city round the stadium gets (backdrop.js)
-export const NIGHT = {
+const NIGHT_BASE = {
   haze: 0x2b211f, fog: [320, 3100], exposure: 1.05, hemi: [0x6276a8, 0x2a2420, 0.95], flood: [0xf1f4ff, 2.85],
   fill: [0xd8e4ff, 0.85, [-0.68, 0.55, -0.45]], spill: 0.14,
 };
+let NIGHT = NIGHT_BASE;
 const MOON = new THREE.Vector3(0.36, 0.33, -0.87).normalize();   // up over the north stand from the start
 
 // The sky, the fog and the light: called as main.js sets them up, before anything else reads them.
@@ -43,6 +44,7 @@ const MOON = new THREE.Vector3(0.36, 0.33, -0.87).normalize();   // up over the 
 // side of a car turned away from the bank is lit too (by day the sky does that; a moonlit sky is too dim to), and a
 // rival reads from any side. (The bank shines the way main.js's sun already does, so the shadow box needs no new way.)
 export function setup(L, { scene, renderer, sky, hemi, sun }) {
+  NIGHT = { ...NIGHT_BASE, ...(L.tone || {}) };   // (a map may set its own: a hall lit by its furnaces, maps/steel.js)
   scene.fog.color.set(NIGHT.haze); scene.fog.near = NIGHT.fog[0]; scene.fog.far = NIGHT.fog[1];
   renderer.setClearColor(scene.fog.color);
   renderer.toneMappingExposure = NIGHT.exposure;

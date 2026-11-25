@@ -1172,6 +1172,8 @@ function covered(api, h) {
 // ---- a map's own -------------------------------------------------------------------------------------------------
 // Something only one map has, that isn't voxels: the map makes it itself. { make(api) } returns what a hazard does
 // ({ step(dt, live) }), or nothing.
-function custom(api, h) { const o = h.make(api); return o && o.step ? o : { step() {} }; }
+function custom(api, h, S) { const o = h.make(api, S); return o && o.step ? o : { step() {} }; }
+// what a map's own traps (a custom hazard's: steeltraps.js) share with these
+export const TRAP = { knock, slide, fresh, ends, inCar, shake, busy, wildIn, lampMats, canvasTex };
 
 const KINDS = { custom, ramp, el, steam, covered, army, grates, press, barrels, boost, conveyor, bounds, keepout, sweeper, hammer, jets, magnet, show, scoreboard };

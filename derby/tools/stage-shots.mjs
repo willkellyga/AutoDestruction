@@ -15,6 +15,7 @@ export const SHOTS = {
   fair: { auto: true },
   arena: { from: [330, 20, 566], at: [520, 9, 470] },   // (the boost strip into the mountain, a crush lane either side)
   rig: { from: [700, 46, 646], at: [520, 8, 500] },   // (the main deck from its south-east corner: the crane, the derrick, the flare, the sea)
+  steel: { from: [668, 26, 650], at: [410, 40, 372], steps: 500 },   // (across the jump to Steeljaw pouring, the runner alight, the smith beyond; `steps`: how long the round has run)
 };
 const W = 640, H = 400;
 const only = process.argv.slice(2).filter((a) => !a.startsWith('-'));
@@ -39,7 +40,7 @@ for (const id of only.length ? only : Object.keys(SHOTS)) {
       at = [sp.x + fx * (S.ahead || 60), 4, sp.z + fz * (S.ahead || 60)];
     } else { from = S.from; at = S.at; }
     if (S.car) { P.x = S.car[0]; P.z = S.car[1]; if (S.car[2] != null) P.yaw = S.car[2]; }
-    for (let k = 0; k < 40; k++) D.step(1 / 30);
+    for (let k = 0; k < (S.steps || 40); k++) D.step(1 / 30);
     const cam = D.camera;
     const put = () => { cam.position.set(from[0], from[1], from[2]); cam.lookAt(at[0], at[1], at[2]); cam.fov = S.fov || 55; cam.updateProjectionMatrix(); cam.updateMatrixWorld(); };
     for (let k = 0; k < 6; k++) { D.step(1 / 30); put(); D.render(); await new Promise((r) => setTimeout(r, 50)); }
