@@ -28,7 +28,7 @@ import * as THREE from 'three';
 import { look } from '../../../src/mesh.js';
 import { solid } from '../../../src/world.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { TAU, ADD, TONE, rng, noiseTile, BEAM_FRAG, glowSprites, lampPools, groundSpots, carLamps, commit, pixelAt, outOfReach, floorLayer, towerBeams as bankBeams } from './kit.js';
+import { TAU, ADD, TONE, rng, noiseTile, BEAM_FRAG, glowSprites, lampPools, groundSpots, carLamps, commit, pixelAt, outOfReach, floorLayer, floorMask, towerBeams as bankBeams } from './kit.js';
 
 // the look: the murk (the fog, and the sky at its foot), the fog's start and end, the exposure, the sky light (sky
 // colour, ground colour, strength), the floodlights (the way their light comes from, colour, strength; the moon's
@@ -125,7 +125,7 @@ function rain(n) {
 // ---- the mist over the ground ---------------------------------------------------------------------------------------
 // One sheet a little above the ground, patchy (the same noise as the sky, drifting), clear close to the camera, and
 // lit up by the lightning.
-function groundMist(noise, [cx, cz]) {
+function groundMist(noise, [cx, cz], y = 2.4) {   // (y: how high it lies: a map over the sea lays it on the water)
   const m = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, fog: true,
     uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { noise: { value: null }, time: { value: 0 }, flash: { value: 0 }, col: { value: new THREE.Color(STORM.murk).multiplyScalar(2.8) } }]),
@@ -147,7 +147,7 @@ function groundMist(noise, [cx, cz]) {
   });
   m.uniforms.noise.value = noise;
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2400, 2400), m);
-  mesh.rotation.x = -Math.PI / 2; mesh.position.set(cx, 2.4, cz); mesh.updateMatrix(); mesh.matrixAutoUpdate = false;
+  mesh.rotation.x = -Math.PI / 2; mesh.position.set(cx, y, cz); mesh.updateMatrix(); mesh.matrixAutoUpdate = false;
   mesh.renderOrder = -0.5;   // after the solid things, before the lamps' pools, the glows and the rain
   return mesh;
 }
@@ -334,18 +334,19 @@ export function make(L, { scene, renderer, camera, sky, hemi, sun, mats, bloom, 
   bloom.strength = 0.36; bloom.radius = 0.6; bloom.threshold = 1.25;
   const towers = L.towers, fires = L.fires, beacons = L.beacons, nt = towers.length, nf = fires.length, nbk = beacons.length;
   const noise = sky.material.uniforms.noise.value;
-  const drops = rain(2800), mist = groundMist(noise, L.middle), beams = towerBeams(nt), smokes = smoke(fires, 8, noise), flashBolt = bolt();
+  const drops = rain(2800), mist = groundMist(noise, L.middle, L.mistY), beams = towerBeams(nt), smokes = smoke(fires, 8, noise), flashBolt = bolt();
   const banks = L.banks || [], nfl = banks.length;
   // the camp's own lamps (L.pools, from the map's things: fairstalls.js stallPools): a pool of light on the ground under
   // each, gone when the thing is smashed (its `on`)
   const lamps = L.pools || [], nl = lamps.length;
-  const gmax = nfl + nt + 2 * nbk + nf + CAR_GLOWS, glows = glowSprites(gmax), pools = lampPools(2 * nbk + 2 * 40), spots = groundSpots(nt + nf + nl);
+  const mask = floorMask(L.floorMask);   // (a map of decks over the sea: nothing is drawn flat on the ground past their edges)
+  const gmax = nfl + nt + 2 * nbk + nf + CAR_GLOWS, glows = glowSprites(gmax), pools = lampPools(2 * nbk + 2 * 40, mask), spots = groundSpots(nt + nf + nl, mask);
   for (const o of [drops, mist, beams, smokes, flashBolt, glows, pools, spots]) scene.add(o);
   // the floodlights: the towers, their beams in the rain and the light they put on the ground inside the wall
   const floodBeams = nfl ? bankBeams(banks) : null;
   if (nfl) {
     for (const m of floodTowers(banks)) scene.add(m);
-    scene.add(floorLayer(L, STORM.floor));
+    scene.add(floorLayer(L, { ...STORM.floor, geo: L.floorGeo ? L.floorGeo() : null }));
     floodBeams.material.uniforms.col.value.setRGB(0.15, 0.145, 0.13); floodBeams.material.uniforms.near.value = 120;
     scene.add(floodBeams);
   }

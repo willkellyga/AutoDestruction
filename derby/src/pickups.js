@@ -171,6 +171,21 @@ function beamTexture() {
   g.fillStyle = gr; g.fillRect(0, 0, 4, 64);
   return (beamTex = new THREE.CanvasTexture(cv));
 }
+// A pickup's beam (Will, 2026-11-25: "more of a beam without the hard cone feeling"): a flat card that turns to face the
+// camera, bright down its middle and gone by its edge, brightest at the foot and fading out up top. No tube, so no rim.
+let softTex = null;
+function softBeamTexture() {
+  if (softTex) return softTex;
+  const W = 64, Hh = 128, cv = document.createElement('canvas'); cv.width = W; cv.height = Hh;
+  const g = cv.getContext('2d'), im = g.createImageData(W, Hh);
+  for (let y = 0; y < Hh; y++) for (let x = 0; x < W; x++) {
+    const u = (x + 0.5) / W * 2 - 1, v = 1 - (y + 0.5) / Hh, uu = u * u;   // (v: 0 at the foot, 1 at the top)
+    const a = Math.exp(-uu * 5) * (1 - uu) * (1 - uu) * Math.pow(1 - v, 1.6) * Math.min(1, v * 14);
+    const i = (y * W + x) * 4, k = Math.round(255 * a); im.data[i] = im.data[i + 1] = im.data[i + 2] = k; im.data[i + 3] = 255;
+  }
+  g.putImageData(im, 0, 0);
+  return (softTex = new THREE.CanvasTexture(cv));
+}
 
 // ---- which pickup a rival should go for --------------------------------------------------------------------------
 let all = [];
@@ -193,7 +208,7 @@ export function pickupFor(car, hurt) {
 export function makePickups(api, spots = []) {
   const { scene, cars } = api;
   all = spots;
-  const geo = {}, ringGeo = new THREE.RingGeometry(4.2, 5.6, 32), beamGeo = new THREE.CylinderGeometry(1.6, 2.4, 70, 12, 1, true);
+  const geo = {}, ringGeo = new THREE.RingGeometry(4.2, 5.6, 32), beamGeo = new THREE.PlaneGeometry(13, 70);
   beamGeo.translate(0, 35, 0);
   // a supply drop's parachute: half a ball in orange and white gores, over the crate as it comes down
   let chuteGeo = null;
@@ -218,7 +233,7 @@ export function makePickups(api, spots = []) {
     p.model.position.set(p.x, p.py + 6, p.z); p.model.castShadow = true;
     p.ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: glow, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
     p.ring.rotation.x = -Math.PI / 2; p.ring.position.set(p.x, p.gy + 0.12, p.z); p.ring.renderOrder = 3;
-    p.beam = new THREE.Mesh(beamGeo, new THREE.MeshBasicMaterial({ color: new THREE.Color(...K.rgb), map: beamTexture(), transparent: true, opacity: 0.45, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }));
+    p.beam = new THREE.Mesh(beamGeo, new THREE.MeshBasicMaterial({ color: new THREE.Color(...K.rgb), map: softBeamTexture(), transparent: true, opacity: 0.45, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }));
     p.beam.position.set(p.x, p.gy, p.z); p.beam.renderOrder = 3;
     scene.add(p.model, p.ring, p.beam);
     if (p.hold || p.drop) { p.up = !!p.up0; p.t = Infinity; p.fall = 0; p.ring.visible = p.up; }
@@ -347,7 +362,9 @@ export function makePickups(api, spots = []) {
     step(dt, on) {
       stepMarks(dt);
       const T = performance.now() / 1000;
+      const cam = api.camera.position;
       for (const p of live) {
+        p.beam.rotation.y = Math.atan2(cam.x - p.x, cam.z - p.z);   // (the beam is a card: it faces the camera)
         if (p.hold) {
           // a held spot is up while the map says so
           const want = !p.gone && (p.raise === undefined ? p.up : !!p.raise);
@@ -361,7 +378,7 @@ export function makePickups(api, spots = []) {
             const y = 6 + Math.max(0, p.fall) / DROP.fall * DROP.from;
             p.spin += dt * 0.8; p.model.rotation.y = p.spin; p.model.position.y = y; p.chute.position.set(p.x + Math.sin(p.spin * 1.7) * 1.2, y + 6, p.z);
             p.ring.material.opacity = 0.35 + 0.35 * ((T * 5 | 0) & 1); p.ring.scale.setScalar(1.6 - 0.6 * (1 - Math.max(0, p.fall) / DROP.fall));
-            p.beam.material.opacity = 0.3;
+            p.beam.material.opacity = 0.45;
             if (p.fall <= 0) { p.up = true; p.chute.visible = false; p.ring.scale.setScalar(1); const [r, g, b] = p.K.rgb; ring(p.x, 0.4, p.z, 9, new THREE.Color(r, g, b), 0.5); sparks(p.x, 3, p.z, 16, r, g, b, 16); api.sfx.play('crunch', 0.6, p.x, p.z); api.sound('thud', 0.8, p.x, 2, p.z); dust(p.x, 1, p.z, 6, 4, 0.6, 0.52, 0.38); }
             continue;
           }
@@ -385,7 +402,7 @@ export function makePickups(api, spots = []) {
         p.ring.material.opacity = 0.55 + 0.3 * Math.sin(T * 4 + p.z);
         // (the beam fades out as the camera comes up to it, so the camera never sits in a wall of light)
         const near = Math.min(1, Math.max(0, (Math.hypot(api.camera.position.x - p.x, api.camera.position.z - p.z) - 3) / 10));
-        p.beam.material.opacity = (0.32 + 0.1 * Math.sin(T * 3 + p.x)) * near;
+        p.beam.material.opacity = (0.5 + 0.12 * Math.sin(T * 3 + p.x)) * near;
         if (!on) continue;
         // taken by the first car whose box it is in
         for (const c of cars) {

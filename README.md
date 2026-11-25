@@ -13,8 +13,9 @@ fight a free-for-all in the arena. Every mode plays online, with bots in the sea
 
 - `derby/`: the game itself (`derby/src`), its sounds (`derby/assets`), the build (`derby/build.mjs`) and the online
   server (`derby/server`).
-- `src/`, `units/`, `civilian/`, `assets/sfx/`: the parts of Monster Mayhem's engine the game is built on (the town and
-  New York, the destruction, the gun effects, the townsfolk and the sound mixer). They are copied from
+- `src/`, `units/`, `civilian/`, `rivals/`, `kaiju/`, `assets/sfx/`: the parts of Monster Mayhem's engine the game is built on (the town and
+  New York, the destruction, the gun effects, the townsfolk, the sound mixer, and the giant robot that works the
+  steelworks: `rivals/src/marshal.js` and what it imports). They are copied from
   [Monster Mayhem](https://github.com/willkellyga/MonsterMayhem) as they are, only the files the game uses, with their
   history, and the game imports them by relative path. Change them there first and copy them across, so the two stay
   the same.
