@@ -57,6 +57,8 @@ export const WEAPONS = {
   cannon: { kind: 'shell', speed: 260, len: 10, w: 0.7, col: [1.0, 0.86, 0.55], spread: 0.004, life: 2, sound: 'cannon', vol: 1, r: 6 },
   rocket: { kind: 'rocket', speed: 34, top: 150, acc: 260, turn: 3.2, spread: 0.025, life: 3.2, sound: 'launch', vol: 0.8, r: 4, scale: 1 },
   pod: { kind: 'rocket', speed: 70, top: 190, acc: 320, turn: 2.4, spread: 0.04, life: 3, sound: 'launch', vol: 0.65, r: 3.6, scale: 0.85 },
+  salvo: { kind: 'rocket', speed: 60, top: 180, acc: 300, turn: 2.6, spread: 0.05, life: 3.4, sound: 'launch', vol: 0.75, r: 4.2, scale: 1.1 },      // missile truck: a rack of rockets
+  missile: { kind: 'rocket', speed: 22, top: 150, acc: 150, turn: 2.8, spread: 0.015, life: 5, sound: 'launch', vol: 1, r: 7, scale: 2.3 },         // missile truck: one big missile
 };
 
 // `world` and `onLand` are for the game: world.solid(x, y, z) lets shots strike buildings, and onLand(shot, hit, point)

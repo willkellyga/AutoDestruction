@@ -10,7 +10,7 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { WX, WZ, WY, CITY, solid, bodies, ownerAt, idx } from '../../src/world.js';
 import * as world from '../../src/world.js';
 import { look } from '../../src/mesh.js';
-import { hooks, stats, cfg, initSim, stepSim, blast, explode, setFocus, setParticleScale, sparks, dust } from '../../src/sim.js';
+import { hooks, stats, cfg, initSim, stepSim, blast, explode, setFocus, setParticleScale, sparks, dust, stopMeshWorker } from '../../src/sim.js';
 import { makeCivilians } from '../../src/civilians.js';
 import { makeMixer } from '../../src/sfx.js';
 import { DEFAULT_TRIMS } from '../../src/sfx-trims.js';
@@ -46,6 +46,7 @@ import { makeDirt } from './dirt.js';
 import { makeStreaks } from './streaks.js';
 import { makeNet, makeLobby, serverUrl, quickPlay } from './net.js';
 import { makeLearn } from './learn.js';
+import { onLeave, leavePage, leaving } from './leave.js';
 
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -102,6 +103,9 @@ function followSun(x, z) {   // the shadow box follows the player, in whole texe
 
 // ---- the map: built once as the page loads (maps/index.js picks which) ------------------------------------------
 MAP.build();
+// what each part of the page adds to the scene, for the reports' count of what is drawn by kind (report.js)
+const kindFrom = (from, kind) => { for (const o of scene.children.slice(from)) if (!o.userData.kind) o.userData.kind = kind; };
+let kindAt = scene.children.length;
 const floor = makeGround({ scene, renderer, MAP, mobile: MOBILE });   // the map's painted floor, and on dirt its detail and ruts (ground.js)
 {
   // the land past the edge of the map: one plain colour, or a map's own world round it (the arena's city: backdrop.js)
@@ -110,11 +114,15 @@ const floor = makeGround({ scene, renderer, MAP, mobile: MOBILE });   // the map
     outer.renderOrder = -1; outer.rotation.x = -Math.PI / 2; outer.position.set(WX / 2, -0.06, WZ / 2); scene.add(outer);
   }
 }
+kindFrom(kindAt, 'ground'); kindAt = scene.children.length;
 const backdrop = MAP.backdrop ? makeBackdrop({ scene, map: MAP, mobile: MOBILE, viewH: () => renderer.domElement.height, follow: () => player }) : null;
+kindFrom(kindAt, 'backdrop');
 initSim(scene);
+kindAt = scene.children.length;
 const drifts = makeDrift({ scene, camera, mobile: MOBILE, el: $('drift'), soft: floor.dirtAt });   // skid marks, tyre smoke, the drift meter
 const dirt = makeDirt({ scene, camera, renderer, floor, MAP, mobile: MOBILE });   // ruts, rooster tails, dust and clods off the wheels
 const streaks = MAP.mode === 'race' ? makeStreaks({ scene, mobile: MOBILE }) : null;   // the air rushing past, flat out
+kindFrom(kindAt, 'skids, dirt and streaks');
 look.detail.value = 1; look.dusk.value = 0;
 cfg.dust = 0.55; cfg.hang = 0.2;
 toughen();   // sturdier buildings than the town's own (sturdy.js, tuning.js BUILDINGS)
@@ -800,16 +808,19 @@ const api = {
 };
 // playing online (net.js): made before the mode, which asks it how many bots to run and where its player starts
 let net = null;
+kindAt = scene.children.length;
 const mode = MODES[MAP.mode](api);
+kindFrom(kindAt, 'the mode\'s own (horde, base, rides)'); kindAt = scene.children.length;
 net = makeNet({ cars, game, MAP, mode, api, addCar, wreck, damage, gadget, player: () => player, toast, banner, $,
   get pickups() { return pickups; }, horde: () => mode.horde || null,
   removeCar: (c) => { c.gone = true; c.dispose(); if (c.tag) c.tag.remove(); const i = cars.indexOf(c); if (i >= 0) cars.splice(i, 1); },
   begin: () => { if (game.state === 'menu') startGame(true); },
   onRoster: () => { const n = net.players.length + net.bots; $('menu-note').textContent = `${net.players.map((p) => p.name).join(', ')}${net.bots ? ` and ${net.bots} bot${net.bots === 1 ? '' : 's'}` : ''}: ${n} cars.`; },
   // (quick play: the round is over, so straight into the next one)
-  noRound: () => { toast('That round is over', net.quick ? 'Finding another one' : 'Back to the lobby'); setTimeout(() => { if (net.quick) playAgain(); else location.href = net.lobby(); }, 1500); } });
+  noRound: () => { toast('That round is over', net.quick ? 'Finding another one' : 'Back to the lobby'); setTimeout(() => { if (net.quick) playAgain(); else { leavePage(); location.href = net.lobby(); } }, 1500); } });
 // the map's pickups and hazards, if it lists any (pickups.js, hazards.js)
 const pickups = makePickups(api, MAP.pickups), hazards = makeHazards(api, MAP.hazards);
+kindFrom(kindAt, 'pickups and hazards');
 function spawnPlayer(at) {
   if (!at) {
     at = { ...MAP.spawn };
@@ -1359,7 +1370,7 @@ function pauseOff() {
 // out of a round to the home screen (online: off the round first, and the page loads again without it)
 function toHome() {
   pauseOff(); if (document.exitPointerLock) document.exitPointerLock();
-  if (net) { net.bye(); const u = new URL(location.href), q = u.searchParams; u.search = ''; for (const k of ['server', 'as', 'touch']) if (q.get(k)) u.searchParams.set(k, q.get(k)); location.href = u.toString(); return; }
+  if (net) { net.bye(); const u = new URL(location.href), q = u.searchParams; u.search = ''; for (const k of ['server', 'as', 'touch']) if (q.get(k)) u.searchParams.set(k, q.get(k)); leavePage(); location.href = u.toString(); return; }
   keepSave(save); game.ended = true; showHome();
 }
 
@@ -1462,7 +1473,7 @@ $('pause-learn').addEventListener('click', () => learn.show());
   // (the map and the difficulty are picked on the stage select before the map loads: showStages. The card says which.)
 }
 let lobby = null;
-$('over-go').addEventListener('click', () => { if (net && net.quick) playAgain(); else if (net) { net.bye(); location.href = net.lobby(); } else chooseMap(MAP.id); });
+$('over-go').addEventListener('click', () => { if (net && net.quick) playAgain(); else if (net) { net.bye(); leavePage(); location.href = net.lobby(); } else chooseMap(MAP.id); });
 $('over-more').addEventListener('click', overGo);
 $('over-maps').addEventListener('click', () => { if (net) toHome(); else { game.ended = true; showHome(); } });
 $('pause-b').addEventListener('click', pauseOn);
@@ -1743,11 +1754,19 @@ const quality = makeQuality({ renderer, composer, bloom: bloomPass, scene, camer
 // the rest of a map's look (looks/): its beams, glows, lamps, weather and the rest
 const lookFrom = scene.children.length;
 const mapLook = MAP.look ? makeLook(MAP.look, { scene, renderer, camera, sky, hemi, sun, mats, bloom: bloomPass, quality, backdrop, sfx, setup: LOOK }) : null;
-const lookObjs = scene.children.slice(lookFrom);   // the look's own draws (the storm's rain, mist and beams): put away in the garage
+const lookObjs = scene.children.slice(lookFrom); kindFrom(lookFrom, 'map look');   // the look's own draws (the storm's rain, mist and beams): put away in the garage
 // how the game runs on this device, for the server's /host page (report.js; ?perf=1 shows it on screen too)
-const reports = startReports({ game, quality, renderer, MAP, cars, online: () => !!net });
+// on the way out (leave.js): the meshing worker and its copy of the world, both drawing contexts and the sound go first
+onLeave(() => {
+  stopMeshWorker();
+  art.dispose();
+  renderer.dispose(); renderer.forceContextLoss();
+  if (audioMix.ctx && audioMix.ctx.close) audioMix.ctx.close().catch(() => {});
+});
+const reports = startReports({ game, quality, renderer, MAP, cars, online: () => !!net, stats, leaving });
 let last = performance.now();
 function frame(now) {
+  if (leaving()) return;   // on the way out (leave.js): nothing more is stepped or drawn
   requestAnimationFrame(frame);
   if (innerWidth !== sizeW || innerHeight !== sizeH) resize();
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
@@ -1755,7 +1774,7 @@ function frame(now) {
   const a = performance.now();
   step(dt);
   const b = performance.now();
-  quality.judge(now); placeSky(); quality.draw();
+  quality.judge(now); placeSky(); reports.drawStart(); quality.draw(); reports.drawEnd();
   reports.frame(now, b - a, performance.now() - b);
 }
 // Online, a hidden tab gets no frames: the host's bots (and horde) would stand still for everyone. So while the page is
@@ -1765,6 +1784,7 @@ if (net) {
   let at = 0;
   try {
     const w = new Worker(URL.createObjectURL(new Blob(['setInterval(() => postMessage(0), 50)'], { type: 'text/javascript' })));
+    onLeave(() => w.terminate());
     w.onmessage = () => { const now = performance.now(); if (!document.hidden || window.__hold) { at = now; return; } const dt = Math.min(0.1, (now - (at || now)) / 1000); at = now; if (dt > 0) step(dt); };
   } catch (e) { /* no workers: a hidden host just waits */ }
 }

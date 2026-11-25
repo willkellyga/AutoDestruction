@@ -19,6 +19,7 @@
 //   laps                          for the race mode: how many laps (3 if it is left out)
 // The race ('race') and the arena are on New York's world, a world of its own: ../flags.js has the list of maps built on it.
 import { picked } from '../flags.js';
+import { leavePage } from '../leave.js';
 import town from './town.js';
 import manhattan from './manhattan.js';
 import base from './base.js';
@@ -56,5 +57,6 @@ export function chooseMap(id) {
   try { window.name = (window.name || '').replace(/ad-map=\w+;?/, '') + `ad-map=${id};`; } catch (e) { /* stays */ }
   let u = location.href.replace(/([?&])map=\w+&?/, '$1').replace(/[?&]$/, '');
   if (!MAPS.some((m) => m.id === id) && !Object.values(STAGES).some((l) => l.some((m) => m.id === id))) u = u.replace(/(#|$)/, `${u.includes('?') ? '&' : '?'}map=${id}$1`);
+  leavePage();   // let this world go before the next one is built (leave.js)
   if (u !== location.href) location.replace(u); else location.reload();
 }

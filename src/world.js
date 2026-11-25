@@ -10,16 +10,13 @@ export const tiled = (a, step) => Array.from({ length: TILES }, (_, t) => a.map(
 // reload that builds the other world (pickMap). A script can force it with `window.__MAP = 'city'` before this runs.
 // PARIS builds the Paris map (`python3 build.py paris`, laid out in paris.js). It is a city as far as size, haze and
 // street dressing go, so CITY is true for it too; it is taller, for the Eiffel Tower.
-export const PARIS = typeof __PARIS__ === 'boolean' && __PARIS__;
-// NYC builds the New York map (`python3 build.py nyc`, laid out in nyc.js): a city too, and as tall as the handles allow.
-export const NYC = typeof __NYC__ === 'boolean' && __NYC__;
-// TOKYO builds the Tokyo map (`python3 build.py tokyo`, laid out in tokyo.js), on the same terms.
-export const TOKYO = typeof __TOKYO__ === 'boolean' && __TOKYO__;
-// CAIRO builds the Cairo map (`python3 build.py cairo`, laid out in cairo.js), on the same terms.
-export const CAIRO = typeof __CAIRO__ === 'boolean' && __CAIRO__;
-// DC builds the Washington map (`python3 build.py dc`, laid out in dc.js), on the same terms.
-export const DC = typeof __DC__ === 'boolean' && __DC__;
-export const MAP_FIXED = PARIS || NYC || TOKYO || CAIRO || DC || (typeof __CITY__ === 'boolean' && __CITY__) || (typeof __STUDIO__ === 'boolean' && __STUDIO__) || TILES > 1;
+// Which map: a build can fix it with a flag (`python3 build.py paris` and the others, for the one-file pages and artifacts),
+// or the one engine bundle shared by every map (`python3 build.py web`, Will 2026-11-23: one engine the browser keeps, the
+// map picked at run time) reads it from `window.__MAP` (set by the page before the engine runs), and the meshing worker
+// from its own name. Keys: town, city, paris, nyc, tokyo, cairo, dc.
+// PARIS builds the Paris map (laid out in paris.js). It is a city as far as size, haze and street dressing go, so CITY is
+// true for it too; it is taller, for the Eiffel Tower. NYC (nyc.js), TOKYO (tokyo.js), CAIRO (cairo.js) and DC (dc.js) the same.
+const FLAGGED = [typeof __PARIS__, typeof __NYC__, typeof __TOKYO__, typeof __CAIRO__, typeof __DC__, typeof __CITY__].includes('boolean');
 function chosenMap() {
   // the meshing worker (src/mesh-worker.js) is started with the page's map in its name
   if (typeof window === 'undefined') { const m = typeof self !== 'undefined' && /mm-map=(\w+)/.exec(self.name || ''); return m ? m[1] : ''; }
@@ -27,10 +24,19 @@ function chosenMap() {
   try { const v = sessionStorage.getItem('mm-map'); if (v) return v; } catch (e) { /* no storage here: the window's name carries it */ }
   const m = /mm-map=(\w+)/.exec(window.name || ''); return m ? m[1] : '';
 }
+const RUN_MAP = FLAGGED ? '' : chosenMap();
+export const PARIS = typeof __PARIS__ === 'boolean' ? __PARIS__ : RUN_MAP === 'paris';
+export const NYC = typeof __NYC__ === 'boolean' ? __NYC__ : RUN_MAP === 'nyc';
+export const TOKYO = typeof __TOKYO__ === 'boolean' ? __TOKYO__ : RUN_MAP === 'tokyo';
+export const CAIRO = typeof __CAIRO__ === 'boolean' ? __CAIRO__ : RUN_MAP === 'cairo';
+export const DC = typeof __DC__ === 'boolean' ? __DC__ : RUN_MAP === 'dc';
+export const MAP_FIXED = PARIS || NYC || TOKYO || CAIRO || DC || (typeof __CITY__ === 'boolean' && __CITY__) || (typeof __STUDIO__ === 'boolean' && __STUDIO__) || TILES > 1;
 export function pickMap(m) {
   try { sessionStorage.setItem('mm-map', m); } catch (e) { try { window.name = 'mm-map=' + m; } catch (e2) { /* it stays on this map */ } }
 }
 export const CITY = PARIS || NYC || TOKYO || CAIRO || DC || (typeof __CITY__ === 'boolean' && __CITY__) || (!MAP_FIXED && chosenMap() === 'city');
+// the map's key, for the meshing worker's name and the round's pace (src/round.js RULES.pace)
+export const MAP_KEY = DC ? 'dc' : CAIRO ? 'cairo' : TOKYO ? 'tokyo' : NYC ? 'nyc' : PARIS ? 'paris' : CITY ? 'city' : 'town';
 export const WX = CITY ? 1024 : TILE_X * TILES, WY = PARIS || NYC || TOKYO || CAIRO || DC ? 256 : CITY ? 224 : 128, WZ = CITY ? 1024 : TILE_Z * TILES, CH = 16;
 export const NCX = WX / CH, NCZ = WZ / CH;
 

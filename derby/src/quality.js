@@ -25,7 +25,7 @@ const LODS_MOBILE = [[360, 720], [360, 720], [330, 680], [300, 640], [260, 560],
 export function makeQuality({ renderer, composer, bloom, scene, camera, sun, resize, playing, mobile, lodK = 1 }) {
   let q = -1, post = true;
   const win = { t: 0, n: 0, fast: 0, settle: 3, prev: 0, left: new Float64Array(QMAX + 1) };
-  const fixed = /[?&]q=(\d)/.exec(location.search);
+  const fixed = !/[?&]mp=/.test(location.search) && /[?&]q=(\d)/.exec(location.search);   // never in an online round (an older page sent quick rounds as ?q=1)
   const shadowSize = (n) => { sun.shadow.mapSize.set(n, n); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } };
   function set(n) {
     n = Math.max(0, Math.min(QMAX, Math.round(n)));
