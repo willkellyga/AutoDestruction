@@ -16,6 +16,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 WEAPONS.missile = { kind: 'rocket', speed: 46, top: 132, acc: 200, turn: 4.4, spread: 0.08, life: 4.6, sound: 'launch', vol: 0.7, r: 3.6, scale: 0.85 };
 
 const GRAV = 70;   // the mortar's shells fall at this (voxels a second squared)
+const STOMP = { base: 30, k: 1.1 };   // coming down on another car, off the jump jets or a ramp: this, and this for each voxel a second it was falling (times the car's weight)
 const _d = new THREE.Vector3(), _p = new THREE.Vector3(), _c = new THREE.Vector3();
 
 export function makeSpecials({ scene, fx, sfx, cars, extras, player, damage, blast, friendly, cube, chip, mobile }) {
@@ -251,19 +252,19 @@ export function makeSpecials({ scene, fx, sfx, cars, extras, player, damage, bla
   function stepAir(c) {
     if (!((c.y || 0) > 0.05)) return;
     if (c.vy > 8) jets(c, 2);
-    if (c.vy >= 0 || c.dead) return;
+    if (c.vy >= -5 || c.dead) return;   // (coming down in earnest: not the hops of a rough floor)
     for (const o of cars) {
       if (o === c || o.dead || o.gone || (o.y || 0) > 0.5) continue;
-      if (c.y > o.top + 1.2) continue;
+      if (c.h > o.h + o.top + 1.2 || c.h < o.h - 1) continue;   // (heights in the world: the floor may be a heap of dirt, maps/arena.js)
       const dx = (c.x + Math.sin(c.yaw) * c.mid) - (o.x + Math.sin(o.yaw) * o.mid), dz = (c.z + Math.cos(c.yaw) * c.mid) - (o.z + Math.cos(o.yaw) * o.mid);
       if (Math.hypot(dx, dz) > Math.max(o.half, o.wide) * 0.9 + c.wide * 0.5) continue;
       const hard = Math.abs(c.vy);
-      if (!friendly() || o.dummy) damage(o, 18 + hard * 0.9 * (c.spec.mass || 1), c, true);   // (true: a car driven on another device is told: net.js)
+      if (!friendly() || o.dummy) damage(o, STOMP.base + hard * STOMP.k * (c.spec.mass || 1), c, true);   // (true: a car driven on another device is told: net.js)
       _p.set(o.x + Math.sin(o.yaw) * o.mid, o.top, o.z + Math.cos(o.yaw) * o.mid);
       o.unit.hit(_p, 2.4, chip, 10);
       sparks(_p.x, _p.y, _p.z, 18, 1, 0.8, 0.4, 24);
       sfx.play('crunch_heavy', 1, _p.x, _p.z);
-      c.vy = 16; c.y = o.top + 0.6; c.vx += dx * 0.8; c.vz += dz * 0.8;
+      c.vy = 16; c.y = Math.max(c.y, o.h + o.top + 0.6 - (c.fy || 0)); c.vx += dx * 0.8; c.vz += dz * 0.8;
       o.vx *= 0.4; o.vz *= 0.4;
       if (c === player()) c.stomped = 0.4;
       break;

@@ -72,6 +72,7 @@ export function makeDriver(car) {
     // a clear run at it (for the driving), and whether it can see it (for the shooting): in front, the way the player's
     // camera shows what is ahead of their car, or right alongside. Nobody shoots at a car behind them that they never saw.
     const clear = d < AI.see && clearLine(car.x, car.z, T.x, T.z, 4);
+    const run = clear && (!MAP.runClear || MAP.runClear(car.x, car.z, T.x, T.z));   // (a straight run at it: not across what the map says cannot be driven, the arena's heaps of dirt)
     const sees = clear && (d < AI.close || Math.abs(wrap(Math.atan2(dx, dz) - car.yaw)) < AI.view);
     // where to drive: to a pickup it wants (looked at again every half second), else straight at the target with a
     // clear run, else along the streets
@@ -79,8 +80,8 @@ export function makeDriver(car) {
     if (b.pkT <= 0) { b.pkT = 0.5; b.pk = pickupFor(car, car.hp < car.maxHp * AI.mend) || (FFA && !clear && d > 200 ? forage(all, d) : null); }
     if (b.pk && !b.pk.up) b.pk = null;
     let gx, gz;
-    if (b.pk) { if (clearLine(car.x, car.z, b.pk.x, b.pk.z, 4)) { gx = b.pk.x; gz = b.pk.z; } else { MAP.waypoint(car, b.pk.x, b.pk.z, b.wp); gx = b.wp.x; gz = b.wp.z; } }
-    else if (clear || d < 30) { gx = T.x; gz = T.z; }
+    if (b.pk) { if (clearLine(car.x, car.z, b.pk.x, b.pk.z, 4) && (!MAP.runClear || MAP.runClear(car.x, car.z, b.pk.x, b.pk.z))) { gx = b.pk.x; gz = b.pk.z; } else { MAP.waypoint(car, b.pk.x, b.pk.z, b.wp); gx = b.wp.x; gz = b.wp.z; } }
+    else if (run || d < 30) { gx = T.x; gz = T.z; }
     else {
       // (in the free-for-all a target far off is gone after by way of the middle of the pit, where the fighting is)
       let tx = T.x, tz = T.z; if (FFA && MAP.pit && d > 260) { tx = (tx + MAP.pit.x) / 2; tz = (tz + MAP.pit.z) / 2; }

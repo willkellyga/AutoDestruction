@@ -212,12 +212,14 @@ export function makePickups(api, spots = []) {
     const K = PICKUPS[p.kind]; if (!K) continue;
     const glow = new THREE.Color(K.rgb[0] * 2.2, K.rgb[1] * 2.2, K.rgb[2] * 2.2);
     p.K = K; p.up = !K.first; p.t = K.first || 0; p.spin = Math.random() * 6;
+    // how high it is: on the floor where it stands (a heap of dirt, a deck: MAP.floor), and `air` over that, where only a car off a jump reaches it
+    p.gy = api.MAP.floor ? api.MAP.floor(p.x, p.z, 1e3) : 0; p.py = p.gy + (p.air || 0);
     p.model = new THREE.Mesh(geo[p.kind] || (geo[p.kind] = MODELS[p.kind]()), new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(1.25, 1.25, 1.25), toneMapped: false }));
-    p.model.position.set(p.x, 6, p.z); p.model.castShadow = true;
+    p.model.position.set(p.x, p.py + 6, p.z); p.model.castShadow = true;
     p.ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: glow, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
-    p.ring.rotation.x = -Math.PI / 2; p.ring.position.set(p.x, 0.12, p.z); p.ring.renderOrder = 3;
+    p.ring.rotation.x = -Math.PI / 2; p.ring.position.set(p.x, p.gy + 0.12, p.z); p.ring.renderOrder = 3;
     p.beam = new THREE.Mesh(beamGeo, new THREE.MeshBasicMaterial({ color: new THREE.Color(...K.rgb), map: beamTexture(), transparent: true, opacity: 0.45, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }));
-    p.beam.position.set(p.x, 0, p.z); p.beam.renderOrder = 3;
+    p.beam.position.set(p.x, p.gy, p.z); p.beam.renderOrder = 3;
     scene.add(p.model, p.ring, p.beam);
     if (p.hold || p.drop) { p.up = !!p.up0; p.t = Infinity; p.fall = 0; p.ring.visible = p.up; }
     if (p.drop) p.chute = chute();
@@ -374,12 +376,12 @@ export function makePickups(api, spots = []) {
           p.ring.material.opacity = 0.12 + 0.4 * k; p.ring.scale.setScalar(0.4 + 0.6 * k);
           if (p.t <= 0) {
             p.up = true; p.model.visible = p.beam.visible = true; p.ring.scale.setScalar(1);
-            const [r, g, b] = p.K.rgb; ring(p.x, 0.4, p.z, 7, new THREE.Color(r, g, b), 0.4); sparks(p.x, 4, p.z, 10, r, g, b, 14);
+            const [r, g, b] = p.K.rgb; ring(p.x, p.gy + 0.4, p.z, 7, new THREE.Color(r, g, b), 0.4); sparks(p.x, p.py + 4, p.z, 10, r, g, b, 14);
           }
           continue;
         }
         p.model.visible = p.beam.visible = true;
-        p.spin += dt * 2.2; p.model.rotation.y = p.spin; p.model.position.y = 6 + Math.sin(T * 2.6 + p.x) * 0.8;
+        p.spin += dt * 2.2; p.model.rotation.y = p.spin; p.model.position.y = p.py + 6 + Math.sin(T * 2.6 + p.x) * 0.8;
         p.ring.material.opacity = 0.55 + 0.3 * Math.sin(T * 4 + p.z);
         // (the beam fades out as the camera comes up to it, so the camera never sits in a wall of light)
         const near = Math.min(1, Math.max(0, (Math.hypot(api.camera.position.x - p.x, api.camera.position.z - p.z) - 3) / 10));
@@ -392,6 +394,7 @@ export function makePickups(api, spots = []) {
           const lx = _o.x * co - _o.z * s, lz = _o.x * s + _o.z * co - c.mid;
           if (Math.abs(lx) > c.wide + 3 || Math.abs(lz) > c.half + 3) continue;
           if (p.kind === 'repair' && c.hp >= c.maxHp - 0.5) continue;
+          if (p.air ? c.h < p.py - 0.5 : Math.abs(c.h - p.py) > 9) continue;   // up in the air: only a car that is too; on a heap: not from its foot
           take(p, c); p.model.visible = p.beam.visible = false; break;
         }
       }

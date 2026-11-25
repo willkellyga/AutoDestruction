@@ -792,6 +792,7 @@ const api = {
   // for the map's own parts and the pickups: the mode (its phase and clock), whether cars can hurt each other, the dead
   get mode() { return mode; }, get pickups() { return pickups; }, friendly: () => !!mode.friendly, horde: () => mode.horde || null,
   fx,   // (the shots, for a map's own guns: basemoves.js)
+  get pix() { return specials.pix; },   // (the pixel fire, for a map's own flames: hazards.js's jets, the arena's cannons)
 };
 // playing online (net.js): made before the mode, which asks it how many bots to run and where its player starts
 let net = null;

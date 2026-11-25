@@ -255,6 +255,10 @@ const AFTER_MAP = /* glsl */`
   #endif
 `;
 const NORMAL = /* glsl */`
+  #ifdef G_SHAPED
+    // (a floor of shaped dirt, maps/arena.js: the detail's slope is laid over the heap's own)
+    { vec3 gN = normalize( ( vec4( normal, 0.0 ) * viewMatrix ).xyz ); gSlope += vec2( - gN.x, - gN.z ) / max( gN.y, 0.25 ); }
+  #endif
   normal = normalize( ( viewMatrix * vec4( normalize( vec3( - gSlope.x, 1.0, - gSlope.y ) ), 0.0 ) ).xyz );
 `;
 const SHINE = /* glsl */`
@@ -375,7 +379,7 @@ export function makeGround({ scene, renderer, MAP, mobile }) {
   };
   // (water and wet mud reflect about 4% head on, and more the flatter they are seen: Phong's Fresnel does the rest)
   const mat = new THREE.MeshPhongMaterial({ map: tex, specular: new THREE.Color().setRGB(0.04, 0.04, 0.04), shininess: 30 });
-  mat.defines = {};
+  mat.defines = {}; if (MAP.ledges) mat.defines.G_SHAPED = 1;
   mat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, U);
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vGround;')
