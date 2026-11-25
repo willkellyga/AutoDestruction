@@ -4,19 +4,24 @@
 //   the chair swing   a striped top turning on a column, the chairs flung out on their chains, well over the cars.
 //   the drop tower    a ring of seats hauled to the top of a tall lit tower, held, and let go.
 //   the octopus       six arms with a pod on each, turning and rocking, overhead.
+//   the carousel      at the crossing: horses and other animals at twice the town's detail, going up and down on their
+//                     poles under a striped top, round a mirrored drum. (maps/fair.js plays the organ from it.)
 //   the coaster train five cars running the rollercoaster's track. Knock the track out from under it (the legs are
 //                     the map's voxels) and it comes off, and blows up where it lands.
 // What stands still of each (frame, column, tower, hub) is one of the stalls' kinds, so it is in the stalls' two
 // meshes, cars bounce off its feet and the bots route round it. What moves is a mesh of paint and a mesh of lights
 // each, in the stalls' own materials (so its lights are on its quarter's circuit, and go out with it).
+// Every one can be wrecked (Will, 2026-11-24): shot, blown up or rammed enough (the stalls' `tough`), what stands goes
+// as a stall does and what moves flies apart with it.
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { makeKit, KINDS, N, CHASE } from './fairstalls.js';
 import { sparks } from '../../src/sim.js';
 import { solid } from '../../src/world.js';
 
 const TAU = Math.PI * 2;
 const RED = 0xc8342c, WHITE = 0xeee8da, YELLOW = 0xe8b830, BLUE = 0x2f6fc0, GREEN = 0x3c9a52, DARK = 0x24262c, TEAL = 0x1f9c98,
-  PINK = 0xe86aa8, PURPLE = 0x7a4ac0, ORANGE = 0xe2752a, PLANK = 0x5c4630, STEEL = 0x8e969c, BROWN = 0x6a4326, CREAM = 0xf4ead0;
+  PINK = 0xe86aa8, PURPLE = 0x7a4ac0, ORANGE = 0xe2752a, PLANK = 0x5c4630, STEEL = 0x8e969c, BROWN = 0x6a4326, CREAM = 0xf4ead0, GOLD = 0xd2a23a;
 const SEATS = [RED, YELLOW, BLUE, GREEN, PINK, ORANGE, TEAL, PURPLE];
 // one of the dead, riding: sat down, its arms up (2 cubes wide, 6 tall)
 export function rider(K, x, y, z, k = 0) {
@@ -46,7 +51,7 @@ function shipFrame(K, o) {
   // the steps up to it, and its rail
   K.b(-9, 0.4, 13, 18, 1, 4, PLANK); K.b(-7, 1.4, 13, 14, 1, 2, PLANK);
 }
-KINDS.shipframe = { make: shipFrame, foot: [[-15.6, -8.8, -12.4, -6.2], [12.4, -8.8, 15.6, -6.2], [-15.6, 6.2, -12.4, 8.8], [12.4, 6.2, 15.6, 8.8]], top: 29, hp: 0, pool: [0, 0, 17] };
+KINDS.shipframe = { make: shipFrame, foot: [[-15.6, -8.8, -12.4, -6.2], [12.4, -8.8, 15.6, -6.2], [-15.6, 6.2, -12.4, 8.8], [12.4, 6.2, 15.6, 8.8]], shot: [[-12, -4, 12, 4, 0, 30], [-3, -9, 3, 9, 24, 36]], top: 29, hp: 420, tough: true, heap: 1.7, pool: [0, 0, 17] };
 function shipHull(K, o) {
   const R = SHIP.keel, a = o.a, b = o.b ?? YELLOW;
   K.b(-12, -R, -5, 24, 2, 10, BROWN);
@@ -80,7 +85,7 @@ function swingBase(K, o) {
   K.b(-4, 20, -4, 8, 2, 8, YELLOW); K.b(-4, 42, -4, 8, 2, 8, YELLOW);
   for (let i = 0; i < 10; i++) { const ph = 0.05 + i / 10 * 0.9; K.l(-0.6, 5 + i * 4.4, 3, 1.2, 1.8, 0.4, N.yellow, ph); K.l(-0.6, 5 + i * 4.4, -3.4, 1.2, 1.8, 0.4, N.yellow, ph); K.l(3, 5 + i * 4.4, -0.6, 0.4, 1.8, 1.2, N.yellow, ph); K.l(-3.4, 5 + i * 4.4, -0.6, 0.4, 1.8, 1.2, N.yellow, ph); }
 }
-KINDS.swingbase = { make: swingBase, foot: [[-3.4, -3.4, 3.4, 3.4]], top: 26, hp: 0, pool: [0, 0, 19] };
+KINDS.swingbase = { make: swingBase, foot: [[-3.4, -3.4, 3.4, 3.4]], shot: [[-12, -12, 12, 12, 20, 31], [-19, -19, 19, 19, 9, 15]], top: 26, hp: 320, tough: true, heap: 1.1, pool: [0, 0, 19] };
 function swingTop(K, o) {
   K.discXZ(0, 0, 0, 24, 1.5, o.a); K.discXZ(0, 1.5, 0, 19, 2, WHITE); K.discXZ(0, 3.5, 0, 13, 2, o.a); K.discXZ(0, 5.5, 0, 7, 2, WHITE);
   K.b(-1.5, 7.5, -1.5, 3, 3, 3, YELLOW); K.l(-1, 10.5, -1, 2, 2, 2, N.yellow, -0.3);
@@ -110,7 +115,7 @@ function dropTower(K, o) {
   K.sign(o.name, 0, H + 9, 1, 30, 8, o.neon, o.frame, 2);
   K.bulbs(-14, 14, H + 13.2, -0.5, 3, false, 1.2); K.l(-1.5, H + 15, -1.5, 3, 3, 3, N.red, -0.7);
 }
-KINDS.droptower = { make: dropTower, foot: [[-5.8, -5.8, 5.8, 5.8]], top: 31, hp: 0, pool: [0, 0, 15] };
+KINDS.droptower = { make: dropTower, foot: [[-5.8, -5.8, 5.8, 5.8]], shot: [[-4, -4, 4, 4, 0, 30]], top: 56, hp: 380, tough: true, heap: 1.1, pool: [0, 0, 15] };
 function dropCar(K, o) {
   K.b(-10, 0, -10, 20, 1.5, 5, DARK); K.b(-10, 0, 5, 20, 1.5, 5, DARK); K.b(-10, 0, -5, 5, 1.5, 10, DARK); K.b(5, 0, -5, 5, 1.5, 10, DARK);
   K.b(-9, 1.5, -6.5, 18, 6, 1.5, o.a); K.b(-9, 1.5, 5, 18, 6, 1.5, o.a); K.b(-6.5, 1.5, -5, 1.5, 6, 10, o.a); K.b(5, 1.5, -5, 1.5, 6, 10, o.a);
@@ -128,7 +133,7 @@ function octoBase(K, o) {
   for (let y = 2.5, i = 0; y < OCTO_TOP; y += 3.25, i++) K.b(-3, y, -3, 6, 3.25, 6, i & 1 ? WHITE : o.a);
   for (let i = 0; i < 4; i++) { const ph = 0.05 + i / 4 * 0.9; K.l(-0.6, 5 + i * 4, 3, 1.2, 1.6, 0.4, N[o.neon], ph); K.l(-0.6, 5 + i * 4, -3.4, 1.2, 1.6, 0.4, N[o.neon], ph); }
 }
-KINDS.octobase = { make: octoBase, foot: [[-3.2, -3.2, 3.2, 3.2]], top: 11, hp: 0, pool: [0, 0, 17] };
+KINDS.octobase = { make: octoBase, foot: [[-3.2, -3.2, 3.2, 3.2]], shot: [[-15, -15, 15, 15, 6, 17]], top: 11, hp: 300, tough: true, heap: 1.1, pool: [0, 0, 17] };
 function octoTop(K, o) {
   K.b(-4.5, 0, -4.5, 9, 4, 9, o.a); K.b(-3, 4, -3, 6, 3, 6, YELLOW); K.l(-1.5, 7, -1.5, 3, 3, 3, N[o.neon], -0.5);
   for (let k = 0; k < 6; k++) {
@@ -142,6 +147,141 @@ function octoTop(K, o) {
   }
 }
 
+// ---- the carousel -----------------------------------------------------------------------------------------------------
+// What stands: the plinth, its skirt in stripes with bulbs chasing round it, and the boards of the deck. What turns:
+// the drum in the middle with its mirrors, the striped top with its bulbs, and the animals, in two lots that go up
+// and down against each other. Each animal is its own model at twice the town's detail, facing the way it goes.
+export const MERRY = { r: 34, top: 30, turn: 0.5, bob: 0.55 };   // cubes: the plinth's radius and how high the top's edge is over the deck; radians a second; how far the animals rise and fall, voxels
+// a disc lying flat whose colour goes by where: col(dx, dz), in rows `step` cubes deep
+function discF(K, y, r, h, col, step = 1) {
+  for (let dz = -r; dz < r; dz += step) {
+    const half = Math.floor(Math.sqrt(Math.max(0, r * r - (dz + step / 2) * (dz + step / 2))) + 0.5); if (half <= 0) continue;
+    let x0 = -half, c0 = col(-half + 0.5, dz + step / 2);
+    for (let dx = -half + 1; dx <= half; dx++) { const c = dx < half ? col(dx + 0.5, dz + step / 2) : null; if (c !== c0) { K.b(x0, y, dz, dx - x0, h, step, c0); x0 = dx; c0 = c; } }
+  }
+}
+const wedges = (n, a, b) => (dx, dz) => (Math.floor((Math.atan2(dz, dx) + Math.PI) / (TAU / n)) & 1 ? b : a);
+function merryBase(K, o) {
+  const R = MERRY.r;
+  discF(K, 0, R + 1, 2.4, wedges(24, o.a, WHITE), 2);
+  K.discXZ(0, 2.4, 0, R, 0.6, PLANK);
+  discF(K, 3, R - 1, 0.1, (dx, dz) => ((Math.hypot(dx, dz) / 4 | 0) & 1 ? 0x6a5238 : 0x7a6040), 2);
+  for (let k = 0; k < 40; k++) { const a = k / 40 * TAU; K.l(Math.cos(a) * (R + 1.4) - 0.6, 0.9, Math.sin(a) * (R + 1.4) - 0.6, 1.2, 1.2, 1.2, N[CHASE[k % 5]], 0.05 + (k % 6) / 6 * 0.9); }
+}
+KINDS.carousel = { make: merryBase, foot: [[-17, -7, 17, 7], [-7, -17, 7, 17], [-12.5, -12.5, 12.5, 12.5]], shot: [[-17, -17, 17, 17, 0, 22]], top: 3, hp: 460, tough: true, heap: 2.2, pool: null };
+// the drum and the top (about the deck's middle, at deck height)
+function merryFrame(K, o) {
+  const T = MERRY.top, R = MERRY.r + 3;
+  K.b(-5, 0, -5, 10, T, 10, CREAM); K.b(-5.4, 0, -5.4, 10.8, 2.5, 10.8, o.a); K.b(-5.4, T - 5, -5.4, 10.8, 5, 10.8, o.a);
+  for (const sx of [-5.6, 4.4]) for (const sz of [-5.6, 4.4]) K.b(sx, 0, sz, 1.2, T, 1.2, GOLD);
+  for (const [x, z, w, d] of [[-3.5, 5, 7, 0.25], [-3.5, -5.25, 7, 0.25], [5, -3.5, 0.25, 7], [-5.25, -3.5, 0.25, 7]]) { K.l(x, 5, z, w, 14, d, N.warm, 0, 0.42); K.b(x - (w > 1 ? 0.3 : 0), 19, z - (d > 1 ? 0.3 : 0), w > 1 ? w + 0.6 : d, 1, d > 1 ? d + 0.6 : w, GOLD); }
+  for (let k = 0; k < 16; k++) { const a = k / 16 * TAU; K.l(Math.cos(a) * 7 - 0.5, T - 6.4, Math.sin(a) * 7 - 0.5, 1, 1, 1, N[CHASE[k % 5]], 0.05 + (k % 6) / 6 * 0.9); }
+  // the top: a striped cone in steps, a valance round its edge with bulbs, lamps under it, a ball and a pennant on top
+  K.discXZ(0, T, 0, R - 1, 1, CREAM);
+  for (let i = 0; i < 6; i++) discF(K, T + 1 + i * 2, Math.round(R - i * 6.3), 2, wedges(16, o.a, WHITE), 2);
+  for (let k = 0; k < 48; k++) { const a = (k + 0.5) / 48 * TAU; K.b(Math.cos(a) * R - 1.4, T - 2.6 + (k & 1), Math.sin(a) * R - 1.4, 2.8, 3.6 - (k & 1), 2.8, k & 1 ? GOLD : o.a); }
+  for (let k = 0; k < 36; k++) { const a = k / 36 * TAU; K.l(Math.cos(a) * (R + 1.6) - 0.6, T - 0.4, Math.sin(a) * (R + 1.6) - 0.6, 1.2, 1.2, 1.2, N[CHASE[k % 5]], 0.05 + (k % 6) / 6 * 0.9); }
+  for (let k = 0; k < 10; k++) { const a = (k + 0.5) / 10 * TAU; K.l(Math.cos(a) * 21 - 1, T - 0.9, Math.sin(a) * 21 - 1, 2, 0.9, 2, N.warm, 0, 0.9); }
+  K.b(-1.5, T + 13, -1.5, 3, 3, 3, GOLD); K.l(-1, T + 16, -1, 2, 2, 2, N.yellow, -0.3); K.b(-0.3, T + 18, -0.3, 0.6, 5, 0.6, STEEL); K.b(0.3, T + 20.4, -0.2, 4, 2.4, 0.4, o.a);
+}
+// The animals: each faces the model's +z, stands over (0, 0), its hooves at y and its pole right through it.
+const pole = (K, y) => { for (let i = 0; i < 16; i++) K.b(-0.35, y - 3 + i * 2, -0.35, 0.7, 2, 0.7, i & 1 ? GOLD : 0xf0d27a); };
+const tack = (K, y, c) => {   // the blanket with its edging, the saddle, the girth
+  K.b(-1.68, y + 5.4, -2.1, 3.36, 2.8, 3.8, c.blanket); K.b(-1.74, y + 5.4, -2.2, 3.48, 0.5, 4, YELLOW); K.b(-1.74, y + 7.7, -2.2, 3.48, 0.3, 0.4, YELLOW); K.b(-1.74, y + 7.7, 1.4, 3.48, 0.3, 0.4, YELLOW);
+  K.b(-1.3, y + 8.2, -1.7, 2.6, 0.7, 3, c.saddle); K.b(-1.1, y + 8.9, -1.8, 2.2, 0.9, 0.7, c.saddle); K.b(-0.6, y + 8.9, 0.8, 1.2, 0.6, 0.5, c.saddle);
+};
+function horse(K, c, y = 2) {
+  const B = (x, yy, z, w, h, d, col) => K.b(x, y + yy, z, w, h, d, col), hoof = c.hoof ?? DARK;
+  pole(K, y);
+  B(-1.5, 5, -3.5, 3, 3, 7, c.coat); B(-1.25, 4.5, -3, 2.5, 0.5, 6, c.belly ?? c.coat); B(-1.2, 8, -3.2, 2.4, 0.4, 5, c.coat); B(-1.4, 5.4, -4, 2.8, 2.4, 0.6, c.coat);
+  // the neck, arched; the head, down a little; ears, eyes, nostrils
+  B(-1, 7, 2.4, 2, 2.6, 2, c.coat); B(-1, 9, 3, 2, 2.2, 1.8, c.coat); B(-0.9, 10.6, 3.6, 1.8, 1.4, 1.4, c.coat);
+  B(-1, 9.6, 4.4, 2, 2.2, 2.2, c.coat); B(-0.8, 9.2, 6.4, 1.6, 1.8, 1.4, c.nose ?? c.coat); B(-0.6, 9, 7.6, 1.2, 1.2, 0.5, c.nose ?? c.coat);
+  B(-0.95, 12, 3.9, 0.6, 1, 0.6, c.coat); B(0.35, 12, 3.9, 0.6, 1, 0.6, c.coat);
+  B(-1.08, 10.9, 5.2, 0.16, 0.6, 0.7, DARK); B(0.92, 10.9, 5.2, 0.16, 0.6, 0.7, DARK); B(-0.7, 9.6, 8, 0.4, 0.4, 0.2, DARK); B(0.3, 9.6, 8, 0.4, 0.4, 0.2, DARK);
+  // mane and tail
+  B(-0.4, 8, 1.7, 0.8, 4.4, 0.9, c.mane); B(-0.45, 11.8, 2.6, 0.9, 0.9, 1.6, c.mane); B(-0.4, 11.4, 4.6, 0.8, 0.9, 1.2, c.mane); B(-0.6, 9, 1.2, 1.2, 2, 0.6, c.mane);
+  B(-0.5, 6.4, -4.6, 1, 1.8, 1, c.mane); B(-0.6, 4, -5.2, 1.2, 2.8, 1.2, c.mane); B(-0.4, 2.6, -5.6, 0.8, 1.6, 0.8, c.mane);
+  // the legs, at a gallop: one of each pair further out than the other
+  for (const [sx, f] of [[-1.5, 0], [0.5, 1]]) {
+    B(sx, 2.6, 2 + f, 1, 2.6, 1.1, c.coat); B(sx, 1.2, 2.8 + f, 1, 1.8, 1, c.coat); B(sx - 0.05, 0.4, 2.8 + f, 1.1, 0.9, 1.3, hoof);
+    B(sx, 2.6, -3.4 - f, 1, 2.8, 1.2, c.coat); B(sx, 1.4, -4.2 - f, 1, 1.5, 1, c.coat); B(sx - 0.05, 0.6, -4.5 - f, 1.1, 0.9, 1.3, hoof);
+  }
+  tack(K, y, c);
+  B(-1.1, 10.4, 5.9, 2.2, 0.35, 0.35, c.saddle); B(-1.1, 9.4, 4.5, 2.2, 0.35, 0.35, c.saddle); B(-1.08, 9.4, 4.5, 0.2, 2.6, 0.35, c.saddle); B(0.88, 9.4, 4.5, 0.2, 2.6, 0.35, c.saddle);
+  B(-1.6, 6.6, 2.5, 3.2, 0.5, 0.6, YELLOW);
+  if (c.stripes) {   // a zebra
+    for (const z of [-3.3, 2.3, 3.3]) B(-1.56, 5, z, 3.12, 3.06, 0.5, DARK);
+    for (let i = 0; i < 3; i++) B(-1.06, 7.4 + i * 1.3, 2.36 + i * 0.3, 2.12, 0.5, 2.1, DARK);
+    for (const [sx, f] of [[-1.56, 0], [0.44, 1]]) { B(sx, 3.4, 1.95 + f, 1.12, 0.5, 1.2, DARK); B(sx, 1.8, 2.75 + f, 1.12, 0.5, 1.1, DARK); B(sx, 3.6, -3.45 - f, 1.12, 0.5, 1.3, DARK); B(sx, 2, -4.25 - f, 1.12, 0.5, 1.1, DARK); }
+    B(-1.06, 10.4, 4.36, 2.12, 0.4, 2, DARK);
+  }
+  if (c.spots) for (const [x, yy, z] of [[-1.56, 6.2, -3.2], [-1.56, 5.2, 2.2], [1.36, 6.4, -3], [1.36, 5.4, 2.4], [-1.06, 8.6, 2.6], [0.86, 8, 2.8]]) B(x, yy, z, 0.22, 1.2, 1.2, c.spots);
+}
+function tiger(K, c, y = 2) {
+  const B = (x, yy, z, w, h, d, col) => K.b(x, y + yy, z, w, h, d, col), O = 0xe2882a, W = CREAM;
+  pole(K, y);
+  B(-1.6, 4.6, -4, 3.2, 3, 8, O); B(-1.2, 4.2, -3.4, 2.4, 0.5, 6.6, W); B(-1.4, 7.6, -3.6, 2.8, 0.4, 6.6, O);
+  B(-1.7, 6.4, 3.4, 3.4, 3.2, 3, O); B(-1.1, 6.4, 6.4, 2.2, 1.7, 0.9, W); B(-0.4, 7.7, 7, 0.8, 0.5, 0.4, PINK); B(-1.9, 6.6, 4, 0.3, 1.6, 1.6, W); B(1.6, 6.6, 4, 0.3, 1.6, 1.6, W);
+  B(-1.6, 9.6, 3.9, 1, 0.9, 0.8, O); B(0.6, 9.6, 3.9, 1, 0.9, 0.8, O); B(-1.2, 8.5, 6.42, 0.6, 0.6, 0.2, 0xd8e04a); B(0.6, 8.5, 6.42, 0.6, 0.6, 0.2, 0xd8e04a); B(-1, 8.6, 6.5, 0.2, 0.4, 0.2, DARK); B(0.8, 8.6, 6.5, 0.2, 0.4, 0.2, DARK);
+  B(-0.7, 6.5, 7.3, 1.4, 0.3, 0.1, DARK); for (const x of [-0.8, 0.5]) B(x, 6.2, 7.3, 0.3, 0.6, 0.15, W);   // the grin and its teeth
+  for (const z of [-3.6, -2.2, 2.2]) B(-1.66, 5.6, z, 3.32, 2.06, 0.5, DARK);
+  for (const z of [3.9, 5]) B(-1.76, 8.6, z, 3.52, 1.06, 0.4, DARK);
+  for (const [sx, f] of [[-1.6, 0], [0.5, 0.9]]) {
+    B(sx, 1.8, 2.2 + f, 1.1, 3, 1.3, O); B(sx - 0.05, 1, 2.4 + f, 1.2, 0.9, 1.9, W); B(sx - 0.03, 3, 2.15 + f, 1.16, 0.4, 1.4, DARK);
+    B(sx, 1.8, -3.8 - f, 1.1, 3, 1.4, O); B(sx - 0.05, 1, -3.8 - f, 1.2, 0.9, 1.9, W); B(sx - 0.03, 3, -3.85 - f, 1.16, 0.4, 1.5, DARK);
+  }
+  B(-0.4, 6.4, -4.8, 0.8, 0.8, 1, O); B(-0.4, 6.8, -5.6, 0.8, 3, 0.8, O); B(-0.45, 8, -5.65, 0.9, 0.5, 0.9, DARK); B(-0.4, 9.8, -5.2, 0.8, 0.8, 1.2, DARK);
+  tack(K, y - 0.2, c);
+}
+function giraffe(K, c, y = 2) {
+  const B = (x, yy, z, w, h, d, col) => K.b(x, y + yy, z, w, h, d, col), Y = 0xe8c05a, S = 0x8a5a2a;
+  pole(K, y);
+  B(-1.4, 6.5, -3, 2.8, 3, 6, Y); B(-1.2, 9.5, -2.6, 2.4, 0.4, 4.6, Y);
+  for (let i = 0; i < 5; i++) B(-0.9, 9 + i * 2, 2 + i * 0.5, 1.8, 2.2, 1.8, Y);                          // the neck
+  B(-1, 18.6, 4, 2, 2, 3.4, Y); B(-0.8, 18.4, 7.2, 1.6, 1.5, 1, 0xd8a84a); B(-0.8, 20.6, 4.4, 0.4, 1.4, 0.4, S); B(0.4, 20.6, 4.4, 0.4, 1.4, 0.4, S);
+  B(-0.9, 21.8, 4.3, 0.6, 0.5, 0.6, DARK); B(0.3, 21.8, 4.3, 0.6, 0.5, 0.6, DARK); B(-1.5, 19.8, 4.2, 0.6, 0.6, 1, Y); B(0.9, 19.8, 4.2, 0.6, 0.6, 1, Y);
+  B(-1.08, 19.6, 5.6, 0.16, 0.6, 0.6, DARK); B(0.92, 19.6, 5.6, 0.16, 0.6, 0.6, DARK);
+  for (let i = 0; i < 5; i++) B(-0.3, 9.4 + i * 2, 1.6 + i * 0.5, 0.6, 2, 0.6, S);                         // its mane
+  for (const [sx, f] of [[-1.4, 0], [0.5, 0.8]]) {
+    B(sx, 0.8, 1.6 + f, 0.9, 5.8, 0.9, Y); B(sx - 0.05, 0.2, 1.55 + f, 1, 0.8, 1, DARK);
+    B(sx, 0.8, -2.8 - f, 0.9, 5.8, 0.9, Y); B(sx - 0.05, 0.2, -2.85 - f, 1, 0.8, 1, DARK);
+  }
+  for (const [x, yy, z, s] of [[-1.46, 7, -2.6, 1.4], [-1.46, 8, 1.2, 1.2], [1.26, 7.2, 1.4, 1.4], [1.26, 8.2, -2.4, 1.2], [-0.96, 11, 2.6, 1], [0.76, 13.4, 3.2, 1], [-0.96, 15.4, 3.6, 1], [0.76, 10, 2.4, 0.9], [-1.46, 6.6, -0.6, 0.9], [1.26, 6.7, -0.4, 1]]) B(x, yy, z, 0.2, s, s, S);
+  B(-0.3, 7.5, -3.6, 0.6, 2.4, 0.6, Y); B(-0.4, 6.2, -3.7, 0.8, 1.4, 0.8, S);
+  tack(K, y + 1.3, { ...c, blanket: c.blanket });
+}
+function pig(K, c, y = 2) {
+  const B = (x, yy, z, w, h, d, col) => K.b(x, y + yy, z, w, h, d, col), P = 0xf0a4b4, Q = 0xe08a9c;
+  pole(K, y);
+  B(-2, 4, -4, 4, 4, 8, P); B(-1.6, 3.6, -3.4, 3.2, 0.5, 6.8, P); B(-1.6, 8, -3.4, 3.2, 0.5, 6.6, P);
+  B(-1.8, 4.6, 4, 3.6, 3.4, 2.4, P); B(-1.1, 5, 6.4, 2.2, 1.8, 1, Q); B(-0.7, 5.6, 7.42, 0.4, 0.6, 0.1, DARK); B(0.3, 5.6, 7.42, 0.4, 0.6, 0.1, DARK);
+  B(-1.9, 7.6, 4.4, 1.2, 1.3, 0.8, Q); B(0.7, 7.6, 4.4, 1.2, 1.3, 0.8, Q); B(-1.3, 7, 6.42, 0.5, 0.5, 0.1, DARK); B(0.8, 7, 6.42, 0.5, 0.5, 0.1, DARK);
+  for (const [sx, f] of [[-1.9, 0], [0.8, 0.6]]) { B(sx, 1.6, 2 + f, 1.1, 2.6, 1.2, P); B(sx, 0.9, 2 + f, 1.1, 0.8, 1.2, 0x5a4034); B(sx, 1.6, -3.6 - f, 1.1, 2.6, 1.2, P); B(sx, 0.9, -3.6 - f, 1.1, 0.8, 1.2, 0x5a4034); }
+  B(-0.3, 7, -4.6, 0.6, 0.6, 0.8, Q); B(-0.3, 7.4, -5.2, 0.6, 1.2, 0.6, Q); B(0.2, 8.2, -5.2, 0.6, 0.6, 0.6, Q);
+  tack(K, y - 0.2, c);
+}
+// who rides where: [the animal, its colours], round the outer ring and the inner
+const TACK = [[RED, BROWN], [BLUE, DARK], [GREEN, BROWN], [PURPLE, DARK], [TEAL, BROWN], [ORANGE, DARK], [PINK, BROWN]];
+const COATS = [{ coat: 0xf2ece0, mane: 0xd8b25a, nose: 0xe8c4c0 }, { coat: 0x2c2c32, mane: 0x16161a }, { coat: 0xa8672e, mane: 0x2a2018, belly: 0xb87a40 }, { coat: 0xd9b46a, mane: CREAM }, { coat: 0x9aa2aa, mane: 0x50565c, spots: 0xc8ced4 }, { coat: 0x6a4026, mane: 0xd8c8a0, hoof: 0xe8e0d0 }];
+const ZEBRA = { coat: 0xf2f0ea, mane: DARK, nose: 0x3a3a3e, stripes: true };
+const RINGS = [
+  { r: 13.6, list: [[horse, COATS[0]], [tiger, {}], [horse, COATS[1]], [horse, ZEBRA], [horse, COATS[2]], [giraffe, {}], [horse, COATS[3]], [pig, {}], [horse, COATS[4]], [horse, COATS[5]]] },
+  { r: 8.2, list: [[horse, COATS[2]], [pig, {}], [horse, COATS[0]], [tiger, {}], [horse, ZEBRA], [horse, COATS[1]]] },
+];
+// the animals as two lots of paint (those that are up while the others are down), about the deck's middle
+function merryAnimals() {
+  const lots = [[], []];
+  let n = 0;
+  RINGS.forEach((ring, ri) => ring.list.forEach(([make, c], k) => {
+    const a = (k + ri * 0.5) / ring.list.length * TAU, K = makeKit(Math.cos(a) * ring.r, Math.sin(a) * ring.r, -a, true), t = TACK[n % TACK.length];
+    make(K, { ...c, blanket: t[0], saddle: t[1] });
+    if (n % 4 === 1) rider(K, -1, 2 + 9, -1.6, n);
+    lots[(k + ri) & 1].push(K.geos().paint); n++;
+  }));
+  return lots.map((gs) => mergeGeometries(gs));
+}
+
 // ---- a coaster car: its front the model's +z ------------------------------------------------------------------------------
 function coasterCar(K) {
   K.b(-4, 0, -6, 8, 1, 12, DARK);
@@ -152,19 +292,28 @@ function coasterCar(K) {
   K.l(-3, 2, 7.6, 1.5, 1.2, 0.3, N.warm); K.l(1.5, 2, 7.6, 1.5, 1.2, 0.3, N.warm);
 }
 
-// api: main.js's api; spec: { ship, swing, drop, octo: the stalls' own entries for what stands (x, z, yaw, a, neon...),
+// api: main.js's api; spec: { ship, swing, drop, octo, merry: the stalls' own entries for what stands (x, z, yaw, a, neon...),
 // coaster: { at(t) => [x, y, z, length] } }; mats: the stalls' { paint, lit: [a quarter each] }; quarter(x, z)
 export function makeMoves(api, spec, mats, quarter) {
   const { scene } = api;
   // a moving part: its paint and its lights, under a group; made by `make` about its own middle
   function part(make, o, parent) {
     const K = makeKit(0, 0, 0, true); make(K, o);
-    const g = K.geos(), G = new THREE.Group(), p = new THREE.Mesh(g.paint, mats.paint), l = new THREE.Mesh(g.lit, mats.lit[quarter(o.x, o.z)]);
+    const g = K.geos(), G = new THREE.Group(), p = new THREE.Mesh(g.paint, mats.paint), l = new THREE.Mesh(g.lit, mats.lit[o.always ? 4 : quarter(o.x, o.z)]);
     p.castShadow = true; G.add(p, l); (parent || scene).add(G);
     return G;
   }
   const stand = (o) => { const G = new THREE.Group(); G.position.set(o.x, 0, o.z); G.rotation.y = o.yaw || 0; scene.add(G); return G; };
   let time = 0;
+  // wrecked (the stalls smashed what stands of it: its entry is `dead`): what moves flies apart
+  const COLS = [WHITE, YELLOW, STEEL, DARK, RED];
+  function wreck(o, at, h, r) {
+    at.visible = false;
+    for (let i = 0; i < 70; i++) { const a = Math.random() * TAU, d = Math.sqrt(Math.random()) * r, col = i % 3 ? COLS[(Math.random() * COLS.length) | 0] : o.a; api.cube(o.x + Math.cos(a) * d, 2 + Math.random() * h, o.z + Math.sin(a) * d, (Math.random() - 0.5) * 44, 8 + Math.random() * 26, (Math.random() - 0.5) * 44, col, 0.6 + Math.random() * 1.3); }
+    sparks(o.x, h * 0.6, o.z, 44, 1, 0.8, 0.4, 36);
+    api.sfx.play('bigboom', 0.9, o.x, o.z);
+    const P = api.player; if (P) api.game.shake = Math.min(1.2, api.game.shake + Math.max(0, 1 - Math.hypot(P.x - o.x, P.z - o.z) / 160) * 0.6);
+  }
 
   // ---- the ship ----
   const SH = spec.ship, shipAt = stand(SH), hull = part(shipHull, SH, shipAt);
@@ -180,6 +329,7 @@ export function makeMoves(api, spec, mats, quarter) {
     return Math.abs(ux) < HALF + r && uy < -RK + 5 + h * 0.5 && uy > -RK - 3;
   }
   function stepShip(dt, live) {
+    if (SH.dead) return;
     shipA = SHIP.swing * Math.sin(time * SHIP.rate); shipW = SHIP.swing * SHIP.rate * Math.cos(time * SHIP.rate);
     hull.rotation.z = shipA;
     if (!live) return;
@@ -211,6 +361,7 @@ export function makeMoves(api, spec, mats, quarter) {
   const DT = spec.drop, dropAt = stand(DT), car = part(dropCar, DT, dropAt);
   const D = { y: DROP.low, v: 0, state: 'wait', t: 1 + Math.random() * 2 };
   function stepDrop(dt, live) {
+    if (DT.dead) return;
     if (D.state === 'wait') { if ((D.t -= dt) <= 0) D.state = 'up'; }
     else if (D.state === 'up') { D.y += DROP.up * dt; if (D.y >= DROP.high) { D.y = DROP.high; D.state = 'hold'; D.t = DROP.hold; } }
     else if (D.state === 'hold') { if ((D.t -= dt) <= 0) { D.state = 'fall'; D.v = 0; if (live) api.sound('whoosh', 0.5, DT.x, 30, DT.z); } }
@@ -226,6 +377,11 @@ export function makeMoves(api, spec, mats, quarter) {
   // ---- the octopus ----
   const OC = spec.octo, octoAt = stand(OC), octoTilt = new THREE.Group(), octoSpin = part(octoTop, OC, octoTilt);
   octoTilt.position.y = OCTO_TOP / 2; octoAt.add(octoTilt);
+
+  // ---- the carousel ----
+  const ME = spec.merry, merryAt = stand(ME), merry = part(merryFrame, ME, merryAt);
+  merry.position.y = 1.5;
+  const lots = merryAnimals().map((g) => { const m = new THREE.Mesh(g, mats.paint); m.castShadow = true; merry.add(m); return m; });
 
   // ---- the coaster's train ----
   const CO = spec.coaster, CARS = 5, GAP = 6.6;
@@ -284,7 +440,9 @@ export function makeMoves(api, spec, mats, quarter) {
     ship: () => ({ a: shipA, w: shipW }), train: T, drop: D,   // (for the tests)
     step(dt, live) {
       time += dt;
+      for (const [o, at, h, r] of [[SH, shipAt, 26, 13], [SW, swingAt, 28, 16], [DT, dropAt, 48, 6], [OC, octoAt, 14, 14], [ME, merryAt, 20, 17]]) if (o.dead && at.visible) wreck(o, at, h, r);
       stepShip(dt, live);
+      merry.rotation.y -= dt * MERRY.turn; lots[0].position.y = 0.3 + MERRY.bob * Math.sin(time * 2.1); lots[1].position.y = 0.3 - MERRY.bob * Math.sin(time * 2.1);
       swingSpin.rotation.y -= dt * 1.05; swingTilt.rotation.x = 0.07 * Math.sin(time * 0.8); swingTilt.rotation.z = 0.07 * Math.cos(time * 0.8);
       stepDrop(dt, live);
       octoSpin.rotation.y += dt * 1.15; octoTilt.rotation.x = 0.11 * Math.sin(time * 0.9); octoTilt.rotation.z = 0.11 * Math.cos(time * 0.9);
@@ -293,7 +451,7 @@ export function makeMoves(api, spec, mats, quarter) {
     // on the radar: the ship's swing and the train
     radar(R, s, ox, oy) {
       R.fillStyle = 'rgba(255,120,90,0.85)';
-      const k = Math.sin(shipA) * RK; R.fillRect(ox + (SH.x + k * shipCo - 2) * s, oy + (SH.z - k * shipSi - 2) * s, 4 * s, 4 * s);
+      const k = Math.sin(shipA) * RK; if (!SH.dead) R.fillRect(ox + (SH.x + k * shipCo - 2) * s, oy + (SH.z - k * shipSi - 2) * s, 4 * s, 4 * s);
       if (T.state === 'run' && T.pos[0]) { R.fillStyle = 'rgba(255,214,90,0.8)'; R.fillRect(ox + (T.pos[0].x - 2) * s, oy + (T.pos[0].z - 2) * s, 4 * s, 4 * s); }
     },
   };

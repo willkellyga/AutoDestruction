@@ -430,11 +430,14 @@ function heap(K) {
 }
 
 // what each kind is: its model, the ground it stands on (in voxels, about its middle: x0, z0, x1, z1), how tall, how
-// much shooting it takes (0: it can't be smashed, and cars bounce off it), and where its light falls on the ground
+// much shooting it takes (0: it can't be smashed, and cars bounce off it), and where its light falls on the ground.
+// tough: cars bounce off it though it can be smashed (shot, blown up, or rammed: a player's car takes some off it
+// each time it hits it hard). shot: more of it for shots and blasts to strike than what stands on the ground, as
+// [x0, z0, x1, z1, y0, y1] (the first is also where its pieces fly from). boom: it blows up when it goes.
 export const KINDS = {
   booth: { make: booth, foot: [[-7.2, -4.2, 7.2, 4.4]], top: 9.5, hp: 90, heap: 1, pool: [0, 9, 13] },
   kiosk: { make: kiosk, foot: [[-6.2, -3.7, 6.2, 4.2]], top: 9, hp: 80, heap: 0.9, pool: [0, 8, 12] },
-  truck: { make: truck, foot: [[-11, -4, 11, 4]], top: 10, hp: 0, pool: [-4, 9, 14] },
+  truck: { make: truck, foot: [[-11, -4, 11, 4]], top: 10, hp: 200, tough: true, boom: true, heap: 1.2, pool: [-4, 9, 14] },
   arch: { make: arch, foot: null, top: 30, hp: 0, pool: null },
   pylon: { make: pylon, foot: [[-1.4, -1.4, 1.4, 1.4]], top: 21, hp: 40, heap: 0.3, pool: [0, 0, 9] },
   striker: { make: striker, foot: [[-2.4, -2, 2.4, 2]], top: 28, hp: 50, heap: 0.4, pool: [0, 3, 8] },
@@ -463,6 +466,15 @@ export function stallPools(list, quarter) {
   }
   return out;
 }
+
+// is (x, y, z) in one of the boxes of o that shots strike (its `shot`), with a margin?
+function inShot(o, x, y, z, pad = 0) {
+  const dx = x - o.x, dz = z - o.z; if (dx * dx + dz * dz > o.reach2) return false;
+  const lx = dx * o.co - dz * o.si, lz = dx * o.si + dz * o.co;
+  for (const [x0, z0, x1, z1, y0, y1] of o.shot) if (y > y0 - pad && y < y1 + pad && lx > x0 - pad && lx < x1 + pad && lz > z0 - pad && lz < z1 + pad) return true;
+  return false;
+}
+const struck = (o, x, y, z, pad) => (y < o.top && inFoot(o, x, z, pad)) || (!!o.shot && inShot(o, x, y, z, pad));
 
 const _e = [[0, 0], [0, 0]];
 // api: main.js's api; list: the map's [{ kind, x, z, yaw, name, neon, frame, a, b, ... }]; power: the map's POWER
@@ -497,8 +509,9 @@ export function makeStalls(api, list, power, quarter, [WX, WZ]) {
     const KD = KINDS[o.kind], yaw = o.yaw || 0, K = makeKit(o.x, o.z, yaw);
     KD.make(K, o);
     const g = K.geos(), q = o.always ? 4 : quarter(o.x, o.z);
-    const S = { ...o, K: KD, yaw, co: Math.cos(yaw), si: Math.sin(yaw), foot: footOf(o), top: KD.top, hp: KD.hp, solid: !KD.hp, dead: false, q, cols: K.cols, src: o };
-    S.reach2 = 0; if (S.foot) for (const [x0, z0, x1, z1] of S.foot) S.reach2 = Math.max(S.reach2, (Math.max(-x0, x1) + 6) ** 2 + (Math.max(-z0, z1) + 6) ** 2);
+    const S = { ...o, K: KD, yaw, co: Math.cos(yaw), si: Math.sin(yaw), foot: footOf(o), top: KD.top, hp: KD.hp, breaks: KD.hp > 0, solid: !KD.hp || !!KD.tough, shot: KD.shot || null, dead: false, q, cols: K.cols, src: o };
+    S.reach2 = 0; S.rad = 0;
+    if (S.foot) for (const [x0, z0, x1, z1] of [...S.foot, ...(S.shot || [])]) { S.reach2 = Math.max(S.reach2, (Math.max(-x0, x1) + 6) ** 2 + (Math.max(-z0, z1) + 6) ** 2); S.rad = Math.max(S.rad, Math.min(Math.max(-x0, x1), Math.max(-z0, z1))); }
     S.pv = [nPaint, g.paint.attributes.position.count]; nPaint += S.pv[1]; paints.push(g.paint);
     S.lv = [nLit[q], g.lit.attributes.position.count]; nLit[q] += S.lv[1]; lits[q].push(g.lit);
     if (S.foot) objs.push(S);
@@ -539,7 +552,7 @@ export function makeStalls(api, list, power, quarter, [WX, WZ]) {
 
   // ---- smashing one ----
   function smash(o, by, vx = 0, vz = 0) {
-    if (o.dead || o.solid) return;
+    if (o.dead || !o.breaks) return;
     o.dead = true; fold(paintMesh, o.pv); fold(litMesh[o.q], o.lv);
     o.src.dead = true; if (o.src.pool) o.src.pool.on = 0;
     power.rev = (power.rev || 0) + 1;
@@ -548,35 +561,36 @@ export function makeStalls(api, list, power, quarter, [WX, WZ]) {
     _m.position.set(o.x, 0, o.z); _m.rotation.y = o.yaw; _m.scale.set(k, Math.min(1, k * 1.3), k); _m.updateMatrix();
     heaps.setMatrixAt(nHeaps++, _m.matrix); heaps.count = nHeaps; heaps.instanceMatrix.needsUpdate = true;
     // it flies apart: cubes in its colours from all through it, thrown the way it was hit
-    const [x0, z0, x1, z1] = o.foot[0], n = Math.round(46 * Math.max(0.35, k));
+    const [x0, z0, x1, z1] = o.shot ? o.shot[0] : o.foot[0], n = Math.round(46 * Math.max(0.35, k)), high = o.shot ? o.shot[0][5] : Math.min(o.top, 12);
     for (let i = 0; i < n; i++) {
       const lx = x0 + Math.random() * (x1 - x0), lz = z0 + Math.random() * (z1 - z0), x = o.x + lx * o.co + lz * o.si, z = o.z - lx * o.si + lz * o.co;
-      api.cube(x, 0.5 + Math.random() * Math.min(o.top, 12), z, vx * (0.3 + Math.random() * 0.6) + (Math.random() - 0.5) * 22, 6 + Math.random() * 20, vz * (0.3 + Math.random() * 0.6) + (Math.random() - 0.5) * 22, o.cols[(Math.random() * o.cols.length) | 0], 0.5 + Math.random() * 0.9);
+      api.cube(x, 0.5 + Math.random() * high, z, vx * (0.3 + Math.random() * 0.6) + (Math.random() - 0.5) * 22, 6 + Math.random() * 20, vz * (0.3 + Math.random() * 0.6) + (Math.random() - 0.5) * 22, o.cols[(Math.random() * o.cols.length) | 0], 0.5 + Math.random() * 0.9);
     }
     sparks(o.x, o.top * 0.6, o.z, 26, 1, 0.8, 0.4, 26);
     for (let i = 0; i < 6; i++) dust(o.x + (Math.random() - 0.5) * 10, 2, o.z + (Math.random() - 0.5) * 8, 3, 3, 0.62, 0.54, 0.4);
     api.sfx.play('crunch_heavy', 0.9, o.x, o.z); api.sound('crash', 0.6, o.x, 3, o.z); api.sound('glass', 0.5, o.x, 3, o.z);
     const P = api.player; if (P && by === P) api.game.shake = Math.min(1.2, api.game.shake + 0.35);
     regrid();
+    if (o.K.boom) api.explode(o.x, 3, o.z, 5.5, 0.45, { maxDebris: 30 });
   }
   // shots strike them and blasts flatten them (main.js asks everything in `extras`). It is the players who wreck the
   // fair: a bot's shots only spark off a stall, and its blasts do a third as much
   const mine = (c) => !!c && (c === api.player || !!c.remote);
   api.extras.push({
-    solid(x, y, z) { if (y < 0 || y > 31) return false; for (const o of objs) if (!o.dead && y < o.top && inFoot(o, x, z, 0.2)) return true; return false; },
+    solid(x, y, z) { if (y < 0 || y > 56) return false; for (const o of objs) if (!o.dead && struck(o, x, y, z, 0.2)) return true; return false; },
     hit(p, dmg, owner, g, dir) {
       for (const o of objs) {
-        if (o.dead || p.y > o.top || !inFoot(o, p.x, p.z, 0.5)) continue;
+        if (o.dead || !struck(o, p.x, p.y, p.z, 0.5)) continue;
         sparks(p.x, p.y, p.z, 4, 1, 0.8, 0.4, 14);
-        if (!o.solid && mine(owner) && (o.hp -= dmg) <= 0) smash(o, owner, dir ? dir.x * 30 : 0, dir ? dir.z * 30 : 0);
+        if (o.breaks && mine(owner) && (o.hp -= dmg) <= 0) smash(o, owner, dir ? dir.x * 30 : 0, dir ? dir.z * 30 : 0);
         return true;
       }
       return false;
     },
     explosion(x, y, z, reach, base, by) {
       for (const o of objs) {
-        if (o.dead || o.solid) continue;
-        const d = Math.hypot(o.x - x, o.z - z); if (d > reach + 5) continue;
+        if (o.dead || !o.breaks) continue;
+        const d = Math.max(0, Math.hypot(o.x - x, o.z - z) - o.rad * 0.7); if (d > reach + 5) continue;
         if ((o.hp -= base * (mine(by) ? 2.5 : 0.8) * (1 - d / (reach + 5))) <= 0) smash(o, by, (o.x - x) / Math.max(1, d) * 24, (o.z - z) / Math.max(1, d) * 24);
       }
     },
@@ -591,9 +605,19 @@ export function makeStalls(api, list, power, quarter, [WX, WZ]) {
     else { const m = [[lx - x0, -1, 0], [x1 - lx, 1, 0], [lz - z0, 0, -1], [z1 - lz, 0, 1]].sort((p, q) => p[0] - q[0])[0]; nx = m[1]; nz = m[2]; over = m[0] + r; }
     const wx = nx * o.co + nz * o.si, wz = -nx * o.si + nz * o.co;
     // (the bots never go through one: left to themselves they would flatten the fair in a minute)
-    if (o.solid || Math.hypot(c.vx, c.vz) < (c === api.player || c.remote ? SMASH : SMASH_BOT)) { c.x += wx * over; c.z += wz * over; const vn = c.vx * wx + c.vz * wz; if (vn < 0) { c.vx -= wx * vn * 1.3; c.vz -= wz * vn * 1.3; } return false; }
+    if (o.solid || Math.hypot(c.vx, c.vz) < (c === api.player || c.remote ? SMASH : SMASH_BOT)) {
+      c.x += wx * over; c.z += wz * over;
+      const vn = c.vx * wx + c.vz * wz;
+      if (vn < 0) {
+        c.vx -= wx * vn * 1.3; c.vz -= wz * vn * 1.3;
+        // rammed: what is tough takes it, and goes in the end
+        if (o.breaks && -vn > RAM.from && mine(c)) { sparks(ex, 2.5, ez, 10, 1, 0.8, 0.4, 16); api.sfx.play('crunch_heavy', 0.7, ex, ez, { gap: 0.15 }); if ((o.hp -= Math.min(RAM.most, (-vn - RAM.from) * RAM.k)) <= 0) smash(o, c, -wx * 20, -wz * 20); }
+      }
+      return false;
+    }
     return true;
   }
+  const RAM = { from: 9, k: 3, most: 110 };   // ramming what is tough: how hard a hit (voxels a second into it) starts to count, the damage for each one more, and the most one ram does (a car at full speed is near 100)
   const SMASH = 9, SMASH_BOT = Infinity;   // how fast a car must be going to go through a stall and not bounce off it: a player's, and a bot's (never: it goes round)
   return {
     objs, blocks, smash, mats: { paint: paintMat, lit: litMats },

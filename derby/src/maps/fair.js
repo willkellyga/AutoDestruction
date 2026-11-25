@@ -1,11 +1,10 @@
 // Dead Man's Fair: a county fair the dead have overrun, at twilight with the lights still on, for the last-car-standing
 // round (modes/survival.js). A painted board fence with a gate in each side. The midway runs east to west through the
-// middle and the avenue north to south, and where they cross the carousel turns (a mesh on a voxel plinth), with the
-// traffic going round it. A quarter each:
-//   north-west  the Ferris wheel on its stand, turning (a mesh, ../fairrides.js), the fairground organ playing by it
-//               (heard as you come near). It stays there (Will, 2026-11-24: shot loose early, it was
-//               gone for the rest of the round); the rolling is still in fairrides.js. The game stalls in a horseshoe,
-//               and the octopus.
+// middle and the avenue north to south, and where they cross the carousel turns, the fairground organ playing from it
+// (heard as you come near), with the traffic going round it. A quarter each:
+//   north-west  the Ferris wheel on its stand, turning (a mesh, ../fairrides.js). It doesn't roll (Will, 2026-11-24:
+//               shot loose early, it was gone for the rest of the round; the rolling is still in fairrides.js), but
+//               like every ride it can be wrecked. The game stalls in a horseshoe, and the octopus.
 //   north-east  the big top: a striped tent nobody can drive into. The chair swing and the drop tower.
 //   south-west  the pirate ship, swinging (it runs down what is under it at the bottom of its swing), the food court
 //               (trucks and stalls round a yard of picnic tables), and the generator truck that runs the lights.
@@ -21,7 +20,6 @@
 // Like Camp Deadfall it is kept open for driving through a horde of hundreds, with a ring road inside the fence, and
 // nothing has a way in for a car.
 import { WX, WZ, M, begin, set, box, ctx, place, setSeed } from '../../../src/world.js';
-import { disc } from '../../../src/kit.js';
 import { canvasFor, finish, makeGridNav, pickSpot, gridRadar } from './common.js';
 import { dropSpots } from '../drops.js';
 import { makeRides, WHEEL } from '../fairrides.js';
@@ -93,6 +91,7 @@ const SHIP = stall('shipframe', 96, 322, 0, 'PIRATE SHIP', 'red', 'yellow', C.na
 const SWING = stall('swingbase', 318, 84, 0, '', 'pink', 'pink', C.blue);
 const DROP = stall('droptower', 442, 70, 0, 'FREE FALL', 'cyan', 'red', C.purple);
 const OCTO = stall('octobase', 190, 66, 0, '', 'green', 'green', C.teal);
+const MERRY = stall('carousel', CAROUSEL.x, CAROUSEL.z, 0, '', 'warm', 'warm', C.red, { always: true });   // (on a circuit of its own: it turns, lit, whatever the generator does)
 const STALLS = [
   // the games' horseshoe
   stall('booth', 154, 112, 0, 'RING TOSS', 'yellow', 'red', C.red, { game: 'ring' }),
@@ -120,7 +119,7 @@ const STALLS = [
   stall('table', 176, 292, 0.2, '', 'warm', 'warm', C.red), stall('table', 196, 298, 1.1, '', 'warm', 'warm', C.blue),
   stall('table', 184, 312, -0.3, '', 'warm', 'warm', C.yellow), stall('table', 168, 316, 0.8, '', 'warm', 'warm', C.green), stall('table', 200, 320, 0.1, '', 'warm', 'warm', C.orange),
   // the rides
-  SHIP, SWING, DROP, OCTO,
+  SHIP, SWING, DROP, OCTO, MERRY,
   stall('arch', 40, GZ, E, 'GAMES', 'yellow', 'pink', C.red, { span: 116 }),
   stall('arch', 478, GZ, E, 'EATS', 'pink', 'cyan', C.blue, { span: 116 }),
   stall('arch', GX, 44, 0, 'RIDES', 'cyan', 'yellow', C.purple, { span: 108 }),
@@ -205,7 +204,7 @@ function bigTop({ x: cx, z: cz, r }) {
   for (let k = 0; k < 32; k++) { const a = k / 32 * TAU; set(Math.round(cx + Math.cos(a) * (r + 0.6) - 0.5), WALL + 1, Math.round(cz + Math.sin(a) * (r + 0.6) - 0.5), k & 1 ? M.LIT_Y : M.LIT_R); }
 }
 
-// ---- the Ferris wheel's stand, and the carousel's plinth (the rides themselves are meshes: ../fairrides.js) -----------
+// ---- the Ferris wheel's stand (the wheel itself is a mesh: ../fairrides.js) --------------------------------------------
 // two steel A-frames, one each side of the wheel, up to its hub; cars bounce off the legs
 function wheelStand({ x: cx, z: cz }) {
   const H = WHEEL.hub, SPREAD = 17;
@@ -216,12 +215,6 @@ function wheelStand({ x: cx, z: cz }) {
     box(cx - 2, H - 1, cz + dz, cx + 2, H + 2, cz + dz + 1, M.DARK); set(cx, H + 3, cz + dz, M.LIT_R);
   }
 }
-function carouselPlinth({ x: cx, z: cz, r }) {
-  begin('Carousel', 'barrier', false);
-  for (let y = 0; y <= 2; y++) disc(cx, cz, y, r, y === 2 ? M.WOOD : M.AWN_R, y === 2 ? -1 : r - 2);
-  for (let k = 0; k < 24; k++) { const a = k / 24 * TAU; set(Math.round(cx + Math.cos(a) * (r - 0.6) - 0.5), 3, Math.round(cz + Math.sin(a) * (r - 0.6) - 0.5), k & 1 ? M.LIT_Y : M.LIT_B); }
-}
-
 // ---- the rollercoaster ----------------------------------------------------------------------------------------------
 // A loop of track high overhead (never lower than 34: the chase camera passes under it) on steel legs. Knock a leg out
 // and the track over it comes down.
@@ -283,7 +276,6 @@ function build() {
 
   wheelStand(FERRIS);
   bigTop(TENT);
-  carouselPlinth(CAROUSEL);
   coaster();
   for (const [x, z, a] of [[150, 92, 1], [158, 92, 1], [296, 122, 0], [60, 354, 0], [90, 286, 1], [336, 160, 0], [420, 250, 1], [118, 152, 0], [226, 330, 0], [130, 344, 1]]) hayBale(x, z, a);
   finish();
@@ -357,17 +349,21 @@ function breach(G) {
 }
 
 // ---- the fairground organ --------------------------------------------------------------------------------------------
-// It plays by the big wheel, and is heard as you come near it (Will, 2026-11-24): full by the wheel, gone by the far side
-// of the fair. On the wheel's circuit: when that quarter's lights fail it winds down with them.
-// The tune is a band organ waltz of our own (assets/sfx/CREDITS.md), sixteen bars that come round; the file has half a
-// second either side of the loop.
-const ORGAN = { vol: 0.9, near: 110, far: 210, loop: [0.5, 16.7935] };   // how loud by the wheel; how far off it starts to fade for good, and where it is gone; the loop in the file, seconds
+// It plays from the carousel for as long as the carousel stands (Will, 2026-11-24), whatever the lights do, and is
+// heard as you come near: full beside it, fading across the fair, gone at the far fence. Wrecked, it runs down and
+// stops. The tune is a band organ waltz of our own (assets/sfx/CREDITS.md), sixteen bars that come round; the file
+// has half a second either side of the loop.
+const ORGAN = { vol: 1, full: 45, far: 280, loop: [0.5, 16.7935] };   // how loud beside it; how far off it is still that loud, and where it is gone (voxels); the loop in the file, seconds
 const organSound = (ctx) => bytes(organClip).then((u8) => ctx.decodeAudioData(u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength)));
-function stepOrgan(api) {
+let organRun = 1;   // 1 while the carousel stands; it runs down to 0 when it is wrecked
+function stepOrgan(api, dt) {
   if (!organ) { if (!api.sfx.make('fair_organ', organSound)) return; organ = api.sfx.loop('fair_organ', 0.5, ORGAN.loop); }
-  const cam = api.camera.position, d = Math.hypot(cam.x - FERRIS.x, cam.z - FERRIS.z), lit = POWER.lit[quarter(FERRIS.x, FERRIS.z)];
-  const fade = Math.max(0, Math.min(1, (ORGAN.far - d) / (ORGAN.far - ORGAN.near)));
-  organ.set(ORGAN.vol * fade * (0.1 + 0.9 * lit), 0.7 + 0.3 * lit, FERRIS.x, FERRIS.z);
+  if (MERRY.dead) { if (organRun <= 0) return; organRun = Math.max(0, organRun - dt / 1.6); if (organRun <= 0) { organ.stop(); return; } }
+  // how loud by how far, ours and not the usual falling away with distance (which audio.js then takes off again):
+  // level out to `full`, then down to nothing at `far`
+  const P = api.player || api.camera.position, d = Math.hypot(P.x - CAROUSEL.x, P.z - CAROUSEL.z);
+  const t = Math.max(0, Math.min(1, (ORGAN.far - d) / (ORGAN.far - ORGAN.full))), want = t * t * (0.25 + 0.75 * t);
+  organ.set(ORGAN.vol * want * Math.pow(1 + d / 45, 1.4) * organRun, 0.55 + 0.45 * organRun, CAROUSEL.x, CAROUSEL.z);
 }
 
 // ---- the lights -------------------------------------------------------------------------------------------------------
@@ -455,17 +451,17 @@ export default {
   // the rides (meshes: the wheel and the carousel) and the stalls, made once the game's parts are there
   hazards: [{ kind: 'custom', make(api) {
     lightsApi = api;
-    rides = makeRides(api, { wheel: { ...FERRIS, to: WX + 300, fixed: true }, carousel: CAROUSEL });
+    rides = makeRides(api, { wheel: { ...FERRIS, to: WX + 300, fixed: true } });
     for (const p of POOLS) p.on = 1;
     for (const o of STALLS) o.dead = false;
     stalls = makeStalls(api, STALLS, POWER, quarter, [WX, WZ]);
-    moves = makeMoves(api, { ship: SHIP, swing: SWING, drop: DROP, octo: OCTO, coaster: { x: COASTER.x, z: COASTER.z, at: coasterAt } }, stalls.mats, quarter);
+    moves = makeMoves(api, { ship: SHIP, swing: SWING, drop: DROP, octo: OCTO, merry: MERRY, coaster: { x: COASTER.x, z: COASTER.z, at: coasterAt } }, stalls.mats, quarter);
     SW_LIGHTS.on = (c) => lightsOn(c);
     SW_LIGHTS.raise = false;
     return { step(dt, live) {
       rides.step(dt, live); stalls.step(dt); moves.step(dt, live); stepLights(dt);
-      rides.power(POWER.lit[quarter(FERRIS.x, FERRIS.z)], Math.max(...POWER.lit));   // (the carousel, at the crossing, runs while any quarter does)
-      stepOrgan(api);
+      rides.power(POWER.lit[quarter(FERRIS.x, FERRIS.z)]);
+      stepOrgan(api, dt);
     } };
   } }],
   groundDetail: { soft: 'dirt', hard: false, wet: 0 },
