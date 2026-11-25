@@ -10,7 +10,7 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { WX, WZ, WY, CITY, solid, bodies, ownerAt, idx } from '../../src/world.js';
 import * as world from '../../src/world.js';
 import { look } from '../../src/mesh.js';
-import { hooks, stats, cfg, initSim, stepSim, blast, explode, setFocus, setParticleScale, sparks, dust } from '../../src/sim.js';
+import { hooks, stats, cfg, initSim, stepSim, blast, explode, setFocus, setParticleScale, sparks, dust, stopMeshWorker } from '../../src/sim.js';
 import { makeCivilians } from '../../src/civilians.js';
 import { makeMixer } from '../../src/sfx.js';
 import { DEFAULT_TRIMS } from '../../src/sfx-trims.js';
@@ -18,9 +18,11 @@ import { SFX_BANK, SFX_NORM } from '../../src/sfx-bank.js';
 import { makeFx, WEAPONS } from '../../units/src/fx.js';
 import { Vehicle, newFrame } from './vehicle.js';
 import { makeDriver, clearLine } from './ai.js';
-import { MAP, MAPS, chooseMap } from './maps/index.js';
+import { MAP, MAPS, SHARED, STAGES, TAGS, PREVIEW, mapById, chooseMap } from './maps/index.js';
+import STAGE_PICS from './stages.json';   // the stage select's pictures (tools/stage-shots.mjs)
 import { MODES } from './modes/index.js';
-import { CRASH, ROUND, AI, DRIFT, BUILDINGS } from './tuning.js';
+import { CRASH, ROUND, AI, DRIFT, BUILDINGS, CAM, RACE, SURVIVAL_LEVELS, BRAWL_LEVELS } from './tuning.js';
+import { build as buildKeepOut } from './keepout.js';
 import { toughen, boom, chipAt, fuelBlast } from './sturdy.js';
 import { PARTS, PAINTS, STARTER, loadSave, keepSave, rivalBuild, RIVAL_NAMES, statsOf } from './parts.js';
 import { makeGarage, rating, classOf, GADGET, gadgetIcon } from './garage.js';
@@ -29,7 +31,9 @@ import { makePartArt } from './partart.js';
 import { makeSpecials } from './specials.js';
 import { makeCrumple } from './crumple.js';
 import { makeSounds, fetchClips } from './audio.js';
-import { makeMusic } from './music.js';
+import { makeMusic, MAP_TRACK } from './music.js';
+import { makeRoadSound } from './roadsound.js';
+import { makeEngineSound } from './enginesound.js';
 import { bank as sfxBank, count as sfxCount } from './sfxfiles.js';
 import { makePickups } from './pickups.js';
 import { makeHazards } from './hazards.js';
@@ -43,6 +47,7 @@ import { makeDirt } from './dirt.js';
 import { makeStreaks } from './streaks.js';
 import { makeNet, makeLobby, serverUrl, quickPlay } from './net.js';
 import { makeLearn } from './learn.js';
+import { onLeave, leavePage, leaving } from './leave.js';
 
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -99,6 +104,9 @@ function followSun(x, z) {   // the shadow box follows the player, in whole texe
 
 // ---- the map: built once as the page loads (maps/index.js picks which) ------------------------------------------
 MAP.build();
+// what each part of the page adds to the scene, for the reports' count of what is drawn by kind (report.js)
+const kindFrom = (from, kind) => { for (const o of scene.children.slice(from)) if (!o.userData.kind) o.userData.kind = kind; };
+let kindAt = scene.children.length;
 const floor = makeGround({ scene, renderer, MAP, mobile: MOBILE });   // the map's painted floor, and on dirt its detail and ruts (ground.js)
 {
   // the land past the edge of the map: one plain colour, or a map's own world round it (the arena's city: backdrop.js)
@@ -107,14 +115,20 @@ const floor = makeGround({ scene, renderer, MAP, mobile: MOBILE });   // the map
     outer.renderOrder = -1; outer.rotation.x = -Math.PI / 2; outer.position.set(WX / 2, -0.06, WZ / 2); scene.add(outer);
   }
 }
+kindFrom(kindAt, 'ground'); kindAt = scene.children.length;
 const backdrop = MAP.backdrop ? makeBackdrop({ scene, map: MAP, mobile: MOBILE, viewH: () => renderer.domElement.height, follow: () => player }) : null;
+kindFrom(kindAt, 'backdrop');
 initSim(scene);
-const drifts = makeDrift({ scene, camera, mobile: MOBILE, el: $('drift'), soft: floor.dirtAt });   // skid marks, tyre smoke, the drift meter
+kindAt = scene.children.length;
+const drifts = makeDrift({ scene, camera, mobile: MOBILE, el: $('drift'), soft: MAP.dirtAt ? (x, z) => (MAP.dirtAt(x, z) ? 1 : floor.dirtAt(x, z)) : floor.dirtAt });   // skid marks, tyre smoke, the drift meter (none on dirt, a map's own stretch of it too)
 const dirt = makeDirt({ scene, camera, renderer, floor, MAP, mobile: MOBILE });   // ruts, rooster tails, dust and clods off the wheels
 const streaks = MAP.mode === 'race' ? makeStreaks({ scene, mobile: MOBILE }) : null;   // the air rushing past, flat out
+kindFrom(kindAt, 'skids, dirt and streaks');
 look.detail.value = 1; look.dusk.value = 0;
 cfg.dust = 0.55; cfg.hang = 0.2;
 toughen();   // sturdier buildings than the town's own (sturdy.js, tuning.js BUILDINGS)
+const keep = buildKeepOut();   // cars can't get into buildings (keepout.js)
+
 // the garage's own workshop and yard, out past the edge of the map (garageroom.js)
 const room = makeGarageRoom({ scene, WX, mobile: MOBILE });
 
@@ -144,9 +158,11 @@ const audioMix = makeMixer({ camera }); sfxBank(SFX_BANK).then((b) => audioMix.l
 for (const [k, v] of Object.entries(DEFAULT_TRIMS)) audioMix.setTrim(k, v);
 let muted = false, engine = null;
 const sfx = makeSounds(() => audioMix.ctx);
-// the music (music.js): the main theme all through the home zone (home, garage and shop, a mode's start card), none in a round
-const music = makeMusic(() => audioMix.ctx);
-const HOME_ZONE = { garage: 1, menu: 1, test: 1 };
+// the music (music.js): the main theme all through the home zone (home, garage and shop, a mode's start card), and in a
+// round the map's own track where it has one
+const ROUND_TRACK = MAP_TRACK[MAP.id] || null;
+const music = makeMusic(() => audioMix.ctx, ROUND_TRACK ? ['theme', ROUND_TRACK] : ['theme']);
+const HOME_ZONE = { garage: 1, menu: 1, test: 1 }, IN_ROUND = { play: 1, dead: 1 };
 function musicOn() { music.on = !muted && !document.hidden; }
 document.addEventListener('visibilitychange', musicOn);
 // browsers only start sound after a tap or key: the first one anywhere starts the theme on the home screen
@@ -155,7 +171,7 @@ function initAudio() {
   audioMix.init(); music.init();
   if (engine || !sfx.init()) return;
   // the player's engine and tyres, and the two nearest rivals' engines, on loops
-  engine = { me: sfx.loop('engine_loop'), skid: sfx.loop('skid_loop'), rivals: [sfx.loop('engine_loop'), sfx.loop('engine_loop')], spin: sfx.loop('mini_spin'), saw: sfx.loop('saw_loop'), hum: sfx.loop('arc_hum'), flame: sfx.loop('flame_loop'), jet: sfx.loop('mini_spin') };
+  engine = { note: makeEngineSound({ sfx }), spin: sfx.loop('mini_spin'), saw: sfx.loop('saw_loop'), hum: sfx.loop('arc_hum'), flame: sfx.loop('flame_loop'), jet: sfx.loop('mini_spin') };
 }
 function sound(name, vol = 1, x, y, z) {
   audioMix.on = !muted;
@@ -164,6 +180,7 @@ function sound(name, vol = 1, x, y, z) {
   audioMix.play(name, vol, x, y, z, grp, 0.4);
 }
 const armySfx = audioMix.module('a.', 'army');
+const road = makeRoadSound({ sfx, sound, map: MAP });   // tyres, scrapes, knocks, wind, pass-bys (roadsound.js)
 
 // ---- effects: the army's guns and the town's cars -------------------------------------------------------------
 const mats = [new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.1, color: new THREE.Color(1.2, 1.2, 1.2) }), new THREE.MeshBasicMaterial({ vertexColors: true })];
@@ -239,8 +256,8 @@ hooks.scorch = (x, z, r) => {
 // any explosion in town (a rocket, a fuel tank going up, a car) hurts the cars round it
 let splashK = null;
 hooks.explosion = (x, y, z, r) => {
-  const base = (splashK ? splashK.splash : 16) * (by && by.rival ? AI.dmg : 1), reach = splashK ? splashK.reach : r * 2.4 + 4;
-  for (const c of cars) {
+  const base = (splashK ? splashK.splash : 16) * (by && by.rival ? AI.dmg : 1), reach = splashK && splashK.reach ? splashK.reach : r * 2.4 + 4;
+  if (!splashK || !splashK.own) for (const c of cars) {
     if (c.dead) continue;
     const d = Math.hypot(c.x - x, c.z - z) - c.wide; if (d > reach) continue;
     const k = 1 - Math.max(0, d) / reach;
@@ -249,6 +266,9 @@ hooks.explosion = (x, y, z, r) => {
   }
   for (const e of extras) e.explosion(x, y, z, reach, base, by);
 };
+// A blast whose caller works out for itself what it does to the cars (the arena's barrels: hazards.js): everything
+// else round it is broken, burnt and set off as by any other.
+function ownBlast(fn) { const was = splashK; splashK = { splash: 16, own: true }; try { fn(); } finally { splashK = was; } }
 // the town's parked cars blow up through a blast of their own (src/civilians.js); that should hurt as well
 const civBlast = hooks.blast;
 hooks.blast = (cx, cy, cz, r, o) => {
@@ -291,7 +311,7 @@ function wreck(c, who) {
   crumple.wrecked(c, chip);   // the roof caves in, the bonnet and a panel or two blow off
   c.unit.kill(p, 6, chip);
   c.blowParts(cube, p, 16);
-  sfx.play(c.maxHp > 200 ? 'bigboom' : 'carboom', 1, p.x, p.z);
+  sfx.play(c.maxHp > 200 ? 'bigboom' : 'carboom', 1, p.x, p.z); road.wrecked(p.x, p.z);
   const was = by; by = who || (mode.friendly ? c : null); splashK = { splash: 18, reach: 18 };   // (friendly: the wreck's own blast spares the other cars)
   try { boom(p.x, 2.5, p.z, 5.5, 0.6, { maxDebris: 260, fire: true }, BUILDINGS.wreck); } finally { by = was; splashK = null; }
   if (c.dummy) { c.respawnT = 2.6; if (who === player) toast('Target wrecked', 'Another one is on its way'); return; }   // no scrap for these
@@ -449,7 +469,7 @@ function onLand(s, hit, p) {
 // two cars meeting: each is two circles, front and back
 const _n = { x: 0, z: 0 };
 function bump(a, b) {
-  if (Math.abs((a.y || 0) - (b.y || 0)) > Math.min(a.top, b.top) * 0.6) return;   // one jumping over the other
+  if (Math.abs(a.h - b.h) > Math.min(a.top, b.top) * 0.6) return;   // one jumping over the other
   let best = 0, ax = 0, az = 0, bx = 0, bz = 0;
   const ra = a.wide + 0.6, rb = b.wide + 0.6;
   for (const fa of [-0.55, 0.55]) for (const fb of [-0.55, 0.55]) {
@@ -463,10 +483,12 @@ function bump(a, b) {
   const ma = a.dead ? 2.2 : a.spec.mass, mb = b.dead ? 2.2 : b.spec.mass, ia = 1 / ma, ib = 1 / mb;
   a.x -= _n.x * best * ia / (ia + ib); a.z -= _n.z * best * ia / (ia + ib); b.x += _n.x * best * ib / (ia + ib); b.z += _n.z * best * ib / (ia + ib);
   const vrel = (b.vx - a.vx) * _n.x + (b.vz - a.vz) * _n.z;
+  const vt = Math.abs((b.vx - a.vx) * -_n.z + (b.vz - a.vz) * _n.x);   // how fast they go past each other along the touch
+  if (vt > 6) { a.touch(vt); b.touch(vt); }   // door to door: the grind (roadsound.js)
   if (vrel >= 0) return;
   const j = -(1 + 0.35 * CRASH.kick) * vrel / (ia + ib);
   a.vx -= j * ia * _n.x; a.vz -= j * ia * _n.z; b.vx += j * ib * _n.x; b.vz += j * ib * _n.z;
-  const hitSp = -vrel; if (hitSp < 10) return;
+  const hitSp = -vrel; if (hitSp < 10) { road.meet(a, b, hitSp, (ax + bx) / 2, (az + bz) / 2); return; }   // a knock
   // the one driving into the other is the rammer; its plow takes less
   const ta = a.vx * _n.x + a.vz * _n.z, tb = -(b.vx * _n.x + b.vz * _n.z), ram = ta >= tb ? a : b, hit = ram === a ? b : a;
   const cp = new THREE.Vector3((ax + bx) / 2, 2.6, (az + bz) / 2), dmg = hitSp * CRASH.carHurt * ram.spec.ram;
@@ -477,6 +499,7 @@ function bump(a, b) {
   sparks(cp.x, cp.y, cp.z, Math.round(6 + hitSp * 0.3), 1, 0.8, 0.4, 24);
   sound(hitSp > 40 ? 'crash' : 'metal', clamp(hitSp / 60, 0.35, 1.2), cp.x, cp.y, cp.z);
   sfx.play(hitSp > 38 ? 'crunch_heavy' : 'crunch', clamp(hitSp / 45, 0.35, 1.2), cp.x, cp.z, { gap: 0.1 });
+  road.meet(a, b, hitSp, cp.x, cp.z);
   if (a === player || b === player) game.shake = Math.min(1.4, game.shake + hitSp / 80);
 }
 // what driving into the town feels like
@@ -491,9 +514,10 @@ const crashHooks = {
     crumple.crash(c, into, H, clamp(0.5 + (into - CRASH.bump) * 0.035, 0.5, 2.6));   // the end that hit the wall crumples
     sound('thud', clamp(into / 50, 0.3, 1), H.x, H.y, H.z); sparks(H.x, 2.5, H.z, 6, 1, 0.8, 0.4, 14);
     sfx.play(into > 30 ? 'crunch' : 'scrape', clamp(into / 40, 0.3, 1), H.x, H.z, { gap: 0.25 });
+    road.wall(c, into, H.x, H.z);
     if (c === player) game.shake = Math.min(1.2, game.shake + into / 90);
   },
-  land(c, speed) { specials.landed(c, speed); },   // down from a jump (vehicle.js)
+  land(c, speed) { specials.landed(c, speed); road.land(c, speed); },   // down from a jump (vehicle.js)
   // a drift held long enough pays out a short burst as it ends (vehicle.js)
   // (bigger the longer it was held: a whoosh, the nitro's roar, the view widening and a jolt, DRIFT.boost)
   drift(c, lvl) {
@@ -595,7 +619,7 @@ function stepMines(dt) {
     try { boom(m.x, 1, m.z, m.g.wall, 0.5, { maxDebris: 160, fire: true }, BUILDINGS.shell); if (hit) { hit.vx *= 0.3; hit.vz *= 0.3; } } finally { by = was; splashK = null; }
   }
 }
-// Shift: the gadget. Nitro is a burst of speed; the repair kit patches the car up.
+// E (or Q): the gadget. Nitro is a burst of speed; the repair kit patches the car up.
 function gadget(c) {
   const G = c.gadget; if (!G || c.dead || c.gadgetT > 0) return;
   useGadget(c, G);
@@ -764,17 +788,63 @@ function addRival(n, at) {   // (n can be a build itself: the race's rivals are 
 }
 function hint(html) { if (html) { $('hint').innerHTML = html; $('hint').classList.add('on'); } else $('hint').classList.remove('on'); }
 // the round is over: a card with how it went, and the way to the next one. `more` ({ label, go }), if the mode gives
-// it, is a button (and Enter or C) to carry on the same round instead: overGo hides the card and calls `go`
+// it, is a button (and Enter or C) to carry on the same round instead: overGo hides the card and calls `go`.
+// `sheet` is what the mode has to show on it (all of it optional; without one the lines are shown as they are):
+//   kicker   the small line over the title ('Race results')
+//   badge    the place, big, on the yellow plate ('1st')
+//   sub      under the title ('Your time 3:02.7')
+//   cols, rows   the standings: the column heads, and { pos, name, car, value, note, me } for each car
+//   stats    tiles: [label, value, flag] (the flag in yellow: 'New record')
+//   pay      what paid this round, [label, scrap]; the card adds the wrecks (100 each, paid as they happen) and
+//            whatever else the round earned (`rest` names that line), and counts up the total
 let overMore = null;
-function over(title, lines = [], scrap = 0, more = null) {
+const el = (tag, cls, text) => { const d = document.createElement(tag); if (cls) d.className = cls; if (text !== undefined) d.textContent = text; return d; };
+function showResults(title, lines, scrap, sheet) {
+  $('over-t').textContent = title;
+  $('over-k').textContent = sheet.kicker || MAP.name || 'Round over';
+  $('over-sub').textContent = sheet.sub || ''; $('over-sub').hidden = !sheet.sub;
+  const badge = $('over-badge'), m = /^(\d+)(\D*)$/.exec(sheet.badge || '');
+  badge.hidden = !sheet.badge; badge.innerHTML = '';
+  if (m) { badge.append(el('b', '', m[1]), el('i', '', m[2])); } else if (sheet.badge) badge.append(el('b', 'w', sheet.badge));
+  // the standings
+  const T = $('over-rows'); T.innerHTML = ''; T.hidden = !(sheet.rows && sheet.rows.length);
+  if (!T.hidden) {
+    const cols = sheet.cols || ['Pos', 'Driver', 'Car', ''];
+    const head = el('div', 'ov-r h'); for (const c of cols) head.append(el('span', '', c)); T.append(head);
+    for (const r of sheet.rows) {
+      const d = el('div', 'ov-r' + (r.me ? ' me' : '') + (r.out ? ' out' : ''));
+      const name = el('span', 'n', r.name); if (r.note) name.append(el('em', '', r.note));
+      d.append(el('span', 'p', r.pos), name, el('span', 'c', r.car || ''), el('span', 'v', r.value ?? '')); T.append(d);
+    }
+  }
+  // the tiles, and any plain lines
+  const S = $('over-stats'); S.innerHTML = ''; S.hidden = !(sheet.stats && sheet.stats.length);
+  for (const [label, value, flag] of sheet.stats || []) { const d = el('div', 'ov-st'); d.append(el('span', '', label), el('b', '', value)); if (flag) d.append(el('em', '', flag)); S.append(d); }
+  const shown = sheet.rows || sheet.stats ? sheet.lines || [] : lines;
+  $('over-l').innerHTML = ''; for (const l of shown) $('over-l').append(el('div', '', l)); $('over-l').hidden = !shown.length;
+  // the scrap: what the mode paid, the wrecks, the rest of what the round earned, and the total counting up
+  const earned = Math.max(0, Math.round(game.scrap - (game.scrap0 ?? game.scrap - scrap)));
+  const pay = (sheet.pay || (scrap ? [['Prize', scrap]] : [])).filter((p) => p[1] > 0).map(([l, v]) => [l, Math.round(v)]);
+  if (game.kills && !sheet.noWrecks) pay.push([`Wrecks × ${game.kills}`, game.kills * 100]);
+  const rest = earned - pay.reduce((a, p) => a + p[1], 0);
+  if (rest >= 1) pay.push([sheet.rest || 'Hits and stunts', rest]);
+  const P = $('over-pay'); P.innerHTML = ''; P.hidden = earned < 1;
+  for (const [l, v] of pay) { const d = el('div'); d.append(el('span', '', l), el('span', '', `+${v}`)); P.append(d); }
+  const tot = el('div', 'tot'), num = el('b', '', `+${earned}`); tot.append(el('span', '', 'Scrap earned'), num); P.append(tot);
+  P.append(el('div', 'bank', `In the bank: ${Math.floor(game.scrap)}`));
+  return () => {   // (when the card comes up: the total runs up to what it is)
+    const t0 = performance.now(), tick = () => { const k = Math.min(1, (performance.now() - t0) / 900); num.textContent = `+${Math.round(earned * (1 - (1 - k) ** 3))}`; if (k < 1 && game.state === 'over') requestAnimationFrame(tick); else num.textContent = `+${earned}`; };
+    if (earned > 0) requestAnimationFrame(tick);
+  };
+}
+function over(title, lines = [], scrap = 0, more = null, sheet = null) {
   if (game.state === 'over') return;
   overMore = more; $('over').classList.toggle('more', !!more); $('over-go').className = more ? 'alt' : 'go';
   if (more) $('over-more').textContent = more.label || 'Keep going';
   game.state = 'over'; game.scrap += scrap; keepSave(save); hint(null);
   $('dead').hidden = true;
-  $('over-t').textContent = title;
-  $('over-l').innerHTML = ''; for (const l of [...lines, ...(scrap ? [`+${Math.round(scrap)} scrap`] : [])]) { const d = document.createElement('div'); d.textContent = l; $('over-l').appendChild(d); }
-  setTimeout(() => { if (game.state === 'over') { $('over').hidden = false; if (document.exitPointerLock) document.exitPointerLock(); } }, 1600);
+  const run = showResults(title, lines, scrap, sheet || {});
+  setTimeout(() => { if (game.state === 'over') { $('over').hidden = false; $('banner').classList.remove('on'); run(); if (document.exitPointerLock) document.exitPointerLock(); } }, 1600);
 }
 function overGo() {
   const m = overMore; if (!m || game.state !== 'over' || $('over').hidden) return;
@@ -782,33 +852,40 @@ function overGo() {
   game.state = 'play'; lockMouse(); m.go(); return true;
 }
 const api = {
-  game, cars, extras, MAP, scene, mats, camera, sfx, save, cube, chip, blast, explode, sparks, dust, CRASH, ROUND, AI,
+  game, cars, extras, MAP, scene, mats, camera, renderer, sfx, save, cube, chip, blast, explode, sparks, dust, CRASH, ROUND, AI,
   get player() { return player; }, TOUCH: () => TOUCH,
-  addCar, addRival, rivalBuild, RIVAL_NAMES, damage, wreck, banner, toast, hint, over, keepSave: () => keepSave(save), sound,
+  addCar, addRival, rivalBuild, RIVAL_NAMES, damage, wreck, ownBlast, banner, toast, hint, over, keepSave: () => keepSave(save), sound,
   makeDriver, clearLine, spawnPlayer: (at) => spawnPlayer(at),
   get net() { return net; },
+  // for the map's own parts and the pickups: the mode (its phase and clock), whether cars can hurt each other, the dead
+  get mode() { return mode; }, get pickups() { return pickups; }, friendly: () => !!mode.friendly, horde: () => mode.horde || null,
+  fx,   // (the shots, for a map's own guns: basemoves.js)
+  get pix() { return specials.pix; },   // (the pixel fire, for a map's own flames: hazards.js's jets, the arena's cannons)
 };
 // playing online (net.js): made before the mode, which asks it how many bots to run and where its player starts
 let net = null;
+kindAt = scene.children.length;
 const mode = MODES[MAP.mode](api);
+kindFrom(kindAt, 'the mode\'s own (horde, base, rides)'); kindAt = scene.children.length;
 net = makeNet({ cars, game, MAP, mode, api, addCar, wreck, damage, gadget, player: () => player, toast, banner, $,
   get pickups() { return pickups; }, horde: () => mode.horde || null,
   removeCar: (c) => { c.gone = true; c.dispose(); if (c.tag) c.tag.remove(); const i = cars.indexOf(c); if (i >= 0) cars.splice(i, 1); },
   begin: () => { if (game.state === 'menu') startGame(true); },
   onRoster: () => { const n = net.players.length + net.bots; $('menu-note').textContent = `${net.players.map((p) => p.name).join(', ')}${net.bots ? ` and ${net.bots} bot${net.bots === 1 ? '' : 's'}` : ''}: ${n} cars.`; },
   // (quick play: the round is over, so straight into the next one)
-  noRound: () => { toast('That round is over', net.quick ? 'Finding another one' : 'Back to the lobby'); setTimeout(() => { if (net.quick) playAgain(); else location.href = net.lobby(); }, 1500); } });
+  noRound: () => { toast('That round is over', net.quick ? 'Finding another one' : 'Back to the lobby'); setTimeout(() => { if (net.quick) playAgain(); else { leavePage(); location.href = net.lobby(); } }, 1500); } });
 // the map's pickups and hazards, if it lists any (pickups.js, hazards.js)
 const pickups = makePickups(api, MAP.pickups), hazards = makeHazards(api, MAP.hazards);
+kindFrom(kindAt, 'pickups and hazards');
 function spawnPlayer(at) {
   if (!at) {
     at = { ...MAP.spawn };
-    if (player) { const o = (mode.respawnAt && mode.respawnAt(player)) || MAP.spawnPoint(null, cars.filter((c) => !c.gone && c !== player)); at.x = o.x; at.z = o.z; at.yaw = o.yaw ?? Math.random() * 6.28; }
+    if (player) { const o = (mode.respawnAt && mode.respawnAt(player)) || MAP.spawnPoint(null, cars.filter((c) => !c.gone && c !== player)); at.x = o.x; at.z = o.z; at.yaw = o.yaw ?? Math.random() * 6.28; at.y = o.y; }   // (y: the road's height there, so it comes back on a bridge and not under it)
   }
   if (player && !player.dead) { player.dispose(); cars.splice(cars.indexOf(player), 1); }   // a fresh build in place of the old one
   player = addCar({ ...save.load, name: 'You' }, at, false);
   player.turretTurn = 10;
-  cam.yaw = at.yaw; cam.cx = player.x; cam.cz = player.z;
+  cam.yaw = at.yaw; cam.head = undefined; cam.cx = player.x; cam.cz = player.z;
   // the player's car always goes first in the list
   cars.splice(cars.indexOf(player), 1); cars.unshift(player);
 }
@@ -1091,7 +1168,7 @@ function startTest(load) {
   game.state = 'test'; game.testT = 30; game.testEnd = null; game.testLoad = { ...load };
   placePlayer(load, room.start); player.bounds = room.bounds;
   clearDummies(); for (const d of room.dummies) addDummy(d);
-  cam.yaw = player.yaw; cam.cx = player.x; cam.cz = player.z; cam.d = undefined; cam.p = undefined;
+  cam.yaw = player.yaw; cam.head = undefined; cam.cx = player.x; cam.cz = player.z; cam.d = undefined; cam.p = undefined;
   sfx.play('start', 0.9); setTimeout(() => sfx.play('ui_go', 0.8), 300); lockMouse();
   toast('Test drive', TOUCH ? 'Try the build on the targets' : 'WASD to drive, click to fire. G to come back');
 }
@@ -1116,10 +1193,10 @@ function intoRoom() {
   if (!lightWas) {
     if (document.exitPointerLock && cam.locked) document.exitPointerLock();
     // where the car goes back to when it drives out: where it stood, or a spawn point if it was wrecked
-    if (player && !player.dead) game.garageBack = { x: player.x, z: player.z, yaw: player.yaw };
+    if (player && !player.dead) game.garageBack = { x: player.x, z: player.z, yaw: player.yaw, y: player.fy };
     else {
       const o = (mode.respawnAt && mode.respawnAt(player)) || MAP.spawnPoint(null, cars.filter((c) => !c.gone && c !== player));
-      game.garageBack = { x: o.x, z: o.z, yaw: o.yaw ?? Math.random() * 6.28 };
+      game.garageBack = { x: o.x, z: o.z, yaw: o.yaw ?? Math.random() * 6.28, y: o.y };
       player = null;   // (the wreck stays where it is)
     }
     garageLight(true);
@@ -1136,13 +1213,13 @@ function outOfRoom() {
   specials.clearOffMap();
   garageLight(false);
   spawnPlayer(game.garageBack || null);
-  cam.yaw = player.yaw; cam.d = undefined; cam.p = undefined;
+  cam.yaw = player.yaw; cam.head = undefined; cam.d = undefined; cam.p = undefined;
 }
 // The home screen: the car turning on the turntable, and a card for each way to play and for the garage.
 const BRIEF = 'ad-brief';   // (kept across the page loading again on another map: straight to that mode's card)
 const HOME_CARDS = [
-  { map: 'race', k: 'Manhattan Circuit', t: 'Race', d: 'Laps of New York with the guns on', icon: 'M5 3h2v18H5zm3 1h4l1 1h6v9h-6l-1-1H8zm2 2v2h2V6zm4 1v2h2V7zm-2 1v2h2V8zm-2 2v2h2v-2zm4 1v2h2v-2z' },
-  { map: 'base', k: 'Camp Deadfall', t: 'Zombie Survival', d: 'Outlast the horde. Last car running wins', icon: 'M12 2a8 8 0 0 1 8 8c0 3-1.5 5-3 6v3h-2v-2h-2v2h-2v-2H9v2H7v-3c-1.5-1-3-3-3-6a8 8 0 0 1 8-8zM8.5 9a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm7 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM12 13l-1.2 2.5h2.4z' },
+  { map: 'race', k: 'Two tracks', t: 'Race', d: 'Laps of New York and Washington with the guns on', icon: 'M5 3h2v18H5zm3 1h4l1 1h6v9h-6l-1-1H8zm2 2v2h2V6zm4 1v2h2V7zm-2 1v2h2V8zm-2 2v2h2v-2zm4 1v2h2v-2z' },
+  { map: 'base', k: 'Two maps', t: 'Zombie Survival', d: 'Outlast the horde. Last car running wins', icon: 'M12 2a8 8 0 0 1 8 8c0 3-1.5 5-3 6v3h-2v-2h-2v2h-2v-2H9v2H7v-3c-1.5-1-3-3-3-6a8 8 0 0 1 8-8zM8.5 9a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm7 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM12 13l-1.2 2.5h2.4z' },
   { map: 'arena', k: 'Hammerdown Arena', t: 'Arena', d: 'Eight cars, three minutes, most wrecks wins', icon: 'M12 1l2.2 5.6L19 3.5l-1.6 5.6L23 10l-4.6 3.2L21 18.5l-5.6-1.3L14 23l-2-5-2 5-1.4-5.8L3 18.5l2.6-5.3L1 10l5.6-.9L5 3.5l4.8 3.1z' },
   { garage: true, k: 'Your car', t: 'Garage', d: 'Build it, arm it, paint it', icon: 'M21.7 6.3l-3.6 3.6-2.8-.7-.7-2.8 3.6-3.6a6 6 0 0 0-7.7 7.7L2.3 18.7a2.1 2.1 0 0 0 3 3l8.2-8.2a6 6 0 0 0 8.2-7.2z' },
 ];
@@ -1163,7 +1240,10 @@ function cardAs(a) {
   if ((a === 'online' || a === 'friends') && !lobby) a = 'solo';
   document.body.classList.toggle('as-solo', a === 'solo'); document.body.classList.toggle('as-online', a === 'online' || a === 'friends');
   const kind = { waves: 'Waves', race: 'Race', survival: 'Zombie Survival', brawl: 'Arena' }[MAP.mode] || MAP.mode;
-  $('brief-k').textContent = a === 'online' ? kind + ' · Online' : a === 'friends' ? kind + ' · Friends' : a === 'solo' ? kind + ' · Solo' : kind;
+  const lv = LEVELS[MAP.mode] && LEVELS[MAP.mode].list[levelOf(MAP.mode)];
+  $('brief-k').textContent = a === 'online' ? kind + ' · Online' : a === 'friends' ? kind + ' · Friends' : a === 'solo' ? kind + ' · Solo' + (lv ? ' · ' + lv.name : '') : kind;
+  $('menu-home').textContent = a === 'solo' && STAGES[MAP.mode] ? 'Back' : 'Main menu';
+  if (!net) $('menu-note').textContent = a === 'solo' && STAGES[MAP.mode] ? '' : mode.tip || '';   // (solo: the stage select said it)
   $('on-quick').hidden = a === 'friends';   // (Friends: the room's buttons only; quick play is the home screen's Online)
   $('on-quick').className = a === 'online' ? 'go' : 'alt'; $('on-quick').textContent = 'Play online';
 }
@@ -1194,9 +1274,17 @@ function playAgain() { if (net) net.bye(); goOnline(MAP.id); }
     b.innerHTML = `<small></small><b></b><span></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${c.icon}"/></svg>`;
     b.querySelector('small').textContent = c.k; b.querySelector('b').textContent = c.t; b.querySelector('span').textContent = c.d;
     if (c.map) b.dataset.map = c.map;
-    b.addEventListener('click', () => { if (!game.home) return; if (c.garage) openGarage('home'); else if (playAs === 'online') goOnline(c.map); else pickMode(c.map); });
+    b.addEventListener('click', () => { if (!game.home) return; if (c.garage) openGarage('home'); else if (playAs === 'online') goOnline(c.map); else if (playAs === 'solo' && STAGES[modeOf(c.map)]) showStages(modeOf(c.map)); else pickMode(lastMap(c.map)); });
     box.appendChild(b);
   }
+}
+// A mode with two maps (Zombie Survival: maps/index.js SHARED) opens on the one played last, kept in this browser; its
+// start card has a row to change map.
+const LAST = 'ad-last-';
+function lastMap(id) {
+  const m = mapById(id), list = m && (STAGES[m.mode] || SHARED[m.mode]); if (!list) return id;
+  let v = null; try { v = localStorage.getItem(LAST + m.mode); } catch (e) { /* the first */ }
+  return list.some((o) => o.id === v) ? v : list.some((o) => o.id === PREVIEW) ? PREVIEW : list.some((o) => o.id === id) ? id : list[0].id;   // (a preview page opens on the track it is for)
 }
 function drawHome() {
   const st = statsOf(save.load), r = rating(st), body = PARTS.body[save.load.body] || {};
@@ -1222,12 +1310,90 @@ function showHome() {
   $('menu').hidden = true; $('over').hidden = true; $('dead').hidden = true; $('hint').classList.remove('on');
   drawHome(); $('home').hidden = false;
 }
-// a way to play, picked on the home screen: its card (what it is, the controls, Start), on its own map
+// ---- the stage select (solo): a picture card for each map of the mode, the difficulty, and Start -----------------------
+// Picking a map no longer loads it at once (Will, 2026-11-25: "it instantly takes you to a loading screen, it's a little
+// jarring"): this screen comes first, over the workshop, and Start goes to the loading screen, then the mode's card.
+const modeOf = (id) => (mapById(id) || {}).mode;
+const MODE_NAME = { waves: 'Waves', race: 'Race', survival: 'Zombie Survival', brawl: 'Arena' };
+const PICK_WORD = { race: 'Pick a track', survival: 'Pick a map', brawl: 'Pick a map' };
+// each mode's difficulty, as kept in the save (the same places the modes read: modes/race.js, survival.js, brawl.js)
+const lvBox = () => (save.levels && typeof save.levels === 'object' ? save.levels : (save.levels = {}));
+const LEVELS = {
+  race: { list: RACE.levels, get: () => save.raceLevel, put: (id) => { save.raceLevel = id; } },
+  survival: { list: SURVIVAL_LEVELS, get: () => lvBox().survival, put: (id) => { lvBox().survival = id; } },
+  brawl: { list: BRAWL_LEVELS, get: () => lvBox().brawl, put: (id) => { lvBox().brawl = id; } },
+};
+const levelOf = (m) => { const L = LEVELS[m]; return L && L.list[L.get()] ? L.get() : 'normal'; };
+function setLevel(m, id) {
+  if (!LEVELS[m] || !LEVELS[m].list[id]) return;
+  if (m === MAP.mode && mode.levels) mode.levels.set(id); else { LEVELS[m].put(id); keepSave(save); }
+}
+const stage = { mode: null, pick: null };
+function bestText(m, lv) {   // Zombie Survival: the best time on that map at that difficulty (modes/survival.js keeps it)
+  const b = +((save.survivalBest || {})[lv === 'normal' ? m.id : `${m.id}-${lv}`]) || 0;
+  return b ? `Best ${Math.floor(b / 60)}:${String(Math.floor(b) % 60).padStart(2, '0')}` : '';
+}
+function drawStages() {
+  const m = stage.mode, lv = levelOf(m), L = LEVELS[m];
+  for (const b of $('st-cards').children) {
+    b.classList.toggle('on', b.dataset.id === stage.pick);
+    const best = b.querySelector('.st-best'); best.textContent = m === 'survival' ? bestText(STAGES[m].find((o) => o.id === b.dataset.id), lv) : '';
+  }
+  for (const b of $('st-levels').querySelectorAll('button')) b.classList.toggle('on', b.dataset.id === lv);
+  $('st-note').textContent = (L && L.list[lv] && L.list[lv].note) || '';
+}
+function showStages(m) {
+  const list = STAGES[m]; if (!list) return;
+  initAudio(); sfx.play('ui_open', 0.6);
+  stage.mode = m; stage.pick = lastMap(list[0].id);
+  if (!list.some((o) => o.id === stage.pick)) stage.pick = list[0].id;
+  if (!game.home) { intoRoom(); game.state = 'garage'; game.home = true; }   // (Back from the mode's card: the workshop again behind it)
+  $('home').hidden = true; $('menu').hidden = true; $('over').hidden = true; $('dead').hidden = true; $('hint').classList.remove('on');
+  $('st-k').textContent = MODE_NAME[m] + ' · Solo'; $('st-t').textContent = list.length > 1 ? PICK_WORD[m] : 'Ready to roll';
+  const box = $('st-cards'); box.textContent = '';
+  for (const o of list) {
+    const b = document.createElement('button'); b.className = 'st-card'; b.dataset.id = o.id;
+    b.innerHTML = '<img alt=""><span class="st-best"></span><span class="st-lab"><b></b><small></small></span>';
+    if (STAGE_PICS[o.id]) b.querySelector('img').src = STAGE_PICS[o.id];
+    b.querySelector('b').textContent = o.name; b.querySelector('small').textContent = TAGS[o.id] || '';
+    b.addEventListener('click', () => { if (stage.pick === o.id) { stageGo(); return; } stage.pick = o.id; sfx.play('ui_open', 0.35); drawStages(); });
+    box.appendChild(b);
+  }
+  const row = $('st-levels'); for (const b of row.querySelectorAll('button')) b.remove();
+  const L = LEVELS[m]; row.hidden = !L;
+  if (L) for (const [id, v] of Object.entries(L.list)) {
+    const b = document.createElement('button'); b.dataset.id = id; b.textContent = v.name;
+    b.addEventListener('click', () => { setLevel(m, id); sfx.play('ui_open', 0.35); drawStages(); });
+    row.appendChild(b);
+  }
+  drawStages(); $('stages').hidden = false;
+}
+function hideStages() { $('stages').hidden = true; stage.mode = null; }
+function stageGo() {
+  const id = stage.pick; if (!id) return;
+  try { localStorage.setItem(LAST + stage.mode, id); } catch (e) { /* this visit only */ }
+  hideStages(); pickMode(id);
+}
+$('st-go').addEventListener('click', stageGo);
+$('st-back').addEventListener('click', () => { sfx.play('ui_open', 0.4); hideStages(); showHome(); });
+addEventListener('keydown', (e) => {
+  if (!stage.mode || $('stages').hidden) return;
+  const list = STAGES[stage.mode], k = list.findIndex((o) => o.id === stage.pick);
+  if (e.code === 'Escape' || e.code === 'Backspace') { e.preventDefault(); hideStages(); showHome(); }
+  else if (e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Space') { e.preventDefault(); if (!e.repeat) stageGo(); }
+  else if (e.code === 'ArrowLeft' || e.code === 'ArrowRight' || e.code === 'KeyA' || e.code === 'KeyD') {
+    const d = e.code === 'ArrowLeft' || e.code === 'KeyA' ? -1 : 1; stage.pick = list[(k + d + list.length) % list.length].id; drawStages();
+  } else if (e.code === 'ArrowUp' || e.code === 'ArrowDown' || e.code === 'KeyW' || e.code === 'KeyS') {
+    const L = LEVELS[stage.mode]; if (!L) return; const ids = Object.keys(L.list), j = ids.indexOf(levelOf(stage.mode));
+    const n = ids[Math.max(0, Math.min(ids.length - 1, j + (e.code === 'ArrowUp' || e.code === 'KeyW' ? 1 : -1)))]; setLevel(stage.mode, n); drawStages();
+  }
+}, true);
+// a way to play, picked on the home screen (or the stage select): its card (what it is, the controls, Start), on its own map
 function pickMode(id) {
   initAudio(); sfx.play('ui_open', 0.7);
   if (id !== MAP.id || game.ended) {
     try { sessionStorage.setItem(BRIEF, playAs); } catch (e) { /* it lands on the home screen again */ }
-    $('home').hidden = true; if (window.__adLoad) window.__adLoad.again(((MAPS.find((m) => m.id === id) || {}).loading || [])[0]); else { const l = $('loading'); if (l) l.hidden = false; }
+    $('home').hidden = true; if (window.__adLoad) window.__adLoad.again(((mapById(id) || {}).loading || [])[0]); else { const l = $('loading'); if (l) l.hidden = false; }
     chooseMap(id); return;
   }
   outOfRoom();
@@ -1242,6 +1408,7 @@ function drawPause() {
   $('pause-note').textContent = net ? 'An online round cannot pause: the others play on, and your car is still out there.' : '';
   $('pause-again').hidden = !!net; $('pause-home').textContent = net ? 'Leave the round' : 'Main menu';
   $('pause-sound').textContent = muted ? 'Sound: off' : 'Sound: on';
+  $('pause-auto').textContent = autoFire ? 'Auto-fire: on' : 'Auto-fire: off';
 }
 function pauseOn() {
   if (game.paused || (game.state !== 'play' && game.state !== 'dead')) return;
@@ -1259,7 +1426,7 @@ function pauseOff() {
 // out of a round to the home screen (online: off the round first, and the page loads again without it)
 function toHome() {
   pauseOff(); if (document.exitPointerLock) document.exitPointerLock();
-  if (net) { net.bye(); const u = new URL(location.href), q = u.searchParams; u.search = ''; for (const k of ['server', 'as', 'touch']) if (q.get(k)) u.searchParams.set(k, q.get(k)); location.href = u.toString(); return; }
+  if (net) { net.bye(); const u = new URL(location.href), q = u.searchParams; u.search = ''; for (const k of ['server', 'as', 'touch']) if (q.get(k)) u.searchParams.set(k, q.get(k)); leavePage(); location.href = u.toString(); return; }
   keepSave(save); game.ended = true; showHome();
 }
 
@@ -1291,6 +1458,7 @@ function leaveGarage() {
 function startGame(auto) {
   learn.dismiss();   // (online, the round can start while the how-to-play card is still up)
   initAudio(); $('menu').hidden = true; game.state = 'play';
+  game.scrap0 = save.scrap;   // (what the round earns is shown on the results card)
   // phones and tablets: the whole screen for the round, where the browser allows it (a tap on Start counts as asking)
   const root = document.documentElement;
   if (MOBILE && root.requestFullscreen && !document.fullscreenElement) { try { root.requestFullscreen({ navigationUI: 'hide' }).catch(() => {}); } catch (err) { /* not allowed here */ } }
@@ -1304,6 +1472,8 @@ function lockMouse(soft) { if (soft) cam.softAt = performance.now(); if (canvas.
 
 // ---- controls ------------------------------------------------------------------------------------------------------
 const keys = {};
+const AUTOFIRE = 'auto-destruction-autofire';
+let autoFire = true; try { autoFire = localStorage.getItem(AUTOFIRE) !== '0'; } catch (e) { /* on */ }
 const cam = { yaw: Math.PI, pitch: 0.3, dist: 36, locked: false, mx: 0, my: 0, cx: 0, cz: 0 };
 const mouse = { b0: false, b2: false };
 addEventListener('keydown', (e) => {
@@ -1311,12 +1481,12 @@ addEventListener('keydown', (e) => {
   if ((e.code === 'Escape' || e.code === 'KeyP') && (game.state === 'play' || game.state === 'dead')) { pauseOn(); return; }
   keys[e.code] = true; initAudio();
   if (e.code === 'KeyM') { muted = !muted; sfx.on = !muted; musicOn(); }
-  if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight') && game.state === 'play' && player) gadget(player);
+  // the gadget is E (or Q) since 2026-11-25; Shift drifts with Space, so the left hand drifts without leaving W A S D
+  if ((e.code === 'KeyE' || e.code === 'KeyQ') && !e.repeat && (game.state === 'play' || game.state === 'test') && player) gadget(player);
   if (e.code === 'KeyG' && game.home) openGarage('home');
   else if (e.code === 'KeyG' && (game.state === 'menu' || (game.state === 'dead' && !game.noGarage) || (game.state === 'play' && mode.garageOK()))) openGarage(game.state === 'play' ? 'break' : game.state);
   else if ((e.code === 'KeyG' || e.code === 'Escape') && game.state === 'garage' && !game.home) leaveGarage();
   else if ((e.code === 'KeyG' || e.code === 'Escape' || e.code === 'KeyT') && game.state === 'test') endTest();
-  if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight') && game.state === 'test' && player) gadget(player);
   if (e.code === 'KeyR' && game.state === 'play' && mode.resetPlayer) mode.resetPlayer();   // back on the track (the race)
   if ((e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'KeyC') && overMore && overGo()) e.preventDefault();   // the end card's Keep going (not a click on a focused button too)
   if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
@@ -1343,7 +1513,7 @@ addEventListener('mousemove', (e) => {
   if (cam.drag && game.state === 'garage') turnTable(e.clientX - cam.mx);
   cam.mx = e.clientX; cam.my = e.clientY;
   // the aim slows a little over a rival, so it is easier to stay on one
-  if (cam.locked) { const f = 1 - 0.35 * (cam.sticky || 0); cam.yaw -= e.movementX * 0.0026 * f; cam.pitch = clamp(cam.pitch + e.movementY * 0.0022 * f, 0.02, 0.75); }   // never down behind the car's back
+  if (cam.locked) { const f = 1 - 0.35 * (cam.sticky || 0); if (Math.abs(e.movementX) + Math.abs(e.movementY) > 2) cam.idle = 0; cam.yaw -= e.movementX * 0.0026 * f; cam.pitch = clamp(cam.pitch + e.movementY * 0.0022 * f, 0.02, 0.75); }   // never down behind the car's back
 });
 addEventListener('wheel', (e) => { cam.dist = clamp(cam.dist + Math.sign(e.deltaY) * 3, 20, 60); }, { passive: true });
 // the mode's how-to-play cards: on its start card, and again from the round's menu (learn.js)
@@ -1357,34 +1527,25 @@ $('pause-learn').addEventListener('click', () => learn.show());
 {
   $('brief-t').textContent = MAP.name;
   $('go').textContent = mode.go; $('menu-note').textContent = mode.tip || '';
-  // a mode with difficulty levels (the race) gets a row of buttons for them, kept in the save
-  if (mode.levels) {
-    const row = $('levels'); row.hidden = false;
-    const show = () => { for (const b of row.querySelectorAll('button')) b.className = b.dataset.id === mode.levels.get() ? 'on' : ''; $('menu-note').textContent = mode.tip || ''; };
-    for (const [id, name] of mode.levels.list) {
-      const b = document.createElement('button'); b.dataset.id = id; b.textContent = name;
-      b.addEventListener('click', () => { mode.levels.set(id); show(); });
-      row.appendChild(b);
-    }
-    show();
-  }
+  // (the map and the difficulty are picked on the stage select before the map loads: showStages. The card says which.)
 }
 let lobby = null;
-$('over-go').addEventListener('click', () => { if (net && net.quick) playAgain(); else if (net) { net.bye(); location.href = net.lobby(); } else chooseMap(MAP.id); });
+$('over-go').addEventListener('click', () => { if (net && net.quick) playAgain(); else if (net) { net.bye(); leavePage(); location.href = net.lobby(); } else chooseMap(MAP.id); });
 $('over-more').addEventListener('click', overGo);
 $('over-maps').addEventListener('click', () => { if (net) toHome(); else { game.ended = true; showHome(); } });
 $('pause-b').addEventListener('click', pauseOn);
 $('pause-go').addEventListener('click', pauseOff);
 $('pause-again').addEventListener('click', () => { pauseOff(); try { sessionStorage.setItem(BRIEF, 'solo'); } catch (e) { /* home */ } chooseMap(MAP.id); });
 $('pause-sound').addEventListener('click', () => { muted = !muted; sfx.on = !muted; audioMix.on = !muted; musicOn(); drawPause(); });
+$('pause-auto').addEventListener('click', () => { autoFire = !autoFire; try { localStorage.setItem(AUTOFIRE, autoFire ? '1' : '0'); } catch (e) { /* this visit only */ } drawPause(); });
 $('pause-home').addEventListener('click', toHome);
 $('over-garage').addEventListener('click', () => { $('over').hidden = true; game.ended = true; openGarage('over'); });
-$('menu-home').addEventListener('click', () => { if (game.state === 'menu') showHome(); });
+$('menu-home').addEventListener('click', () => { if (game.state !== 'menu') return; if (document.body.classList.contains('as-solo') && STAGES[MAP.mode]) showStages(MAP.mode); else showHome(); });
 // online (net.js): in a round, the start card is a Ready button for it; otherwise it has the lobby (Play online, With friends)
 if (net) {
   document.body.classList.add('online');
   $('brief-k').textContent = ({ waves: 'Waves', race: 'Race', survival: 'Zombie Survival', brawl: 'Arena' }[MAP.mode] || MAP.mode) + ' · Online';
-  for (const id of ['levels', 'menu-home', 'over-garage']) $(id).hidden = true;
+  for (const id of ['menu-home', 'over-garage']) $(id).hidden = true;
   // no Ready button: the map is built, so this page is ready (main.js's end), and the round starts by itself when the
   // countdown is out and everyone has loaded. The card shows how to play meanwhile, and how long is left.
   $('go').disabled = true; $('go').textContent = 'Loading...'; $('menu-note').textContent = 'Joining the round...';
@@ -1447,7 +1608,7 @@ function drivePlayer(dt) {
   const k = (a, b) => keys[a] || keys[b];
   c.throttle = (k('KeyW', 'ArrowUp') ? 1 : 0) - (k('KeyS', 'ArrowDown') ? 1 : 0);
   c.steer = (k('KeyA', 'ArrowLeft') ? 1 : 0) - (k('KeyD', 'ArrowRight') ? 1 : 0);
-  c.drift = !!keys.Space || touch.drift; c.brake = 0;   // the handbrake: a drift when steering, a brake when not (vehicle.js)
+  c.drift = !!(keys.Space || keys.ShiftLeft || keys.ShiftRight) || touch.drift; c.brake = 0;   // the handbrake: a drift when steering, a brake when not (vehicle.js)
   // the stick: the car turns to the way it is pushed (up the screen is straight ahead) and goes; pulled back, it reverses
   const m = Math.hypot(touch.sx, touch.sy);
   if (touch.id !== null && m > 0.2) {
@@ -1461,14 +1622,20 @@ function drivePlayer(dt) {
   }
   // a brake, not reverse, while still rolling forwards fast
   if (c.throttle < 0 && c.fwd > 12) { c.brake = 1; c.throttle = -0.2; }
-  guns(c, dt, [mouse.b0 || keys.KeyJ || touch.fire, mouse.b2 || keys.KeyF || keys.KeyK || touch.heavy]);
+  // auto-fire (PC, a switch on the pause menu, on unless turned off): the guns fire by themselves while the crosshair is
+  // on a rival (aimLock, aimFor), so drifting and steering never mean letting go of the trigger. The heavy weapons stay
+  // on the right click.
+  const auto = autoFire && !TOUCH && aimLock && !aimLock.dead;
+  guns(c, dt, [mouse.b0 || keys.KeyJ || touch.fire || auto, mouse.b2 || keys.KeyF || keys.KeyK || touch.heavy]);
 }
 
 // ---- camera and aiming -----------------------------------------------------------------------------------------
 const ray = new THREE.Raycaster(), _ndc = new THREE.Vector2(), _o = new THREE.Vector3(), _dir = new THREE.Vector3(), _tgt = new THREE.Vector3();
 function aimRay() {
   // through the middle of the screen when the mouse is captured, else through the pointer
-  if (cam.locked || !cam.mx) _ndc.set(0, 0.2);   // the crosshair sits a little above the middle, clear of the car else _ndc.set(cam.mx / canvas.clientWidth * 2 - 1, -(cam.my / canvas.clientHeight * 2 - 1));
+  // (the crosshair sits a little above the middle, clear of the car; on a touch screen it stays there too)
+  if (cam.locked || !cam.mx || TOUCH) _ndc.set(0, 0.2);
+  else _ndc.set(cam.mx / canvas.clientWidth * 2 - 1, -(cam.my / canvas.clientHeight * 2 - 1));
   ray.setFromCamera(_ndc, camera); _o.copy(ray.ray.origin); _dir.copy(ray.ray.direction);
   const p = new THREE.Vector3();
   for (let t = 4; t < 520; t += 1) {
@@ -1554,22 +1721,39 @@ function aimFor(c, dt) {
 function stepCamera(dt) {
   const c = player; if (!c) return;
   if (game.state === 'garage') { garageCamera(dt); return; }
+  // in a drift it swings round a little towards where the car is going, and keeps up with the car's quicker turn
+  const want = c.yaw + c.slipA * c.slide * DRIFT.camSwing, pitch0 = tall ? 0.4 : 0.3;
   if (!cam.locked) {   // follow the car round its turns
-    // in a drift it swings round a little towards where the car is going, and keeps up with the car's quicker turn
-    const want = c.yaw + c.slipA * c.slide * DRIFT.camSwing;
     cam.yaw += wrap(want - cam.yaw) * Math.min(1, dt * (2.6 + DRIFT.camFollow * c.slide));
-    cam.pitch += ((tall ? 0.4 : 0.3) - cam.pitch) * Math.min(1, dt * 2);   // up behind the car, so the road ahead shows over its roof
+    cam.pitch += (pitch0 - cam.pitch) * Math.min(1, dt * 2);   // up behind the car, so the road ahead shows over its roof
+  } else {
+    // smart follow (Will, 2026-11-25: with the mouse on the camera, it never turned with the car, so in a drift the view
+    // stayed put and the corner was out of sight). The mouse's look is kept as a turn off the car's way: the view turns
+    // with the car, and a moment after the mouse goes still it eases back behind it. In a slide it looks further into
+    // the way the car is going, to see round the corner.
+    const head = want + c.slipA * c.slide * CAM.driftLook;
+    if (cam.head === undefined) cam.head = head;
+    const turn = wrap(head - cam.head); cam.head = head;
+    cam.yaw += clamp(turn, -CAM.carry * dt, CAM.carry * dt);   // (a spin after a hit doesn't whip the view round with it)
+    cam.idle = (cam.idle || 0) + dt;
+    const back = c.slide > 0.3 ? CAM.driftWait : CAM.wait;
+    if (cam.idle > back && !c.dead) {
+      const k = Math.min(1, (cam.idle - back) / CAM.ramp);   // (it starts slowly, so a short pause doesn't snap the aim)
+      cam.yaw += wrap(head - cam.yaw) * Math.min(1, dt * CAM.rate * k * (1 + c.slide));
+      cam.pitch += (pitch0 - cam.pitch) * Math.min(1, dt * CAM.rate * 0.6 * k);
+    }
   }
   cam.cx += (c.x - cam.cx) * Math.min(1, dt * 12); cam.cz += (c.z - cam.cz) * Math.min(1, dt * 12);
   const dist = cam.dist * (tall ? 1.2 : 1) * (1 + clamp(Math.abs(c.fwd) / 300, 0, 0.25));
-  _tgt.set(cam.cx, 7.5, cam.cz);
+  cam.cy = cam.cy === undefined ? c.h : cam.cy + (c.h - cam.cy) * Math.min(1, dt * 9);   // (the road's height, and a jump's)
+  _tgt.set(cam.cx, 7.5 + (c.fy === undefined ? 0 : cam.cy - Math.max(0, c.y || 0) * 0.6), cam.cz);
   // how far back the camera can sit before a wall; lamps, props and rubble don't count (it looks past them)
   const room = (pitch) => {
     const bx = -Math.sin(cam.yaw) * Math.cos(pitch), by = Math.sin(pitch) + 0.15, bz = -Math.cos(cam.yaw) * Math.cos(pitch);
     for (let t = 4; t < dist; t += 1.5) {
       const i = idx(Math.floor(_tgt.x + bx * t), Math.floor(_tgt.y + by * t), Math.floor(_tgt.z + bz * t));
       if (!solid(Math.floor(_tgt.x + bx * t), Math.floor(_tgt.y + by * t), Math.floor(_tgt.z + bz * t))) continue;
-      const b = bodies[ownerAt(i)]; if (b && (b.kind === 'prop' || b.kind === 'rubble')) continue;
+      const b = bodies[ownerAt(i)]; if (b && (b.kind === 'prop' || b.kind === 'rubble' || b.see)) continue;   // (b.see: something the map lets it look through, maps/empire.js)
       return Math.max(7, t - 2);
     }
     return dist;
@@ -1577,13 +1761,24 @@ function stepCamera(dt) {
   // a wall behind: rise and look down over it rather than close in on the car, which would hide the road ahead. Backed
   // up to a tall wall, the last tries go up nearly over the car's roof, so the camera never sits inside the wall.
   let pitch = cam.pitch, dd = room(pitch);
-  if (dd < dist) for (const up of [0.2, 0.45, 0.7, 0.95, 1.15]) { const p2 = Math.min(1.45, cam.pitch + up), d2 = room(p2); if (d2 > dd + 2) { pitch = p2; dd = d2; } if (d2 >= dist * 0.85) break; }
+  // under a map's roof (a tunnel, a hall: MAP.roofs, [{ x0, z0, x1, z1, y }]) it never climbs: it would go up into it
+  const under = (x, z) => { if (MAP.roofs) for (const r of MAP.roofs) if (x > r.x0 && x < r.x1 && z > r.z0 && z < r.z1 && c.h < r.y - 4) return r.y; return Infinity; };   // (a car on the deck over a road is over that roof, not under it)
+  const roofY = under(_tgt.x, _tgt.z);
+  if (dd < dist && roofY === Infinity) for (const up of [0.2, 0.45, 0.7, 0.95, 1.15]) { const p2 = Math.min(1.45, cam.pitch + up), d2 = room(p2); if (d2 > dd + 2) { pitch = p2; dd = d2; } if (d2 >= dist * 0.85) break; }
   cam.p = cam.p === undefined ? pitch : cam.p + (pitch - cam.p) * Math.min(1, dt * 5);
   const bx = -Math.sin(cam.yaw) * Math.cos(cam.p), by_ = Math.sin(cam.p) + 0.15, bz = -Math.cos(cam.yaw) * Math.cos(cam.p);
   cam.d = cam.d === undefined ? dd : cam.d + (dd - cam.d) * Math.min(1, dt * (dd < cam.d ? 14 : 3));
-  camera.position.set(_tgt.x + bx * cam.d, Math.max(2.5, _tgt.y + by_ * cam.d), _tgt.z + bz * cam.d);
+  camera.position.set(_tgt.x + bx * cam.d, Math.max((MAP.floor ? MAP.floor(_tgt.x + bx * cam.d, _tgt.z + bz * cam.d, _tgt.y) : 0) + 2.5, _tgt.y + by_ * cam.d), _tgt.z + bz * cam.d);
+  // (it comes down under a roof over a moment, not at once; and never below the road where it is: coming down a ramp to
+  // a tunnel's mouth it is still up the ramp behind the car)
+  { const ry = Math.min(roofY, under(camera.position.x, camera.position.z)), want = ry === Infinity ? 0 : Math.max(0, camera.position.y - (ry - 2.5));
+    cam.duck = (cam.duck || 0) + (want - (cam.duck || 0)) * Math.min(1, dt * (want > (cam.duck || 0) ? 6 : 3));
+    if (cam.duck > 0.01) camera.position.y = Math.max(camera.position.y - cam.duck, (MAP.floor ? MAP.floor(camera.position.x, camera.position.z, _tgt.y) : 0) + 1.5); }
   const sh = game.shake; if (sh > 0) camera.position.add(_o.set((Math.random() - 0.5) * sh * 1.6, (Math.random() - 0.5) * sh * 1.2, (Math.random() - 0.5) * sh * 1.6));
-  camera.lookAt(_tgt.x + Math.sin(cam.yaw) * 16, _tgt.y - 0.5, _tgt.z + Math.cos(cam.yaw) * 16);
+  // a map's view (MAP.vista(x, z) -> 0 to 1): it looks up from the road, at something tall ahead (maps/empire.js: the statue)
+  { const v = MAP.vista ? MAP.vista(c.x, c.z) * (cam.locked ? 0.7 : 1) : 0;   // (less with the mouse on the camera: it can look up itself)
+    cam.vista = (cam.vista || 0) + (v - (cam.vista || 0)) * Math.min(1, dt * 1.4); }
+  camera.lookAt(_tgt.x + Math.sin(cam.yaw) * 16, _tgt.y - 0.5 + cam.vista * (tall ? 10 : 13), _tgt.z + Math.cos(cam.yaw) * 16);
   // a drift boost widens the view for a moment (it springs out, then eases back as the burst runs out)
   const fk = c.miniT > 0 ? (cam.fovKick || 0) * Math.min(1, c.miniT / 0.6) : 0;
   cam.fov = (cam.fov || 0) + (fk - (cam.fov || 0)) * Math.min(1, dt * (fk > (cam.fov || 0) ? 14 : 3));
@@ -1612,24 +1807,32 @@ addEventListener('resize', resize); resize();
 // check again after a turn, and on any frame where the window's size no longer matches the view's
 addEventListener('orientationchange', () => { for (const t of [100, 300, 700]) setTimeout(resize, t); });
 if (window.visualViewport) visualViewport.addEventListener('resize', resize);
-const quality = makeQuality({ renderer, composer, bloom: bloomPass, scene, camera, sun, resize, playing: () => game.state === 'play' || game.state === 'test', mobile: MOBILE });
+const quality = makeQuality({ renderer, composer, bloom: bloomPass, scene, camera, sun, resize, playing: () => game.state === 'play' || game.state === 'test', mobile: MOBILE, lodK: MAP.lodK });
 // the rest of a map's look (looks/): its beams, glows, lamps, weather and the rest
 const lookFrom = scene.children.length;
 const mapLook = MAP.look ? makeLook(MAP.look, { scene, renderer, camera, sky, hemi, sun, mats, bloom: bloomPass, quality, backdrop, sfx, setup: LOOK }) : null;
-const lookObjs = scene.children.slice(lookFrom);   // the look's own draws (the storm's rain, mist and beams): put away in the garage
+const lookObjs = scene.children.slice(lookFrom); kindFrom(lookFrom, 'map look');   // the look's own draws (the storm's rain, mist and beams): put away in the garage
 // how the game runs on this device, for the server's /host page (report.js; ?perf=1 shows it on screen too)
-const reports = startReports({ game, quality, renderer, MAP, cars, online: () => !!net });
+// on the way out (leave.js): the meshing worker and its copy of the world, both drawing contexts and the sound go first
+onLeave(() => {
+  stopMeshWorker();
+  art.dispose();
+  renderer.dispose(); renderer.forceContextLoss();
+  if (audioMix.ctx && audioMix.ctx.close) audioMix.ctx.close().catch(() => {});
+});
+const reports = startReports({ game, quality, renderer, MAP, cars, online: () => !!net, stats, leaving });
 let last = performance.now();
 function frame(now) {
+  if (leaving()) return;   // on the way out (leave.js): nothing more is stepped or drawn
   requestAnimationFrame(frame);
   if (innerWidth !== sizeW || innerHeight !== sizeH) resize();
-  music.play(HOME_ZONE[game.state] ? 'theme' : null);
+  music.play(HOME_ZONE[game.state] ? 'theme' : IN_ROUND[game.state] ? ROUND_TRACK : null);
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   if (window.__hold) return;   // tests step the game by hand (window.__derby.step)
   const a = performance.now();
   step(dt);
   const b = performance.now();
-  quality.judge(now); placeSky(); quality.draw();
+  quality.judge(now); placeSky(); reports.drawStart(); quality.draw(); reports.drawEnd();
   reports.frame(now, b - a, performance.now() - b);
 }
 // Online, a hidden tab gets no frames: the host's bots (and horde) would stand still for everyone. So while the page is
@@ -1639,6 +1842,7 @@ if (net) {
   let at = 0;
   try {
     const w = new Worker(URL.createObjectURL(new Blob(['setInterval(() => postMessage(0), 50)'], { type: 'text/javascript' })));
+    onLeave(() => w.terminate());
     w.onmessage = () => { const now = performance.now(); if (!document.hidden || window.__hold) { at = now; return; } const dt = Math.min(0.1, (now - (at || now)) / 1000); at = now; if (dt > 0) step(dt); };
   } catch (e) { /* no workers: a hidden host just waits */ }
 }
@@ -1701,10 +1905,9 @@ function step(dt) {
     const sp = Math.abs(player.fwd), on = !muted && (live || test || game.state === 'garage') && !player.dead, k = clamp(sp / player.spec.top, 0, 1.4);
     sfx.listen(player.x, player.z, cam.yaw);
     const rev = game.revT > 0 ? Math.sin(Math.min(1, game.revT / 1.4) * Math.PI) : 0;   // an engine tried in the garage: a rev
-    const E = PARTS.engine[player.load.engine] || {}, pitch = E.pitch || 1;
-    engine.me.set(on ? 0.5 + 0.35 * Math.max(Math.abs(player.throttle), rev) : 0, (0.72 + k * 1.05 + (player.boostT > 0 ? 0.22 : 0) + rev * 0.9) * pitch, player.x, player.z);
+    const E = PARTS.engine[player.load.engine] || {};
     engine.jet.set(on && E.whine ? 0.22 + 0.3 * Math.max(Math.abs(player.throttle), rev) : 0, 1.3 + k * 0.9 + rev * 0.8, player.x, player.z);
-    engine.skid.set(on && player.speed > 14 ? clamp(player.skid, 0, 0.9) : 0, 0.85 + clamp(player.speed / 160, 0, 0.3) + 0.12 * player.skid, player.x, player.z);
+    road.step(dt, player, cars, on && game.state !== 'garage');   // the tyres, scrapes, wind and the rest (roadsound.js)
     const near = live ? cars.filter((c) => c.rival && !c.dead).sort((a, b) => Math.hypot(a.x - player.x, a.z - player.z) - Math.hypot(b.x - player.x, b.z - player.z)) : [];
     // the minigun's barrels, the saws' motor and the arc coil's hum, on the player's car
     const bv = player.barrelV || 0, arcG = player.guns.find((G) => G.g.arc);
@@ -1714,7 +1917,7 @@ function step(dt) {
     // a flamethrower going: the player's, or else the nearest one
     const fl = player.flameT > 0 && !player.dead ? player : cars.filter((c) => c.flameT > 0 && !c.dead).sort((a, b) => Math.hypot(a.x - player.x, a.z - player.z) - Math.hypot(b.x - player.x, b.z - player.z))[0];
     engine.flame.set(!muted && fl ? (fl === player ? 0.8 : 0.6) : 0, fl === player ? 1 : 0.92, fl ? fl.x : player.x, fl ? fl.z : player.z);
-    engine.rivals.forEach((L, i) => { const c = near[i]; if (!c) L.set(0); else L.set(0.45 + 0.3 * Math.abs(c.throttle), (0.68 + clamp(Math.abs(c.fwd) / c.spec.top, 0, 1.3) * 0.95) * ((PARTS.engine[c.load.engine] || {}).pitch || 1), c.x, c.z); });
+    engine.note.step(dt, player, near, on, rev);   // the engines' note, through the gears (enginesound.js)
   }
   document.body.classList.toggle('in-garage', game.state === 'garage');
   document.body.classList.toggle('at-home', !!game.home);
@@ -1740,4 +1943,4 @@ if (net) net.ready_();
   else if (net || brief || /[?&](room|online|map)=/.test(location.search)) $('menu').hidden = false; else showHome();
 }
 requestAnimationFrame((t) => { last = t; frame(t); });
-window.__derby = { art, STARTER, net, specials, crumple, cube, room, gcam, garageLight, startTest, endTest, tryPart: (s, k) => onTry(s, k), dummies, renderer, mapLook, touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH, picked }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, pauseOn, pauseOff, toHome, setPlay, sfx, music, audioMix, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop };
+window.__derby = { art, STARTER, net, specials, crumple, cube, room, gcam, garageLight, startTest, endTest, tryPart: (s, k) => onTry(s, k), dummies, renderer, mapLook, touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH, picked }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, pauseOn, pauseOff, toHome, setPlay, sfx, music, audioMix, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop, keep, road, engine: () => engine };

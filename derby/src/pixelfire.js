@@ -61,12 +61,13 @@ export function makePixelFire(scene, { mobile = false } = {}) {
 
   // One puff of a flamethrower, from `from` along unit direction `d` (reach: how far it carries), standing for `dt`
   // seconds of the jet (the gun's own fire rate puffs it: the blocks are spread over that time so it pours, not pulses).
+  // `rate` thins it (the arena's flame jets burn eight at once: hazards.js).
   // `w` scales its width and block size (the side burners are thinner). Fire under pressure: a tight stream, white down
   // the middle and red at its skin, two bright strands twisting round it, a blue pilot flame at the nozzle, burning
   // drops, and a tip that rolls up and back into smoke.
   const _r = new THREE.Vector3(), _u = new THREE.Vector3();
   let spin = 0;
-  function jet(from, d, reach, dt, w = 1, t = 0, cvx = 0, cvz = 0) {
+  function jet(from, d, reach, dt, w = 1, t = 0, cvx = 0, cvz = 0, rate = 1) {
     const R = Math.random, A = PIXFIRE.spread * w, drag = PIXFIRE.drag, hl = Math.hypot(d.x, d.z) || 1;
     _r.set(d.z / hl, 0, -d.x / hl); _u.crossVectors(_r, d);   // across the stream and up from it
     const shot = (a, off, v, size, life, rise, kind, lead) => {
@@ -75,7 +76,7 @@ export function makePixelFire(scene, { mobile = false } = {}) {
     };
     const surge = (t * 6) % 1 < 0.2, vr = reach * drag / (1 - Math.exp(-drag * 0.72));   // (vr: how fast a block must leave to carry `reach` in its life)
     // the stream
-    let n = PIXFIRE.jet * K * dt * (surge ? 1.5 : 1);
+    let n = PIXFIRE.jet * K * dt * rate * (surge ? 1.5 : 1);
     for (; n > 0; n--) {
       if (n < 1 && R() > n) break;
       const q = Math.sqrt(R()), v0 = vr * (0.95 + R() * 0.15), tau = R() * dt;
@@ -83,7 +84,7 @@ export function makePixelFire(scene, { mobile = false } = {}) {
       if (f) { f.o = -0.36 + 0.7 * q * q - (surge ? 0.25 : 0); f.curl = 30; f.cx = d.x / hl; f.cz = d.z / hl; if (R() < 0.12) f.vy += 3 + R() * 5; if (R() < 0.4) f.cap = 0.74; }
     }
     // the two strands: each block is aimed a little further round than the last
-    n = PIXFIRE.strands * K * dt;
+    n = PIXFIRE.strands * K * dt * rate;
     for (; n > 0; n--) {
       if (n < 1 && R() > n) break;
       const tau = R() * dt, v = vr * 1.1;
@@ -92,13 +93,25 @@ export function makePixelFire(scene, { mobile = false } = {}) {
       if (f) { f.j = 1.3; f.wx = f.wy = 0; }
     }
     // the pilot flame at the nozzle
-    n = PIXFIRE.pilot * K * dt;
+    n = PIXFIRE.pilot * K * dt * rate;
     for (; n > 0; n--) { if (n < 1 && R() > n) break; const life = 0.1 + R() * 0.06, f = shot(R() * 6.283, R() * 0.18, reach * 0.06 * 6 / (1 - Math.exp(-6 * life)), (0.4 + R() * 0.25) * PIXFIRE.size * w, life, 0, 2, R() * 0.3); if (f) f.drag = 6; }
     // burning drops
     if (R() < PIXFIRE.drops * dt) {
       const at = reach * (0.18 + R() * 0.6), v = reach * (0.5 + R() * 0.5);
       const f = block(from.x + d.x * at, from.y + d.y * at, from.z + d.z * at, d.x * v, d.y * v + R() * 3, d.z * v, 0.3 * w, 0.45 + R() * 0.2, 1.2, 0, 3);
       if (f) f.g = 30;
+    }
+  }
+  // A column of fire thrown straight up from (x, y, z), `reach` high, for `dt` seconds of it: a show's flame cannon
+  // (the arena's: arenamoves.js). White at its foot and down its middle, rolling out into smoke at the top.
+  function column(x, y, z, reach, dt, w = 1, rate = 1) {
+    const R = Math.random, drag = PIXFIRE.drag, vr = reach * drag / (1 - Math.exp(-drag * 0.72));
+    let n = PIXFIRE.jet * K * dt * rate;
+    for (; n > 0; n--) {
+      if (n < 1 && R() > n) break;
+      const a = R() * 6.283, q = Math.sqrt(R()), out = q * 0.11 * w, v0 = vr * (0.85 + R() * 0.25);
+      const f = block(x + Math.cos(a) * q * 0.8 * w, y + R() * v0 * dt, z + Math.sin(a) * q * 0.8 * w, Math.cos(a) * out * v0, v0, Math.sin(a) * out * v0, (0.85 + R() * 0.6) * PIXFIRE.size * w, 0.55 + R() * 0.3, drag, PIXFIRE.rise * 0.4, 0);
+      if (f) { f.o = -0.36 + 0.7 * q * q; f.hit = 3; if (R() < 0.4) f.cap = 0.74; }
     }
   }
   // flames licking up off a burning car (x, z its middle; half, wide its size; dt the step)
@@ -148,5 +161,5 @@ export function makePixelFire(scene, { mobile = false } = {}) {
     if (n) { mesh.instanceMatrix.needsUpdate = true; mesh.instanceColor.needsUpdate = true; }
   }
   function clear() { live.length = 0; mesh.count = 0; }
-  return { jet, burning, block, step, clear, live, mesh };
+  return { jet, column, burning, block, step, clear, live, mesh };
 }

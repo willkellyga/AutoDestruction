@@ -16,7 +16,7 @@ export const SLOTS = [
   { key: 'armour', name: 'Armour', tip: 'More health, more weight.' },
   { key: 'wheels', name: 'Wheels', tip: 'Grip, speed and height.' },
   { key: 'engine', name: 'Engine', tip: 'More go.' },
-  { key: 'gadget', name: 'Gadget', tip: 'Shift to use.' },
+  { key: 'gadget', name: 'Gadget', tip: 'E to use.' },
   { key: 'paint', name: 'Paint', tip: 'Colours and patterns. Free.' },
 ];
 
@@ -84,20 +84,20 @@ export const PARTS = {
     monster: { name: 'Monster tyres', desc: 'Huge. Ram harder and roll over rubble and grass.', cost: 600, power: 1, mass: 0.2, hp: 20, ramK: 1.4, topK: 0.94, roughK: 0.1, look: 'monster' },
   },
   engine: {
-    stock: { name: 'Stock', desc: 'A plain four. It runs.', cost: 0, power: 0, mass: 0, look: 'stock' },
-    turbo: { name: 'Turbo', desc: 'A four with a turbo on it. Faster off the line.', cost: 250, power: 1, mass: 0.02, accelK: 1.25, pitch: 1.06, look: 'turbo' },
-    diesel: { name: 'Big diesel', desc: 'A huge six. Slow to rev, but it shoves: rams harder, and black smoke when you floor it.', cost: 450, power: 2, mass: 0.12, accelK: 1.1, ramK: 1.25, pitch: 0.7, smoke: true, look: 'diesel' },
-    v8: { name: 'Big V8', desc: 'More top speed and more pull.', cost: 500, power: 2, mass: 0.06, accelK: 1.12, topK: 1.12, pitch: 0.9, look: 'v8' },
-    blower: { name: 'Supercharger', desc: 'A V8 with a blower sticking up through the bonnet. Huge pull and top speed.', cost: 850, power: 3, mass: 0.08, accelK: 1.28, topK: 1.16, pitch: 0.85, look: 'blower' },
-    jet: { name: 'Jet turbine', desc: 'A screaming turbine. The highest top speed of all, but slow to wind up.', cost: 1100, power: 4, mass: 0.05, accelK: 0.94, topK: 1.26, pitch: 1.45, whine: true, look: 'jet' },
+    stock: { name: 'Stock', desc: 'A plain four. It runs.', cost: 0, power: 0, mass: 0, sound: 'engine_loop', look: 'stock' },
+    turbo: { name: 'Turbo', desc: 'A four with a turbo on it. Faster off the line.', cost: 250, power: 1, mass: 0.02, accelK: 1.25, sound: 'engine_loop', pitch: 1.06, look: 'turbo' },
+    diesel: { name: 'Big diesel', desc: 'A huge six. Slow to rev, but it shoves: rams harder, and black smoke when you floor it.', cost: 450, power: 2, mass: 0.12, accelK: 1.1, ramK: 1.25, sound: 'engine_diesel', pitch: 0.9, smoke: true, look: 'diesel' },
+    v8: { name: 'Big V8', desc: 'More top speed and more pull.', cost: 500, power: 2, mass: 0.06, accelK: 1.12, topK: 1.12, sound: 'engine_v8', pitch: 1, look: 'v8' },
+    blower: { name: 'Supercharger', desc: 'A V8 with a blower sticking up through the bonnet. Huge pull and top speed.', cost: 850, power: 3, mass: 0.08, accelK: 1.28, topK: 1.16, sound: 'engine_v8', pitch: 0.92, look: 'blower' },
+    jet: { name: 'Jet turbine', desc: 'A screaming turbine. The highest top speed of all, but slow to wind up.', cost: 1100, power: 4, mass: 0.05, accelK: 0.94, topK: 1.26, sound: 'engine_jet', pitch: 1, gears: false, whine: true, look: 'jet' },
   },
   gadget: {
     none: { name: 'Nothing', desc: '', cost: 0, power: 0, mass: 0 },
-    nitro: { name: 'Nitro', desc: 'Shift for a burst of speed. Ram through anything.', cost: 300, power: 2, mass: 0.02, nitro: { time: 2.2, every: 7, topK: 1.45, accelK: 2.4 } },
-    repair: { name: 'Repair kit', desc: 'Shift to patch up 40 health. Once every 25 seconds.', cost: 400, power: 2, mass: 0.02, repair: { hp: 40, every: 25 } },
-    shield: { name: 'Shield', desc: 'Shift for four seconds when nothing can hurt you. Once every 20 seconds.', cost: 550, power: 3, mass: 0.03, shield: { time: 4, every: 20 } },
-    oil: { name: 'Oil slick', desc: 'Shift to pour a slick behind you. Whoever drives into it spins out.', cost: 300, power: 1, mass: 0.04, oil: { every: 8, life: 14, r: 9 } },
-    jump: { name: 'Jump jets', desc: 'Shift to leap over cars and come down on top of them.', cost: 450, power: 2, mass: 0.04, jump: { every: 6, vy: 34 } },
+    nitro: { name: 'Nitro', desc: 'E for a burst of speed. Ram through anything.', cost: 300, power: 2, mass: 0.02, nitro: { time: 2.2, every: 7, topK: 1.45, accelK: 2.4 } },
+    repair: { name: 'Repair kit', desc: 'E to patch up 40 health. Once every 25 seconds.', cost: 400, power: 2, mass: 0.02, repair: { hp: 40, every: 25 } },
+    shield: { name: 'Shield', desc: 'E for four seconds when nothing can hurt you. Once every 20 seconds.', cost: 550, power: 3, mass: 0.03, shield: { time: 4, every: 20 } },
+    oil: { name: 'Oil slick', desc: 'E to pour a slick behind you. Whoever drives into it spins out.', cost: 300, power: 1, mass: 0.04, oil: { every: 8, life: 14, r: 9 } },
+    jump: { name: 'Jump jets', desc: 'E to leap over cars and come down on top of them.', cost: 450, power: 2, mass: 0.04, jump: { every: 6, vy: 34 } },
   },
 };
 

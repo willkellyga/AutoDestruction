@@ -16,6 +16,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 WEAPONS.missile = { kind: 'rocket', speed: 46, top: 132, acc: 200, turn: 4.4, spread: 0.08, life: 4.6, sound: 'launch', vol: 0.7, r: 3.6, scale: 0.85 };
 
 const GRAV = 70;   // the mortar's shells fall at this (voxels a second squared)
+const STOMP = { base: 30, k: 1.1 };   // coming down on another car, off the jump jets or a ramp: this, and this for each voxel a second it was falling (times the car's weight)
 const _d = new THREE.Vector3(), _p = new THREE.Vector3(), _c = new THREE.Vector3();
 
 export function makeSpecials({ scene, fx, sfx, cars, extras, player, damage, blast, friendly, cube, chip, mobile }) {
@@ -70,7 +71,7 @@ export function makeSpecials({ scene, fx, sfx, cars, extras, player, damage, bla
     c.burnT -= dt;
     c.burnAcc = (c.burnAcc || 0) + c.burnDps * dt;
     if (c.burnAcc >= 2) { damage(c, c.burnAcc, c.burnBy); c.burnAcc = 0; }
-    pix.burning(c.x + Math.sin(c.yaw) * c.mid, (c.y || 0) + c.top * 0.55, c.z + Math.cos(c.yaw) * c.mid, c.yaw, c.half, c.wide, dt);
+    pix.burning(c.x + Math.sin(c.yaw) * c.mid, c.h + c.top * 0.55, c.z + Math.cos(c.yaw) * c.mid, c.yaw, c.half, c.wide, dt);
   }
 
   // ---- the seeker missiles ---------------------------------------------------------------------------------------
@@ -101,7 +102,7 @@ export function makeSpecials({ scene, fx, sfx, cars, extras, player, damage, bla
       if (!fx.shots.includes(S.shot)) { seekers.splice(i, 1); continue; }
       const t = S.car; if (t.dead || t.gone || t.shieldT > 0) continue;   // (it flies on to the last place it saw)
       const d = S.shot.p.distanceTo(t.centre(_c)), lead = d / 150, mid = t.mid || 0;   // (a zombie has no mid)
-      S.shot.aim.set(t.x + Math.sin(t.yaw) * mid + (t.vx || 0) * lead, (t.mid === undefined ? 3 : 1.6) + (t.y || 0), t.z + Math.cos(t.yaw) * mid + (t.vz || 0) * lead);
+      S.shot.aim.set(t.x + Math.sin(t.yaw) * mid + (t.vx || 0) * lead, (t.mid === undefined ? 3 : 1.6) + (t.h ?? (t.y || 0)), t.z + Math.cos(t.yaw) * mid + (t.vz || 0) * lead);
     }
   }
 
@@ -176,7 +177,7 @@ export function makeSpecials({ scene, fx, sfx, cars, extras, player, damage, bla
     if (c.gone) { b.removeFromParent(); c.bubble = null; return; }
     c.bubbleHit = Math.max(0, (c.bubbleHit || 0) - dt * 3);
     const u = b.material.uniforms; u.t.value += dt; u.hit.value = c.bubbleHit; u.fade.value = c.shieldT < 0.8 ? ((c.shieldT * 8) % 1 < 0.5 ? 0.4 : 1) : 1;   // it flickers before it goes
-    b.position.set(c.x + Math.sin(c.yaw) * c.mid, (c.y || 0) + c.top * 0.42, c.z + Math.cos(c.yaw) * c.mid);
+    b.position.set(c.x + Math.sin(c.yaw) * c.mid, c.h + c.top * 0.42, c.z + Math.cos(c.yaw) * c.mid);
     b.rotation.y = c.yaw; b.scale.set(c.wide + 2.2, c.top * 0.75 + 1.4, c.half + 2.4);
   }
 
@@ -241,7 +242,7 @@ export function makeSpecials({ scene, fx, sfx, cars, extras, player, damage, bla
     return true;
   }
   function jets(c, n) {
-    const s = Math.sin(c.yaw), co = Math.cos(c.yaw), y = (c.y || 0) + 0.6;
+    const s = Math.sin(c.yaw), co = Math.cos(c.yaw), y = c.h + 0.6;
     for (let k = 0; k < n; k++) {
       const u = (Math.random() < 0.5 ? -0.6 : 0.6) * c.half, v = (Math.random() < 0.5 ? -0.7 : 0.7) * c.wide;
       mote(c.x + s * (c.mid + u) + co * v, y, c.z + co * (c.mid + u) - s * v, (Math.random() - 0.5) * 3, -24 - Math.random() * 14, (Math.random() - 0.5) * 3, 0.9 + Math.random() * 0.9, 0.12 + Math.random() * 0.1, 1, 0.62 + Math.random() * 0.25, 0.3);
@@ -251,19 +252,19 @@ export function makeSpecials({ scene, fx, sfx, cars, extras, player, damage, bla
   function stepAir(c) {
     if (!((c.y || 0) > 0.05)) return;
     if (c.vy > 8) jets(c, 2);
-    if (c.vy >= 0 || c.dead) return;
+    if (c.vy >= -5 || c.dead) return;   // (coming down in earnest: not the hops of a rough floor)
     for (const o of cars) {
       if (o === c || o.dead || o.gone || (o.y || 0) > 0.5) continue;
-      if (c.y > o.top + 1.2) continue;
+      if (c.h > o.h + o.top + 1.2 || c.h < o.h - 1) continue;   // (heights in the world: the floor may be a heap of dirt, maps/arena.js)
       const dx = (c.x + Math.sin(c.yaw) * c.mid) - (o.x + Math.sin(o.yaw) * o.mid), dz = (c.z + Math.cos(c.yaw) * c.mid) - (o.z + Math.cos(o.yaw) * o.mid);
       if (Math.hypot(dx, dz) > Math.max(o.half, o.wide) * 0.9 + c.wide * 0.5) continue;
       const hard = Math.abs(c.vy);
-      if (!friendly() || o.dummy) damage(o, 18 + hard * 0.9 * (c.spec.mass || 1), c, true);   // (true: a car driven on another device is told: net.js)
+      if (!friendly() || o.dummy) damage(o, STOMP.base + hard * STOMP.k * (c.spec.mass || 1), c, true);   // (true: a car driven on another device is told: net.js)
       _p.set(o.x + Math.sin(o.yaw) * o.mid, o.top, o.z + Math.cos(o.yaw) * o.mid);
       o.unit.hit(_p, 2.4, chip, 10);
       sparks(_p.x, _p.y, _p.z, 18, 1, 0.8, 0.4, 24);
       sfx.play('crunch_heavy', 1, _p.x, _p.z);
-      c.vy = 16; c.y = o.top + 0.6; c.vx += dx * 0.8; c.vz += dz * 0.8;
+      c.vy = 16; c.y = Math.max(c.y, o.h + o.top + 0.6 - (c.fy || 0)); c.vx += dx * 0.8; c.vz += dz * 0.8;
       o.vx *= 0.4; o.vz *= 0.4;
       if (c === player()) c.stomped = 0.4;
       break;
@@ -274,7 +275,7 @@ export function makeSpecials({ scene, fx, sfx, cars, extras, player, damage, bla
     if (speed > 14 && !c.dead) for (const e of extras) if (e.explosion) e.explosion(c.x + Math.sin(c.yaw) * c.mid, 0.5, c.z + Math.cos(c.yaw) * c.mid, Math.max(c.half, c.wide) + 3, 10 + speed * 0.4, c);
     if (speed < 8) return;
     dust(c.x, 0.6, c.z, Math.round(4 + speed * 0.25), 6);
-    if (speed > 20) sfx.play('crunch', 0.6, c.x, c.z, { rate: 0.8 });
+    if (speed > 30) sfx.play('crunch', 0.4, c.x, c.z, { rate: 0.8 });   // (a hard landing; the thump is roadsound.js land())
   }
   // a hop on the garage's turntable: up, and back down onto it (the car stands still there, so this does the falling)
   function hop(c, dt) {

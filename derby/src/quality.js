@@ -16,11 +16,16 @@ import { setShadows, setDebrisBudget, setLod } from '../../src/sim.js';
 
 const QMAX = 6;
 const LODS = [[Infinity, Infinity], [Infinity, Infinity], [Infinity, Infinity], [300, 640], [260, 560], [220, 440], [180, 360]];
+// On a phone or tablet the far detail never turns off, however well it runs: climbing from step 3 to 2 used to switch it
+// off, the whole of New York came back in full (and twice over, for the shadows), and the race fell to 27 fps on an
+// iPad before the next window could step it down again (device report, 2026-11-24). Measured headless on the race:
+// 1,100 draws and 2.9 million triangles in view with it off, about 510 and 1.1 million with it on.
+const LODS_MOBILE = [[360, 720], [360, 720], [330, 680], [300, 640], [260, 560], [220, 440], [180, 360]];
 
-export function makeQuality({ renderer, composer, bloom, scene, camera, sun, resize, playing, mobile }) {
+export function makeQuality({ renderer, composer, bloom, scene, camera, sun, resize, playing, mobile, lodK = 1 }) {
   let q = -1, post = true;
   const win = { t: 0, n: 0, fast: 0, settle: 3, prev: 0, left: new Float64Array(QMAX + 1) };
-  const fixed = /[?&]q=(\d)/.exec(location.search);
+  const fixed = !/[?&]mp=/.test(location.search) && /[?&]q=(\d)/.exec(location.search);   // never in an online round (an older page sent quick rounds as ?q=1)
   const shadowSize = (n) => { sun.shadow.mapSize.set(n, n); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } };
   function set(n) {
     n = Math.max(0, Math.min(QMAX, Math.round(n)));
@@ -38,7 +43,7 @@ export function makeQuality({ renderer, composer, bloom, scene, camera, sun, res
     bloom.enabled = n <= 1;
     post = n <= 3;   // below that the picture goes straight to the screen, without the grade and vignette
     setDebrisBudget(n <= 1 ? 8000 : n <= 3 ? 5000 : 3000);
-    setLod(LODS[n][0], LODS[n][1]);
+    const L = (mobile ? LODS_MOBILE : LODS)[n]; setLod(L[0] * (mobile ? lodK : 1), L[1] * (mobile ? lodK : 1));   // (lodK: a map that shows more city at once asks for less of it in full, maps/empire.js)
     win.t = 0; win.n = 0; win.fast = 0; win.settle = 3;   // let a change settle (shaders compile) before judging again
   }
   // once a frame, with the frame's time stamp

@@ -253,7 +253,7 @@ export function makeCrumple({ scene }) {
   function crash(car, into, H, r) {
     if (!car.crumple || car.dead) return;
     const end = H && H.front !== undefined ? (H.front > H.back ? 1 : H.back > H.front ? -1 : 0) : (car.fwd >= 0 ? 1 : -1);
-    const s = Math.sin(car.yaw), c = Math.cos(car.yaw), y = 1.6 + (car.y || 0);
+    const s = Math.sin(car.yaw), c = Math.cos(car.yaw), y = 1.6 + car.h;
     if (end) {
       const along = car.mid + end * (car.half + 0.4), off = (Math.random() - 0.5) * car.wide;
       _p.set(car.x + s * along + c * off, y, car.z + c * along - s * off);
@@ -268,7 +268,7 @@ export function makeCrumple({ scene }) {
   // a car wrecked: the roof caves in, the bonnet blows off and another panel or two go, the rest hang loose
   function wrecked(car, debris) {
     const C = car.crumple; if (!C) return;
-    const top = car.def.dims.roof + (car.y || 0);
+    const top = car.def.dims.roof + car.h;
     C.wrecking = true;
     for (const f of [-0.35, 0.3]) {
       const s = Math.sin(car.yaw), c = Math.cos(car.yaw), along = car.mid + f * car.half;
@@ -307,7 +307,7 @@ export function makeCrumple({ scene }) {
       const f = car.dead ? 0 : car.hp / car.maxHp;
       let stage = null; for (const S of SMOKE) if (f < S[0]) { stage = S; break; }
       if (stage && (!car.dead || car.deadT < 6)) {
-        const s = Math.sin(car.yaw), c = Math.cos(car.yaw), bz = car.def.dims.bayZ, x = car.x + s * bz, z = car.z + c * bz, y = car.top * 0.55 + (car.y || 0);
+        const s = Math.sin(car.yaw), c = Math.cos(car.yaw), bz = car.def.dims.bayZ, x = car.x + s * bz, z = car.z + c * bz, y = car.top * 0.55 + car.h;
         if (Math.random() < dt * stage[2]) smoke(x + (Math.random() - 0.5), y, z + (Math.random() - 0.5), 1, 0.4, stage[1]);
         if (f < 0.12 && Math.random() < dt * 30) mote(x + (Math.random() - 0.5) * 1.6, y - 0.4, z + (Math.random() - 0.5) * 1.6, car.vx * 0.3, 4 + Math.random() * 5, car.vz * 0.3, 1.2 + Math.random() * 1.4, 0.3 + Math.random() * 0.3, 1, 0.45 + Math.random() * 0.3, 0.08);
       }

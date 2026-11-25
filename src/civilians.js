@@ -206,7 +206,8 @@ export function makeCivilians(o) {
 
   const recs = [], live = [], cells = new Map(), variants = new Map(), grid = new Map(), fuses = [], air = [], sorties = [], rockets = [];
   const ZERO = new THREE.Matrix4().makeScale(0, 0, 0), UP = new THREE.Vector3(0, 1, 0), _c = new THREE.Vector3(), _d = new THREE.Vector3(), _w = new THREE.Vector3(), _q = new THREE.Quaternion(), _e = new THREE.Euler(0, 0, 0, 'YXZ'), _s = new THREE.Vector3(1, 1, 1);
-  let clock = 0, quiet = false, lodT = 0, stamp = 0, carrier = null, jetT = 26, toldJets = false;
+  const KEEP_SHIPS = typeof location !== 'undefined' && /[?&]keepships=1/.test(location.search); let unloads = 0;
+  let clock = 0, quiet = false, lodT = 0, stamp = 0, carrier = null, jetT = 26, toldJets = false, armyJetT = 30, armyJets = 0, wingman = 0;
   let nearD = NEAR, nearSoloD = NEAR_SOLO, farLvl = 0;   // the lighter quality steps draw models in full less far out, and their far copies in bigger cubes (detail() below)
 
   // ---- which model stands where ----
@@ -295,7 +296,7 @@ export function makeCivilians(o) {
   }
   function sleep(rec) { rec.unit.dispose(); rec.unit = null; draw(rec, true); }
   const pristine = (rec) => { const u = rec.unit; return u && !u.dead && !u.gone && u.voxels === u.voxels0 && !rec.touched; };
-  function unfar(rec) { if (rec.far) { rec.far.removeFromParent(); for (const g of rec.farG) g.dispose(); rec.far = rec.farG = null; rec.remade = false; if (rec.unit) rec.unit.root.visible = true; } }
+  function unfar(rec) { if (rec.unit) rec.unit.reload(); if (rec.far) { rec.far.removeFromParent(); for (const g of rec.farG) g.dispose(); rec.far = rec.farG = null; rec.remade = false; if (rec.unit) rec.unit.root.visible = true; } }
   function touch(rec) {   // damaged: its far copy no longer looks like it, and is put away until it has come to rest (refar below)
     rec.touched = true; rec.idle = 0; rec.stillT = 0; rec.noFar = false;
     unfar(rec);
@@ -627,11 +628,17 @@ export function makeCivilians(o) {
       const nd = !rec.spec.solo ? nearD : rec.remade && !farLvl ? FAR_SOLO : nearSoloD, d = Math.hypot(rec.x - cx, rec.z - cz) - rec.reach;
       if (rec.far) {
         let want = d < (rec.unit.root.visible ? nd + 40 : nd), mid = false;
+        const u = rec.unit;
         if (want && P && rec.unit.def.wk.boat && !rec.remade) {
           const b = rec.size.box; local(rec, cx, cz, _l);
           const gap = Math.hypot(Math.max(b.min.x - _l.x, 0, _l.x - b.max.x), Math.max(b.min.z - _l.z, 0, _l.z - b.max.z), Math.max(0, cy - rec.y - b.max.y));
           if (rec.unit.def.h * vh / Math.max(1, gap) < (rec.unit.root.visible ? P * 0.85 : P)) { want = false; mid = true; }
         }
+        // Memory: an untouched model shown by its far copy for a while lets go of its vertex lists (unit.js unload), and
+        // builds them again when it is wanted near, its far copy staying until that is done. ?keepships=1 keeps them.
+        if (want && u.unloaded) u.reload();
+        if (want && u.loading) { if (u.busy) want = false; else u.loading = false; }
+        if (!want && !u.root.visible && !u.unloaded && !u.loading && !KEEP_SHIPS && pristine(rec)) { const now = performance.now(); if (!rec.farFor) rec.farFor = now; else if (now - rec.farFor > 4000) { u.unload(); rec.farFor = 0; unloads++; } } else rec.farFor = 0;
         rec.unit.root.visible = want; rec.far.visible = !want;
         if (!want) { const g = rec.farG[mid ? 0 : farLvl || d > FAR_SOLO ? 1 : 0]; if (rec.far.geometry !== g) rec.far.geometry = g; }
       }
@@ -652,6 +659,7 @@ export function makeCivilians(o) {
     for (let i = live.length - 1; i >= 0; i--) {
       const rec = live[i], u = rec.unit;
       const away = rec.far && !u.root.visible;   // far off, and untouched or come to rest: its far copy stands in, and it need not move
+      if (away && u.loading) u.update(0);   // its vertex lists being built again (unload above), a slab at a time
       if (!away) {
         const t0 = laps.on ? performance.now() : 0;
         stepUnit(rec, dt); rec.stillT = still(rec) ? (rec.stillT || 0) + dt : 0;
@@ -705,8 +713,23 @@ export function makeCivilians(o) {
     if (!toldJets) { toldJets = true; toast('Jets incoming', 'Burn them down, or sink the carrier'); }
     return true;
   }
+  // The army's own jets, on every map (playtest, 2026-11-24, Will: "Let's use the jets since we added them"). They come in
+  // high from far off on a random side, round to a point well off from him, make the carrier jets' strafing pass and fly off.
+  function flyIn() {
+    const n = armyJets++ % 2, u = new Unit(JET, mats, { paint: n ? 'green' : 'blue', seed: 60 + armyJets });
+    scene.add(u.root); u.play('Fly', 0);
+    const a = Math.random() * Math.PI * 2, sa = Math.sin(a), ca = Math.cos(a), pos = u.root.position;
+    pos.set(mon.x + sa * 1100, 200, mon.z + ca * 1100);
+    const yaw = Math.atan2(-sa, -ca), b = a + (n ? -0.6 : 0.6);
+    const s = { u, n, cv: null, t: 5, phase: 'air', v: 74, yaw, pitch: 0, bank: 0, wp: 0, gun: 0, salvo: 0, roll: 0, vy: 0, hp: JET_HP, x: pos.x, y: pos.y, z: pos.z, dead: false, jet: true,
+      wps: [[mon.x + Math.sin(b) * 420, 150, mon.z + Math.cos(b) * 420], [mon.x, mon.y + 20, mon.z, 'gun']] };
+    u.root.rotation.set(0, yaw, 0, 'YXZ');
+    sorties.push(s); air.push(s); sfx.play('jet', pos, 0.7);
+    if (!toldJets) { toldJets = true; toast('Jets incoming', 'Burn them down with your breath'); }
+  }
   function endSortie(s, lost) {
     sorties.splice(sorties.indexOf(s), 1); air.splice(air.indexOf(s), 1); s.dead = true; s.u.dispose();
+    if (!s.cv) return;   // an army jet: no deck to bring a fresh one up to
     // a fresh jet comes up to the catapult, unless she has been wrecked or stepped on meanwhile
     fuses.push([lost ? 9 : 4, () => { const cv = s.cv, part = cv.parts.find((p) => p.name === 'p' + (s.n + 1)), sv = cv.away && cv.away[s.n]; if (!sv || cv.dead || cv.gone) return; touch(carrier); part.col.set(sv.col); part.count = sv.count; part.dirty = true; cv.away[s.n] = null; }]);
   }
@@ -821,7 +844,11 @@ export function makeCivilians(o) {
   }
   function stepJets(dt) {
     // she sends them once the army is out in strength, one at a time
-    if (carrier && carrier.unit && !carrier.unit.dead && (hooks.heat ? hooks.heat() : 0) > 0.22) { jetT -= dt; if (jetT <= 0) { jetT = sorties.length ? 12 : launch() ? 34 + Math.random() * 14 : 8; } }
+    const heat = hooks.heat ? hooks.heat() : 0;
+    if (wingman > 0 && (wingman -= dt) <= 0 && game.state === 'play') flyIn();   // the second of a pair, a moment behind
+    if (carrier && carrier.unit && !carrier.unit.dead && heat > 0.22) { jetT -= dt; if (jetT <= 0) { jetT = sorties.length ? 12 : launch() ? 34 + Math.random() * 14 : 8; } }
+    // the army's: once it is out in strength, a pair every half a minute or so, more often as the town comes down
+    if (heat > 0.25 && !o.noArmyJets) { armyJetT -= dt; if (armyJetT <= 0) { const mine = sorties.filter((q) => !q.cv).length; if (mine < 2) { flyIn(); if (!mine) wingman = 1.8; } armyJetT = (heat > 0.5 ? 22 : 32) + Math.random() * 10; } }
     for (const s of [...sorties]) stepSortie(s, dt);
     for (let i = rockets.length - 1; i >= 0; i--) {      // rockets: they speed up, trail smoke and burst on him, or on the street where he was
       const r = rockets[i]; r.t += dt; const d = _d.copy(r.to).sub(r.p), len = d.length(), sp = Math.min(240, 74 + r.t * 420);
@@ -837,7 +864,7 @@ export function makeCivilians(o) {
 
   build();
   const api = { recs, live, variants, cells, air, sorties, rockets, fx, sfx, debris, update, damageJet, launch, kill, hit, tread, wake, near, packed, packFar, block, inWay, at, blocks, BLOCK,
-    get remakes() { return remakes; }, get farJob() { return farJob; }, get laps() { return laps; },
+    get remakes() { return remakes; }, get unloads() { return unloads; }, get farJob() { return farJob; }, get laps() { return laps; },
     detail(k) {
       nearD = NEAR * k; nearSoloD = NEAR_SOLO * k; lodT = 0;
       const l = k < 1 ? 1 : 0; if (l === farLvl) return;

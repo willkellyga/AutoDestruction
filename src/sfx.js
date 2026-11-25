@@ -251,14 +251,17 @@ export function makeMixer({ camera }) {
     } catch (e) { ctx = null; }
   }
   let normOf = {};
+  // A sound is its bytes (the one-file pages carry them inside the page) or the address of its file (the shared engine,
+  // `python3 build.py web`, where the browser keeps each sound as a file of its own and fetches it once).
+  const bytesOf = (x) => typeof x === 'string' ? fetch(x).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(r.status))) : Promise.resolve(x.buffer.slice(x.byteOffset, x.byteOffset + x.byteLength));
+  const decoded = new Map();   // a piece of music, once decoded
   function load(b, norm) { bank = b; normOf = norm || {}; if (ctx) decode(); }
   function decode() {
     for (const [set, list] of Object.entries(bank)) {
       buffers[set] = buffers[set] || [];
       list.forEach((u8, i) => {
-        const ab = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
         const done = (buf) => { buf.__n = (normOf[set] || [])[i] || 1; buffers[set].push(buf); };
-        try { const p = ctx.decodeAudioData(ab, done, () => {}); if (p && p.catch) p.catch(() => {}); } catch (e) {}
+        bytesOf(u8).then((ab) => { try { const p = ctx.decodeAudioData(ab, done, () => {}); if (p && p.catch) p.catch(() => {}); } catch (e) {} }, () => {});
       });
     }
   }
@@ -444,11 +447,12 @@ export function makeMixer({ camera }) {
   }
 
   // Music: one track at a time on its own bus, outside the sound limits. music(slot) crossfades to that slot's track
-  // (a slot with several tracks picks one at random); the same slot again does nothing. 'end' plays once, the rest loop.
+  // (a slot with several tracks picks one at random); the same slot again does nothing. 'end' plays once, the rest loop,
+  // either whole or, when loadMusic was given its loop points, from the start once and then between those points.
   // Tracks are decoded the first time they are wanted, not at load, so a round starts as fast as it did.
-  let musicBank = {}, musicBus = null, cur = null, want = null, musicIsOn = true;
+  let musicBank = {}, musicLoops = new Map(), musicBus = null, cur = null, want = null, musicIsOn = true;
   const MUSIC_GAIN = 0.32, FADE = 1.2, ONCE = { end: true };
-  function loadMusic(b) { musicBank = b || {}; }
+  function loadMusic(b, loops) { musicBank = b || {}; musicLoops = loops || new Map(); }
   function music(slot) {
     if (slot === want) return;
     if (!ctx || ctx.state !== 'running') return;   // asked again every frame, so it starts once the sound is woken
@@ -461,12 +465,28 @@ export function makeMixer({ camera }) {
     const go = (buf) => {
       if (want !== slot || !buf) return;
       const s = ctx.createBufferSource(); s.buffer = buf; s.loop = !ONCE[slot];
+      const lp = musicLoops.get(u8);   // a track with an intro: play it once, then repeat only [start, end]
+      if (s.loop && lp && lp[1] <= buf.duration) { s.loopStart = lp[0]; s.loopEnd = lp[1]; }
       const g = ctx.createGain(); g.gain.setValueAtTime(0, ctx.currentTime); g.gain.linearRampToValueAtTime(1, ctx.currentTime + FADE);
       s.connect(g); g.connect(musicBus); s.start(); cur = { s, g, slot };
     };
-    if (u8.__buf) return go(u8.__buf);
-    const ab = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
-    try { const p = ctx.decodeAudioData(ab, (buf) => { u8.__buf = buf; go(buf); }, () => {}); if (p && p.catch) p.catch(() => {}); } catch (e) {}
+    if (decoded.has(u8)) return go(decoded.get(u8));
+    bytesOf(u8).then((ab) => { try { const p = ctx.decodeAudioData(ab, (buf) => { decoded.set(u8, buf); go(buf); }, () => {}); if (p && p.catch) p.catch(() => {}); } catch (e) {} }, () => {});
+  }
+  // A sting (the round-over jingle): played once over the music, which dips under it and comes back as it ends.
+  // Will, 2026-11-24: one sting for winning and losing, and the battle music carries on under the results.
+  const DUCK = 0.25;
+  function sting(slot = 'sting') {
+    const list = musicBank[slot]; if (!ctx || ctx.state !== 'running' || !list || !list.length || !musicBus) return;
+    const u8 = list[Math.floor(Math.random() * list.length)];
+    const go = (buf) => {
+      if (!buf) return;
+      const t = ctx.currentTime, s = ctx.createBufferSource(); s.buffer = buf; s.connect(musicBus); s.start(t + 0.05);
+      if (cur) { const g = cur.g.gain; g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(DUCK, t + 0.15);
+        g.setValueAtTime(DUCK, t + Math.max(0.2, buf.duration - 0.6)); g.linearRampToValueAtTime(1, t + buf.duration + 0.8); }
+    };
+    if (decoded.has(u8)) return go(decoded.get(u8));
+    bytesOf(u8).then((ab) => { try { const p = ctx.decodeAudioData(ab, (buf) => { decoded.set(u8, buf); go(buf); }, () => {}); if (p && p.catch) p.catch(() => {}); } catch (e) {} }, () => {});
   }
   function musicOn(on) { if (on === musicIsOn) return; musicIsOn = on; if (musicBus && ctx) musicBus.gain.setTargetAtTime(on ? MUSIC_GAIN * vol.music * vol.music : 0, ctx.currentTime, 0.1); }
   // the player's volume sliders (0..1): 'music' or 'sfx'; heard as a curve, so half way sounds about half as loud
@@ -477,7 +497,7 @@ export function makeMixer({ camera }) {
     if (kind === 'sfx' && sfxBus) sfxBus.gain.setTargetAtTime(vol.sfx * vol.sfx, t, 0.05);
     if (kind === 'music' && musicBus) musicBus.gain.setTargetAtTime(musicIsOn ? MUSIC_GAIN * vol.music * vol.music : 0, t, 0.05);
   }
-  function musicRetry() { const w = want; want = null; music(w); }   // after the context wakes up (first tap)
+  function musicRetry() { if (cur && cur.slot === want) return; const w = want; want = null; music(w); }   // already playing: leave it   // after the context wakes up (first tap)
 
   const meterBuf = new Float32Array(1024);
   // what the console shows: the output level, every sound playing now, each loop's level, and each cue's last start
@@ -487,6 +507,6 @@ export function makeMixer({ camera }) {
     reap();
     return { rms, peak, clock, voices: voices.map((v) => ({ cue: v.cue, grp: v.grp, g: v.g, left: v.end - clock })), loops: Object.fromEntries(Object.entries(loopState).map(([k, L]) => [k, { want: L.want || 0, gain: L.gain || 0, on: !!L.node }])), recent };
   }
-  const api = { on: true, init, load, play, tick, module, volume, meter, trim, setTrim: (k, v) => { if (v === 1) delete trim[k]; else trim[k] = v; }, LABEL_GROUPS: GROUPS, get vol() { return { ...vol }; }, feed, level, loopSize, LAYERS, LOOPS, loadMusic, music, musicOn, musicRetry, CUES, GROUPS, stats: () => st, get clock() { return clock; }, get voices() { return voices.length; }, get track() { return cur ? cur.slot : null; }, get clips() { return Object.values(buffers).reduce((n, b) => n + b.length, 0); }, get ctx() { return ctx; } };
+  const api = { on: true, init, load, play, tick, module, volume, meter, trim, setTrim: (k, v) => { if (v === 1) delete trim[k]; else trim[k] = v; }, LABEL_GROUPS: GROUPS, get vol() { return { ...vol }; }, feed, level, loopSize, LAYERS, LOOPS, loadMusic, music, sting, musicOn, musicRetry, CUES, GROUPS, stats: () => st, get clock() { return clock; }, get voices() { return voices.length; }, get track() { return cur ? cur.slot : null; }, get clips() { return Object.values(buffers).reduce((n, b) => n + b.length, 0); }, get ctx() { return ctx; } };
   return api;
 }

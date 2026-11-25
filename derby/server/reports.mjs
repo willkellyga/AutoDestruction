@@ -79,6 +79,17 @@ table{border-collapse:collapse;width:100%;font-size:15px}th,td{text-align:left;p
 const e = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const browser = (v) => { if (!v) return ''; const u = v.ua || '', b = (u.match(/(CriOS|FxiOS|EdgiOS|Edg|Chrome|Version|Firefox)[/][0-9.]+/) || [''])[0].replace('CriOS', 'Chrome').replace('FxiOS', 'Firefox').replace(/EdgiOS|Edg/, 'Edge').replace('Version', 'Safari'), os = (u.match(/OS ([0-9_]+)/) || ['', ''])[1].replace(/_/g, '.');
   return '<small>' + e(b || 'browser?') + (os ? ', iOS ' + e(os) : '') + (v.cores ? ', ' + e(v.cores) + ' cores' : '') + (v.standalone ? ', Home Screen icon' : '') + (v.secure ? '' : ', <b class="bad">not https</b>') + '</small><br>'; };
+const kf = (v) => v >= 1e6 ? (v / 1e6).toFixed(2) + 'M' : Math.round(v / 1000) + 'k';
+// the lines from Monster Mayhem's reports: where a frame goes, what is drawn, city redraws, pauses, and the page's life
+function more(d) {
+  let t = '';
+  const S = d.split; if (S) t += '<small>frame ' + e(S.frame) + ' ms = game ' + e(S.step) + ' + drawing ' + e(S.draw) + ' + waiting ' + e(S.wait) + ' (' + e(S.over20) + '% over 20 ms) <span class="' + (S.step + S.draw > 12 ? 'bad' : '') + '">' + (S.step + S.draw > 12 ? 'page-bound' : S.over20 > 20 ? 'graphics-bound' : '') + '</span></small><br>';
+  const D = d.drawn; if (D && D.kinds) t += '<small>drawn: ' + Object.entries(D.kinds).slice(0, 5).map(([k, v]) => e(k) + ' ' + kf(v[0]) + ' / ' + e(v[1])).join(', ') + '</small><br>';
+  const R = d.redraw; if (R && (R.total || R.mbps)) t += '<small>city redraws ' + e(R.mbps) + ' MB/s, busiest second ' + e(R.busiest) + ' MB</small><br>';
+  if (d.pauseCount) { const P = d.pauses[d.pauses.length - 1]; t += '<small class="bad">' + e(d.pauseCount) + ' pauses over 100 ms; last ' + e(P.ms) + ' ms at ' + e(P.at) + ' s: game ' + e(P.step) + ', drawing ' + e(P.draw) + ', ' + e(P.shaders) + ' new shaders, ' + e(P.meshes) + ' new meshes</small><br>'; }
+  const L = d.life; if (L) t += '<small>' + (L.hidden ? e(L.hidden) + ' times hidden, ' : '') + (L.lost ? '<b class="bad">graphics dropped ' + e(L.lost) + ', back ' + e(L.back) + '</b>, ' : '') + e(L.geoms) + ' meshes, ' + e(L.textures) + ' textures, ' + e(L.shaders) + ' shaders on the card</small><br>';
+  return t;
+}
 const ms = (v) => v == null ? '?' : (v / 1000).toFixed(1) + ' s';
 async function tick() {
   try {
@@ -94,6 +105,7 @@ async function tick() {
         + (d.stepMs != null ? '<small>game ' + e(d.stepMs) + ' ms, drawing ' + e(d.drawMs) + ' ms of ' + e(d.frameMs) + ' ms a frame</small><br>' : '')
         + (d.load ? '<small>page in ' + ms(d.load.page) + ', ready in ' + ms(d.load.ready) + ', JavaScript check ' + e(d.jsMs) + ' ms</small><br>' : '')
         + (d.calls != null ? '<small>' + e(d.calls) + ' draw calls, ' + e(Math.round((d.tris || 0) / 1000)) + 'k triangles, ' + e(d.cars) + ' cars</small><br>' : '')
+        + more(d)
         + (d.errors ? e(d.errors) + ' errors<br><small>' + e(d.lastError) + '</small>' : '') + '</td></tr>';
     }).join('');
   } catch (err) { /* the server stopped */ }

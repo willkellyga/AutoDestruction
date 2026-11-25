@@ -231,7 +231,10 @@ export function makeDirt({ scene, camera, renderer, floor, MAP, mobile }) {
   const onDirt = floor.dirt, onHard = floor.hard;
   const top0 = mobile ? 3 : 0;   // the pools are made for the best step this device starts on
   const dust = dustPool(scene, DUST[top0]);
-  const LUMPS = onDirt ? CLODS : FLAKES, clods = clodPool(scene, LUMPS[top0]);
+  // a map whose floor is all hard ground can still have a stretch of dirt road (MAP.dirtAt(x, z): the dirt's colour
+  // there as linear light, or null; maps/capital.js's Mall): the wheels throw it up as they do the arena's
+  const roadDirt = MAP.dirtAt || null;
+  const LUMPS = onDirt || roadDirt ? CLODS : FLAKES, clods = clodPool(scene, LUMPS[top0]);
   let q = -1, K = 1;   // the quality step, and how much is thrown at it against the best
   const col = [0, 0, 0];
   const pools = poolsOf(MAP.look);   // (null for a look without banks of floodlights)
@@ -425,6 +428,23 @@ export function makeDirt({ scene, camera, renderer, floor, MAP, mobile }) {
             for (let i = 0; i < n; i++) dust.spawn(x + bx * 2 + (Math.random() - 0.5) * 1.5, 0.7, z + bz * 2 + (Math.random() - 0.5) * 1.5, c.vx * 0.15 + (Math.random() - 0.5) * 3, 1 + Math.random() * 3, c.vz * 0.15 + (Math.random() - 0.5) * 3, 2.5 + Math.random() * 2.5, 1.6 + Math.random() * 1.6, dc[0], dc[1], dc[2], 0.22, 2.8, 0, 1.3);
           }
         }
+      } else if (roadDirt && roadDirt(x, z)) {
+        // a dirt road: the wheels throw it up whenever the car is moving (Will, 2026-11-24: "dirt flying off the tires
+        // when driving through dirt"), a spray at speed and the full rooster tail when they dig; and a trail of dust
+        const rc = roadDirt(x, z), y0 = c.fy || 0, run = clamp((sp - 8) / (topS * 0.55), 0, 1) * 0.6, kk = c.dead || (c.y || 0) > 1.5 ? 0 : Math.max(dig, run);
+        if (kk > 0.05) {
+          let dx = bx * (0.45 + spin + run) + co * side * (slide * 1.4 + turn * 0.8), dz = bz * (0.45 + spin + run) - s * side * (slide * 1.4 + turn * 0.8);
+          const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
+          const r = c.wheelR || 1.5;
+          rooster(T, x + bx * r, z + bz * r, y0 + 0.5, dx, dz, kk, c.vx, c.vz, rc, dt);
+        }
+        if (sp > 24 && kk) {
+          const n = take(T, 't', 18 * clamp((sp - 24) / (topS * 0.7), 0, 1) * K, dt);
+          if (n) {
+            const dc = dustCol(rc);
+            for (let i = 0; i < n; i++) dust.spawn(x + bx * 2 + (Math.random() - 0.5) * 1.5, y0 + 0.7, z + bz * 2 + (Math.random() - 0.5) * 1.5, c.vx * 0.15 + (Math.random() - 0.5) * 3, 1 + Math.random() * 3, c.vz * 0.15 + (Math.random() - 0.5) * 3, 2.5 + Math.random() * 2.5, 1.6 + Math.random() * 1.6, dc[0], dc[1], dc[2], 0.22, 2.8, 0, 1.3);
+          }
+        }
       } else if (MAP.surface && sp > 40 && !c.dead && MAP.surface(x, z) > 0.3) {   // the race: a little dust off the grass
         const n = take(T, 't', 6 * clamp((sp - 40) / (topS * 0.7), 0, 1) * K, dt);
         for (let i = 0; i < n; i++) dust.spawn(x + bx * 2, 0.7, z + bz * 2, c.vx * 0.15 + (Math.random() - 0.5) * 3, 1 + Math.random() * 3, c.vz * 0.15 + (Math.random() - 0.5) * 3, 2.2 + Math.random() * 2, 1.2 + Math.random() * 1.2, GRASS[0], GRASS[1], GRASS[2], 0.18, 2.4, 0, 1.4);
@@ -435,7 +455,7 @@ export function makeDirt({ scene, camera, renderer, floor, MAP, mobile }) {
     if (sp > 14 && !c.dead) {
       const fast = clamp((sp - 14) / 60, 0, 1);
       for (let k = 0; k < W.length; k++) {
-        const w = W[k], x = c.x + w.x * co + w.z * s, z = c.z - w.x * s + w.z * co, T = st.w[k], wet = floor.wetAt(x, z);
+        const w = W[k], x = c.x + w.x * co + w.z * s, z = c.z - w.x * s + w.z * co, T = st.w[k], wet = MAP.wetAt ? Math.max(floor.wetAt(x, z), MAP.wetAt(x, z)) : floor.wetAt(x, z);   // (a map can have water standing on its road: maps/capital.js's pool)
         if (wet > 0.3) {
           const c0 = onDirt && floor.dirtAt(x, z) > 0.5 ? dirtCol(x, z) : WATER, m = c0 === WATER ? 1 : 0.55, sd = w.x > 0 ? 1 : -1, ox = co * sd, oz = -s * sd;
           const n = take(T, 'p', 200 * wet * fast * K, dt);

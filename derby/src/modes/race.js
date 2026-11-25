@@ -6,8 +6,8 @@
 // cutting across the infield gains nothing. The HUD has the lap and the player's place, a warning when going the wrong
 // way or past a missed gate, and the radar shows the next gate. A wrecked car, the player's too, comes back at the last
 // gate it passed, facing the right way, after RESPAWN seconds: wrecking someone costs them time. When the player takes
-// the flag the car drives itself and the rivals race on for a few seconds; then the results, with scrap for the place
-// and for every rival wrecked. If a rival wins and the player is still out there, the race closes after a while.
+// the flag the car drives itself and the results come up at once, with scrap for the place and for every rival
+// wrecked; whoever is still racing is listed by how far behind they were. If a rival wins and the player is still out there, the race closes after a while.
 //
 // Difficulty (Easy, Normal, Hard on the start card, kept in the save as `raceLevel`: tuning.js RACE): the rivals' cars
 // are tuned to the player's, faster or slower by the level, and drive better or worse; Easy and Normal have a little
@@ -21,7 +21,10 @@ import { PARTS, racerBuild } from '../parts.js';
 const RESPAWN = 2.5, COUNT = 3;
 const PRIZE = [300, 200, 120, 80, 50, 30];   // by place, on Normal (each rival you wreck already pays 100 as it happens)
 const CLOSE = 40;                     // seconds the race stays open after the winner finishes
-const AFTER = 9;                      // seconds the rivals race on after the player finishes, before the results
+// seconds after the player takes the flag before the results: a moment for the banner, no more (Will, 2026-11-24:
+// "When you win a race, you should get to the screen where you can quit and rerace if you want rather than waiting
+// for everyone to finish"). The card comes up over the race, and the rivals drive on behind it.
+const AFTER = 0.4;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const ord = (n) => n + (n % 10 === 1 && n % 100 !== 11 ? 'st' : n % 10 === 2 && n % 100 !== 12 ? 'nd' : n % 10 === 3 && n % 100 !== 13 ? 'rd' : 'th');
 const clock = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`;
@@ -110,14 +113,15 @@ export function makeRace(G) {
       const i = T.at(gi - Math.round(back / T.STEP)), x = T.X[i] + T.TZ[i] * lat, z = T.Z[i] - T.TX[i] * lat;
       if (T.WL && (lat > WL(i) - 5 || -lat > WR(i) - 5)) continue;   // too near the kerb on a street
       if (G.cars.some((c) => !c.gone && (c !== r.car || c.dead) && Math.hypot(c.x - x, c.z - z) < 18)) continue;   // wrecks too
-      return { x, z, yaw: Math.atan2(T.TX[i], T.TZ[i]) };
+      return { x, z, yaw: Math.atan2(T.TX[i], T.TZ[i]), y: TR.H ? TR.H[i] : 0 };   // (y: the road's height there, on a course that climbs)
     }
-    return { x: T.X[gi], z: T.Z[gi], yaw: Math.atan2(T.TX[gi], T.TZ[gi]) };
+    return { x: T.X[gi], z: T.Z[gi], yaw: Math.atan2(T.TX[gi], T.TZ[gi]), y: TR.H ? TR.H[gi] : 0 };
   }
   // put a car back on the track at its last gate without a wreck (stuck, or lost off the route)
   function reset(r) {
     const at = backAt(r), c = r.car;
     c.x = at.x; c.z = at.z; c.yaw = at.yaw; c.vx = c.vz = 0; c.yawRate = 0; c.gunYaw = at.yaw;
+    if (G.MAP.floor) { c.fy = G.MAP.floor(at.x, at.z, at.y || 0); c.y = 0; c.vy = 0; }   // on the bridge, not under it
     if (c.driver && c.driver.brain) { c.driver.brain.i = -1; c.driver.brain.lane = 0; c.driver.brain.backT = 0; }
     locate(r, true); r.stuckT = 0; r.lostT = 0; r.lastProg = progressOf(r); r.resets++;
   }
@@ -171,14 +175,40 @@ export function makeRace(G) {
     // whoever hasn't finished is placed by how far round they got
     const order = [...recs].sort((a, b) => (a.finished && b.finished ? a.finishT - b.finishT : a.finished ? -1 : b.finished ? 1 : b.progress - a.progress));
     order.forEach((r, k) => { r.place = k + 1; });
-    const lines = order.map((r) => `${ord(r.place)}  ${r.name}  ${r.finished ? clock(r.finishT) : `lap ${Math.min(LAPS, Math.floor(r.passed / NG) + 1)}`}${r.wrecks ? ` (wrecked ${r.wrecks})` : ''}`);
+    // (a rival still out there when the player is home: how far behind it was at the last gate it passed, and at
+    // least the time since the player went through the next one)
+    const behind = (r) => { const k = r.passed, a = r.gateT[k], b = me.gateT[k], n = me.gateT[k + 1]; return k >= 1 && a !== undefined && b !== undefined ? Math.max(a - b, n !== undefined ? raceT - n : 0) : null; };
+    const still = (r) => { const d = me.finished && r !== me ? behind(r) : null; return d !== null ? `+${d.toFixed(1)} s` : `lap ${Math.min(LAPS, Math.floor(r.passed / NG) + 1)}`; };
+    const lines = order.map((r) => `${ord(r.place)}  ${r.name}  ${r.finished ? clock(r.finishT) : still(r)}${r.wrecks ? ` (wrecked ${r.wrecks})` : ''}`);
     lines.push(`Best lap ${me.best ? clock(me.best) : '-'}  ·  You wrecked ${me.kills}  ·  ${LV.name}`);
-    const title = me.place === 1 ? 'You win!' : me.finished ? `${ord(me.place)} place` : 'Out of time';
-    G.over(title, lines, Math.round(PRIZE[me.place - 1] * LV.prize));
+    const title = me.place === 1 ? 'You win!' : !me.finished ? 'Out of time' : me.place <= 3 ? 'Podium finish' : 'Race finished';   // (the place itself is on the card's yellow tab)
+    // the best lap and the best race on this track, kept in the save: a new one is called out on the card
+    const id = G.MAP.id || 'race', all = G.save.raceBest || (G.save.raceBest = {}), was = all[id] || {}, now = { ...was };
+    const newLap = me.best > 0 && (!was.lap || me.best < was.lap), newRace = me.finished && (!was.race || me.finishT < was.race);
+    if (newLap) now.lap = me.best; if (newRace) now.race = me.finishT;
+    all[id] = now;
+    const carOf = (r) => (PARTS.body[r.car.load.body] || {}).name || '';
+    const prize = Math.round(PRIZE[me.place - 1] * LV.prize);
+    const sheet = {
+      kicker: `${G.MAP.name || 'Race'} · race results`, badge: ord(me.place),
+      sub: me.finished ? `Your time ${clock(me.finishT)}` : 'The race closed before you finished',
+      cols: ['Pos', 'Driver', 'Car', 'Time'],
+      rows: order.map((r) => ({ pos: r.place, name: r.name, me: r.me, car: carOf(r), value: r.finished ? clock(r.finishT) : still(r), out: !r.finished, note: r.wrecks ? `wrecked ${r.wrecks}` : '' })),
+      stats: [
+        ['Best lap', me.best ? clock(me.best) : '-', newLap && was.lap ? 'New record!' : !newLap && was.lap ? `Record ${clock(was.lap)}` : ''],
+        ['Race time', me.finished ? clock(me.finishT) : '-', newRace && was.race ? 'New record!' : !newRace && was.race ? `Record ${clock(was.race)}` : ''],
+        ['You wrecked', String(me.kills)],
+        ['Difficulty', LV.name],
+      ],
+      pay: [[`${ord(me.place)} place`, prize]],
+    };
+    G.over(title, lines, prize, null, sheet);
     phase = 'over';
   }
 
   return {
+    // tests: the player's car drives itself round, as it does after the flag (window.__derby.mode.pilot())
+    pilot() { const m = recs.find((r) => r.me); if (m) m.car.driver = makeRacer(m.car, race, { autopilot: true, pace: 1, grip: 0.9 }); },
     go: 'Race',
     get tip() { return LV.note || ''; },
     get note() { return `${G.MAP.laps || 3} laps, six cars, guns on. ${LV.note} Tuck in behind a car for a tow.`; },
@@ -238,7 +268,9 @@ export function makeRace(G) {
               if (closeT < 0) closeT = CLOSE;
               if (r.me) {
                 G.banner(r.place === 1 ? 'Winner!' : `${ord(r.place)} place`, clock(raceT)); G.sfx.play('ui_go', 1);
-                c.driver = makeRacer(c, race, { autopilot: true, pace: 0.97, grip: 0.86 });   // at the player's own speed (at 0.8 it felt like the car had slowed: kids' playtest) doneT = AFTER; phase = 'done'; G.hint(null);
+                // (the car drives itself on at the player's own speed: at 0.8 it felt like it had slowed, kids' playtest)
+                c.driver = makeRacer(c, race, { autopilot: true, pace: 0.97, grip: 0.86 });
+                doneT = AFTER; phase = 'done'; G.hint(null);
               } else if (phase === 'race') G.toast(`${r.name} finished ${ord(r.place)}`, clock(raceT));
             } else if (r.me) {
               if (done === LAPS - 1) G.banner('Final lap', `Lap ${clock(lapT)}`); else G.toast(`Lap ${done} ${clock(lapT)}`, r.best === lapT ? 'Best lap' : `Best ${clock(r.best)}`);
@@ -268,7 +300,7 @@ export function makeRace(G) {
           if (r.lostT > 1.5 || r.stuckT > 6) reset(r);
         }
       }
-      // the player done: the rivals race on a little, then the results
+      // the player done: a moment for the banner, then the results
       if (phase === 'done') {
         if (me) holdGuns(me.car);
         if (me && !me.car.dead) me.car.hp = me.car.maxHp;

@@ -27,15 +27,15 @@ const STEPS = {
     ['radar', 'Follow the radar', `The blinking dot on the radar is where to go next. Lost or facing the wrong way? ${desk('Press <kbd>R</kbd>.')}${tap('Tap the yellow message.')}`],
     ['tow', 'Shoot and tow', 'Blast the cars in front of you. Drive right behind a car and it pulls you along faster.'],
   ],
-  survival: () => [
-    ['zombie', 'Last car running', 'Zombies are taking over the base. Stay alive longer than every other car!'],
-    ['smash', 'Run them over', 'Smash through zombies or shoot them. The cars here can\'t hurt each other.'],
-    ['shake', 'Shake them off', 'Zombies grab onto your car. Turn hard to throw them off. You only get one car!'],
+  survival: (MAP) => [
+    ['zombie', 'Last car running', `Zombies are taking over the ${MAP.id === 'fair' ? 'fair' : 'base'}. Stay alive longer than every other car. You only get one!`],
+    ['smash', 'Run them over', 'Smash through zombies or shoot them. Turn hard to throw off the ones that grab on.'],
+    ['glow', 'Race to the drops', `Crates parachute in: ${dot('#4be37a', 'fix')} ${dot('#45b4ff', 'speed')} ${dot('#ff8a2a', 'faster guns')} ${dot('#ff4fd8', 'air strike')}` + (MAP.id === 'fair' ? '<br>The red button by the generator turns the lights back on.' : MAP.id === 'base' ? '<br>The red button by headquarters wakes the sentry guns.' : '')],
   ],
   brawl: () => [
     ['clock', 'Most wrecks wins', 'Everyone against everyone until the clock runs out.'],
-    ['smash', 'Ram and shoot', 'Wreck as many cars as you can. Got wrecked? You\'re back in three seconds.'],
-    ['glow', 'Grab the glow', `${dot('#4be37a', 'fix')} ${dot('#45b4ff', 'speed')} ${dot('#ff8a2a', 'faster guns')}<br>Watch out for the hammers and the flames!`],
+    ['smash', 'Ram, shoot and jump', 'Wreck as many cars as you can. Land on a rival to crush it. Got wrecked? You\'re back in three seconds.'],
+    ['glow', 'Grab the glow', `${dot('#4be37a', 'fix')} ${dot('#45b4ff', 'speed')} ${dot('#ff8a2a', 'faster guns')}<br>The ${dot('#ff4fd8', 'strike')} hangs over the bus jump: fly to take it.<br>Watch out for the hammers and the flames!`],
   ],
   waves: () => [
     ['smash', 'Wreck each wave', 'Rival cars come in waves. Ram them and shoot them until they\'re all wrecked.'],
