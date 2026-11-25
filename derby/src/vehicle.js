@@ -7,12 +7,19 @@ import { solid, idx, ownerAt, bodies, WX, WZ } from '../../src/world.js';
 import { blast, dust } from '../../src/sim.js';
 import { CRASH, DRIFT, BUILDINGS } from './tuning.js';
 import { EASY } from './sturdy.js';
+import { at as keptOut, nearestOut } from './keepout.js';
 import { MAP } from './maps/index.js';
 import { carDef, LOOSE } from './carmodel.js';
 import { PARTS, statsOf } from './parts.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+// The road's height (a map with hills, bridges and dips gives floor(x, z, y): the height of the road under a thing at
+// height y, so the deck of a flyover and the street under it are told apart; every other map is flat, at 0). A car's
+// `fy` is the floor under it and its `y` how far up off that floor it is (in the air off a jump, or over a crest).
+const FLOOR = MAP.floor ? (x, z, y) => MAP.floor(x, z, y) : null;
+const STEP_UP = 6;     // a floor this much higher or lower a probe away is a wall (no slope is that steep over a car's length): past a deck's edge, should a car get through its parapet
+const RAIL = MAP.rail ? (x, z, y) => MAP.rail(x, z, y) : null;   // a deck's parapet, a cut's wall (maps/heights.js)
 
 let SEED = 1;
 // A car's body is rebuilt after it is hit, which costs a millisecond or two. Hits pile up between rebuilds: each car is
@@ -34,7 +41,7 @@ export class Vehicle {
     scene.add(this.unit.root);
     this.maxHp = this.spec.hp; this.hp = this.maxHp;
     this.x = at.x; this.z = at.z; this.yaw = at.yaw || 0; this.vx = 0; this.vz = 0; this.yawRate = 0;
-    this.y = 0; this.vy = 0; this.oilT = 0;   // up in the air off the jump jets; on an oil slick (specials.js)
+    this.y = 0; this.vy = 0; this.fy = FLOOR ? FLOOR(at.x, at.z, at.y ?? 0) : 0; this.gvy = 0; this.tilt = 0; this.oilT = 0;   // up in the air off the jump jets; on an oil slick (specials.js)
     this.steer = 0; this.throttle = 0; this.brake = 0; this.boost = 1; this.accelK = 1;
     this.aimYaw = this.yaw; this.aimPitch = 0; this.gunYaw = this.yaw; this.gunPitch = 0; this.turretTurn = 9;
     this.aim = new THREE.Vector3(at.x, 3, at.z + 40);
@@ -64,6 +71,7 @@ export class Vehicle {
   }
   get speed() { return Math.hypot(this.vx, this.vz); }
   get fwd() { return this.vx * Math.sin(this.yaw) + this.vz * Math.cos(this.yaw); }
+  get h() { return (this.fy || 0) + (this.y || 0); }   // how high the car is in the world
 
   // ---- driving ----------------------------------------------------------------------------------------------
   // The car's velocity, taken forwards (vf) and sideways (vs) to where it points. Gripping, the velocity turns with
@@ -82,7 +90,7 @@ export class Vehicle {
     const air = this.y > 0.3;
     if (this.y > 0 || this.vy > 0) {
       this.vy -= 70 * dt; this.y += this.vy * dt;
-      if (this.y <= 0) { const hit = -this.vy; this.y = 0; this.vy = 0; if (hooks && hooks.land) hooks.land(this, hit); }
+      if (this.y <= 0 && !FLOOR) { const hit = -this.vy; this.y = 0; this.vy = 0; if (hooks && hooks.land) hooks.land(this, hit); }   // (with a floor, ride() lands it)
     }
     // on oil the tyres hardly grip (it wears off as they come off it)
     const oil = this.oilT > 0 ? Math.min(1, this.oilT / 0.4) : 0; this.oilT = Math.max(0, this.oilT - dt);
@@ -134,6 +142,7 @@ export class Vehicle {
     this.collide(dt, hooks);
     if (this.bounds) this.fence(hooks);   // the garage's yard: a walled lot of its own, off the map
     else { this.x = clamp(this.x, 8, WX - 8); this.z = clamp(this.z, 8, WZ - 8); }
+    if (FLOOR && !this.bounds) this.ride(dt, hooks);
   }
   // The handbrake: steered at speed (or still sliding) the back lets go, straight it is a brake. Returns how far out
   // the back is (0 to 1), and sets the handbrake's own braking. A slide held at an angle long enough gives a burst
@@ -165,6 +174,25 @@ export class Vehicle {
     }
     return this.slide;
   }
+  // Following the road up and down (a map with floor()). On the road the car goes where it goes: up a ramp, over a
+  // hill, down into a cut. Where the road falls away faster than the car can fall after it (a sharp crest, the end
+  // of a ramp), the car leaves it and comes down as it does off a jump.
+  ride(dt, hooks) {
+    const f0 = this.fy, top = f0 + this.y, f1 = FLOOR(this.x, this.z, top);
+    if (this.y === 0 && this.vy === 0) {
+      const v = (f1 - f0) / Math.max(dt, 1e-3), vb = this.gvy - 70 * dt, yb = f0 + vb * dt;
+      if (yb > f1 + 0.3 && this.speed > 12) { this.y = yb - f1; this.vy = vb; }   // off a crest
+      else this.gvy += (clamp(v, -60, 60) - this.gvy) * Math.min(1, dt * 14);
+    } else {
+      this.y = top - f1; this.gvy = 0;   // in the air (step() moved it): the floor under it may have changed
+      if (this.y <= 0) { const hit = -this.vy; this.y = 0; this.vy = 0; if (hit > 6 && hooks && hooks.land) hooks.land(this, hit); }
+    }
+    this.fy = f1;
+    // the nose up or down with the slope
+    const s = Math.sin(this.yaw), c = Math.cos(this.yaw), a = this.mid + this.half, b = this.mid - this.half;
+    const want = this.y > 0.5 ? this.tilt : Math.atan2(FLOOR(this.x + s * a, this.z + c * a, top) - FLOOR(this.x + s * b, this.z + c * b, top), 2 * this.half);
+    this.tilt += (clamp(want, -0.5, 0.5) - this.tilt) * Math.min(1, dt * 10);
+  }
   // kept inside a box (bounds: x0, x1, z0, z1 for the car's middle), bouncing off its sides like a wall
   fence(hooks) {
     const B = this.bounds; let into = 0;
@@ -186,10 +214,21 @@ export class Vehicle {
   }
   hits(x, z, yaw, out) {
     const s = Math.sin(yaw), c = Math.cos(yaw); let n = 0;
-    out.front = 0; out.back = 0; out.side = 0; out.soft = 0; out.hard = 0; out.wall = 0; out.x = 0; out.y = 0; out.z = 0;
+    out.front = 0; out.back = 0; out.side = 0; out.soft = 0; out.hard = 0; out.wall = 0; out.bld = 0; out.x = 0; out.y = 0; out.z = 0;
+    const f = this.fy || 0, top = f + (this.y || 0), fi = Math.round(f), flat = Math.abs(f) < 3;
     for (const [lx, lz, kind] of this.probes()) {
       const wx = x + lx * c + lz * s, wz = z - lx * s + lz * c;
-      for (const y of [2, 4]) {
+      // where a building stands, or stood (keepout.js): a wall to a car, holes or not. And where the road's height
+      // steps: the edge of a bridge's deck, the wall of a cut
+      const bld = flat && keptOut(wx, wz);
+      if (bld || (FLOOR && (Math.abs(FLOOR(wx, wz, top) - f) > STEP_UP || (RAIL && RAIL(wx, wz, top))))) {
+        out.hard++; out.wall++; if (bld) out.bld = 1;
+        if (kind === 0) out.front++; else if (kind === 1) out.back++; else out.side++;
+        out.x += wx; out.y += f + 3; out.z += wz; n++;
+        continue;
+      }
+      if (fi < -1) continue;   // below the ground (a cut, a tunnel): only its walls
+      for (const y of [fi + 2, fi + 4]) {
         const ix = Math.floor(wx), iz = Math.floor(wz);
         if (!solid(ix, y, iz)) continue;
         const b = bodies[ownerAt(idx(ix, y, iz))], soft = !b || b.kind === 'rubble' || b.kind === 'prop';
@@ -208,10 +247,12 @@ export class Vehicle {
   // hole). The face runs the way those blocks spread furthest, so a thin wall works as well as a thick one.
   wallNormal(H, out) {
     const cx = Math.floor(H.x), cz = Math.floor(H.z);
+    const f = this.fy || 0, top = f + (this.y || 0), fi = Math.round(f), flat = Math.abs(f) < 3;
+    const blk = (x, z) => (flat && keptOut(x, z)) || (FLOOR && (Math.abs(FLOOR(x + 0.5, z + 0.5, top) - f) > STEP_UP || (RAIL && RAIL(x + 0.5, z + 0.5, top)))) || (fi >= -1 && (solid(x, fi + 2, z) || solid(x, fi + 4, z)));
     let n = 0, sx = 0, sz = 0, sxx = 0, sxz = 0, szz = 0;
     for (let dz = -3; dz <= 3; dz++) for (let dx = -3; dx <= 3; dx++) {
       if (dx * dx + dz * dz > 10) continue;
-      if (solid(cx + dx, 2, cz + dz) || solid(cx + dx, 4, cz + dz)) { n++; sx += dx; sz += dz; sxx += dx * dx; sxz += dx * dz; szz += dz * dz; }
+      if (blk(cx + dx, cz + dz)) { n++; sx += dx; sz += dz; sxx += dx * dx; sxz += dx * dz; szz += dz * dz; }
     }
     if (n < 4) return false;
     const mx = sx / n, mz = sz / n, a = sxx / n - mx * mx, b = sxz / n - mx * mz, c = szz / n - mz * mz;
@@ -227,6 +268,11 @@ export class Vehicle {
   collide(dt, hooks) {
     const ox = this.x, oz = this.z, H = this._h || (this._h = {}), N = this._n || (this._n = { x: 0, z: 0 });
     let nx = ox + this.vx * dt, nz = oz + this.vz * dt;
+    // the middle of the car inside a building (shoved in, or put there): out to the nearest open ground
+    if (Math.abs(this.fy || 0) < 3 && keptOut(ox + Math.sin(this.yaw) * this.mid, oz + Math.cos(this.yaw) * this.mid) && (this.outT = (this.outT || 0) + dt) > 0.4) {
+      const o = nearestOut(ox, oz); this.outT = 0;
+      if (o) { this.x = o.x; this.z = o.z; this.vx = this.vz = 0; return; }
+    }
     // already in something: rubble came down on it, it turned a corner into a wall, it is half way through the hole it
     // just punched, a shove pushed it in. Rubble, lamps and bins are shoved aside, and so is a wall the car is still
     // going into faster than BUILDINGS.smash. Out of any other wall it eases itself, away from where it is in it; only
@@ -278,6 +324,13 @@ export class Vehicle {
     else if (H.front > H.back && vf > 0) { this.vx -= sy * vf * 1.3; this.vz -= cy * vf * 1.3; }
     else if (H.back > H.front && vf < 0) { this.vx -= sy * vf * 1.3; this.vz -= cy * vf * 1.3; }
     else { this.vx -= cy * vs * 1.4; this.vz += sy * vs * 1.4; }
+    // a building is never broken into, but a hard hit still knocks a dent in its wall and brings down some of it
+    if (this.chipT > 0) this.chipT -= dt;
+    if (H.bld && into > BUILDINGS.smash && !(this.chipT > 0)) {
+      this.chipT = 0.25;
+      blast(H.x + N.x * 0.5, 3, H.z + N.z * 0.5, BUILDINGS.chip + (into - BUILDINGS.smash) * BUILDINGS.holeK, { push: 6, maxDebris: 50, core: 0.3, hard: 0.85, pushDebris: false });
+      dust(H.x, 3, H.z, 10, 4, 0.3, 0.28, 0.25);
+    }
     if (H.hard) this.touch();
     if (into > CRASH.bump) hooks.bump(this, into, H);
   }
@@ -332,7 +385,8 @@ export class Vehicle {
       this.barrelV = (this.barrelV || 0) + ((this.firing > 0 ? 30 : 0) - (this.barrelV || 0)) * Math.min(1, dt * 3);
       s.gunSpin += this.barrelV * dt; s.saw += 24 * dt;
     }
-    u.root.position.set(this.x, this.y || 0, this.z); u.root.rotation.y = this.yaw;
+    u.root.position.set(this.x, this.h, this.z); u.root.rotation.y = this.yaw;
+    if (FLOOR) { u.root.rotation.order = 'YXZ'; u.root.rotation.x = -this.tilt; }
     const body = this.body || (this.body = u.parts.find((p) => p.name === 'body'));
     let held = false;
     this.rebuildT = (this.rebuildT || 0) - dt;
@@ -375,14 +429,14 @@ export class Vehicle {
   }
   // does a world point lie inside the car's box?
   inside(x, y, z, pad = 0) {
-    y -= this.y || 0;
+    y -= this.h;
     if (this.gone || y > this.top + 0.6 + pad || (this.y > 1 && y < -0.6 - pad)) return false;
     const s = Math.sin(this.yaw), c = Math.cos(this.yaw), dx = x - this.x, dz = z - this.z;
     const lx = dx * c - dz * s, lz = dx * s + dz * c - this.mid;
     return Math.abs(lx) < this.wide + pad && Math.abs(lz) < this.half + pad;
   }
   // the middle of the car, as a world point
-  centre(out) { const s = Math.sin(this.yaw), c = Math.cos(this.yaw); return out.set(this.x + this.mid * s, 3 + (this.y || 0), this.z + this.mid * c); }
-  dust(n) { dust(this.x, 0.8, this.z, n, 5); }
+  centre(out) { const s = Math.sin(this.yaw), c = Math.cos(this.yaw); return out.set(this.x + this.mid * s, 3 + this.h, this.z + this.mid * c); }
+  dust(n) { dust(this.x, 0.8 + (this.fy || 0), this.z, n, 5); }
   dispose() { this.unit.dispose(); if (this.bubble) { this.bubble.removeFromParent(); this.bubble = null; } }   // (the shield's bubble: specials.js)
 }

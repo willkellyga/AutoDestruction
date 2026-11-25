@@ -38,6 +38,14 @@
 //            (hurting the cars round them, and the vehicles beside them) and stay as burnt wrecks. A helicopter's
 //            rotor turns over slowly in the wind, a tank's turret looks about. { units: [{ type: 'tank'|'heli', x, z,
 //            yaw }] }. armyFoot() says where one stands, for the map's route grid.
+//   ramp     a steel ramp across the road with a dug-up trench beyond it: a car that hits it going fast enough along
+//            `yaw` is thrown up and over (vehicle.js does the falling and the landing). It is a mesh, not voxels, so a
+//            slow car just rolls over it. { x0, z0, x1, z1 (the ramp), yaw, dig (how long the trench is past it) }
+//   el       an elevated railway along z at x: a steel deck high over the street on the columns the map builds (as
+//            voxels, so cars hit them), and a train that runs along it now and then, rumbling. Above 30, so the chase
+//            camera passes under it. { x, z0, z1, y (the deck's underside), every (seconds between trains) }
+//   covered  a roofed stretch (a tunnel, a hall): while the camera is under it the picture dims, so it reads as inside
+//            even at the quality steps with no shadows. { x0, z0, x1, z1, dim (how much of the light is left) }
 // Keep what hangs over the floor (a sweeper's drum and beams, a magnet) above about 30: the chase camera rides from 23
 // to 28 up behind the car, and would pass through it.
 // None of them are voxels: they are meshes that move and glow, so nothing has to be rebuilt. The map's own list objects
@@ -47,9 +55,10 @@
 // Rivals keep clear of them through steerClear (for ai.js): each kind that can hurt says where it is dangerous and
 // when, and a rival bound through it is sent round (by the map's route grid, which the map blocks while it is on).
 import * as THREE from 'three';
-import { fire, sparks, ring, dust } from '../../src/sim.js';
+import { fire, sparks, ring, dust, puff } from '../../src/sim.js';
 import { Unit } from '../../units/src/unit.js';
 import { TANK, HELI } from '../../units/src/vehicles.js';
+import { makeTrain } from './maps/train.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
@@ -1027,4 +1036,149 @@ function scoreboard(api, h) {
   return { step(dt) { if ((t -= dt) <= 0) { t = 0.5; draw(); } } };
 }
 
-const KINDS = { army, grates, press, barrels, boost, conveyor, bounds, keepout, sweeper, hammer, jets, magnet, show, scoreboard };
+
+// ---- the ramp jump ---------------------------------------------------------------------------------------------------
+// A wedge of steel plate with yellow and black stripes on its lip, across the road, and a dug-up trench painted past
+// it (the map paints the trench: this is only the ramp). A car going along `yaw` at more than MIN when its middle
+// reaches the lip is thrown up by its speed; the landing is vehicle.js's (and specials.landed's dust and crunch).
+const RAMP = { min: 22, lift: 0.34, most: 30, height: 3 };
+function ramp(api, h) {
+  const along = Math.abs(Math.sin(h.yaw)) > 0.7, len = along ? h.x1 - h.x0 : h.z1 - h.z0, wide = along ? h.z1 - h.z0 : h.x1 - h.x0;
+  // the wedge: up from nothing at the near end to RAMP.height at the lip, drawn along +z and then turned to yaw
+  const g = new THREE.BufferGeometry(), H = RAMP.height, L = len, W = wide / 2;
+  const v = [-W, 0, -L / 2, W, 0, -L / 2, W, H, L / 2, -W, H, L / 2, -W, 0, L / 2, W, 0, L / 2];
+  g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+  g.setIndex([0, 2, 1, 0, 3, 2, 3, 4, 5, 3, 5, 2, 0, 4, 3, 1, 2, 5]); g.computeVertexNormals();
+  const plate = new THREE.MeshStandardMaterial({ color: 0x6b7078, roughness: 0.55, metalness: 0.55, side: THREE.DoubleSide });
+  const m = new THREE.Mesh(g, plate); m.position.set((h.x0 + h.x1) / 2, 0, (h.z0 + h.z1) / 2); m.rotation.y = h.yaw; m.castShadow = false; m.receiveShadow = true; api.scene.add(m);
+  // the lip: a stripe of hazard paint along the top edge
+  const lip = new THREE.Mesh(new THREE.BoxGeometry(wide, 0.5, 1.2), new THREE.MeshStandardMaterial({ map: stripesTex([wide / 8, 1]), roughness: 0.7 }));
+  lip.position.set(0, H - 0.2, L / 2 - 0.6); m.add(lip);
+  const sx = Math.sin(h.yaw), cz = Math.cos(h.yaw), lipX = (h.x0 + h.x1) / 2 + sx * L / 2, lipZ = (h.z0 + h.z1) / 2 + cz * L / 2;
+  const last = new Map();
+  return {
+    step(dt, live) {
+      for (const c of api.cars) {
+        if (c.gone || c.dead || (c.y || 0) > 0.3) { last.set(c, null); continue; }
+        // how far past the lip the car's middle is, along the ramp, and whether it is across the ramp's width
+        const mx = c.x + Math.sin(c.yaw) * c.mid, mz = c.z + Math.cos(c.yaw) * c.mid, a = (mx - lipX) * sx + (mz - lipZ) * cz, b = Math.abs((mx - lipX) * cz - (mz - lipZ) * sx);
+        const was = last.get(c); last.set(c, a);
+        if (was == null || !(was < 0 && a >= 0) || b > W) continue;
+        const sp = c.vx * sx + c.vz * cz;
+        if (sp < RAMP.min) continue;
+        c.vy = Math.min(RAMP.most, sp * RAMP.lift); c.y = 0.4;
+        if (live) { api.sfx.play('nitro', c === api.player ? 0.8 : 0.4, c.x, c.z, { gap: 0.2, rate: 0.7 }); if (c === api.player) shake(api, 0.25, c.x, c.z); }
+      }
+    },
+  };
+}
+
+// ---- the El ----------------------------------------------------------------------------------------------------------
+// The deck: two steel girders with a lattice of cross beams under a slab, the rails on top, and a lamp now and then
+// underneath. One mesh a kind (merged), however long. The train: four silver cars with a lit band of windows and a
+// headlamp at each end, built of boxes, running the length of the deck one way and then the other.
+// With `ground`, the same train is a subway train in a station: no deck, its rails on the floor, and each car shown
+// only between z0 and z1 (it comes and goes through the tunnel mouths the map builds at the station's ends).
+function el(api, h) {
+  const len = h.z1 - h.z0, ground = !!h.ground, y = ground ? (h.y ?? 0) - 5.2 : h.y ?? 32, W = 14, zc = (h.z0 + h.z1) / 2;
+  const steel = new THREE.MeshStandardMaterial({ color: 0x3e5a4c, roughness: 0.6, metalness: 0.5 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x2a2c30, roughness: 0.8 });
+  const root = new THREE.Group(); root.position.set(h.x, 0, zc); api.scene.add(root);
+  const add = (geo, mat, x, yy, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, yy, z); m.castShadow = false; m.receiveShadow = false; root.add(m); return m; };
+  if (!ground) {
+    for (const sx of [-W / 2 + 1, W / 2 - 1]) add(new THREE.BoxGeometry(2, 4, len), steel, sx, y + 2, 0);       // the girders
+    add(new THREE.BoxGeometry(W, 1, len), dark, 0, y + 4.5, 0);                                                  // the slab
+  }
+  for (const rx of h.model ? [-3.25, 3.25] : [-3.2, -1.8, 1.8, 3.2]) add(new THREE.BoxGeometry(0.4, 0.4, len), steel, rx, y + 5.2, 0);  // the rails
+  // cross beams under it (sleepers, in a station), every 6, as one instanced mesh
+  const n = Math.floor(len / (ground ? 3 : 6)), beams = new THREE.InstancedMesh(new THREE.BoxGeometry(ground ? 9 : W, ground ? 0.3 : 1, 1), ground ? dark : steel, n), M4 = new THREE.Matrix4();
+  for (let i = 0; i < n; i++) { M4.makeTranslation(0, ground ? y + 5.3 : y + 0.5, -len / 2 + 1.5 + i * (ground ? 3 : 6)); beams.setMatrixAt(i, M4); }
+  root.add(beams);
+  // the train: Monster Mayhem's own (h.model: 'commuter' or 'express'), or a plain one of boxes
+  let CAR = 22, CARS = h.cars ?? 4, TL;
+  const train = new THREE.Group(); train.position.y = y + 5.4; root.add(train);
+  if (h.model) {
+    const t = makeTrain(api.mats, { model: h.model, cars: CARS, paint: h.paint }); CAR = t.car; TL = t.length;
+    for (const c of [...t.group.children]) train.add(c);
+  } else {
+    const GAP = 1.5; TL = CARS * CAR + (CARS - 1) * GAP;
+    const body = new THREE.MeshStandardMaterial({ color: 0xb9bec4, roughness: 0.35, metalness: 0.7 });
+    const glass = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 1.4, 0.9), toneMapped: false });
+    const lamp = new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 2.8, 2.2), toneMapped: false });
+    for (let k = 0; k < CARS; k++) {
+      const z = -TL / 2 + CAR / 2 + k * (CAR + GAP), c = new THREE.Group(); c.position.z = z; train.add(c);
+      const b = new THREE.Mesh(new THREE.BoxGeometry(8, 8, CAR), body); b.position.y = 4.6; c.add(b);
+      for (const sx of [-4.05, 4.05]) { const w = new THREE.Mesh(new THREE.PlaneGeometry(CAR - 3, 2.2), glass); w.position.set(sx, 5.6, 0); w.rotation.y = sx > 0 ? Math.PI / 2 : -Math.PI / 2; c.add(w); }
+      const r = new THREE.Mesh(new THREE.BoxGeometry(7, 0.6, CAR - 1), dark); r.position.y = 8.9; c.add(r);
+      for (const ez of [-1, 1]) if ((k === 0 && ez < 0) || (k === CARS - 1 && ez > 0)) { const l = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1, 0.3), lamp); l.position.set(0, 6.8, ez * (CAR / 2 + 0.1)); c.add(l); }
+    }
+  }
+  // a shed over each end of the line, which the train comes out of and goes into (h.sheds)
+  if (h.sheds) {
+    const SL = CAR + 6, lit = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.7, 1.45, 0.9), toneMapped: false });
+    for (const e of [-1, 1]) {
+      const z = e * (len / 2 - SL / 2);
+      for (const sx of [-W / 2 - 0.5, W / 2 + 0.5]) { add(new THREE.BoxGeometry(1, 16, SL), dark, sx, y + 12.5, z); add(new THREE.BoxGeometry(0.2, 3, SL - 8), lit, sx + Math.sign(sx) * 0.55, y + 13, z); }
+      add(new THREE.BoxGeometry(W + 4, 1.2, SL + 2), steel, 0, y + 21, z); add(new THREE.BoxGeometry(W + 2, 16, 1), dark, 0, y + 12.5, z + e * SL / 2);
+    }
+  }
+  const EVERY = h.every ?? 16, RUN = len + TL + 120, SPEED = h.speed ?? (ground ? 70 : 55), CLIP = ground || !!h.sheds;
+  let t = EVERY * 0.4, dir = 1;
+  train.visible = false;
+  return {
+    step(dt, live) {
+      t -= dt;
+      if (t > 0) return;
+      const run = -t * SPEED;   // how far this run has gone
+      if (run > RUN) { t = EVERY; dir = -dir; train.visible = false; return; }
+      const pl = api.player, SEE = h.see ?? 460;   // (not drawn from far off: a car of it is as much to draw as a racing car)
+      train.visible = !pl || (Math.abs(pl.x - h.x) < SEE && Math.abs(pl.z - zc) < len / 2 + SEE);
+      const z = (-len / 2 - TL / 2 - 60 + run) * dir; train.position.z = z; train.rotation.y = dir > 0 ? 0 : Math.PI;
+      if (CLIP) for (const c of train.children) { const cz = z + c.position.z * dir; c.visible = Math.abs(cz) < len / 2 - CAR / 2 + 2; }
+      // the rumble, now and then, from where the train is (it carries when the player is anywhere near)
+      const p = api.player;
+      if (live && p && Math.abs(p.x - h.x) < 160 && Math.random() < dt * 3) api.sound && api.sound('rumble', clamp(1 - Math.abs(zc + z - p.z) / 240, 0.1, 0.7), h.x, y, zc + z);
+    },
+  };
+}
+
+
+// ---- steam ------------------------------------------------------------------------------------------------------------
+// Steam from the street: a slow column of white puffs out of a manhole or a vent, now and then. { pts: [[x, z], ...] }
+function steam(api, h) {
+  const pts = h.pts || [];
+  return {
+    step(dt, live) {
+      if (!live) return;
+      const p = api.player; if (!p) return;
+      for (const [x, z] of pts) {
+        if (Math.abs(p.x - x) > 260 || Math.abs(p.z - z) > 260 || Math.random() > dt * 9) continue;
+        puff(x + (Math.random() - 0.5) * 3, 0.6, z + (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 1.2, 4 + Math.random() * 3, (Math.random() - 0.5) * 1.2, 3 + Math.random() * 2, 2.6, 0.32, 1.4, 0.4);
+      }
+    },
+  };
+}
+
+// ---- covered stretches ---------------------------------------------------------------------------------------------
+// The renderer's exposure eases down as the camera goes in under the roof and back up as it comes out. All the covered
+// parts of a map share one easing (the darkest one the camera is in wins), kept on the renderer itself.
+function covered(api, h) {
+  const R = api.renderer; if (!R) return null;
+  const all = api.covers || (api.covers = []); all.push(h);
+  if (all.length > 1) return null;   // the first one runs them all
+  let k = 1; const base = R.toneMappingExposure;
+  return {
+    step(dt) {
+      const C = api.camera.position; let want = 1;
+      for (const c of all) if (C.x > c.x0 && C.x < c.x1 && C.z > c.z0 && C.z < c.z1) want = Math.min(want, c.dim ?? 0.6);
+      k += (want - k) * Math.min(1, dt * 3); R.toneMappingExposure = base * k;
+    },
+  };
+}
+
+// ---- a map's own -------------------------------------------------------------------------------------------------
+// Something only one map has, that isn't voxels: the map makes it itself. { make(api) } returns what a hazard does
+// ({ step(dt, live) }), or nothing.
+function custom(api, h) { const o = h.make(api); return o && o.step ? o : { step() {} }; }
+
+const KINDS = { custom, ramp, el, steam, covered, army, grates, press, barrels, boost, conveyor, bounds, keepout, sweeper, hammer, jets, magnet, show, scoreboard };

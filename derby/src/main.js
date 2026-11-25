@@ -21,6 +21,7 @@ import { makeDriver, clearLine } from './ai.js';
 import { MAP, MAPS, chooseMap } from './maps/index.js';
 import { MODES } from './modes/index.js';
 import { CRASH, ROUND, AI, DRIFT, BUILDINGS } from './tuning.js';
+import { build as buildKeepOut } from './keepout.js';
 import { toughen, boom, chipAt, fuelBlast } from './sturdy.js';
 import { PARTS, PAINTS, STARTER, loadSave, keepSave, rivalBuild, RIVAL_NAMES, statsOf } from './parts.js';
 import { makeGarage, rating, classOf, GADGET, gadgetIcon } from './garage.js';
@@ -116,6 +117,8 @@ const streaks = MAP.mode === 'race' ? makeStreaks({ scene, mobile: MOBILE }) : n
 look.detail.value = 1; look.dusk.value = 0;
 cfg.dust = 0.55; cfg.hang = 0.2;
 toughen();   // sturdier buildings than the town's own (sturdy.js, tuning.js BUILDINGS)
+const keep = buildKeepOut();   // cars can't get into buildings (keepout.js)
+
 // the garage's own workshop and yard, out past the edge of the map (garageroom.js)
 const room = makeGarageRoom({ scene, WX, mobile: MOBILE });
 
@@ -444,7 +447,7 @@ function onLand(s, hit, p) {
 // two cars meeting: each is two circles, front and back
 const _n = { x: 0, z: 0 };
 function bump(a, b) {
-  if (Math.abs((a.y || 0) - (b.y || 0)) > Math.min(a.top, b.top) * 0.6) return;   // one jumping over the other
+  if (Math.abs(a.h - b.h) > Math.min(a.top, b.top) * 0.6) return;   // one jumping over the other
   let best = 0, ax = 0, az = 0, bx = 0, bz = 0;
   const ra = a.wide + 0.6, rb = b.wide + 0.6;
   for (const fa of [-0.55, 0.55]) for (const fb of [-0.55, 0.55]) {
@@ -781,7 +784,7 @@ function overGo() {
   game.state = 'play'; lockMouse(); m.go(); return true;
 }
 const api = {
-  game, cars, extras, MAP, scene, mats, camera, sfx, save, cube, chip, blast, explode, sparks, dust, CRASH, ROUND, AI,
+  game, cars, extras, MAP, scene, mats, camera, renderer, sfx, save, cube, chip, blast, explode, sparks, dust, CRASH, ROUND, AI,
   get player() { return player; }, TOUCH: () => TOUCH,
   addCar, addRival, rivalBuild, RIVAL_NAMES, damage, wreck, banner, toast, hint, over, keepSave: () => keepSave(save), sound,
   makeDriver, clearLine, spawnPlayer: (at) => spawnPlayer(at),
@@ -802,7 +805,7 @@ const pickups = makePickups(api, MAP.pickups), hazards = makeHazards(api, MAP.ha
 function spawnPlayer(at) {
   if (!at) {
     at = { ...MAP.spawn };
-    if (player) { const o = (mode.respawnAt && mode.respawnAt(player)) || MAP.spawnPoint(null, cars.filter((c) => !c.gone && c !== player)); at.x = o.x; at.z = o.z; at.yaw = o.yaw ?? Math.random() * 6.28; }
+    if (player) { const o = (mode.respawnAt && mode.respawnAt(player)) || MAP.spawnPoint(null, cars.filter((c) => !c.gone && c !== player)); at.x = o.x; at.z = o.z; at.yaw = o.yaw ?? Math.random() * 6.28; at.y = o.y; }   // (y: the road's height there, so it comes back on a bridge and not under it)
   }
   if (player && !player.dead) { player.dispose(); cars.splice(cars.indexOf(player), 1); }   // a fresh build in place of the old one
   player = addCar({ ...save.load, name: 'You' }, at, false);
@@ -1115,10 +1118,10 @@ function intoRoom() {
   if (!lightWas) {
     if (document.exitPointerLock && cam.locked) document.exitPointerLock();
     // where the car goes back to when it drives out: where it stood, or a spawn point if it was wrecked
-    if (player && !player.dead) game.garageBack = { x: player.x, z: player.z, yaw: player.yaw };
+    if (player && !player.dead) game.garageBack = { x: player.x, z: player.z, yaw: player.yaw, y: player.fy };
     else {
       const o = (mode.respawnAt && mode.respawnAt(player)) || MAP.spawnPoint(null, cars.filter((c) => !c.gone && c !== player));
-      game.garageBack = { x: o.x, z: o.z, yaw: o.yaw ?? Math.random() * 6.28 };
+      game.garageBack = { x: o.x, z: o.z, yaw: o.yaw ?? Math.random() * 6.28, y: o.y };
       player = null;   // (the wreck stays where it is)
     }
     garageLight(true);
@@ -1467,7 +1470,9 @@ function drivePlayer(dt) {
 const ray = new THREE.Raycaster(), _ndc = new THREE.Vector2(), _o = new THREE.Vector3(), _dir = new THREE.Vector3(), _tgt = new THREE.Vector3();
 function aimRay() {
   // through the middle of the screen when the mouse is captured, else through the pointer
-  if (cam.locked || !cam.mx) _ndc.set(0, 0.2);   // the crosshair sits a little above the middle, clear of the car else _ndc.set(cam.mx / canvas.clientWidth * 2 - 1, -(cam.my / canvas.clientHeight * 2 - 1));
+  // (the crosshair sits a little above the middle, clear of the car; on a touch screen it stays there too)
+  if (cam.locked || !cam.mx || TOUCH) _ndc.set(0, 0.2);
+  else _ndc.set(cam.mx / canvas.clientWidth * 2 - 1, -(cam.my / canvas.clientHeight * 2 - 1));
   ray.setFromCamera(_ndc, camera); _o.copy(ray.ray.origin); _dir.copy(ray.ray.direction);
   const p = new THREE.Vector3();
   for (let t = 4; t < 520; t += 1) {
@@ -1561,14 +1566,15 @@ function stepCamera(dt) {
   }
   cam.cx += (c.x - cam.cx) * Math.min(1, dt * 12); cam.cz += (c.z - cam.cz) * Math.min(1, dt * 12);
   const dist = cam.dist * (tall ? 1.2 : 1) * (1 + clamp(Math.abs(c.fwd) / 300, 0, 0.25));
-  _tgt.set(cam.cx, 7.5, cam.cz);
+  cam.cy = cam.cy === undefined ? c.h : cam.cy + (c.h - cam.cy) * Math.min(1, dt * 9);   // (the road's height, and a jump's)
+  _tgt.set(cam.cx, 7.5 + (c.fy === undefined ? 0 : cam.cy - Math.max(0, c.y || 0) * 0.6), cam.cz);
   // how far back the camera can sit before a wall; lamps, props and rubble don't count (it looks past them)
   const room = (pitch) => {
     const bx = -Math.sin(cam.yaw) * Math.cos(pitch), by = Math.sin(pitch) + 0.15, bz = -Math.cos(cam.yaw) * Math.cos(pitch);
     for (let t = 4; t < dist; t += 1.5) {
       const i = idx(Math.floor(_tgt.x + bx * t), Math.floor(_tgt.y + by * t), Math.floor(_tgt.z + bz * t));
       if (!solid(Math.floor(_tgt.x + bx * t), Math.floor(_tgt.y + by * t), Math.floor(_tgt.z + bz * t))) continue;
-      const b = bodies[ownerAt(i)]; if (b && (b.kind === 'prop' || b.kind === 'rubble')) continue;
+      const b = bodies[ownerAt(i)]; if (b && (b.kind === 'prop' || b.kind === 'rubble' || b.see)) continue;   // (b.see: something the map lets it look through, maps/empire.js)
       return Math.max(7, t - 2);
     }
     return dist;
@@ -1576,13 +1582,24 @@ function stepCamera(dt) {
   // a wall behind: rise and look down over it rather than close in on the car, which would hide the road ahead. Backed
   // up to a tall wall, the last tries go up nearly over the car's roof, so the camera never sits inside the wall.
   let pitch = cam.pitch, dd = room(pitch);
-  if (dd < dist) for (const up of [0.2, 0.45, 0.7, 0.95, 1.15]) { const p2 = Math.min(1.45, cam.pitch + up), d2 = room(p2); if (d2 > dd + 2) { pitch = p2; dd = d2; } if (d2 >= dist * 0.85) break; }
+  // under a map's roof (a tunnel, a hall: MAP.roofs, [{ x0, z0, x1, z1, y }]) it never climbs: it would go up into it
+  const under = (x, z) => { if (MAP.roofs) for (const r of MAP.roofs) if (x > r.x0 && x < r.x1 && z > r.z0 && z < r.z1 && c.h < r.y - 4) return r.y; return Infinity; };   // (a car on the deck over a road is over that roof, not under it)
+  const roofY = under(_tgt.x, _tgt.z);
+  if (dd < dist && roofY === Infinity) for (const up of [0.2, 0.45, 0.7, 0.95, 1.15]) { const p2 = Math.min(1.45, cam.pitch + up), d2 = room(p2); if (d2 > dd + 2) { pitch = p2; dd = d2; } if (d2 >= dist * 0.85) break; }
   cam.p = cam.p === undefined ? pitch : cam.p + (pitch - cam.p) * Math.min(1, dt * 5);
   const bx = -Math.sin(cam.yaw) * Math.cos(cam.p), by_ = Math.sin(cam.p) + 0.15, bz = -Math.cos(cam.yaw) * Math.cos(cam.p);
   cam.d = cam.d === undefined ? dd : cam.d + (dd - cam.d) * Math.min(1, dt * (dd < cam.d ? 14 : 3));
-  camera.position.set(_tgt.x + bx * cam.d, Math.max(2.5, _tgt.y + by_ * cam.d), _tgt.z + bz * cam.d);
+  camera.position.set(_tgt.x + bx * cam.d, Math.max((MAP.floor ? MAP.floor(_tgt.x + bx * cam.d, _tgt.z + bz * cam.d, _tgt.y) : 0) + 2.5, _tgt.y + by_ * cam.d), _tgt.z + bz * cam.d);
+  // (it comes down under a roof over a moment, not at once; and never below the road where it is: coming down a ramp to
+  // a tunnel's mouth it is still up the ramp behind the car)
+  { const ry = Math.min(roofY, under(camera.position.x, camera.position.z)), want = ry === Infinity ? 0 : Math.max(0, camera.position.y - (ry - 2.5));
+    cam.duck = (cam.duck || 0) + (want - (cam.duck || 0)) * Math.min(1, dt * (want > (cam.duck || 0) ? 6 : 3));
+    if (cam.duck > 0.01) camera.position.y = Math.max(camera.position.y - cam.duck, (MAP.floor ? MAP.floor(camera.position.x, camera.position.z, _tgt.y) : 0) + 1.5); }
   const sh = game.shake; if (sh > 0) camera.position.add(_o.set((Math.random() - 0.5) * sh * 1.6, (Math.random() - 0.5) * sh * 1.2, (Math.random() - 0.5) * sh * 1.6));
-  camera.lookAt(_tgt.x + Math.sin(cam.yaw) * 16, _tgt.y - 0.5, _tgt.z + Math.cos(cam.yaw) * 16);
+  // a map's view (MAP.vista(x, z) -> 0 to 1): it looks up from the road, at something tall ahead (maps/empire.js: the statue)
+  { const v = MAP.vista ? MAP.vista(c.x, c.z) * (cam.locked ? 0.7 : 1) : 0;   // (less with the mouse on the camera: it can look up itself)
+    cam.vista = (cam.vista || 0) + (v - (cam.vista || 0)) * Math.min(1, dt * 1.4); }
+  camera.lookAt(_tgt.x + Math.sin(cam.yaw) * 16, _tgt.y - 0.5 + cam.vista * (tall ? 10 : 13), _tgt.z + Math.cos(cam.yaw) * 16);
   // a drift boost widens the view for a moment (it springs out, then eases back as the burst runs out)
   const fk = c.miniT > 0 ? (cam.fovKick || 0) * Math.min(1, c.miniT / 0.6) : 0;
   cam.fov = (cam.fov || 0) + (fk - (cam.fov || 0)) * Math.min(1, dt * (fk > (cam.fov || 0) ? 14 : 3));
@@ -1611,7 +1628,7 @@ addEventListener('resize', resize); resize();
 // check again after a turn, and on any frame where the window's size no longer matches the view's
 addEventListener('orientationchange', () => { for (const t of [100, 300, 700]) setTimeout(resize, t); });
 if (window.visualViewport) visualViewport.addEventListener('resize', resize);
-const quality = makeQuality({ renderer, composer, bloom: bloomPass, scene, camera, sun, resize, playing: () => game.state === 'play' || game.state === 'test', mobile: MOBILE });
+const quality = makeQuality({ renderer, composer, bloom: bloomPass, scene, camera, sun, resize, playing: () => game.state === 'play' || game.state === 'test', mobile: MOBILE, lodK: MAP.lodK });
 // the rest of a map's look (looks/): its beams, glows, lamps, weather and the rest
 const lookFrom = scene.children.length;
 const mapLook = MAP.look ? makeLook(MAP.look, { scene, renderer, camera, sky, hemi, sun, mats, bloom: bloomPass, quality, backdrop, sfx, setup: LOOK }) : null;
@@ -1737,4 +1754,4 @@ if (net) net.ready_();
   else if (net || brief || /[?&](room|online|map)=/.test(location.search)) $('menu').hidden = false; else showHome();
 }
 requestAnimationFrame((t) => { last = t; frame(t); });
-window.__derby = { art, STARTER, net, specials, crumple, cube, room, gcam, garageLight, startTest, endTest, tryPart: (s, k) => onTry(s, k), dummies, renderer, mapLook, touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH, picked }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, pauseOn, pauseOff, toHome, setPlay, sfx, audioMix, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop, road, engine: () => engine };
+window.__derby = { art, STARTER, net, specials, crumple, cube, room, gcam, garageLight, startTest, endTest, tryPart: (s, k) => onTry(s, k), dummies, renderer, mapLook, touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH, picked }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, pauseOn, pauseOff, toHome, setPlay, sfx, audioMix, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop, keep, road, engine: () => engine };
