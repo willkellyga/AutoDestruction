@@ -52,7 +52,7 @@ try {
   ok(go2 && go2.round === go1.round && go2.bots === 4, 'the second racer gets go for the same round (4 bots now)');
   const z = new Client('z1', 'Zed', 'lobby', { room: 'quick:base' }); await z.ready;
   const zgo = await z.until('go', 1000);
-  ok(zgo && zgo.round !== go1.round && zgo.map === 'base', 'zombie survival is a round of its own');
+  ok(zgo && zgo.round !== go1.round && ['base', 'fair'].includes(zgo.map), 'zombie survival is a round of its own, on one of its two maps');
   const g = a.map((c) => new Client(c.id, c.id, 'game', { key: 'k' + c.id.slice(1), round: go1.round, fresh: true }));
   await Promise.all(g.map((c) => c.ready));
   const w = await g[0].until('welcome');
@@ -156,7 +156,7 @@ try {
   ok(f2.last('lobby').pick === 'base', 'the host picks Zombie Survival');
   f1.send({ t: 'start' });
   const fg = await f2.until('go');
-  ok(fg && fg.map === 'base' && fg.bots === 4 && fg.kind === 'friends', 'the round starts on the base with 4 bots');
+  ok(fg && ['base', 'fair'].includes(fg.map) && fg.bots === 4 && fg.kind === 'friends', 'the round starts on one of the zombie maps with 4 bots');
   const fw = new Client('f2', 'x', 'game', { round: fg.round }); await fw.ready;
   const fwm = await fw.until('welcome');
   ok(fwm && fwm.players.map((p) => p.name).join() === 'Will,Will 2', 'two players with one name get told apart');

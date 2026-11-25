@@ -134,11 +134,24 @@ export function makeSounds(getCtx) {
     if (ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = pan; g.connect(p); p.connect(bus); } else g.connect(bus);
     src.start();
   }
-  // a loop that keeps going; set(volume, rate, x, z) every frame
+  // a sound that is not one of the clips above (one map's own, fetched only there): fn(ctx) gives its AudioBuffer, or a
+  // promise of it; asked for the first time this is called once the sound is running. True once it is there to be played.
+  const making = {};
+  function make(name, fn) {
+    if (!buf[name] && !making[name] && ctx && ctx.state === 'running') {
+      making[name] = true;
+      try { Promise.resolve(fn(ctx)).then((b) => { if (b) buf[name] = b; }, () => {}); } catch (e) { /* no sound of it, then */ }
+    }
+    return !!buf[name];
+  }
   // a loop: set(volume, playback rate, x, z) every frame; made with { tone: true } it also takes a low-pass cutoff (Hz)
-  // as set()'s fifth argument (the engines: muffled low and off the gas)
+  // as set()'s fifth argument (the engines: muffled low and off the gas). hold: seconds after the last set() that it
+  // fades out by itself (for a loop whose owner is not stepped while the game is paused or in the garage). part:
+  // [from, to] in seconds, if only that much of the clip is the loop (a clip with a lead-in and a tail, so that a
+  // decoder's padding can't open a gap at the join)
   function loop(name, opts = {}) {
-    let src = null, g = null, p = null, f = null, quiet = 0, lastT = 0;
+    const hold = opts.hold || 0, part = opts.part || null;
+    let src = null, g = null, p = null, f = null, quiet = 0, lastT = 0, watch = 0, lastSet = 0;
     return {
       set(vol, rate = 1, x, z, tone) {
         if (!ctx || !buf[name]) return;
@@ -151,16 +164,19 @@ export function makeSounds(getCtx) {
           g = ctx.createGain(); g.gain.value = 0;
           if (opts.tone) { f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.Q.value = 0.5; f.frequency.value = tone || 20000; src.connect(f); f.connect(g); } else src.connect(g);
           if (ctx.createStereoPanner) { p = ctx.createStereoPanner(); g.connect(p); p.connect(bus); } else g.connect(bus);
-          src.start(0, Math.random() * buf[name].duration);
+          if (part) { src.loopStart = part[0]; src.loopEnd = part[1]; src.start(0, part[0]); } else src.start(0, Math.random() * buf[name].duration);
         }
         const [k, pan] = place(x, z), t = ctx.currentTime;
         g.gain.setTargetAtTime(on ? vol * k * (LEVEL[name] ?? 1) : 0, t, 0.06);
+        // (a clock of its own does the fading: a fade put on the gain's timeline ahead of time has to be cancelled
+        // at every set(), and a cancel throws the gain back to where it started, so the loop never got off zero)
+        if (hold) { lastSet = performance.now(); if (!watch) watch = setInterval(() => { if (src && performance.now() - lastSet > hold * 1000) g.gain.setTargetAtTime(0, ctx.currentTime, 0.2); }, 200); }
         src.playbackRate.setTargetAtTime(Math.max(0.3, rate), t, 0.05);
         if (p) p.pan.setTargetAtTime(pan, t, 0.05);
         if (f && tone) f.frequency.setTargetAtTime(tone, t, 0.06);
       },
-      stop() { quiet = 0; if (src) { try { g.gain.setTargetAtTime(0, ctx.currentTime, 0.05); src.stop(ctx.currentTime + 0.3); } catch (e) { /* already stopped */ } src = null; } },
+      stop() { quiet = 0; if (watch) { clearInterval(watch); watch = 0; } if (src) { try { g.gain.setTargetAtTime(0, ctx.currentTime, 0.05); src.stop(ctx.currentTime + 0.3); } catch (e) { /* already stopped */ } src = null; } },
     };
   }
-  return { init, play, loop, listen, get clips() { return Object.keys(buf).length; }, get on() { return on; }, set on(v) { on = v; } };
+  return { init, play, loop, make, listen, get clips() { return Object.keys(buf).length; }, get on() { return on; }, set on(v) { on = v; } };
 }

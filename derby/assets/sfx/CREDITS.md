@@ -50,6 +50,7 @@ The guns, the scattergun, the cannon and their mechanics are real recordings, on
 | `arc_hum.wav` | the arc coil charged (loop) | IMA electric buzz (3.0 to 5.4); 344 Air Designed: Unidentified Encounter (28.0 to 30.4); IMA Arc: arc power-up (2.5 to 4.9) |
 | `crack.mp3` | a round passing close by | 2017 part 4, Gamemaster Audio, Bullet Impact Sounds: bullet_flyby_fast_05 (0.06 to 0.36) |
 | `flame_loop.wav` | the flamethrower burning (loop) | made in code, not recorded: shaped noise (a low roar and a hiss), a flutter, and crackle, filtered round the loop so it repeats without a seam |
+| `fair_organ.mp3` | the fairground organ by Dead Man's Fair's big wheel (loop) | our own music, not from the bundles: "Fairground Organ Waltz", made for the game with Suno (song 97a39db9-606c-478b-89f6-7326515b46a4), 6.236 to 22.530 s (sixteen bars), with half a second kept either side of the loop |
 
 The buildings coming down, glass and fire are Monster Mayhem's own clips (`src/sfx-bank.js`, credited in `assets/sfx/CREDITS.md`). The 2026 bundle has no gunfire, so the gun recordings come from the older bundle parts named above.
 

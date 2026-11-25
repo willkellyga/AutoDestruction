@@ -14,6 +14,7 @@
 import { makeHorde, HORDE } from '../zombies.js';
 import { WX, WZ } from '../../../src/world.js';
 import { SURVIVAL_LEVELS } from '../tuning.js';
+import { makeDrops } from '../drops.js';
 
 const ORD = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th'];
 const clockText = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t) % 60).padStart(2, '0')}`;
@@ -50,6 +51,7 @@ export const SURVIVAL = {
 export function makeSurvival(G) {
   const S = SURVIVAL, MAP = G.MAP;
   const near = { t: -1, list: [] };
+  let drops = null;   // the supply drops (../drops.js), where the map lists places for them (MAP.drops)
   let horde = null, phase = 'wait', countT = 0, clock = 0, owed = 0, breached = false, out = null;
   // keeping going after the win: when it was won, the time paid for so far, the best before this round, the scrap then
   let overtime = false, wonAt = 0, paidT = 0, best0 = 0, scrap0 = 0, mineOver = false;
@@ -99,7 +101,10 @@ export function makeSurvival(G) {
       if (c.dead) return;
       if (phase === 'count' || phase === 'wait') { c.throttle = 0; c.steer = 0; c.brake = 1; c.fire = [false, false]; b.chkT = 0; return; }
       if ((pickT -= dt) <= 0 || !q0 || q0.dead || (q0.car && q0.car !== c)) { q0 = prey(c); pickT = 1; }
-      if (q0) { mark.x = q0.x; mark.z = q0.z; mark.vx = q0.vx; mark.vz = q0.vz; }
+      // a supply drop near enough is worth leaving the dead for (a repair kit from further off when it is hurt)
+      const crate = drops && drops.nearest(c, c.hp < c.maxHp * 0.5 ? 260 : 150);
+      if (crate && !(crate.kind === 'repair' && c.hp > c.maxHp * 0.9)) { mark.x = crate.x; mark.z = crate.z; mark.vx = mark.vz = 0; }
+      else if (q0) { mark.x = q0.x; mark.z = q0.z; mark.vx = q0.vx; mark.vz = q0.vz; }
       else { mark.x = WX / 2 + Math.sin(G.game.time * 0.2 + wob) * 120; mark.z = WZ / 2 + Math.cos(G.game.time * 0.2 + wob) * 90; mark.vx = mark.vz = 0; }   // none about: a lap of the base
       b.target = mark; b.pickT = 1;
       think(dt, all, player);
@@ -190,7 +195,7 @@ export function makeSurvival(G) {
   return {
     go: 'Survive',
     get tip() { lvId = levelId(); LV = SURVIVAL_LEVELS[lvId]; const b = bestOf(); return [LV.note, b ? `Your best here${lvId === 'normal' ? '' : ' on ' + LV.name}: ${clockText(b)}.` : ''].filter(Boolean).join(' '); },
-    get note() { lvId = levelId(); LV = SURVIVAL_LEVELS[lvId]; const b = bestOf(); return 'The dead are overrunning the base and there are more every minute. One car, no second chances: outlast everyone.' + (LV.note ? ' ' + LV.note : '') + (b ? ` Your best here${lvId === 'normal' ? '' : ' on ' + LV.name}: ${clockText(b)}.` : ''); },
+    get note() { lvId = levelId(); LV = SURVIVAL_LEVELS[lvId]; const b = bestOf(); return (MAP.story || 'The dead are overrunning the base and there are more every minute.') + ' One car, no second chances: outlast everyone.' + (LV.note ? ' ' + LV.note : '') + (b ? ` Your best here${lvId === 'normal' ? '' : ' on ' + LV.name}: ${clockText(b)}.` : ''); },
     levels: {
       list: Object.entries(SURVIVAL_LEVELS).map(([id, L]) => [id, L.name]),
       get: levelId,
@@ -207,6 +212,7 @@ export function makeSurvival(G) {
       lvId = net ? 'normal' : levelId(); LV = SURVIVAL_LEVELS[lvId];
       horde = makeHorde(G, { max: G.TOUCH() && !(net && net.host) ? S.peakPhone : S.peak, puppet: !!(net && !net.host), onKill: (z, by) => { if (net && by && by.remote) net.zkill(by); } });
       G.extras.push(horde);
+      if (MAP.drops && MAP.drops.length) drops = makeDrops(G);
       best0 = bestOf(); scrap0 = G.game.scrap;
       const starts = MAP.starts || [];
       const tiers = S.tiers.slice().sort(() => Math.random() - 0.5);
@@ -244,6 +250,7 @@ export function makeSurvival(G) {
         // kept going after the win: each whole minute more pays as it passes (the rest when it ends)
         if (overtime && clock - paidT >= 60) { paidT += 60; const pm = Math.round(S.perMinute * LV.prize); G.game.scrap += pm; G.toast('Another minute', `+${pm} scrap`); keepBest(); }
         if (!breached && clock >= S.breach * LV.breach) breakThrough();
+        if (drops) drops.step(clock);
         if (horde.puppet) owed = 0;   // (the host's device brings them in)
         owed += horde.puppet ? 0 : (S.rate[0] + S.rate[1] * clock) * LV.rate * dt;
         const cap = capNow();
@@ -275,7 +282,7 @@ export function makeSurvival(G) {
     garageOK: () => false,
     // online: a bot taken over when the host left drives here from now on
     adopt(c) { if (!c.dead) { c.driver = G.makeDriver(c); coach(c); } },
-    radar(R, s, ox, oy) { if (horde) horde.radar(R, s, ox, oy); },
+    radar(R, s, ox, oy) { if (horde) horde.radar(R, s, ox, oy); if (drops) drops.radar(R, s, ox, oy); },
     // what the aim assist (and a phone's auto-aim) picks from: the dead, never the other cars. Only the nearest few
     // dozen to the player (main.js checks each for a clear line, and there can be hundreds)
     targets() {
