@@ -31,6 +31,7 @@ import { makePartArt } from './partart.js';
 import { makeSpecials } from './specials.js';
 import { makeCrumple } from './crumple.js';
 import { makeSounds, fetchClips } from './audio.js';
+import { makeMusic, roundTrack, RADIO, trackName } from './music.js';
 import { makeRoadSound } from './roadsound.js';
 import { makeEngineSound } from './enginesound.js';
 import { bank as sfxBank, count as sfxCount } from './sfxfiles.js';
@@ -157,8 +158,22 @@ const audioMix = makeMixer({ camera }); sfxBank(SFX_BANK).then((b) => audioMix.l
 for (const [k, v] of Object.entries(DEFAULT_TRIMS)) audioMix.setTrim(k, v);
 let muted = false, engine = null;
 const sfx = makeSounds(() => audioMix.ctx);
+// the music (music.js): the main theme all through the home zone (home, garage and shop, a mode's start card), and in a
+// round the map's own track where it has one
+const ROUND_TRACK = roundTrack(MAP);
+// the pause menu's radio: 'auto' (the map's own track) or one track for every round, kept between visits
+const RADIO_KEY = 'auto-destruction-radio';
+let radio = 'auto'; try { const r = localStorage.getItem(RADIO_KEY); if (RADIO.includes(r)) radio = r; } catch (e) { /* auto */ }
+let radioOn = radio, radioT = 0;   // (the pick plays a moment after the last tap, so clicking past a track doesn't download it)
+function roundMusic() { return radioOn === 'auto' ? ROUND_TRACK : radioOn; }
+const music = makeMusic(() => audioMix.ctx, roundMusic() ? ['theme', roundMusic()] : ['theme']);
+const HOME_ZONE = { garage: 1, menu: 1, test: 1 }, IN_ROUND = { play: 1, dead: 1 };
+function musicOn() { music.on = !muted && !document.hidden; }
+document.addEventListener('visibilitychange', musicOn);
+// browsers only start sound after a tap or key: the first one anywhere starts the theme on the home screen
+for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => initAudio(), { once: true, capture: true });
 function initAudio() {
-  audioMix.init();
+  audioMix.init(); music.init();
   if (engine || !sfx.init()) return;
   // the player's engine and tyres, and the two nearest rivals' engines, on loops
   engine = { note: makeEngineSound({ sfx }), spin: sfx.loop('mini_spin'), saw: sfx.loop('saw_loop'), hum: sfx.loop('arc_hum'), flame: sfx.loop('flame_loop'), jet: sfx.loop('mini_spin') };
@@ -1399,6 +1414,7 @@ function drawPause() {
   $('pause-again').hidden = !!net; $('pause-home').textContent = net ? 'Leave the round' : 'Main menu';
   $('pause-sound').textContent = muted ? 'Sound: off' : 'Sound: on';
   $('pause-auto').textContent = autoFire ? 'Auto-fire: on' : 'Auto-fire: off';
+  $('pause-radio').textContent = 'Radio: ' + trackName(radio);
 }
 function pauseOn() {
   if (game.paused || (game.state !== 'play' && game.state !== 'dead')) return;
@@ -1470,7 +1486,7 @@ addEventListener('keydown', (e) => {
   if (game.paused) { if ((e.code === 'Escape' || e.code === 'KeyP') && performance.now() - game.pausedAt > 350) pauseOff(); return; }
   if ((e.code === 'Escape' || e.code === 'KeyP') && (game.state === 'play' || game.state === 'dead')) { pauseOn(); return; }
   keys[e.code] = true; initAudio();
-  if (e.code === 'KeyM') { muted = !muted; sfx.on = !muted; }
+  if (e.code === 'KeyM') { muted = !muted; sfx.on = !muted; musicOn(); }
   // the gadget is E (or Q) since 2026-11-25; Shift drifts with Space, so the left hand drifts without leaving W A S D
   if ((e.code === 'KeyE' || e.code === 'KeyQ') && !e.repeat && (game.state === 'play' || game.state === 'test') && player) gadget(player);
   if (e.code === 'KeyG' && game.home) openGarage('home');
@@ -1526,8 +1542,14 @@ $('over-maps').addEventListener('click', () => { if (net) toHome(); else { game.
 $('pause-b').addEventListener('click', pauseOn);
 $('pause-go').addEventListener('click', pauseOff);
 $('pause-again').addEventListener('click', () => { pauseOff(); try { sessionStorage.setItem(BRIEF, 'solo'); } catch (e) { /* home */ } chooseMap(MAP.id); });
-$('pause-sound').addEventListener('click', () => { muted = !muted; sfx.on = !muted; audioMix.on = !muted; drawPause(); });
+$('pause-sound').addEventListener('click', () => { muted = !muted; sfx.on = !muted; audioMix.on = !muted; musicOn(); drawPause(); });
 $('pause-auto').addEventListener('click', () => { autoFire = !autoFire; try { localStorage.setItem(AUTOFIRE, autoFire ? '1' : '0'); } catch (e) { /* this visit only */ } drawPause(); });
+$('pause-radio').addEventListener('click', () => {
+  radio = RADIO[(RADIO.indexOf(radio) + 1) % RADIO.length];
+  try { localStorage.setItem(RADIO_KEY, radio); } catch (e) { /* this visit only */ }
+  clearTimeout(radioT); radioT = setTimeout(() => { radioOn = radio; }, 900);
+  drawPause();
+});
 $('pause-home').addEventListener('click', toHome);
 $('over-garage').addEventListener('click', () => { $('over').hidden = true; game.ended = true; openGarage('over'); });
 $('menu-home').addEventListener('click', () => { if (game.state !== 'menu') return; if (document.body.classList.contains('as-solo') && STAGES[MAP.mode]) showStages(MAP.mode); else showHome(); });
@@ -1816,6 +1838,7 @@ function frame(now) {
   if (leaving()) return;   // on the way out (leave.js): nothing more is stepped or drawn
   requestAnimationFrame(frame);
   if (innerWidth !== sizeW || innerHeight !== sizeH) resize();
+  music.play(HOME_ZONE[game.state] ? 'theme' : IN_ROUND[game.state] ? roundMusic() : null);
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   if (window.__hold) return;   // tests step the game by hand (window.__derby.step)
   const a = performance.now();
@@ -1918,7 +1941,7 @@ $('hint').addEventListener('click', () => { if (/take the mouse/.test($('hint').
 spawnPlayer();
 followSun(player.x, player.z);
 // the loading screen (page.html) stays until the sounds are in too (or a few seconds more), then goes once a frame is drawn
-fetchClips();
+fetchClips(); music.fetchMusic();
 if (window.__adLoad) window.__adLoad.built(() => sfxCount); else { const l = $('loading'); if (l) l.hidden = true; }
 // online: the map is built, so this page is ready for the round (it starts by itself: net.js)
 if (net) net.ready_();
@@ -1932,4 +1955,4 @@ if (net) net.ready_();
   else if (net || brief || /[?&](room|online|map)=/.test(location.search)) $('menu').hidden = false; else showHome();
 }
 requestAnimationFrame((t) => { last = t; frame(t); });
-window.__derby = { art, STARTER, net, specials, crumple, cube, room, gcam, garageLight, startTest, endTest, tryPart: (s, k) => onTry(s, k), dummies, renderer, mapLook, touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH, picked }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, pauseOn, pauseOff, toHome, setPlay, sfx, audioMix, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop, keep, road, engine: () => engine };
+window.__derby = { art, STARTER, net, specials, crumple, cube, room, gcam, garageLight, startTest, endTest, tryPart: (s, k) => onTry(s, k), dummies, renderer, mapLook, touch, aim: () => ({ lock: aimLock, sticky: cam.sticky, TOUCH, picked }), useTouch, step, render: () => { placeSky(); quality.draw(); }, quality, cars, game, player: () => player, fx, civ, blast, explode, world, stats, camera, keys, mouse, cam, MAP, mode, chooseMap, api, extras, damage, save, garage, openGarage, leaveGarage, startGame, pauseOn, pauseOff, toHome, setPlay, sfx, music, audioMix, mines, gadget, spawnPlayer, addCar, pickups, hazards, backdrop, keep, road, engine: () => engine };
