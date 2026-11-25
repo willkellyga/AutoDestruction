@@ -63,6 +63,7 @@ export class Vehicle {
     this.gadget = this.spec.gadget; this.gadgetT = 0; this.boostT = 0;
     this.dead = false; this.deadT = 0; this.gone = false; this.hurtT = 0; this.lastBy = null;
     this.smashT = 0; this.scrape = 0; this.spinA = 0; this.firing = 0;
+    this.rub = 0; this.rubT = 0;   // rubbing along a wall or another car: how fast, and for how much longer (roadsound.js)
     // drifting (see handbrake()): how far the back is out, the handbrake's braking, how long a slide has been held, the
     // burst after one, the slip angle, how hard the tyres skid, and how loose this car's tyres let the back go
     this.drift = false; this.slide = 0; this.hbBrake = 0; this.driftT = 0; this.miniT = 0; this.miniLvl = 0; this.kick = 0; this.driftLvl = 0; this.slipA = 0; this.skid = 0;
@@ -83,6 +84,7 @@ export class Vehicle {
     let vf = this.vx * sy + this.vz * cy, vs = this.vx * cy - this.vz * sy;   // forwards, and sideways to the left
     if (this.dead) { this.throttle = 0; this.steer = 0; this.brake = 1; }
     const d = this.handbrake(dt, vf, vs, hooks);
+    this.rubT = Math.max(0, this.rubT - dt);
     if (this.kick) { vf = Math.max(vf, 0) + this.kick; this.kick = 0; }   // a drift boost firing: a shove forwards
     // in the air (the jump jets): it falls, and the wheels can't drive or steer it much till it lands
     const air = this.y > 0.3;
@@ -198,8 +200,11 @@ export class Vehicle {
     if (this.x > B.x1) { this.x = B.x1; into = Math.max(into, this.vx); if (this.vx > 0) this.vx *= -0.25; }
     if (this.z < B.z0) { this.z = B.z0; into = Math.max(into, -this.vz); if (this.vz < 0) this.vz *= -0.25; }
     if (this.z > B.z1) { this.z = B.z1; into = Math.max(into, this.vz); if (this.vz > 0) this.vz *= -0.25; }
+    if (into > 0) this.touch();
     if (into > CRASH.bump && hooks && hooks.bump) hooks.bump(this, into, { x: this.x + Math.sin(this.yaw) * this.mid, y: 2, z: this.z + Math.cos(this.yaw) * this.mid });
   }
+  // up against something solid this frame (a wall, a barrier, another car: main.js bump()), sliding along it at `sp`
+  touch(sp = this.speed) { this.rub = this.rubT > 0 ? Math.max(sp, this.rub * 0.8) : sp; this.rubT = 0.12; }
   // the points round the car that feel for walls, in the car's own space (left, forward)
   probes() {
     const h = this.half - 0.3, w = this.wide - 0.2, m = this.mid, P = [];
@@ -280,6 +285,7 @@ export class Vehicle {
         if (H.wall || (vn <= BUILDINGS.smash && this.inWall < BUILDINGS.stuck)) {   // (a barrier never gives way)
           this.x += ex / e * 8 * dt; this.z += ez / e * 8 * dt;
           if (vn > 0) { this.vx += ex / e * vn; this.vz += ez / e * vn; }
+          this.touch();
           return;
         }
       }
@@ -325,6 +331,7 @@ export class Vehicle {
       blast(H.x + N.x * 0.5, 3, H.z + N.z * 0.5, BUILDINGS.chip + (into - BUILDINGS.smash) * BUILDINGS.holeK, { push: 6, maxDebris: 50, core: 0.3, hard: 0.85, pushDebris: false });
       dust(H.x, 3, H.z, 10, 4, 0.3, 0.28, 0.25);
     }
+    if (H.hard) this.touch();
     if (into > CRASH.bump) hooks.bump(this, into, H);
   }
 

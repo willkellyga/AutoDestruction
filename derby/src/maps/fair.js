@@ -353,11 +353,11 @@ function breach(G) {
 // heard as you come near: full beside it, fading across the fair, gone at the far fence. Wrecked, it runs down and
 // stops. The tune is a band organ waltz of our own (assets/sfx/CREDITS.md), sixteen bars that come round; the file
 // has half a second either side of the loop.
-const ORGAN = { vol: 1, full: 45, far: 280, loop: [0.5, 16.7935] };   // how loud beside it; how far off it is still that loud, and where it is gone (voxels); the loop in the file, seconds
+const ORGAN = { vol: 1.4, full: 45, far: 280, loop: [0.5, 16.7935] };   // how loud beside it; how far off it is still that loud, and where it is gone (voxels); the loop in the file, seconds
 const organSound = (ctx) => bytes(organClip).then((u8) => ctx.decodeAudioData(u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength)));
 let organRun = 1;   // 1 while the carousel stands; it runs down to 0 when it is wrecked
 function stepOrgan(api, dt) {
-  if (!organ) { if (!api.sfx.make('fair_organ', organSound)) return; organ = api.sfx.loop('fair_organ', 0.5, ORGAN.loop); }
+  if (!organ) { if (!api.sfx.make('fair_organ', organSound)) return; organ = api.sfx.loop('fair_organ', { hold: 0.5, part: ORGAN.loop }); }
   if (MERRY.dead) { if (organRun <= 0) return; organRun = Math.max(0, organRun - dt / 1.6); if (organRun <= 0) { organ.stop(); return; } }
   // how loud by how far, ours and not the usual falling away with distance (which audio.js then takes off again):
   // level out to `full`, then down to nothing at `far`

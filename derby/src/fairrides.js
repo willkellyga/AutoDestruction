@@ -97,6 +97,8 @@ export function makeRides(api, spec) {
     for (let i = 0; i < 90; i++) { const a = Math.random() * TAU, r = i % 4 ? R * (0.9 + Math.random() * 0.15) : Math.random() * R; api.cube(S.x + Math.cos(a) * r, WHEEL.hub + Math.sin(a) * r, S.z + (Math.random() - 0.5) * 2 * WHEEL.thick, (Math.random() - 0.5) * 40, Math.random() * 22, (Math.random() - 0.5) * 40, [WHITE, RED, YELLOW, BLUE, GREEN, DARK][i % 6], 0.7 + Math.random() * 1.4); }
     sparks(S.x, WHEEL.hub, S.z, 60, 1, 0.8, 0.3, 40);
     api.sfx.play('bigboom', 1, S.x, S.z); api.sound('crash', 0.7, S.x, WHEEL.hub, S.z); shake(0.8, S.x, S.z);
+    // and its stand comes down with it
+    for (const [dx, y] of [[0, WHEEL.hub - 6], [-7, WHEEL.hub * 0.45], [7, WHEEL.hub * 0.45], [-12, 5], [12, 5]]) api.explode(S.x + dx, y, S.z, 11, 0.5, { maxDebris: 40, fire: false });
   }
   function release(by) {
     if (W.fixed || S.state !== 'stand') return;
@@ -119,7 +121,7 @@ export function makeRides(api, spec) {
     explosion(x, y, z, reach, base, by) {
       if (S.state !== 'stand') return;
       const d = Math.hypot(x - S.x, z - S.z); if (d > R + reach || Math.abs(z - S.z) > reach + WHEEL.thick) return;
-      if ((S.hp -= base * (mine(by) ? 2 : 0.5)) <= 0) (W.fixed ? wreck() : release(by));
+      if (mine(by) && (S.hp -= base * 2) <= 0) (W.fixed ? wreck() : release(by));
     },
   };
   api.extras.push(target);
