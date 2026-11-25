@@ -157,5 +157,7 @@ export function makePartArt({ mats }) {
     },
     // drop waiting work (the tab changed): only the newest asks are drawn
     clear() { queue.length = 0; wait.clear(); },
+    // the page is being left (leave.js): give its drawing context back
+    dispose() { clearTimeout(timer); queue.length = 0; if (gl) { gl.dispose(); gl.forceContextLoss(); gl = null; } },
   };
 }

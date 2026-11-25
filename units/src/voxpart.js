@@ -8,6 +8,7 @@ export const GLOW = 1 << 24; // flag on a colour: this cube goes in the glowing 
 export function hash(i, j, k, s = 0) { let h = (i * 374761393 + j * 668265263 + k * 2147483647 + s * 1274126177) | 0; h = (h ^ (h >>> 13)) * 1274126177 | 0; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
 export function tone(hex, m) { return (hex & GLOW) | (Math.min(255, ((hex >> 16) & 255) * m) << 16) | (Math.min(255, ((hex >> 8) & 255) * m) << 8) | Math.min(255, (hex & 255) * m); }
 
+const EMPTY = new THREE.BufferGeometry();   // what an unloaded part's meshes hold (unload below)
 const AXES = [[0, 1, 2], [1, 2, 0], [2, 0, 1]];
 const SLAB = 16, SLAB_MIN = 200000, SLAB_WORK = 250000;   // a part of SLAB_MIN cells or more is rebuilt a slab of SLAB layers at a time, about SLAB_WORK cells a call
 // the index list of F four-cornered faces: 0 1 2, 0 2 3 and so on
@@ -91,6 +92,14 @@ export class VoxPart {
       }
     }
   }
+  // Memory (iPads, 2026-11-24): a far ship drawn by its far copy keeps its full model's vertex lists, 20 MB for a big hull.
+  // unload() lets them go (the cubes stay); reload() asks for them again: the next build() starts afresh (a big part's
+  // slabs over a few frames). Only for a part as it was built: a damaged one is never unloaded.
+  unload() {
+    for (const m of this.meshes) if (m) { m.geometry.dispose(); m.geometry = EMPTY; m.visible = false; }
+    this.rg = null; this.more = false; this.unloaded = true;
+  }
+  reload() { if (!this.unloaded) return; this.unloaded = false; this.dirty = true; }
   build(mats, parent) {
     if (this.built && this.nx * this.ny * this.nz >= SLAB_MIN && this.nz >= SLAB * 2) return this.buildSlabs(mats, parent);
     this.built = true; this.rg = null; this.more = false; this.kd0 = 1e9; this.kd1 = -1;

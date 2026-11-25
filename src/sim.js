@@ -2,7 +2,7 @@
 // Tuned in the Wrecking Yard sandbox. Everything optional is behind a flag in `cfg`.
 import * as THREE from 'three';
 import { cubeGeo, cubeMat, cubeMesh } from '../units/src/cube3.js';
-import { WX, WY, WZ, NCX, NCZ, SX, SXZ, XM, ZS, ZM, YS, NV, voxAt, brickEmpty, ownerAt, sootAt, burnAt, setVox, setCell, setGone, setSoot, setBurn, eachVoxel, idx, solid, bodies, rubbleBody, M, MAT_R, MAT_G, MAT_B, SOFT, CARRY, HARD, TOUGH, SHAPE, FLAM, BURN, CHARP, PANE, jitter, CITY, wlog, takeWrites, storeCopy } from './world.js';
+import { WX, WY, WZ, NCX, NCZ, SX, SXZ, XM, ZS, ZM, YS, NV, voxAt, brickEmpty, ownerAt, sootAt, burnAt, setVox, setCell, setGone, setSoot, setBurn, eachVoxel, idx, solid, bodies, rubbleBody, M, MAT_R, MAT_G, MAT_B, SOFT, CARRY, HARD, TOUGH, SHAPE, FLAM, BURN, CHARP, PANE, jitter, CITY, MAP_KEY, wlog, takeWrites, storeCopy } from './world.js';
 import { meshChunk, meshRegionCoarse, makeChunkMaterial, makeChunkDepthMaterial, meshOpts, geoFromPack, chunkPack } from './mesh.js';
 import MESH_WORKER_SRC from '../dist/mesh-worker.wtxt';
 
@@ -83,7 +83,7 @@ function startMeshWorker() {
   try {
     if (typeof Worker === 'undefined' || typeof location !== 'undefined' && /[?&]mw=0/.test(location.search)) return;
     const url = URL.createObjectURL(new Blob([MESH_WORKER_SRC], { type: 'text/javascript' }));
-    mw = new Worker(url, { name: 'mm-map=' + (CITY ? 'city' : 'town') });
+    mw = new Worker(url, { name: 'mm-map=' + MAP_KEY });
     mw.onmessage = (e) => { if (e.data.error) meshWorkerFailed(e.data.error); else mwBack.push(e.data); };
     mw.onerror = (e) => meshWorkerFailed(e.message || 'worker error');
     const st = storeCopy();
@@ -92,6 +92,8 @@ function startMeshWorker() {
     stats.worker = true;
   } catch (e) { meshWorkerFailed(e && e.message); }
 }
+// the page is being left (main.js leavePage): stop the worker and its copy of the world
+export function stopMeshWorker() { if (mw) { try { mw.terminate(); } catch (e) { /* gone */ } mw = null; wlog.on = false; } }
 function meshWorkerFailed(why) {
   if (typeof console !== 'undefined') console.warn('meshing worker stopped, meshing on the page instead:', why);
   if (mw) { try { mw.terminate(); } catch (e) { /* gone */ } }
@@ -170,6 +172,7 @@ export function flushChunks(ms = 5) {
   tick++;
   if (mwBack.length) mwTake();
   updateLod();
+  freeHiddenNear();
   // with the worker, the limit is how many jobs are out, not the time here
   const room = () => chunksOut < CHUNKS_OUT;
   if (dirty.size) {
@@ -289,6 +292,43 @@ function nearReady(c) {
   }
   return ok;
 }
+// The graphics card was reset (an iPad's browser drops the drawing context when it runs short, and gives a new one back):
+// the city's meshes let go of their arrays once they were on the card (mesh.js dropArray), so they cannot be sent again.
+// Every one is taken out and asked for again, near chunks first; a chunk under a far copy is redrawn when it comes near
+// (nearReady), and a far copy in view is rebuilt before the rest. Until they are back that part of the city is not drawn.
+export function gpuReset() {
+  for (let k = 0; k < NCH; k++) {
+    const m = chunkMesh[k]; if (!m) continue;
+    scene.remove(m); stats.quads -= m.geometry.userData.quads || 0; chunkMesh[k] = null;
+    if (lodNow[k] === 0) dirty.add(k); else nearStale[k] = 1;
+  }
+  for (let r = 0; r < regMesh.length; r++) {
+    const m = regMesh[r]; if (!m) continue;
+    scene.remove(m); regMesh[r] = null; regStale[r] = 1; if (regShown[r]) regTodo.add(r);
+  }
+  lodX = -1e9;
+}
+// Memory (iPads, 2026-11-24): a chunk drawn by a far copy keeps its full copy hidden, on the graphics card and, if it was
+// never drawn, in the page's memory too (mesh.js dropArray lets go only once drawn). Over a round that is the whole city in
+// full twice over, and iOS stops the page. So a full copy hidden under a shown far copy for a while (FREE_AFTER frames),
+// and well past the full-detail distance, is let go; it is redrawn when the chunk comes near, the far copy staying until then
+// (nearReady), as after a lost drawing context (gpuReset). ?keepnear=1 keeps them all, for comparing.
+const lodSince = new Int32Array(NCH), FREE_AFTER = 90, FREE_PER_FRAME = 24;
+const KEEP_NEAR = typeof location !== 'undefined' && /[?&]keepnear=1/.test(location.search);
+let freeAt = 0;
+function freeHiddenNear() {
+  if (KEEP_NEAR || !(LOD1 < 1e6)) return;
+  const lim = LOD1 * 1.25, a = lim * lim; let n = 0;
+  for (let j = 0; j < 256 && n < FREE_PER_FRAME; j++) {
+    const k = freeAt; freeAt = (freeAt + 1) % NCH;
+    const m = chunkMesh[k]; if (!m || !lodNow[k] || m.visible || chunkAsked[k] || nearAsk[k] || dirty.has(k)) continue;
+    if (tick - lodSince[k] < FREE_AFTER || far(k) < a) continue;
+    const c = cell(k), r = lodNow[k] === 2 ? 2 * NRG + up2(c) : NRG + c;
+    if (!regShown[r] || !regMesh[r]) continue;   // only under a far copy that is drawn
+    scene.remove(m); stats.quads -= m.geometry.userData.quads || 0; m.geometry.dispose(); chunkMesh[k] = null;
+    nearStale[k] = 1; lazy.delete(k); stats.nearFreed = (stats.nearFreed || 0) + 1; n++;
+  }
+}
 function showRegion(r, on) { if (regShown[r] === on) return; regShown[r] = on; if (regMesh[r]) regMesh[r].visible = !!on; }
 function updateLod() {
   const dx = focusX - lodX, dz = focusZ - lodZ, ex = eyeX - eyeLX, ez = eyeZ - eyeLZ;
@@ -326,7 +366,7 @@ function updateLod() {
         if (kx >= NCX || kz >= NCZ) continue;
         const k = kx + kz * NCX;
         if (lodNow[k] === L) continue;
-        lodNow[k] = L; nearHeld[k] = 0;
+        lodNow[k] = L; nearHeld[k] = 0; lodSince[k] = tick;
         const near = chunkMesh[k]; if (near) near.visible = L === 0;
         if (L === 0 && nearStale[k]) { nearStale[k] = 0; nearOld[k] = 1; stats.cameNearStale = (stats.cameNearStale || 0) + 1; dirty.add(k); }   // its full copy is out of date: redrawn in turn
       }
