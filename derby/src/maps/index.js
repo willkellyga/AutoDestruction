@@ -44,9 +44,12 @@ export const SHARED = { survival: [base, fair] };
 // The stage select (main.js): a solo player picks a map of the mode from these picture cards, by the mode's name, and the
 // line under each card's name. Their pictures are src/stages.json (node derby/tools/stage-shots.mjs). A map here loads
 // without ?map= in the address, like the start card's.
-export const STAGES = { race: [empire, capital], survival: [base, fair], brawl: [arena] };
+// (a preview of a race not yet on the card puts it on the card, on that page only)
+const PREVIEWED = PREVIEW && [mapById(PREVIEW)].filter((m) => m && m.mode === 'race' && m !== empire && m !== capital);
+export const STAGES = { race: [empire, capital, ...(PREVIEWED || [])], survival: [base, fair], brawl: [arena] };
 export const TAGS = {
   empire: '3 laps · bridges, the subway, Lady Liberty', capital: '3 laps · the Capitol, the Mall, the Metro',
+  tokyo: '3 laps at night · the flyover, the temple, the Rainbow Bridge',
   base: 'Army base · a storm at night', fair: 'County fair · the lights are failing', arena: 'Monster truck show · jumps and traps',
 };
 const KEY = 'ad-map';

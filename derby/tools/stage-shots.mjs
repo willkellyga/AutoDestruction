@@ -11,6 +11,7 @@ const { chromium } = createRequire(import.meta.url)('playwright');
 export const SHOTS = {
   empire: { auto: true },
   capital: { auto: true },
+  tokyo: { auto: true },
   base: { auto: true },
   fair: { auto: true },
   arena: { from: [330, 20, 566], at: [520, 9, 470] },   // (the boost strip into the mountain, a crush lane either side)
