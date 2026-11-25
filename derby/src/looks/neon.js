@@ -19,7 +19,7 @@ import { TONE, cloudStrip, glowSprites, lampPools, groundSpots, carLamps, commit
 
 export const NEON = {
   moon: new THREE.Vector3(0.28, 0.74, -0.61).normalize(), haze: 0x2a1c3c, fog: [380, 2600], exposure: 1.08,
-  hemi: [0x8f9be6, 0x4c4264, 1.55], light: [0xb9c8ff, 1.25], lamps: [1, 1], box: [180, 165],
+  hemi: [0x8f9be6, 0x4c4264, 1.55], light: [0xb9c8ff, 1.25], lamps: [1, 1], box: [115, 105],
 };
 
 export function setup(L, { scene, renderer, sky, hemi, sun }) {
