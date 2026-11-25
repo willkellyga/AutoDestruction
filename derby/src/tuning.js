@@ -119,6 +119,19 @@ export const DRIFT = {
   marks: 1100,        // skid mark pieces kept on the ground (half on phones); the oldest fade out as new ones go down
 };
 
+// ---- the desktop camera ------------------------------------------------------------------------------------------
+// With the mouse captured (PC), the mouse turns the view and the guns follow it. Smart follow (Will picked it,
+// 2026-11-25): the view turns with the car, keeping the mouse's look as a turn off the car's way, and eases back
+// behind the car a moment after the mouse goes still. Phones and tablets keep their own chase camera.
+export const CAM = {
+  wait: 0.9,          // seconds of a still mouse before it eases back behind the car
+  driftWait: 0.35,    // ... sooner in a slide, so the corner comes into view
+  ramp: 0.5,          // seconds over which the ease back grows to full (a short pause barely moves the aim)
+  rate: 2.2,          // how quickly it eases back, a second (doubled at a full slide)
+  carry: 5,           // radians a second at most the view turns with the car (a spin after a hit doesn't whip it round)
+  driftLook: 0.35,    // in a slide, extra share of the slide angle it looks into, the way the car is going
+};
+
 // ---- the buildings -----------------------------------------------------------------------------------------------
 // How much punishment the buildings take, on every map. The destruction itself is Monster Mayhem's (src/sim.js, used as
 // it is); these scale what the derby's cars, guns, rockets and wrecks ask of it, and how its fire and its rules for
