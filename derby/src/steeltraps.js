@@ -237,18 +237,34 @@ export function makeWorks(api, W, S = {}) {
   // the pendant lamps over the floor: each a fitting in the hall's mesh, a soft beam down from it and a pool of light
   // on the floor under it (the beams are one mesh and the pools another)
   if (W.lamps && W.lamps.length) {
-    const LY = W.lampY ?? 100, run = (H.z1 - H.z0) / 2 + 6, zm = (H.z0 + H.z1) / 2, SEG = 14, R0 = 5, R1 = 21;
-    const bp = [], bc = [], bi = [], pp = [], pu = [], pi = [];
+    // (Will, 2026-11-25: the first beams, cones with an edge, were "heavy handed ... soften so you can't tell the
+    // individual rays". So a beam is now one flat card that turns about its lamp to face the camera, bright down its
+    // middle and gone by its edge, with no outline anywhere; and it fades away as the camera comes under it.)
+    const LY = W.lampY ?? 100, run = (H.z1 - H.z0) / 2 + 6, zm = (H.z0 + H.z1) / 2;
+    const bp = [], bq = [], bi = [], pp = [], pu = [], pi = [];
     for (const [x, z] of W.lamps) {
       pendant(X, x, LY, z, H.eave + (H.ridge - H.eave) * (1 - Math.abs(z - zm) / run) + 1);
-      for (const sh of [0.45, 0.72, 1]) {   // (three shells, one inside the next, so a beam is soft at its edge)
-        const at = bp.length / 3;
-        for (let k = 0; k <= SEG; k++) { const a = k / SEG * TAU, c = Math.cos(a), sn = Math.sin(a); bp.push(x + c * R0 * sh, LY, z + sn * R0 * sh, x + c * R1 * sh, 0.3, z + sn * R1 * sh); bc.push(0.0095, 0.0078, 0.0048, 0.0012, 0.001, 0.0006); if (k < SEG) { const i = at + k * 2; bi.push(i, i + 1, i + 3, i, i + 3, i + 2); } }
-      }
-      const q = pp.length / 3, PR = 46; pp.push(x - PR, 0.13, z - PR, x + PR, 0.13, z - PR, x + PR, 0.13, z + PR, x - PR, 0.13, z + PR); pu.push(0, 0, 1, 0, 1, 1, 0, 1); pi.push(q, q + 2, q + 1, q, q + 3, q + 2);
+      const at = bp.length / 3; bp.push(x, 0, z, x, 0, z, x, 0, z, x, 0, z); bq.push(-1, 0, 1, 0, 1, 1, -1, 1); bi.push(at, at + 1, at + 2, at, at + 2, at + 3);
+      const q = pp.length / 3, PR = 50; pp.push(x - PR, 0.13, z - PR, x + PR, 0.13, z - PR, x + PR, 0.13, z + PR, x - PR, 0.13, z + PR); pu.push(0, 0, 1, 0, 1, 1, 0, 1); pi.push(q, q + 2, q + 1, q, q + 3, q + 2);
     }
-    const bg = new THREE.BufferGeometry(); bg.setAttribute('position', new THREE.Float32BufferAttribute(bp, 3)); bg.setAttribute('color', new THREE.Float32BufferAttribute(bc, 3)); bg.setIndex(bi);
-    const beams = new THREE.Mesh(bg, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false, fog: false }));
+    const bg = new THREE.BufferGeometry(); bg.setAttribute('position', new THREE.Float32BufferAttribute(bp, 3)); bg.setAttribute('q', new THREE.Float32BufferAttribute(bq, 2)); bg.setIndex(bi);
+    const beams = new THREE.Mesh(bg, new THREE.ShaderMaterial({
+      uniforms: { top: { value: LY - 2 }, w0: { value: W.beam?.[0] ?? 13 }, w1: { value: W.beam?.[1] ?? 54 }, tint: { value: new THREE.Color(...(W.beam?.[2] ?? [0.05, 0.04, 0.025])) } },
+      vertexShader: `attribute vec2 q; uniform float top, w0, w1; varying vec2 vQ; varying float vNear;
+        void main() {
+          vec2 d = cameraPosition.xz - position.xz; float far = length(d); vec2 side = far > 0.01 ? vec2(d.y, -d.x) / far : vec2(1.0, 0.0);
+          vec3 p = vec3(position.x + side.x * q.x * mix(w0, w1, q.y), mix(top, 0.3, q.y), position.z + side.y * q.x * mix(w0, w1, q.y));
+          vQ = q; vNear = smoothstep(26.0, 90.0, far);
+          gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
+        }`,
+      fragmentShader: `uniform vec3 tint; varying vec2 vQ; varying float vNear;
+        void main() {
+          float u = vQ.x * vQ.x, across = exp(-u * 3.6) * (1.0 - u) * (1.0 - u);   // (bright down the middle, nothing at the edge)
+          float down = smoothstep(0.0, 0.06, vQ.y) * mix(1.0, 0.3, vQ.y) * (1.0 - smoothstep(0.86, 1.0, vQ.y));   // (strongest under the lamp, thinning to the floor)
+          gl_FragColor = vec4(tint * across * down * vNear, 1.0);
+          #include <colorspace_fragment>
+        }`,
+      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false, fog: false }));
     beams.frustumCulled = false; beams.renderOrder = 3; scene.add(beams);
     const pg = new THREE.BufferGeometry(); pg.setAttribute('position', new THREE.Float32BufferAttribute(pp, 3)); pg.setAttribute('uv', new THREE.Float32BufferAttribute(pu, 2)); pg.setIndex(pi);
     floorGlow(1, [1, 1, 1]);   // (makes the shared glow picture)
