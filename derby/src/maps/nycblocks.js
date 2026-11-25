@@ -95,11 +95,12 @@ function street() {
   const t = tex(cv), u = tex(ev); t.wrapT = u.wrapT = THREE.ClampToEdgeWrapping; return [t, u];
 }
 function sheet() {
-  const A = atlas(), out = { signs: [], bigs: [], films: { wide: [], great: [], tall: [] }, ads: { wide: [], great: [], tall: [] }, hero: [] };
+  const A = atlas(1024, 1024), out = { signs: [], bigs: [], films: { wide: [], great: [], tall: [] }, ads: { wide: [], great: [], tall: [] }, hero: [] };
   const add = (P, list) => list.push(A.add(P));
   SIGN_WORDS.forEach((w, i) => { add(sign(w, SIGN_INKS[i % SIGN_INKS.length]), out.signs); add(sign(w, SIGN_INKS[(i * 3 + 4) % SIGN_INKS.length]), out.signs); if (w.length <= 5) add(sign(w, SIGN_INKS[(i * 7 + 1) % SIGN_INKS.length], 2), out.bigs); });
-  for (const k of POSTERS) { const to = FILMS.includes(k) ? out.films : out.ads; add(poster(k, 64, 40), to.wide); add(poster(k, 28, 44), to.tall); if (FILMS.includes(k)) add(poster(k, 96, 56), to.great); }
-  for (const k of FILMS) add(poster(k, 144, 84), out.hero);
+  // (the films' boards are the ones seen close and large: two pixels to a voxel; the sheet is 1024 square for them)
+  for (const k of POSTERS) { const film = FILMS.includes(k), to = film ? out.films : out.ads, f = film ? 2 : 1; add(poster(k, 64, 40, f), to.wide); add(poster(k, 28, 44, f), to.tall); if (film) add(poster(k, 96, 56, f), to.great); }
+  for (const k of FILMS) add(poster(k, 144, 84, 2), out.hero);
   const t = A.pack(), rects = (l) => l.map((it) => it.rect);
   return { tex: t, hero: rects(out.hero), signs: rects(out.signs), bigs: rects(out.bigs), films: { wide: rects(out.films.wide), great: rects(out.films.great), tall: rects(out.films.tall) }, ads: { wide: rects(out.ads.wide), great: rects(out.films.great), tall: rects(out.ads.tall) } };
 }

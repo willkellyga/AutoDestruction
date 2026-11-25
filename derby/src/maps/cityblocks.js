@@ -40,11 +40,11 @@ export function atlas(AW = 512, AH = 512) {
       all.sort((a, b) => b.P.H - a.P.H);
       let x = 1, y = 1, row = 0;
       for (const it of all) {
-        const { W, H, d } = it.P;
+        const { W, H, d } = it.P, s = it.P.s || 1;   // (s: a board drawn finer than a pixel to a voxel)
         if (x + W + 1 > AW) { x = 1; y += row + 2; row = 0; }
         if (y + H + 1 > AH) { it.rect = all[0].rect; continue; }
         g.putImageData(new ImageData(d, W, H), x, y);
-        it.rect = [x / AW, 1 - (y + H) / AH, (x + W) / AW, 1 - y / AH, W, H]; x += W + 2; row = Math.max(row, H);
+        it.rect = [x / AW, 1 - (y + H) / AH, (x + W) / AW, 1 - y / AH, W / s, H / s]; x += W + 2 * s; row = Math.max(row, H + 2 * (s - 1));
       }
       const t = new THREE.CanvasTexture(cv); t.magFilter = THREE.NearestFilter; t.minFilter = THREE.LinearMipmapLinearFilter; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; t.generateMipmaps = true;
       return t;
