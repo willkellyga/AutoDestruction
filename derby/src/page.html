@@ -538,13 +538,14 @@ button.alt:hover { background: linear-gradient(180deg, #4a5056, #2e3237); }
 .nx.ready small, .nx.ready em { color: var(--ok); opacity: 1; } .nx.ready .nx-bar s { background: repeating-linear-gradient(-45deg, transparent 0 6px, rgba(0,0,0,0.16) 6px 9px), var(--ok); }
 @keyframes nx-glow { from { box-shadow: inset 0 0 0 2px var(--ok), inset 0 0 8px rgba(75,227,122,0.2); filter: brightness(1); } to { box-shadow: inset 0 0 0 2px var(--ok), inset 0 0 26px rgba(75,227,122,0.7); filter: brightness(1.18); } }
 @media (prefers-reduced-motion: reduce) { .nx.ready { animation: none; } }
-.h-next { position: absolute; right: 22px; top: 70px; width: 250px; }
+/* bottom left, over the car's name: up top it sat on the Solo / Online / Friends switch */
+.h-next { position: absolute; left: 22px; bottom: 150px; width: 250px; }
 #over-next { margin-top: 8px; }
 .ov-table[hidden] + .ov-side #over-next { grid-column: 1 / -1; }
 #over-buy { font-size: calc(20px * var(--head-k)); padding-left: 22px; padding-right: 22px; }
 .g-chips i.goal { background: var(--hot); color: var(--tar); }
-@media (max-height: 520px) and (min-width: 561px) { .h-next { right: auto; left: 14px; top: auto; bottom: 92px; width: 200px; padding: 4px 10px 5px; } .h-next b { font-size: 15px; } .h-next small, .h-next em { font-size: 11px; } .h-next .nx-bar { height: 6px; } #over-next { margin-top: 5px; padding: 3px 10px 4px; } #over-next b { font-size: 15px; } #over-next .nx-bar { height: 6px; margin: 1px 0; } #over-next em { display: none; } #over-buy { font-size: 16px; padding: 9px 14px; } }
-@media (max-width: 560px) { .h-next { right: 10px; top: 80px; width: 168px; padding: 5px 10px 6px; } .h-next b { font-size: 15px; } .h-next small, .h-next em { font-size: 11px; } #over.buy .ov .row { flex-wrap: nowrap; gap: 8px; } #over.buy .ov .row button.alt { font-size: 14px; padding: 9px 11px; } #over-buy { font-size: 15px; line-height: 1.05; padding: 8px 12px; flex: 1 1 auto; } #over.buy #over-next { display: none; } #over-next { margin-top: 6px; padding: 4px 10px 5px; } #over-next em { display: none; } #over-next b { font-size: 16px; } }
+@media (max-height: 520px) and (min-width: 561px) { .h-next { left: 14px; bottom: 92px; width: 200px; padding: 4px 10px 5px; } .h-next b { font-size: 15px; } .h-next small, .h-next em { font-size: 11px; } .h-next .nx-bar { height: 6px; } #over-next { margin-top: 5px; padding: 3px 10px 4px; } #over-next b { font-size: 15px; } #over-next .nx-bar { height: 6px; margin: 1px 0; } #over-next em { display: none; } #over-buy { font-size: 16px; padding: 9px 14px; } }
+@media (max-width: 560px) { .h-next { left: auto; bottom: auto; right: 10px; top: 80px; width: 168px; padding: 5px 10px 6px; } .h-next b { font-size: 15px; } .h-next small, .h-next em { font-size: 11px; } #over.buy .ov .row { flex-wrap: nowrap; gap: 8px; } #over.buy .ov .row button.alt { font-size: 14px; padding: 9px 11px; } #over-buy { font-size: 15px; line-height: 1.05; padding: 8px 12px; flex: 1 1 auto; } #over.buy #over-next { display: none; } #over-next { margin-top: 6px; padding: 4px 10px 5px; } #over-next em { display: none; } #over-next b { font-size: 16px; } }
 /* ---- the first visit: one press starts a round (main.js firstVisit), and the controls sit over its first seconds ---- */
 #first { position: fixed; inset: 0; z-index: 7; pointer-events: auto; cursor: pointer; display: flex; align-items: flex-end; justify-content: center; background: linear-gradient(transparent 35%, rgba(10,11,13,0.9) 82%); }
 #first[hidden] { display: none; }
